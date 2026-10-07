@@ -28,7 +28,7 @@ UTAGE の代わりになるサイト兼アプリ（PWA）のデモ。架空の�
 - 決済（UnivaPay のテスト）：登録の直後と `/app` に「入会する」。UnivaPay のウィジェットが定期課金（月 3,000 円・テスト）を作り、サイトは秘密の鍵で UnivaPay に聞き直してから `subscription_started` を積む
 - UnivaPay の知らせ：`POST /api/webhooks/univapay`。合言葉は `MCP_SECRET` から作り、シアニン用の画面の「決済とメールの設定」に出す。2 回目以降の入金・失敗・解約を積む。受け取りは全部 `inbound_log` に残す
 - 権利：会員かどうかは出来事から計算する（始まった・入金 → 会員、失敗・解約・停止 → 会員でない）
-- メール（Cloudflare Email Service）：送信元 `demo@shia2n.jp`。デモの間は送り先をシアニン用の画面に入れるメール（と + 付きの別名）だけに限る。全メールの末尾に配信停止のリンク
+- メール（Cloudflare Email Service）：送信元 `noreply@demo.shia2n.jp`（Email Service には demo.shia2n.jp で登録）。デモの間は送り先をシアニン用の画面に入れるメール（と + 付きの別名）だけに限る。全メールの末尾に配信停止のリンク
 - 定時の処理（1 時間ごと）：添削が返って 1 時間読まれていない人へメールを 1 通
 - MCP：`send_email`
 - 秘密の値の追加：`UNIVAPAY_APP_TOKEN`・`UNIVAPAY_APP_SECRET`（Cloudflare の画面）
