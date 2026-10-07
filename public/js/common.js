@@ -51,6 +51,14 @@ export const EVENT_LABEL = {
   email_failed: "メールを送れなかった",
   email_blocked: "メールを送らなかった",
   email_unsubscribed: "メールの配信を止めた",
+  consult_booked: "個別相談を予約した",
+  consult_canceled: "個別相談の予約を取り消した",
+  consult_done: "面談した",
+  deal_won: "成約",
+  deal_lost: "失注",
+  seminar_registered: "セミナーに申し込んだ",
+  seminar_reminded: "セミナーの前日の知らせ",
+  seminar_archive_sent: "セミナーのアーカイブを配った",
 };
 
 // ログインが要る画像を読み、画面に出せる住所に変える（img の src に鍵を付けられないため）

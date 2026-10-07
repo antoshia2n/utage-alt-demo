@@ -43,10 +43,11 @@ async function main() {
     || '<p class="note">お知らせはまだありません。</p>';
 
   const lessons = Object.fromEntries(r.lessons.map((l) => [l.id, l]));
-  const sections = ["lessons", "lesson", "news", "room"];
+  const sections = ["lessons", "lesson", "news", "room", "booking"];
   const showTab = (name) => {
     sections.forEach((s) => $("tab-" + s).classList.toggle("hidden", s !== name));
     if (name === "room") room.open();
+    if (name === "booking") loadBooking(token);
     document.querySelectorAll(".tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === name || (name === "lesson" && b.dataset.tab === "lessons"))));
   };
   document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
@@ -78,10 +79,62 @@ async function main() {
   const room = setupRoom(token, r.community_url);
   room.setBadge(r.room_unread);
   if (location.hash === "#room") showTab("room");
+  if (location.hash === "#booking") showTab("booking");
 
   $("logout").addEventListener("click", async (e) => { e.preventDefault(); await sb.auth.signOut(); location.replace("/"); });
 
   if (fresh) maybeShowA2hs();
+}
+
+// ---------- 予約とセミナー（便 4） ----------
+let pickedSlot = null;
+async function loadBooking(token) {
+  const r = await api("/api/booking", { token });
+  if (!r.ok) { $("bk-status").textContent = "読めませんでした（" + (r.error || r.status) + "）"; return; }
+  $("bk-mine").innerHTML = r.mine.length
+    ? r.mine.map((b) => `<div class="msg ok booked"><div><b>予約中：${esc(b.label)}</b>${b.topic ? `<div class="note">${esc(b.topic)}</div>` : ""}</div><button class="btn ghost small" data-cancel="${esc(b.slot)}" type="button">取り消す</button></div>`).join("")
+    : "";
+  const hasBooking = r.mine.length > 0;
+  const days = {};
+  for (const s of r.slots) { const d = s.label.split("）")[0] + "）"; (days[d] = days[d] || []).push(s); }
+  $("bk-slots").innerHTML = hasBooking ? '<p class="note" style="margin:0">予約は 1 件までです。別の日時にするときは、上の予約を取り消してから選んでください。</p>'
+    : Object.entries(days).map(([d, list]) => `<div class="slot-day"><div class="slot-date">${esc(d)}</div><div class="slot-row">${list.map((s) => `<button type="button" class="slot" data-slot="${esc(s.slot)}" data-label="${esc(s.label)}" ${s.taken ? "disabled" : ""}>${esc(s.label.split("）")[1])}${s.taken ? "<small>埋まり</small>" : ""}</button>`).join("")}</div></div>`).join("");
+  $("bk-form").classList.add("hidden");
+  document.querySelectorAll("#bk-slots .slot").forEach((b) => b.addEventListener("click", () => {
+    document.querySelectorAll("#bk-slots .slot").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    pickedSlot = b.dataset.slot;
+    $("bk-picked").textContent = "選んだ日時：" + b.dataset.label;
+    $("bk-form").classList.remove("hidden");
+  }));
+  document.querySelectorAll("[data-cancel]").forEach((b) => b.addEventListener("click", async () => {
+    b.disabled = true;
+    const res = await api("/api/booking/cancel", { method: "POST", token, body: { slot: b.dataset.cancel } });
+    $("bk-status").textContent = res.ok ? "予約を取り消しました" : "取り消せませんでした（" + (res.error || res.status) + "）";
+    loadBooking(token);
+  }));
+  $("bk-go").onclick = async () => {
+    if (!pickedSlot) return;
+    $("bk-go").disabled = true;
+    const res = await api("/api/booking", { method: "POST", token, body: { slot: pickedSlot, topic: $("bk-topic").value } });
+    $("bk-go").disabled = false;
+    const why = { slot_taken: "その枠は先に埋まりました", already_booked: "予約は 1 件までです", bad_slot: "その枠は選べません" };
+    $("bk-status").textContent = res.ok ? "予約しました（確認のメールを送りました）" : (why[res.error] || "予約できませんでした（" + (res.error || res.status) + "）");
+    if (res.ok) { pickedSlot = null; $("bk-topic").value = ""; }
+    loadBooking(token);
+  };
+  $("bk-seminars").innerHTML = r.seminars.map((s) => `<div class="card seminar">
+      <div class="note">${esc(s.label)}・${s.minutes} 分${s.past ? "・終了" : ""}</div>
+      <h3>${esc(s.title)}</h3>
+      ${s.past
+        ? (s.archive_url ? `<a class="btn ghost small" href="${esc(s.archive_url)}" target="_blank" rel="noopener">アーカイブを見る</a>` : '<span class="note">申し込んだ人だけアーカイブが見られます</span>')
+        : (s.registered ? `<span class="pill">申込済</span> <a class="note" href="${esc(s.zoom_url)}" target="_blank" rel="noopener">Zoom の URL</a>` : `<button class="btn small" data-sem="${esc(s.id)}" type="button">申し込む</button>`)}
+    </div>`).join("");
+  document.querySelectorAll("[data-sem]").forEach((b) => b.addEventListener("click", async () => {
+    b.disabled = true;
+    const res = await api(`/api/seminars/${b.dataset.sem}/register`, { method: "POST", token });
+    $("bk-status").textContent = res.ok ? "セミナーに申し込みました（Zoom の URL をメールで送りました）" : "申し込めませんでした（" + (res.error || res.status) + "）";
+    loadBooking(token);
+  }));
 }
 
 // ---------- 会員の権利（便 3） ----------

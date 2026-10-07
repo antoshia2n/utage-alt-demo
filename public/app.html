@@ -31,6 +31,7 @@
       <button role="tab" aria-selected="true" data-tab="lessons">教材</button>
       <button role="tab" aria-selected="false" data-tab="news">お知らせ</button>
       <button role="tab" aria-selected="false" data-tab="room">添削ルーム<span class="badge hidden" id="room-badge"></span></button>
+      <button role="tab" aria-selected="false" data-tab="booking">予約</button>
     </div>
 
     <div id="member" class="card member hidden"></div>
@@ -44,6 +45,23 @@
     </section>
 
     <section id="tab-news" class="stack hidden"></section>
+
+    <section id="tab-booking" class="stack hidden">
+      <div class="card stack">
+        <h3>個別相談を予約する（30 分）</h3>
+        <div id="bk-mine"></div>
+        <div id="bk-slots" class="slots"></div>
+        <div id="bk-form" class="hidden stack">
+          <div class="note" id="bk-picked"></div>
+          <label for="bk-topic" class="sr">相談したいこと</label>
+          <textarea id="bk-topic" rows="3" placeholder="相談したいこと（任意）" maxlength="1000"></textarea>
+          <button class="btn" id="bk-go" type="button">この日時で予約する</button>
+        </div>
+        <div class="note" id="bk-status"></div>
+      </div>
+      <h3 style="margin:8px 0 0">セミナー</h3>
+      <div id="bk-seminars" class="stack"></div>
+    </section>
 
     <section id="tab-room" class="hidden">
       <p class="note" style="margin-top:0">シアニンと 1 対 1 の部屋です。文章（と画像）を出すと、原文・添削後・コメントの 3 欄で返ってきます。</p>

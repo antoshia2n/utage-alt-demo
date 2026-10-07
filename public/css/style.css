@@ -184,3 +184,23 @@ button.link { background: none; border: 0; color: var(--accent); font: inherit; 
 .setup dl { display: grid; grid-template-columns: 9em 1fr; gap: 6px 12px; font-size: 13px; margin: 12px 0 0; }
 .setup dt { color: var(--muted); }
 .setup dd { margin: 0; }
+
+/* 便 4：予約・セミナー・商談 */
+.tabs { overflow-x: auto; }
+.tabs button { white-space: nowrap; }
+.slots { display: flex; flex-direction: column; gap: 10px; }
+.slot-date { font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+.slot-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.slot { font: inherit; font-family: var(--mono); font-size: 14px; padding: 8px 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
+.slot[aria-pressed=true] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.slot:disabled { opacity: .45; cursor: default; }
+.slot small { display: block; font-size: 10px; }
+.booked { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.seminar h3 { margin: 2px 0 8px; }
+.deal-box { border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin: 0 0 16px; }
+.deal-box h4 { margin: 0 0 8px; font-size: 14px; }
+.deal-box dl { display: grid; grid-template-columns: 7em 1fr; gap: 4px 10px; font-size: 13px; margin: 0; }
+.deal-box dt { color: var(--muted); }
+.deal-box dd { margin: 0; }
+.stage-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+select.inline { min-height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 0 8px; font: inherit; }
