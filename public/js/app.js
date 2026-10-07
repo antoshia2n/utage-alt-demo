@@ -60,7 +60,13 @@ async function main() {
       : "動画の場所（本番は YouTube の限定公開を埋め込みます。デモでは架空の教材のため動画はありません）";
     showTab("lesson");
     window.scrollTo(0, 0);
-    await api("/api/events", { method: "POST", token, body: { type: "lesson_viewed", lesson_id: id } });
+    const res = await api("/api/events", { method: "POST", token, body: { type: "lesson_viewed", lesson_id: id } });
+    // 記録できたら一覧の印をその場で付ける（読み直さなくても見える）
+    if (res.ok && !viewed.has(id)) {
+      viewed.add(id);
+      const meta = document.querySelector(`.lesson[data-id="${CSS.escape(id)}"] .meta`);
+      if (meta) meta.insertAdjacentHTML("beforeend", ' <span class="pill">視聴済み</span>');
+    }
   };
   document.querySelectorAll(".lesson").forEach((el) => {
     el.addEventListener("click", () => openLesson(el.dataset.id));

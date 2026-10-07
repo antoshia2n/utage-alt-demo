@@ -2,7 +2,7 @@
 // 入口は 1 つ：シアニン用の画面（/api/admin/*）と AI（/mcp）が同じ処理（core）を呼ぶ。
 // 表の読み書きはこの Worker だけが秘密の鍵で行う。ブラウザからは表に触れない。
 
-const VERSION = "0.1.0-bin1";
+const VERSION = "0.1.1-bin1";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 
@@ -272,7 +272,16 @@ async function handleMcp(request, env, url) {
   const headerToken = auth.startsWith("Bearer ") ? auth.slice(7) : "";
   if (!safeEqual(pathToken || headerToken, env.MCP_SECRET)) return json({ error: "unauthorized" }, 401);
 
-  if (request.method === "GET") return json({ ok: true, name: "utage-alt-demo", version: VERSION, tools: TOOLS.map((t) => t.name) });
+  if (request.method === "GET") {
+    // 確かめ用：?tool=find_person&query=... で道具を 1 回呼べる（合言葉は同じ。POST と同じ処理を通す）
+    const tool = url.searchParams.get("tool");
+    if (tool) {
+      const args = Object.fromEntries([...url.searchParams].filter(([k]) => k !== "tool"));
+      const r = await rpc({ jsonrpc: "2.0", id: "get", method: "tools/call", params: { name: tool, arguments: args } }, env);
+      return json(r.result || r);
+    }
+    return json({ ok: true, name: "utage-alt-demo", version: VERSION, tools: TOOLS.map((t) => t.name) });
+  }
   if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
   const msg = await request.json().catch(() => null);
