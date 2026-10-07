@@ -42,6 +42,15 @@ export const EVENT_LABEL = {
   correction_submitted: "添削を出した",
   correction_returned: "添削を返した",
   room_read: "添削ルームを読んだ",
+  subscription_started: "入会（定期課金が始まった）",
+  subscription_payment: "定期課金の入金",
+  subscription_failed: "定期課金の失敗",
+  subscription_canceled: "定期課金の解約",
+  subscription_suspended: "定期課金の停止",
+  email_sent: "メールを送った",
+  email_failed: "メールを送れなかった",
+  email_blocked: "メールを送らなかった",
+  email_unsubscribed: "メールの配信を止めた",
 };
 
 // ログインが要る画像を読み、画面に出せる住所に変える（img の src に鍵を付けられないため）

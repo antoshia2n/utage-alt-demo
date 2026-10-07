@@ -56,6 +56,7 @@ async function openConsole() {
   search();
   setupViews();
   loadRooms();
+  loadSetup();
   setInterval(() => { if (!document.hidden) loadRooms(); }, 30000);
   let t;
   $("q").addEventListener("input", () => { clearTimeout(t); t = setTimeout(search, 250); });
@@ -80,7 +81,7 @@ async function search() {
   $("people").innerHTML = r.people.map((p) => `
     <li data-id="${p.id}" ${p.id === current ? 'aria-current="true"' : ""}>
       <div><div>${esc(p.name || "（名前なし）")}</div><div class="sub">${esc(p.email)}</div></div>
-      <div style="text-align:right"><span class="pill">${esc(p.stage)}</span><div class="sub">${SOURCE_LABEL[p.source] || esc(p.source)}${p.note_member ? "・note" : ""}</div></div>
+      <div style="text-align:right">${p.member ? '<span class="pill">会員</span> ' : ""}<span class="pill gray">${esc(p.stage)}</span><div class="sub">${SOURCE_LABEL[p.source] || esc(p.source)}${p.note_member ? "・note" : ""}</div></div>
     </li>`).join("");
   document.querySelectorAll("#people li").forEach((li) => li.addEventListener("click", () => detail(li.dataset.id)));
 }
@@ -98,11 +99,31 @@ async function detail(id) {
       <span class="pill">${esc(p.stage)}</span>
       <span class="pill gray">流入元 ${SOURCE_LABEL[p.source] || esc(p.source)}</span>
       <span class="pill gray">出来事 ${p.event_count} 件</span>
+      ${p.entitlement && p.entitlement.member ? '<span class="pill">会員（定期課金）</span>' : `<span class="pill gray">権利 ${esc(p.entitlement ? p.entitlement.status : "none")}</span>`}
     </div>
+    <details class="setup" style="margin:0 0 16px"><summary>メールを送る（テスト宛てだけに届く）</summary>
+      <form id="mail" class="stack" style="margin-top:8px">
+        <div><label for="m-sub">件名</label><input id="m-sub" type="text" maxlength="200"></div>
+        <div><label for="m-body">本文</label><textarea id="m-body" rows="4"></textarea></div>
+        <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="submit">送る</button><span class="note" id="m-status"></span></div>
+      </form>
+    </details>
     <label class="check" style="margin-bottom:16px"><input type="checkbox" id="nm" ${p.note_member ? "checked" : ""}> <span>note のメンバー（手で付ける印）</span></label>
     <ol class="timeline">${r.events.map((e) => `
       <li><time>${fmtTime(e.occurred_at)}</time>${esc(EVENT_LABEL[e.type] || e.type)}${detailText(e)}<span class="note"> · ${esc(e.actor)}</span></li>`).join("")}
     </ol>`;
+  $("mail").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    $("m-status").textContent = "送っています…";
+    const res = await api(`/api/admin/people/${id}/email`, { method: "POST", token, body: { subject: $("m-sub").value, body: $("m-body").value } });
+    const why = { not_test_recipient: "テスト宛てではないので送りませんでした", unsubscribed: "配信を止めている人なので送りませんでした" };
+    const msg = res.result === "sent" ? "送りました"
+      : res.result === "blocked" ? (why[res.reason] || "送りませんでした") + "（記録には残しました）"
+      : "送れませんでした（" + (res.error || res.status) + "）";
+    await detail(id);
+    $("mail").closest("details").open = true;
+    $("m-status").textContent = msg;
+  });
   $("nm").addEventListener("change", async (ev) => {
     const res = await api("/api/admin/people/" + id, { method: "PATCH", token, body: { note_member: ev.target.checked } });
     if (!res.ok) { ev.target.checked = !ev.target.checked; return fail("変えられませんでした（" + (res.error || res.status) + "）"); }
@@ -178,8 +199,23 @@ async function openRoom(id, focusId) {
   loadRooms();
 }
 
+async function loadSetup() {
+  const s = await api("/api/admin/setup", { token });
+  if (!s.ok) { $("setup-body").textContent = "読めませんでした（" + (s.error || s.status) + "）"; return; }
+  const yes = (b) => (b ? "入っている" : "まだ");
+  $("setup-body").innerHTML = `<dl>
+    <dt>UnivaPay の鍵</dt><dd>${yes(s.univapay.configured)}${s.univapay.mode ? "（" + esc(s.univapay.mode) + "）" : ""}</dd>
+    <dt>Webhook の URL</dt><dd><code>${esc(s.webhook.url)}</code></dd>
+    <dt>Webhook の認証</dt><dd><code>${esc(s.webhook.auth_token)}</code></dd>
+    <dt>メールの送り口</dt><dd>${yes(s.mail.binding)}</dd>
+    <dt>送信元</dt><dd>${s.mail.from ? "<code>" + esc(s.mail.from) + "</code>" : "まだ"}</dd>
+  </dl>`;
+}
+
 function detailText(e) {
   const p = e.payload || {};
+  if (e.type.startsWith("subscription_")) return `<span class="note">（${esc(p.status || "")}${p.amount ? "・" + Number(p.amount).toLocaleString() + " 円" : ""}）</span>`;
+  if (e.type.startsWith("email_") && e.type !== "email_unsubscribed") return `<span class="note">（${esc(p.subject || "")}${p.reason ? "・" + esc(p.reason) : ""}${p.error ? "・" + esc(p.error) : ""}）</span>`;
   if (e.type === "correction_submitted") return `<span class="note">（${esc(String(p.text || "").slice(0, 30))}${(p.images || []).length ? " 画像" + p.images.length : ""}）</span>`;
   if (e.type === "correction_returned") return `<span class="note">（${esc(String(p.comment || p.corrected || "").slice(0, 30))}）</span>`;
   if (e.type === "room_read") return `<span class="note">（${p.by === "admin" ? "シアニン" : "生徒"}）</span>`;

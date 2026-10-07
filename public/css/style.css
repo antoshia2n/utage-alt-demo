@@ -174,3 +174,13 @@ textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 .ellip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
 button.link { background: none; border: 0; color: var(--accent); font: inherit; font-size: 12px; cursor: pointer; padding: 0; text-decoration: underline; }
 .reply-form { border-top: 1px solid var(--line); padding-top: 16px; margin-top: 8px; }
+
+/* 便 3：会員の権利・設定 */
+.member { margin-bottom: 12px; }
+.member-row { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.setup { margin-top: 12px; }
+.setup summary { cursor: pointer; font-size: 14px; color: var(--muted); }
+.setup code { word-break: break-all; font-family: var(--mono); font-size: 12px; background: var(--bg); padding: 2px 6px; border-radius: 6px; }
+.setup dl { display: grid; grid-template-columns: 9em 1fr; gap: 6px 12px; font-size: 13px; margin: 12px 0 0; }
+.setup dt { color: var(--muted); }
+.setup dd { margin: 0; }

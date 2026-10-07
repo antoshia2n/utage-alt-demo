@@ -29,6 +29,13 @@
       <button class="btn block" id="go" type="submit">登録してリンクを受け取る</button>
       <div id="msg" class="msg hidden" role="status"></div>
     </form>
+    <section id="join" class="card stack hidden" style="margin-top:16px">
+      <h2 style="margin:0">続けて入会する（テスト決済）</h2>
+      <p class="note" style="margin:0" id="join-plan"></p>
+      <p class="note" style="margin:0">デモなので本当の請求はされません。カード番号は 4000 0200 0000 0000、期限は未来の月、セキュリティコードは 3 桁なら何でも通ります。</p>
+      <button class="btn block" id="pay" type="button">入会する</button>
+      <div id="paymsg" class="msg hidden" role="status"></div>
+    </section>
     <p class="note" id="srcnote"></p>
   </main>
 </div>
@@ -43,6 +50,24 @@
   if (src !== "direct") document.getElementById("srcnote").textContent = "流入元：" + (SOURCE_LABEL[src] || src);
   const $ = (id) => document.getElementById(id);
   const show = (text, ok) => { const m = $("msg"); m.textContent = text; m.className = "msg " + (ok ? "ok" : "err"); };
+  const payShow = (text, ok) => { const m = $("paymsg"); m.textContent = text; m.className = "msg " + (ok ? "ok" : "err"); };
+  async function openJoin(email) {
+    const cfg = await fetch("/api/config").then((r) => r.json()).catch(() => ({}));
+    if (!cfg.univapayAppId) return;
+    $("join-plan").textContent = cfg.plan.name + "：月 " + cfg.plan.amount.toLocaleString() + " 円";
+    $("join").classList.remove("hidden");
+    $("pay").onclick = async () => {
+      $("pay").disabled = true;
+      try {
+        const { startCheckout } = await import("/js/pay.js");
+        await startCheckout({ email, onStatus: (t) => payShow(t, true) });
+        payShow("入会を受け付けました。届いたメールのリンクからログインすると、会員として教材と添削ルームが使えます。", true);
+      } catch (err) {
+        payShow(err.message, false);
+        $("pay").disabled = false;
+      }
+    };
+  }
   $("f").addEventListener("submit", async (e) => {
     e.preventDefault();
     const name = $("name").value.trim(), email = $("email").value.trim();
@@ -56,6 +81,7 @@
       const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.origin + "/app", shouldCreateUser: true, data: { name } } });
       if (error) throw new Error("メールを送れませんでした：" + error.message);
       show(email + " にログイン用のリンクを送りました。メールを開いてリンクを押してください。", true);
+      openJoin(email);
     } catch (err) {
       show(err.message, false);
       $("go").disabled = false;
