@@ -30,7 +30,7 @@
     <div class="tabs" role="tablist">
       <button role="tab" aria-selected="true" data-tab="lessons">教材</button>
       <button role="tab" aria-selected="false" data-tab="news">お知らせ</button>
-      <button role="tab" aria-selected="false" data-tab="room">添削ルーム</button>
+      <button role="tab" aria-selected="false" data-tab="room">添削ルーム<span class="badge hidden" id="room-badge"></span></button>
     </div>
 
     <section id="tab-lessons" class="stack"></section>
@@ -45,7 +45,19 @@
     <section id="tab-news" class="stack hidden"></section>
 
     <section id="tab-room" class="hidden">
-      <div class="card"><h3>添削ルーム</h3><p class="note">1 対 1 の添削ルームは次の便で入ります。ここから文章を出し、原文・添削後・コメントの 3 欄で返ってきます。</p></div>
+      <p class="note" style="margin-top:0">シアニンと 1 対 1 の部屋です。文章（と画像）を出すと、原文・添削後・コメントの 3 欄で返ってきます。</p>
+      <div id="room-list" class="room" aria-live="polite"></div>
+      <form id="composer" class="composer card">
+        <label for="c-text" class="sr">出す文章</label>
+        <textarea id="c-text" rows="5" placeholder="添削してほしい文章を貼ってください" maxlength="8000"></textarea>
+        <div id="c-thumbs" class="thumbs"></div>
+        <div class="composer-row">
+          <label class="btn ghost small" id="c-pick-label">画像を足す<input id="c-pick" type="file" accept="image/*" multiple hidden></label>
+          <span class="note" id="c-status"></span>
+          <button class="btn" id="c-send" type="submit">出す</button>
+        </div>
+      </form>
+      <div class="card community" id="community"></div>
     </section>
   </main>
 </div>

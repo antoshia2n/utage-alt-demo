@@ -1,4 +1,4 @@
-import { getClient, api, esc, fmtTime, SOURCE_LABEL, EVENT_LABEL } from "/js/common.js";
+import { getClient, api, esc, fmtTime, SOURCE_LABEL, EVENT_LABEL, authImage } from "/js/common.js";
 
 const $ = (id) => document.getElementById(id);
 const steps = ["step-login", "step-enroll", "step-mfa", "console"];
@@ -54,6 +54,9 @@ async function openConsole() {
   show("console");
   loadStats();
   search();
+  setupViews();
+  loadRooms();
+  setInterval(() => { if (!document.hidden) loadRooms(); }, 30000);
   let t;
   $("q").addEventListener("input", () => { clearTimeout(t); t = setTimeout(search, 250); });
   $("src").addEventListener("change", search);
@@ -107,8 +110,79 @@ async function detail(id) {
   });
 }
 
+// ---------- 添削ルーム ----------
+let currentRoom = null;
+function setupViews() {
+  document.querySelectorAll("[data-view]").forEach((b) => b.addEventListener("click", () => {
+    document.querySelectorAll("[data-view]").forEach((x) => x.setAttribute("aria-selected", String(x === b)));
+    $("view-people").style.display = b.dataset.view === "people" ? "" : "none";
+    $("view-rooms").style.display = b.dataset.view === "rooms" ? "" : "none";
+  }));
+  $("only-unreplied").addEventListener("change", loadRooms);
+}
+
+async function loadRooms() {
+  const r = await api("/api/admin/rooms" + ($("only-unreplied").checked ? "?only_unreplied=1" : ""), { token });
+  if (!r.ok) { $("rooms-count").textContent = "読めませんでした（" + (r.error || r.status) + "）"; return; }
+  const badge = $("rooms-badge");
+  badge.textContent = r.unreplied_total > 0 ? String(r.unreplied_total) : "";
+  badge.classList.toggle("hidden", !(r.unreplied_total > 0));
+  $("rooms-count").textContent = r.count === 0 ? "部屋は 0 件です" : `${r.count} 部屋・未返信 ${r.unreplied_total} 件`;
+  $("rooms").innerHTML = r.rooms.map((x) => `
+    <li data-id="${x.person_id}" ${x.person_id === currentRoom ? 'aria-current="true"' : ""}>
+      <div style="min-width:0"><div>${esc(x.name || x.email)}</div><div class="sub ellip">${x.last_from === "cyanin" ? "返した：" : ""}${esc(x.last_text)}</div></div>
+      <div style="text-align:right;flex-shrink:0">${x.unreplied > 0 ? `<span class="pill warn">未返信 ${x.unreplied}</span>` : '<span class="pill gray">返信済み</span>'}<div class="sub">${fmtTime(x.last_at)}</div></div>
+    </li>`).join("");
+  document.querySelectorAll("#rooms li").forEach((li) => li.addEventListener("click", () => openRoom(li.dataset.id)));
+}
+
+async function openRoom(id, focusId) {
+  currentRoom = id;
+  document.querySelectorAll("#rooms li").forEach((li) => li.toggleAttribute("aria-current", li.dataset.id === id));
+  const r = await api("/api/admin/rooms/" + id, { token });
+  if (!r.ok || !r.found) { $("room-detail").innerHTML = '<p class="note">読めませんでした。</p>'; return; }
+  const subs = Object.fromEntries(r.messages.filter((m) => m.from === "student").map((m) => [m.id, m]));
+  const target = focusId && subs[focusId] && !subs[focusId].replied ? subs[focusId] : subs[r.unreplied[0]];
+  const block = (label, text) => `<div class="rb"><div class="rb-l">${label}</div><div class="rb-t">${esc(text) || '<span class="note">（なし）</span>'}</div></div>`;
+  $("room-detail").innerHTML = `
+    <h2 style="margin-bottom:2px">${esc(r.person.name || "（名前なし）")}</h2>
+    <div class="note" style="margin-bottom:12px">${esc(r.person.email)}</div>
+    <div class="room">${r.messages.map((m) => m.from === "student"
+      ? `<div class="msg-them"><div class="bubble">${m.text ? `<div class="pre">${esc(m.text)}</div>` : ""}${m.images.length ? `<div class="imgs">${m.images.map((k) => `<img data-key="${esc(k)}" alt="生徒の画像">`).join("")}</div>` : ""}</div>
+          <div class="meta"><time>${fmtTime(m.at)}</time>${m.replied ? '<span class="pill gray">返信済み</span>' : `<button class="link" data-reply="${m.id}">${target && target.id === m.id ? "この投稿に返す（選択中）" : "この投稿に返す"}</button>`}</div></div>`
+      : `<div class="msg-me"><div class="reply card"><div class="reply-h">返した添削${m.actor === "mcp" ? "（AI から）" : ""}</div>${block("原文", m.original)}${block("添削後", m.corrected)}${block("コメント", m.comment)}</div>
+          <div class="meta"><time>${fmtTime(m.at)}</time>${m.read_by_student ? '<span class="pill gray">既読</span>' : ""}</div></div>`).join("") || '<p class="note">やりとりはまだありません。</p>'}</div>
+    ${target ? `
+    <form id="reply" class="stack reply-form">
+      <h3>3 欄で返す</h3>
+      <div><label for="r-orig">原文</label><textarea id="r-orig" rows="4">${esc(target.text)}</textarea></div>
+      <div><label for="r-corr">添削後</label><textarea id="r-corr" rows="5">${esc(target.text)}</textarea></div>
+      <div><label for="r-com">コメント</label><textarea id="r-com" rows="3" placeholder="どこを、なぜ直したか"></textarea></div>
+      <div style="display:flex;gap:8px;align-items:center"><button class="btn" type="submit" id="r-send">返す</button><span class="note" id="r-status"></span></div>
+    </form>` : '<p class="note" style="margin-top:12px">この部屋に未返信はありません。</p>'}`;
+  $("room-detail").querySelectorAll("img[data-key]").forEach(async (img) => {
+    try { img.src = await authImage("/api/admin/image?key=" + encodeURIComponent(img.dataset.key), token); }
+    catch (_) { img.alt = "画像を読めませんでした"; img.classList.add("broken"); }
+  });
+  $("room-detail").querySelectorAll("[data-reply]").forEach((b) => b.addEventListener("click", () => openRoom(id, Number(b.dataset.reply))));
+  if (target) $("reply").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!$("r-corr").value.trim()) { $("r-status").textContent = "添削後を入れてください"; return; }
+    $("r-send").disabled = true;
+    const res = await api(`/api/admin/rooms/${id}/reply`, { method: "POST", token, body: {
+      reply_to: target.id, original: $("r-orig").value, corrected: $("r-corr").value, comment: $("r-com").value,
+    } });
+    if (!res.ok) { $("r-send").disabled = false; $("r-status").textContent = "返せませんでした（" + (res.error || res.status) + "）"; return; }
+    await openRoom(id); loadRooms(); if (current === id) detail(id);
+  });
+  loadRooms();
+}
+
 function detailText(e) {
   const p = e.payload || {};
+  if (e.type === "correction_submitted") return `<span class="note">（${esc(String(p.text || "").slice(0, 30))}${(p.images || []).length ? " 画像" + p.images.length : ""}）</span>`;
+  if (e.type === "correction_returned") return `<span class="note">（${esc(String(p.comment || p.corrected || "").slice(0, 30))}）</span>`;
+  if (e.type === "room_read") return `<span class="note">（${p.by === "admin" ? "シアニン" : "生徒"}）</span>`;
   if (p.lesson_id) return `<span class="note">（${esc(p.lesson_id)}）</span>`;
   if (p.source) return `<span class="note">（${esc(SOURCE_LABEL[p.source] || p.source)}）</span>`;
   if ("value" in p) return `<span class="note">（${p.value ? "付けた" : "外した"}）</span>`;

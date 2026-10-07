@@ -12,5 +12,8 @@
   // 設定の値 4 つ（SUPABASE_URL・SUPABASE_PUBLISHABLE_KEY・SUPABASE_SECRET_KEY・MCP_SECRET）は
   // すべて Cloudflare の画面に Secret として置く。ここに書かないので、上げ直しても消えない。
   "keep_vars": true,
+  // 便 2：添削の画像の置き場（R2）。名前を書かないので、初回の組み立てで Cloudflare が自動で作る（wrangler 4.45 以上）。
+  // 任意の設定 COMMUNITY_URL（生徒同士の場の招待リンク）。無ければ画面は「準備中」と出す。
+  "r2_buckets": [{ "binding": "IMAGES" }],
   "observability": { "enabled": true }
 }
