@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f5c4d">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css">
+<title>マイページ｜言語化ラボ（デモ）</title>
+</head>
+<body>
+<div class="demo-bar">これはデモです。架空のデータだけで動いています。</div>
+<div class="wrap">
+  <header class="top">
+    <a class="brand" href="/app">言語化ラボ<small>DEMO</small></a>
+    <nav class="top"><a href="#" id="logout">ログアウト</a></nav>
+  </header>
+  <div id="loading" class="note">読み込んでいます…</div>
+  <div id="err" class="msg err hidden"></div>
+
+  <main id="main" class="hidden">
+    <p style="margin:0">こんにちは、<b id="who"></b> さん</p>
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-tab="lessons">教材</button>
+      <button role="tab" aria-selected="false" data-tab="news">お知らせ</button>
+      <button role="tab" aria-selected="false" data-tab="room">添削ルーム</button>
+    </div>
+
+    <section id="tab-lessons" class="stack"></section>
+
+    <section id="tab-lesson" class="stack hidden">
+      <a href="#" id="back" class="note">← 教材の一覧へ</a>
+      <h2 id="l-title"></h2>
+      <div class="player" id="l-player"></div>
+      <p id="l-summary"></p>
+    </section>
+
+    <section id="tab-news" class="stack hidden"></section>
+
+    <section id="tab-room" class="hidden">
+      <div class="card"><h3>添削ルーム</h3><p class="note">1 対 1 の添削ルームは次の便で入ります。ここから文章を出し、原文・添削後・コメントの 3 欄で返ってきます。</p></div>
+    </section>
+  </main>
+</div>
+
+<div id="a2hs" class="sheet-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="a2hs-t">
+  <div class="sheet">
+    <h2 id="a2hs-t">ホーム画面に追加すると、アプリのように開けます</h2>
+    <div id="a2hs-ios" class="hidden">
+      <ol><li>画面下の共有のボタンを押す</li><li>「ホーム画面に追加」を押す</li></ol>
+    </div>
+    <div id="a2hs-android" class="hidden"><p class="note">下のボタンを押すと、ホーム画面に追加できます。</p><button class="btn block" id="a2hs-install">ホーム画面に追加</button></div>
+    <div id="a2hs-other" class="hidden"><p class="note">スマホで開くと、ホーム画面に追加できます。</p></div>
+    <button class="btn ghost block" id="a2hs-close" style="margin-top:8px">あとで</button>
+  </div>
+</div>
+<footer class="site wrap">
+  <a href="/legal/tokushoho">特定商取引法に基づく表記</a><a href="/legal/privacy">プライバシーポリシー</a><a href="/legal/terms">利用規約</a>
+  <div style="margin-top:8px">© 言語化ラボ（デモ）— 架空の事業者です</div>
+</footer>
+<script type="module" src="/js/app.js"></script>
+</body>
+</html>

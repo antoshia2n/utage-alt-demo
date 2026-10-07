@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f5c4d">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css">
+<title>無料登録｜言語化ラボ（デモ）</title>
+</head>
+<body>
+<div class="demo-bar">これはデモです。架空のデータだけで動いています。</div>
+<div class="wrap">
+  <header class="top"><a class="brand" href="/">言語化ラボ<small>DEMO</small></a><nav class="top"><a href="/login">ログイン</a></nav></header>
+  <main style="padding:24px 0 8px">
+    <h1 style="font-size:26px">無料登録</h1>
+    <p class="note">登録すると、ログイン用のリンクがメールで届きます。リンクを開くとそのまま教材の画面に入れます。</p>
+    <form id="f" class="card stack" novalidate>
+      <div><label for="name">お名前</label><input id="name" type="text" autocomplete="name" required maxlength="60"></div>
+      <div><label for="email">メールアドレス</label><input id="email" type="email" autocomplete="email" required></div>
+      <label class="check"><input id="consent" type="checkbox"> <span><a href="/legal/terms" target="_blank">利用規約</a>と<a href="/legal/privacy" target="_blank">プライバシーポリシー</a>に同意し、お知らせのメールを受け取ります（いつでも配信を止められます）。</span></label>
+      <button class="btn block" id="go" type="submit">登録してリンクを受け取る</button>
+      <div id="msg" class="msg hidden" role="status"></div>
+    </form>
+    <p class="note" id="srcnote"></p>
+  </main>
+</div>
+<footer class="site wrap">
+  <a href="/legal/tokushoho">特定商取引法に基づく表記</a><a href="/legal/privacy">プライバシーポリシー</a><a href="/legal/terms">利用規約</a>
+  <div style="margin-top:8px">© 言語化ラボ（デモ）— 架空の事業者です</div>
+</footer>
+<script type="module">
+  import { getClient, api, rememberSource, currentSource, SOURCE_LABEL } from "/js/common.js";
+  rememberSource();
+  const src = currentSource();
+  if (src !== "direct") document.getElementById("srcnote").textContent = "流入元：" + (SOURCE_LABEL[src] || src);
+  const $ = (id) => document.getElementById(id);
+  const show = (text, ok) => { const m = $("msg"); m.textContent = text; m.className = "msg " + (ok ? "ok" : "err"); };
+  $("f").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const name = $("name").value.trim(), email = $("email").value.trim();
+    if (!name || !email) return show("お名前とメールアドレスを入れてください。", false);
+    if (!$("consent").checked) return show("同意のチェックが必要です。", false);
+    $("go").disabled = true;
+    try {
+      const r = await api("/api/register", { method: "POST", body: { name, email, source: src, consent: true } });
+      if (!r.ok) throw new Error(r.error === "bad_email" ? "メールアドレスの形が正しくありません。" : "登録できませんでした（" + (r.error || r.status) + "）");
+      const sb = await getClient();
+      const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.origin + "/app", shouldCreateUser: true, data: { name } } });
+      if (error) throw new Error("メールを送れませんでした：" + error.message);
+      show(email + " にログイン用のリンクを送りました。メールを開いてリンクを押してください。", true);
+    } catch (err) {
+      show(err.message, false);
+      $("go").disabled = false;
+    }
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f5c4d">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css">
+<title>シアニン用｜言語化ラボ（デモ）</title>
+</head>
+<body>
+<div class="demo-bar">これはデモです。架空のデータだけで動いています。</div>
+<div class="wrap wide">
+  <header class="top">
+    <a class="brand" href="/admin">シアニン用の画面<small>DEMO</small></a>
+    <nav class="top"><a href="#" id="logout" class="hidden">ログアウト</a></nav>
+  </header>
+  <div id="err" class="msg err hidden" style="margin-bottom:12px"></div>
+
+  <section id="step-login" class="card stack hidden" style="max-width:480px">
+    <h2>ログイン（1 段目：メールのリンク）</h2>
+    <div><label for="email">メールアドレス</label><input id="email" type="email" autocomplete="email"></div>
+    <button class="btn block" id="send">ログイン用のリンクを送る</button>
+    <div id="sent" class="msg ok hidden"></div>
+  </section>
+
+  <section id="step-enroll" class="card stack hidden" style="max-width:480px">
+    <h2>2 段目の準備（最初の 1 回だけ）</h2>
+    <p class="note">スマホの認証アプリ（Google Authenticator など）でこの QR を読み、表示された 6 桁を入れてください。</p>
+    <div class="qr"><img id="qr" alt="2 段目の QR"></div>
+    <p class="note">読めないときの文字：<code id="secret" style="word-break:break-all"></code></p>
+    <div><label for="code1">6 桁</label><input id="code1" inputmode="numeric" autocomplete="one-time-code" maxlength="6"></div>
+    <button class="btn block" id="verify1">確かめる</button>
+  </section>
+
+  <section id="step-mfa" class="card stack hidden" style="max-width:480px">
+    <h2>2 段目：認証アプリの 6 桁</h2>
+    <div><label for="code2">6 桁</label><input id="code2" inputmode="numeric" autocomplete="one-time-code" maxlength="6"></div>
+    <button class="btn block" id="verify2">入る</button>
+  </section>
+
+  <section id="console" class="hidden">
+    <div class="stats" id="stats"></div>
+    <div class="admin-layout" style="margin-top:16px">
+      <div class="card">
+        <div style="display:flex;gap:8px">
+          <input id="q" type="search" placeholder="名前かメールで探す">
+          <select id="src" style="min-height:48px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:0 8px">
+            <option value="">流入元：全部</option><option value="x">X</option><option value="note">note</option><option value="youtube">YouTube</option><option value="direct">直接</option><option value="other">その他</option>
+          </select>
+        </div>
+        <p class="note" id="count" style="margin:8px 0 0"></p>
+        <ul class="people" id="people"></ul>
+      </div>
+      <div class="card" id="detail"><p class="note">左から人を選ぶと、出来事が時系列で並びます。</p></div>
+    </div>
+  </section>
+</div>
+<script type="module" src="/js/admin.js"></script>
+</body>
+</html>
