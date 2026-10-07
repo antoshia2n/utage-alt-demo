@@ -6,8 +6,11 @@
 //   correction_returned  … 原文・添削後・コメントの 3 欄で返したもの（reply_to で出した側を指す）
 //   room_read            … どこまで読んだか（by：student / admin、upto：最後に読んだ出来事の番号）
 // 画像は R2（IMAGES）に置き、ログインした本人とシアニンだけが読める。
+// 便 3：決済（UnivaPay のテスト）とメール（Cloudflare Email Service）。中身は src/bin3.js。
 
-const VERSION = "0.2.0-bin2";
+import { makeBin3 } from "./bin3.js";
+
+const VERSION = "0.3.0-bin3";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_read"];
@@ -28,7 +31,22 @@ export default {
       return json({ ok: false, error: "internal_error", detail: String(err && err.message || err) }, 500);
     }
   },
+
+  // 定時の処理（1 時間ごと）：添削が返って 1 時間読まれていない人へメールを 1 通
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil((async () => {
+      if (missingConfig(env).length) return;
+      try {
+        const r = await bin3.remindUnread(env, roomEvents, roomState);
+        await logInbound(env, "cron", { cron: event.cron }, r, 200);
+      } catch (e) {
+        await logInbound(env, "cron", { cron: event.cron }, { ok: false, error: String(e.message).slice(0, 200) }, 500);
+      }
+    })());
+  },
 };
+
+const bin3 = makeBin3({ db, addEvent, logInbound, json });
 
 // ---------- 共通 ----------
 
@@ -118,6 +136,8 @@ const core = {
     if (s) q += `&or=(name.ilike.*${encodeURIComponent(s)}*,email.ilike.*${encodeURIComponent(s)}*)`;
     if (source && SOURCES.includes(source)) q += `&source=eq.${source}`;
     const people = await db(env, "GET", q);
+    const ent = await bin3.entitlementMap(env);
+    for (const p of people) p.member = !!(ent[p.id] && ent[p.id].member);
     return { ok: true, count: people.length, people };
   },
 
@@ -126,7 +146,7 @@ const core = {
     const [person] = await db(env, "GET", `customer_summary?select=*&id=eq.${person_id}`);
     if (!person) return { ok: true, found: false };
     const events = await db(env, "GET", `events?select=id,type,payload,actor,occurred_at&customer_id=eq.${person_id}&order=occurred_at.desc&limit=200`);
-    return { ok: true, found: true, person, events };
+    return { ok: true, found: true, person: { ...person, entitlement: await bin3.entitlement(env, person_id) }, events };
   },
 
   async setNoteMember(env, { person_id, value }, actor) {
@@ -324,7 +344,12 @@ async function handleApi(request, env, url) {
     if (!missing.includes("SUPABASE_URL") && !missing.includes("SUPABASE_SECRET_KEY")) {
       try { await db(env, "GET", "lessons?select=id&limit=1"); dbOk = true; } catch (e) { dbOk = String(e.message).slice(0, 200); }
     }
-    return json({ ok: missing.length === 0 && dbOk === true, version: VERSION, missing_settings: missing, db: dbOk, images: !!env.IMAGES });
+    const pay = bin3.univapayState(env), mail = bin3.mailState(env);
+    return json({
+      ok: missing.length === 0 && dbOk === true, version: VERSION, missing_settings: missing, db: dbOk, images: !!env.IMAGES,
+      univapay: { configured: pay.configured, mode: pay.mode, store: !!pay.store_id },
+      mail: { binding: mail.binding, from: mail.from },
+    });
   }
 
   if (path === "/api/config") {
@@ -332,6 +357,8 @@ async function handleApi(request, env, url) {
       supabaseUrl: env.SUPABASE_URL || null,
       supabaseKey: env.SUPABASE_PUBLISHABLE_KEY || null,
       communityUrl: env.COMMUNITY_URL || null,
+      univapayAppId: bin3.univapayState(env).app_id,
+      plan: bin3.PLAN,
       version: VERSION,
     });
   }
@@ -361,6 +388,16 @@ async function handleApi(request, env, url) {
     return json({ ok: true, is_new: isNew });
   }
 
+  // 決済の確かめ（ウィジェットのあと。ログインの前でも来る）
+  if (path === "/api/checkout/confirm" && method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    const r = await bin3.confirmCheckout(env, body);
+    await logInbound(env, "checkout", { email: body.email || null, subscription_id: body.subscription_id || null, raw_keys: body.raw && typeof body.raw === "object" ? Object.keys(body.raw) : null }, { ok: r.ok, error: r.error || null }, r.ok ? 200 : 400);
+    return json(r, r.ok ? 200 : 400);
+  }
+  if (path === "/api/webhooks/univapay" && method === "POST") return await bin3.handleWebhook(request, env);
+  if (path === "/api/unsubscribe") return await bin3.handleUnsubscribe(request, env, url);
+
   // 生徒：自分の情報・教材・お知らせ
   if (path === "/api/me" && method === "GET") {
     const v = await verifyUser(request, env);
@@ -381,6 +418,7 @@ async function handleApi(request, env, url) {
       me: { name: customer.name, email: customer.email, source: customer.source },
       lessons, announcements, viewed: viewedIds,
       room_unread: room.unreadForStudent,
+      entitlement: await bin3.entitlement(env, customer.id),
       community_url: env.COMMUNITY_URL || null,
     });
   }
@@ -472,6 +510,21 @@ async function handleApi(request, env, url) {
       return json(await core.setNoteMember(env, { person_id: m[1], value: body.note_member }, "admin"));
     }
     if (path === "/api/admin/stats") return json(await core.stats(env));
+    if (path === "/api/admin/setup" && method === "GET") {
+      const pay = bin3.univapayState(env);
+      return json({
+        ok: true,
+        univapay: { configured: pay.configured, mode: pay.mode, store: !!pay.store_id },
+        webhook: { url: url.origin + "/api/webhooks/univapay", auth_token: await bin3.webhookAuth(env) },
+        mail: bin3.mailState(env),
+      });
+    }
+    const em = path.match(/^\/api\/admin\/people\/([0-9a-f-]{36})\/email$/i);
+    if (em && method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      const r = await bin3.sendMailTo(env, { person_id: em[1], subject: body.subject, body: body.body }, "admin");
+      return json(r, r.ok === false ? 400 : 200);
+    }
     if (path === "/api/admin/rooms" && method === "GET") {
       return json(await core.listRooms(env, { only_unreplied: url.searchParams.get("only_unreplied") === "1" }));
     }
@@ -546,6 +599,19 @@ const TOOLS = [
       required: ["person_id", "corrected"],
     },
   },
+  {
+    name: "send_email",
+    description: "1 人にメールを送る（デモではテスト宛て＝シアニン用の画面に入れるメールとその + 付きの別名だけに届く。それ以外は送らずに email_blocked を台帳に積む）。全メールの末尾に配信停止のリンクが付く。結果は result: sent / blocked / failed。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        person_id: { type: "string" },
+        subject: { type: "string" },
+        body: { type: "string", description: "本文（文字だけ）" },
+      },
+      required: ["person_id", "subject", "body"],
+    },
+  },
 ];
 
 async function handleMcp(request, env, url) {
@@ -604,6 +670,7 @@ async function rpc(msg, env) {
       else if (name === "list_rooms") result = await core.listRooms(env, args);
       else if (name === "get_room") result = await core.getRoom(env, { person_id: args.person_id, mark_read: false }, "mcp");
       else if (name === "return_correction") result = await core.returnCorrection(env, args, "mcp");
+      else if (name === "send_email") result = await bin3.sendMailTo(env, args, "mcp");
       else { result = { ok: false, error: "unknown_tool" }; }
       isError = result.ok === false;
     } catch (e) {

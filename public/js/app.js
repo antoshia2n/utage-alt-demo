@@ -74,6 +74,7 @@ async function main() {
     el.addEventListener("keydown", (e) => { if (e.key === "Enter") openLesson(el.dataset.id); });
   });
 
+  setupMember(r.entitlement, r.me.email);
   const room = setupRoom(token, r.community_url);
   room.setBadge(r.room_unread);
   if (location.hash === "#room") showTab("room");
@@ -81,6 +82,32 @@ async function main() {
   $("logout").addEventListener("click", async (e) => { e.preventDefault(); await sb.auth.signOut(); location.replace("/"); });
 
   if (fresh) maybeShowA2hs();
+}
+
+// ---------- 会員の権利（便 3） ----------
+function setupMember(ent, email) {
+  const box = $("member");
+  box.classList.remove("hidden");
+  if (ent && ent.member) {
+    box.innerHTML = `<div class="member-row"><span class="pill">会員</span><span class="note">${esc(ent.plan || "")}・${ent.since ? fmtTime(ent.since).slice(0, 10) + " から" : ""}</span></div>`;
+    return;
+  }
+  box.innerHTML = `<div class="member-row"><div><b>会員になると添削が受けられます</b><div class="note" id="m-plan"></div></div><button class="btn" id="m-pay" type="button">入会する（テスト）</button></div><div id="m-msg" class="note" style="margin-top:8px"></div>`;
+  fetch("/api/config").then((x) => x.json()).then((cfg) => {
+    if (!cfg.univapayAppId) { $("m-pay").disabled = true; $("m-msg").textContent = "決済の設定がまだ入っていません"; return; }
+    $("m-plan").textContent = cfg.plan.name + "：月 " + cfg.plan.amount.toLocaleString() + " 円（デモなので請求はされません）";
+  });
+  $("m-pay").addEventListener("click", async () => {
+    $("m-pay").disabled = true;
+    try {
+      const { startCheckout } = await import("/js/pay.js");
+      const res = await startCheckout({ email, onStatus: (t) => { $("m-msg").textContent = t; } });
+      setupMember(res.entitlement, email);
+    } catch (err) {
+      $("m-msg").textContent = err.message;
+      $("m-pay").disabled = false;
+    }
+  });
 }
 
 // ---------- 添削ルーム ----------
