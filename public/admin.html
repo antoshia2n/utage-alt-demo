@@ -48,7 +48,19 @@
 
   <section id="console" class="hidden">
     <div class="stats" id="stats"></div>
-    <div class="admin-layout" style="margin-top:16px">
+    <div class="tabs" role="tablist" style="margin-top:16px">
+      <button role="tab" aria-selected="true" data-view="people">人</button>
+      <button role="tab" aria-selected="false" data-view="rooms">添削ルーム<span class="badge hidden" id="rooms-badge"></span></button>
+    </div>
+    <div class="admin-layout" id="view-rooms" style="display:none">
+      <div class="card">
+        <label class="check" style="margin:0 0 8px"><input type="checkbox" id="only-unreplied"> <span>未返信のある部屋だけ</span></label>
+        <p class="note" id="rooms-count" style="margin:0"></p>
+        <ul class="people" id="rooms"></ul>
+      </div>
+      <div class="card" id="room-detail"><p class="note">左から部屋を選ぶと、やりとりと返す欄が出ます。未返信のある部屋が上に来ます。</p></div>
+    </div>
+    <div class="admin-layout" id="view-people">
       <div class="card">
         <div style="display:flex;gap:8px">
           <input id="q" type="search" placeholder="名前かメールで探す">

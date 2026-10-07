@@ -39,7 +39,37 @@ export const EVENT_LABEL = {
   lesson_viewed: "教材を開いた",
   announcement_opened: "お知らせを開いた",
   note_member_set: "note メンバーの印を変更",
+  correction_submitted: "添削を出した",
+  correction_returned: "添削を返した",
+  room_read: "添削ルームを読んだ",
 };
+
+// ログインが要る画像を読み、画面に出せる住所に変える（img の src に鍵を付けられないため）
+const imageCache = new Map();
+export async function authImage(path, token) {
+  if (imageCache.has(path)) return imageCache.get(path);
+  const p = fetch(path, { headers: { authorization: `Bearer ${token}` } })
+    .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(String(r.status)))))
+    .then((b) => URL.createObjectURL(b));
+  imageCache.set(path, p);
+  p.catch(() => imageCache.delete(path));
+  return p;
+}
+
+// 送る前に画像を縮める（長い辺 1600px・JPEG）。縮められない形式はそのまま
+export async function shrinkImage(file, max = 1600) {
+  if (!/^image\/(jpeg|png|webp)$/.test(file.type)) return file;
+  try {
+    const bmp = await createImageBitmap(file);
+    const scale = Math.min(1, max / Math.max(bmp.width, bmp.height));
+    if (scale === 1 && file.size < 1.5 * 1024 * 1024) return file;
+    const c = document.createElement("canvas");
+    c.width = Math.round(bmp.width * scale); c.height = Math.round(bmp.height * scale);
+    c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+    const blob = await new Promise((res) => c.toBlob(res, "image/jpeg", 0.85));
+    return blob || file;
+  } catch (_) { return file; }
+}
 
 export function fmtTime(iso) {
   const d = new Date(iso);

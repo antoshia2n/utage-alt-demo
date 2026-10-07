@@ -1,5 +1,5 @@
 // 画面の骨組みだけを控える。/api と /mcp は控えない（いつも最新を取る）
-const CACHE = "shell-v1";
+const CACHE = "shell-v2";
 const SHELL = ["/app", "/css/style.css", "/js/common.js", "/js/app.js", "/manifest.webmanifest", "/icons/icon-192.png"];
 self.addEventListener("install", (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener("activate", (e) => {
