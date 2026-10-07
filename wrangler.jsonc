@@ -15,5 +15,7 @@
   // 便 2：添削の画像の置き場（R2）。名前を書かないので、初回の組み立てで Cloudflare が自動で作る（wrangler 4.45 以上）。
   // 任意の設定 COMMUNITY_URL（生徒同士の場の招待リンク）。無ければ画面は「準備中」と出す。
   "r2_buckets": [{ "binding": "IMAGES" }],
+  // ブランチとプルリクの試しの組み立て（npx wrangler preview）に要る。中身は空でよい
+  "previews": {},
   "observability": { "enabled": true }
 }
