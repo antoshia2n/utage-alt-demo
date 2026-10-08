@@ -304,8 +304,8 @@ export function makeSell(h) {
     await record(env, customer, p, { [key]: id, status: d.status || null, mode: d.mode || st.mode || null, over_limit: over || null }, "checkout");
     const mailResult = await bin3.sendMail(env, customer, {
       kind: "purchase",
-      subject: `【お申し込みの確認】${p.name}`,
-      text: [`${customer.name || ""} さん`, "", `${p.name}（${priceText(p)}）のお申し込みを受け付けました。`, "", "https://utage-alt-demo.gameister1.workers.dev/app"].join(NL),
+      subject: `【シアラボ】お申し込みの確認：${p.name}`,
+      text: [`${customer.name || ""} さん`, "", `${p.name}（${priceText(p)}）のお申し込みを受け付けました。`, "", `${env.PUBLIC_ORIGIN || "https://utage-alt-demo.gameister1.workers.dev"}/app`].join(NL),
       extra: { product_id: p.id },
     });
     return { ok: true, already: false, product: publicShape(p), entitlement: await entitlement(env, customer.id), mail: mailResult.result };

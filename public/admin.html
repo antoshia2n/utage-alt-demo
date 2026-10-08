@@ -13,10 +13,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/css/style.css">
-<title>シアニン用｜言語化ラボ（デモ）</title>
+<title>シアニン用｜シアラボ</title>
 </head>
 <body>
-<div class="demo-bar">これはデモです。架空のデータだけで動いています。</div>
 <div id="auth-wrap" class="wrap wide">
   <header class="top">
     <a class="brand" href="/admin">シアニン用の画面<small>B</small></a>
@@ -98,6 +97,22 @@
       </div>
       <div id="view-settings" style="display:none">
     <details class="setup card" id="setup"><summary>決済とメールの設定（UnivaPay の Webhook に入れる値）</summary><div id="setup-body" class="note">読み込んでいます…</div></details>
+    <details class="setup card" id="mail-box" open><summary>メールの送り方（送り元・返信先・誰に送るか）</summary>
+      <div class="stack" style="margin-top:8px">
+        <div class="row" style="display:flex;gap:8px;flex-wrap:wrap">
+          <div style="flex:2 1 220px"><label for="ml-from">送り元（mail.shia2n.jp の住所）</label><input id="ml-from" type="email" maxlength="120" placeholder="info@mail.shia2n.jp"></div>
+          <div style="flex:1 1 160px"><label for="ml-name">表示名</label><input id="ml-name" type="text" maxlength="40" placeholder="シアラボ"></div>
+        </div>
+        <div><label for="ml-reply">返信先（生徒が返信したときに届く住所。空なら付けない）</label><input id="ml-reply" type="email" maxlength="120" placeholder="info@mail.shia2n.jp"></div>
+        <div><label for="ml-scope">誰に送るか</label><select id="ml-scope" class="inline" style="width:100%;max-width:100%">
+          <option value="test">テスト宛てだけ（シアニンのメールと + 付きの別名）</option>
+          <option value="login">ログインと手続きのメールは誰にでも・お知らせはテスト宛てだけ</option>
+          <option value="all">お知らせ（一斉配信・ステップ）も誰にでも</option>
+        </select></div>
+        <div><button class="btn" id="ml-save">保存する</button></div>
+        <div id="ml-status" class="note">読み込んでいます…</div>
+      </div>
+    </details>
     <details class="setup card" id="community-box"><summary>オプチャの招待リンク（会員にだけ見える）</summary>
       <div class="stack" style="margin-top:8px">
         <div><label for="cm-url">招待リンク（https:// で始まる）</label><input id="cm-url" type="url" inputmode="url" maxlength="500" placeholder="https://line.me/ti/g2/..."></div>

@@ -66,6 +66,7 @@ async function openConsole() {
   loadRooms();
   loadSetup();
   setupCommunity();
+  setupMail();
   loadApprovalBadge();
   // AI から渡された承認の URL（/admin#approval/<番号>）で開いたときは、AI と承認のタブを開く
   if (location.hash.startsWith("#approval/")) document.querySelector('[data-view="ai"]').click();
@@ -577,6 +578,36 @@ function setupCommunity() {
   $("cm-save").addEventListener("click", () => save($("cm-url").value));
   $("cm-clear").addEventListener("click", () => { if (confirm("招待リンクを外します。会員の画面からも消えます。")) save(""); });
   loadCommunity();
+}
+
+// 便 7c-1：メールの送り方。表 b_settings の 4 行を読み、変える（AI の set_mail_settings と同じ処理）
+const SCOPE_LABEL = { test: "テスト宛てだけ", login: "ログインと手続きは誰にでも・お知らせはテスト宛てだけ", all: "お知らせも誰にでも" };
+function mailStatus(m) {
+  const when = m.updated_at ? new Date(m.updated_at).toLocaleString("ja-JP") : "";
+  return "いま：" + esc(SCOPE_LABEL[m.scope] || m.scope) + "。送り元 " + (m.from ? "<code>" + esc(m.from) + "</code>" : "まだ")
+    + (m.reply_to ? "・返信先 <code>" + esc(m.reply_to) + "</code>" : "・返信先なし")
+    + (when ? "。最後に変えたのは " + esc(when) + (m.updated_by ? "（" + esc(m.updated_by) + "）" : "") : "");
+}
+function fillMail(m) {
+  $("ml-from").value = m.from || ""; $("ml-name").value = m.from_name || ""; $("ml-reply").value = m.reply_to || ""; $("ml-scope").value = m.scope || "test";
+  $("ml-status").innerHTML = mailStatus(m);
+}
+function setupMail() {
+  (async () => {
+    const r = await api("/api/admin/mail", { token });
+    if (!r.ok) { $("ml-status").textContent = "読めませんでした（" + (r.error || r.status) + "）"; return; }
+    fillMail(r.settings);
+  })();
+  $("ml-save").addEventListener("click", async () => {
+    const scope = $("ml-scope").value;
+    if (scope === "all" && !confirm("お知らせ（一斉配信・ステップ）を誰にでも送る形にします。")) return;
+    $("ml-status").textContent = "保存しています…";
+    const r = await api("/api/admin/mail", { method: "PUT", token, body: { from: $("ml-from").value, from_name: $("ml-name").value, reply_to: $("ml-reply").value, scope } });
+    const why = { sender_domain_not_allowed: "送り元は mail.shia2n.jp か demo.shia2n.jp の住所にしてください", bad_from: "送り元のメールの形が違います", bad_reply_to: "返信先のメールの形が違います", bad_from_name: "表示名は 40 文字まで、< > \" は使えません" };
+    if (!r.ok) { $("ml-status").textContent = why[r.error] || "保存できませんでした（" + (r.error || r.status) + "）"; return; }
+    fillMail(r.settings);
+    $("ml-status").innerHTML = (r.changed.length ? "保存しました。" : "前と同じです。") + mailStatus(r.settings);
+  });
 }
 
 async function loadSetup() {
