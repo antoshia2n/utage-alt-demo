@@ -53,7 +53,15 @@
       <button role="tab" aria-selected="true" data-view="people">人</button>
       <button role="tab" aria-selected="false" data-view="rooms">添削ルーム<span class="badge hidden" id="rooms-badge"></span></button>
       <button role="tab" aria-selected="false" data-view="deals">予約と商談</button>
+      <button role="tab" aria-selected="false" data-view="products">商品</button>
       <button role="tab" aria-selected="false" data-view="ai">AI と承認<span class="badge hidden" id="ai-badge"></span></button>
+    </div>
+    <div class="admin-layout" id="view-products" style="display:none">
+      <div class="card">
+        <p class="note" id="pr-count" style="margin:0"></p>
+        <ul class="people" id="products"></ul>
+      </div>
+      <div class="card" id="product-detail"><p class="note">左から商品を選ぶと、値段や「売る・サイトに出す」を変えられます。UTAGE の商品の価格の行から写したものです。</p></div>
     </div>
     <div class="admin-layout" id="view-ai" style="display:none">
       <div class="card">

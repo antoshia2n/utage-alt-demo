@@ -51,17 +51,28 @@
   const $ = (id) => document.getElementById(id);
   const show = (text, ok) => { const m = $("msg"); m.textContent = text; m.className = "msg " + (ok ? "ok" : "err"); };
   const payShow = (text, ok) => { const m = $("paymsg"); m.textContent = text; m.className = "msg " + (ok ? "ok" : "err"); };
+  // B の便 4：?product=<商品の id> で来たら、その商品を申し込む（紹介用の価格のリンクもこれ）。無ければデモの見本のプラン
+  const productId = new URLSearchParams(location.search).get("product") || "";
   async function openJoin(email) {
     const cfg = await fetch("/api/config").then((r) => r.json()).catch(() => ({}));
     if (!cfg.univapayAppId) return;
-    $("join-plan").textContent = cfg.plan.name + "：月 " + cfg.plan.amount.toLocaleString() + " 円";
+    let product = null;
+    if (productId) {
+      const r = await fetch("/api/products?id=" + encodeURIComponent(productId)).then((x) => x.json()).catch(() => ({}));
+      if (!r.products || !r.products.length) return;
+      const { priceLabel } = await import("/js/pay.js");
+      product = r.products[0];
+      $("join-plan").textContent = product.name + "：" + priceLabel(product);
+    } else if (cfg.plan) {
+      $("join-plan").textContent = cfg.plan.name + "：月 " + cfg.plan.amount.toLocaleString() + " 円";
+    } else return;
     $("join").classList.remove("hidden");
     $("pay").onclick = async () => {
       $("pay").disabled = true;
       try {
         const { startCheckout } = await import("/js/pay.js");
-        await startCheckout({ email, onStatus: (t) => payShow(t, true) });
-        payShow("入会を受け付けました。届いたメールのリンクからログインすると、会員として教材と添削ルームが使えます。", true);
+        await startCheckout({ email, product: product ? product.id : null, onStatus: (t) => payShow(t, true) });
+        payShow("お申し込みを受け付けました。届いたメールのリンクからログインすると、教材と添削ルームが使えます。", true);
       } catch (err) {
         payShow(err.message, false);
         $("pay").disabled = false;

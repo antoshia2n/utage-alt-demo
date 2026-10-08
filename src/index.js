@@ -7,12 +7,14 @@
 //   room_read            … どこまで読んだか（by：student / admin、upto：最後に読んだ出来事の番号）
 // 画像は R2（IMAGES）に置き、ログインした本人とシアニンだけが読める。
 // 便 3：決済（UnivaPay のテスト）とメール（Cloudflare Email Service）。中身は src/bin3.js。
+// B の便 4：売る（商品の台帳・単発・定期・年払い・紹介用の価格）。中身は src/sell.js。権利の計算もこちらへ移した。
 
 import { makeBin3 } from "./bin3.js";
 import { makeBin4 } from "./bin4.js";
 import { makeGuard } from "./guard.js";
+import { makeSell } from "./sell.js";
 
-const VERSION = "0.6.0-b3";
+const VERSION = "0.7.0-b4";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_read"];
@@ -51,9 +53,10 @@ export default {
   },
 };
 
-const bin3 = makeBin3({ db, addEvent, logInbound, json });
+const bin3 = makeBin3({ db, addEvent, logInbound, json, onCharge: (env, event, data) => sell.onCharge(env, event, data) });
 const bin4 = makeBin4({ db, addEvent, bin3 });
 const guard = makeGuard({ db, logInbound });
+const sell = makeSell({ db, addEvent, bin3 });
 
 // ---------- 共通 ----------
 
@@ -123,8 +126,10 @@ async function storeCustomerWrite(env, method, pathAndQuery, body) {
     const patch = { member_id: m[1] };
     if ("note_member" in body) patch.note_member = !!body.note_member;
     if ("auth_user_id" in body) patch.sb_auth_uid = body.auth_user_id;
-    const exists = await rawDb(env, "GET", `b_customers?select=id&id=eq.${m[1]}`);
+    const exists = await rawDb(env, "GET", `b_customers?select=id,source&id=eq.${m[1]}`);
     if (exists.length === 0) return [];
+    // B の行がまだ無い人に行を作るとき、流入元が既定の direct に変わらないよう、いまの値を入れる（便 3 の通しで見つけた件）
+    patch.source = exists[0].source;
     await rawDb(env, "POST", "b_profile?on_conflict=member_id", [patch], "resolution=merge-duplicates,return=minimal");
     return await rawDb(env, "GET", `b_customers?select=*&id=eq.${m[1]}`);
   }
@@ -196,7 +201,7 @@ const core = {
     if (s) q += `&or=(name.ilike.*${encodeURIComponent(s)}*,email.ilike.*${encodeURIComponent(s)}*)`;
     if (source && SOURCES.includes(source)) q += `&source=eq.${source}`;
     const people = await db(env, "GET", q);
-    const ent = await bin3.entitlementMap(env);
+    const ent = await sell.entitlementMap(env);
     const dm = await bin4.dealMap(env);
     for (const p of people) {
       p.member = !!(ent[p.id] && ent[p.id].member);
@@ -212,7 +217,7 @@ const core = {
     const events = await db(env, "GET", `events?select=id,type,payload,actor,occurred_at&customer_id=eq.${person_id}&order=occurred_at.desc&limit=200`);
     return {
       ok: true, found: true,
-      person: { ...person, entitlement: await bin3.entitlement(env, person_id), deal: await bin4.deal(env, person_id), contract: bin4.contractOf(person.email) },
+      person: { ...person, entitlement: await sell.entitlement(env, person_id), deal: await bin4.deal(env, person_id), contract: bin4.contractOf(person.email) },
       events,
     };
   },
@@ -427,7 +432,7 @@ async function handleApi(request, env, url) {
       supabaseKey: env.SUPABASE_PUBLISHABLE_KEY || null,
       communityUrl: env.COMMUNITY_URL || null,
       univapayAppId: bin3.univapayState(env).app_id,
-      plan: bin3.PLAN,
+      plan: env.B_STORE ? null : bin3.PLAN,
       version: VERSION,
     });
   }
@@ -457,11 +462,21 @@ async function handleApi(request, env, url) {
     return json({ ok: true, is_new: isNew });
   }
 
-  // 決済の確かめ（ウィジェットのあと。ログインの前でも来る）
+  // B の便 4：商品の一覧（サイトに出すものだけ。?id= を付けると、出していなくても売っているもの 1 つ＝紹介用のリンク）
+  if (path === "/api/products" && method === "GET") {
+    return json(await sell.listForSite(env, url.searchParams.get("id") || ""));
+  }
+  // 窓を開く前の確かめ（登録済みか・売っているか・売り切れ・重ねて買えない商品をもう持っていないか）
+  if (path === "/api/checkout/prepare" && method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    const r = await sell.prepare(env, body);
+    return json(r, r.ok ? 200 : 400);
+  }
+  // 決済の確かめ（ウィジェットのあと。ログインの前でも来る）。商品を指定したら便 4 の道、無ければ便 3 の見本のプラン
   if (path === "/api/checkout/confirm" && method === "POST") {
     const body = await request.json().catch(() => ({}));
-    const r = await bin3.confirmCheckout(env, body);
-    await logInbound(env, "checkout", { email: body.email || null, subscription_id: body.subscription_id || null, raw_keys: body.raw && typeof body.raw === "object" ? Object.keys(body.raw) : null }, { ok: r.ok, error: r.error || null }, r.ok ? 200 : 400);
+    const r = body.product_id ? await sell.confirm(env, body) : await bin3.confirmCheckout(env, body);
+    await logInbound(env, "checkout", { email: body.email || null, product_id: body.product_id || null, charge_id: body.charge_id || null, subscription_id: body.subscription_id || null, raw_keys: body.raw && typeof body.raw === "object" ? Object.keys(body.raw) : null }, { ok: r.ok, error: r.error || null, detail: r.detail || null }, r.ok ? 200 : 400);
     return json(r, r.ok ? 200 : 400);
   }
   if (path === "/api/webhooks/univapay" && method === "POST") return await bin3.handleWebhook(request, env);
@@ -487,7 +502,7 @@ async function handleApi(request, env, url) {
       me: { name: customer.name, email: customer.email, source: customer.source },
       lessons, announcements, viewed: viewedIds,
       room_unread: room.unreadForStudent,
-      entitlement: await bin3.entitlement(env, customer.id),
+      entitlement: await sell.entitlement(env, customer.id),
       community_url: env.COMMUNITY_URL || null,
     });
   }
@@ -665,6 +680,13 @@ async function handleApi(request, env, url) {
       return json(r, r.ok === false ? 400 : 200);
     }
     if (path === "/api/admin/ai-log" && method === "GET") return json(await guard.aiLog(env, {}));
+    // B の便 4：商品の台帳（シアニン用の画面からは承認なしで変えられる。AI からは承認が要る）
+    if (path === "/api/admin/products" && method === "GET") return json(await sell.listProducts(env, {}));
+    if (path === "/api/admin/products" && method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      const r = await sell.setProduct(env, body, a.email);
+      return json(r, r.ok === false ? 400 : 200);
+    }
     if (path === "/api/admin/image" && method === "GET") {
       const key = url.searchParams.get("key") || "";
       if (!imageOwner(key)) return json({ ok: false, error: "not_found" }, 404);
@@ -795,6 +817,27 @@ const TOOLS = [
     description: "道具ごとの権限（auto＝自動・approve＝承認が要る・deny＝禁止）を返す。表に無い道具は禁止。権限を変えられるのは Naoki だけ（シアニン用の画面）で、AI からは変えられない。",
     inputSchema: { type: "object", properties: {} },
   },
+  {
+    name: "list_products",
+    description: "商品の台帳を返す（名前・種類 one_time／subscription／installment・金額・周期・権利の日数・重ねて買えるか・販売数の上限・紹介用の価格の元・売っているか active・サイトに出すか public・売れた数 sold）。UTAGE の商品の価格の行から写したもの。",
+    inputSchema: { type: "object", properties: { include_inactive: { type: "boolean", description: "売っていないものも含める（省略時 true）" } } },
+  },
+  {
+    name: "set_product",
+    description: "商品を 1 つ変える、または足す。承認が要る道具：呼ぶと承認待ちになり approval_url が返る。変えられる欄：name・amount（円）・period（monthly／annually・定期だけ）・grant_days（単発の権利の日数）・grants（権利の印の配列）・deny_multiple・sales_limit・list_price_of・description・active（売る）・public（サイトに出す）・sort・note。新しく足すときは id・kind・name・amount が要る（分割 installment は足せない）。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "商品の id（英小文字・数字・ハイフン）" },
+        kind: { type: "string", enum: ["one_time", "subscription"], description: "新しく足すときだけ" },
+        name: { type: "string" }, amount: { type: "integer" }, period: { type: "string", enum: ["monthly", "annually"] },
+        grant_days: { type: ["integer", "null"] }, grants: { type: "array", items: { type: "string" } },
+        deny_multiple: { type: "boolean" }, sales_limit: { type: ["integer", "null"] }, list_price_of: { type: ["string", "null"] },
+        description: { type: "string" }, active: { type: "boolean" }, public: { type: "boolean" }, sort: { type: "integer" }, note: { type: "string" },
+      },
+      required: ["id"],
+    },
+  },
 ];
 
 // 道具を 1 回実行する（権限の確かめは呼ぶ側で済ませる）。承認されたあとの実行もここを通る
@@ -821,6 +864,8 @@ async function runTool(env, name, args) {
   if (name === "list_approvals") return await guard.listApprovals(env, args);
   if (name === "get_approval") return await guard.getApproval(env, args);
   if (name === "list_permissions") return await guard.listPermissions(env);
+  if (name === "list_products") return await sell.listProducts(env, args);
+  if (name === "set_product") return await sell.setProduct(env, args, "mcp");
   return { ok: false, error: "unknown_tool" };
 }
 

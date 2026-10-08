@@ -137,29 +137,37 @@ async function loadBooking(token) {
   }));
 }
 
-// ---------- 会員の権利（便 3） ----------
+// ---------- 会員の権利（便 3）と、商品を買う（B の便 4） ----------
 function setupMember(ent, email) {
   const box = $("member");
   box.classList.remove("hidden");
-  if (ent && ent.member) {
-    box.innerHTML = `<div class="member-row"><span class="pill">会員</span><span class="note">${esc(ent.plan || "")}・${ent.since ? fmtTime(ent.since).slice(0, 10) + " から" : ""}</span></div>`;
-    return;
-  }
-  box.innerHTML = `<div class="member-row"><div><b>会員になると添削が受けられます</b><div class="note" id="m-plan"></div></div><button class="btn" id="m-pay" type="button">入会する（テスト）</button></div><div id="m-msg" class="note" style="margin-top:8px"></div>`;
-  fetch("/api/config").then((x) => x.json()).then((cfg) => {
-    if (!cfg.univapayAppId) { $("m-pay").disabled = true; $("m-msg").textContent = "決済の設定がまだ入っていません"; return; }
-    $("m-plan").textContent = cfg.plan.name + "：月 " + cfg.plan.amount.toLocaleString() + " 円（デモなので請求はされません）";
-  });
-  $("m-pay").addEventListener("click", async () => {
-    $("m-pay").disabled = true;
-    try {
-      const { startCheckout } = await import("/js/pay.js");
-      const res = await startCheckout({ email, onStatus: (t) => { $("m-msg").textContent = t; } });
-      setupMember(res.entitlement, email);
-    } catch (err) {
-      $("m-msg").textContent = err.message;
-      $("m-pay").disabled = false;
+  const owned = (ent && ent.items ? ent.items : []).filter((x) => x.status === "active");
+  const ownedHtml = owned.map((x) => `<div class="member-row"><span class="pill">${x.kind === "subscription" ? "会員" : "購入済み"}</span><span class="note">${esc(x.name || "")}・${x.since ? fmtTime(x.since).slice(0, 10) + " から" : ""}${x.until ? "・" + fmtTime(x.until).slice(0, 10) + " まで" : ""}</span></div>`).join("");
+  box.innerHTML = ownedHtml + `<div id="m-shop"></div><div id="m-msg" class="note" style="margin-top:8px"></div>`;
+  fetch("/api/config").then((x) => x.json()).then(async (cfg) => {
+    if (!cfg.univapayAppId) { if (!owned.length) $("m-msg").textContent = "決済の設定がまだ入っていません"; return; }
+    if (cfg.plan) {
+      // デモの置き場：便 3 の見本のプラン 1 つ
+      if (ent && ent.member) return;
+      $("m-shop").innerHTML = `<div class="member-row"><div><b>会員になると添削が受けられます</b><div class="note">${esc(cfg.plan.name)}：月 ${cfg.plan.amount.toLocaleString()} 円（デモなので請求はされません）</div></div><button class="btn" data-buy="" type="button">入会する（テスト）</button></div>`;
+    } else {
+      const r = await fetch("/api/products").then((x) => x.json()).catch(() => ({ products: [] }));
+      const { priceLabel } = await import("/js/pay.js");
+      const list = (r.products || []).filter((p) => !owned.some((o) => o.product_id === p.id && o.kind === "subscription"));
+      if (!list.length) { if (!owned.length) $("m-msg").textContent = "いまお申し込みを受け付けている商品はありません"; return; }
+      $("m-shop").innerHTML = list.map((p) => `<div class="member-row"><div><b>${esc(p.name)}</b><div class="note">${esc(priceLabel(p))}${p.description ? "・" + esc(p.description) : ""}</div></div><button class="btn" data-buy="${esc(p.id)}" type="button">申し込む</button></div>`).join("");
     }
+    box.querySelectorAll("[data-buy]").forEach((btn) => btn.addEventListener("click", async () => {
+      box.querySelectorAll("[data-buy]").forEach((x) => { x.disabled = true; });
+      try {
+        const { startCheckout } = await import("/js/pay.js");
+        const res = await startCheckout({ email, product: btn.dataset.buy || null, onStatus: (t) => { $("m-msg").textContent = t; } });
+        setupMember(res.entitlement, email);
+      } catch (err) {
+        $("m-msg").textContent = err.message;
+        box.querySelectorAll("[data-buy]").forEach((x) => { x.disabled = false; });
+      }
+    }));
   });
 }
 

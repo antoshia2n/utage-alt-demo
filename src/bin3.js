@@ -162,6 +162,14 @@ export function makeBin3(h) {
       await logInbound(env, "univapay", reqLog, { ok: false, error: "bad_body" }, 400);
       return json({ ok: false, error: "bad_body" }, 400);
     }
+    // B の便 4：単発の決済の知らせ（charge_finished）は売る側（sell.js）が見る
+    if (h.onCharge && String(event).startsWith("charge_")) {
+      const rc = await h.onCharge(env, event, data);
+      if (rc) {
+        await logInbound(env, "univapay", reqLog, rc, 200);
+        return json(rc);
+      }
+    }
     const map = {
       subscription_payment: "subscription_payment",
       subscription_failure: "subscription_failed",
