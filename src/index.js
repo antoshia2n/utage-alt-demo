@@ -13,6 +13,7 @@
 // B の便 6b：寄せる（裏側）。会員の権利を門番の表（member_entitlement）と 1 つにする・面談の記録を読む・表の目録。中身は src/bridge.js。
 // B の便 7a：オプチャの招待リンクは会員とシアニンにだけ返す。リンクは表 b_settings の 1 行（key=community_url）に置き、
 //   シアニン用の画面と AI の道具（set_community_link・承認が要る）で差し替える。ログイン無しの /api/config からは外した。
+// B の便 8c：企画と設計図。部品の持ち主は b_campaign_parts、設計図は部品どうしのつながりから毎回組み立てる。中身は src/plan.js。
 
 import { makeBin3 } from "./bin3.js";
 import { makeBin4 } from "./bin4.js";
@@ -21,8 +22,9 @@ import { makeSell } from "./sell.js";
 import { makeDeliver } from "./deliver.js";
 import { makeLearn, normalizeNotes, LESSON_ID_RE } from "./learn.js";
 import { makeBridge } from "./bridge.js";
+import { makePlan } from "./plan.js";
 
-const VERSION = "0.11.1-b7a";
+const VERSION = "0.12.0-b8c";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_read"];
@@ -72,6 +74,7 @@ const bridge = makeBridge({ db, rawDb, addEvent, secretHeaders });
 const sell = makeSell({ db, addEvent, bin3, bridge });
 const deliver = makeDeliver({ db, addEvent, logInbound, bin3, sell });
 const learn = makeLearn({ db });
+const plan = makePlan({ db, logInbound, communityLink });
 
 // ---------- 共通 ----------
 
@@ -774,6 +777,27 @@ async function handleApi(request, env, url) {
       return json(r, r.ok === false ? 400 : 200);
     }
     if (path === "/api/admin/ai-log" && method === "GET") return json(await guard.aiLog(env, {}));
+    // B の便 8c：設計図と企画（シアニン用の画面からは承認なしで変えられる。AI からは「しまう・戻す」だけ承認が要る）
+    if (path === "/api/admin/blueprint" && method === "GET") {
+      const r = await plan.blueprint(env, { campaign_id: url.searchParams.get("campaign") || "all" });
+      return json(r, r.ok === false ? 400 : 200);
+    }
+    if (path === "/api/admin/campaigns" && method === "GET") return json(await plan.listCampaigns(env, { include_archived: url.searchParams.get("archived") === "1" }));
+    if (path === "/api/admin/campaigns" && method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      const r = await plan.createCampaign(env, body, a.email);
+      return json(r, r.ok === false ? 400 : 200);
+    }
+    if (path === "/api/admin/campaigns/assign" && method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      const r = await plan.setPartCampaign(env, body, a.email);
+      return json(r, r.ok === false ? 400 : 200);
+    }
+    if (path === "/api/admin/campaigns/archive" && method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      const r = await plan.archiveCampaign(env, body, a.email);
+      return json(r, r.ok === false ? 400 : 200);
+    }
     // B の便 5：配信（シアニン用の画面からは承認なしで送れる。AI からは一斉配信とステップの変更に承認が要る）
     if (path === "/api/admin/deliver" && method === "GET") {
       const [b, s, w] = await Promise.all([deliver.listBroadcasts(env, {}), deliver.listSteps(env), env.B_STORE ? deliver.warmState(env) : null]);
@@ -1034,6 +1058,31 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: "get_blueprint",
+    description: "設計図を返す。部品（page・step・broadcast・seminar・booking・product・course・room・community）を集める・育てる・売る・届ける・紹介のレーンに並べ、実際の設定から引いたつながり（線）と、部品ごとの先週 7 日の数を返す。部品ごとに外の名前（name・生徒に見える）・中の名前（inner_name・企画名｜種類｜役目）・持ち主の企画・線でつながる別の企画（used_by）・どこともつながっていないか（isolated）が付く。campaign_id：all（しまった企画を除く全部）／unassigned（企画に入っていない部品）／企画の番号（その企画の部品と、線でつながる外の部品 outside）。",
+    inputSchema: { type: "object", properties: { campaign_id: { type: "string" } } },
+  },
+  {
+    name: "list_campaigns",
+    description: "企画の一覧（名前・常設か・開催日・しまったか・持ち主の部品の数）と、企画に入っていない部品の数。include_archived が真ならしまった企画も返す。",
+    inputSchema: { type: "object", properties: { include_archived: { type: "boolean" } } },
+  },
+  {
+    name: "create_campaign",
+    description: "企画を作る（部品は動かない）。title は 1〜60 文字。名前の頭に年月が自動で付く（starts_on＝開催日 YYYY-MM-DD があればその月、無ければ今月）。しまっていない企画と同じ名前は作れない。",
+    inputSchema: { type: "object", properties: { title: { type: "string" }, starts_on: { type: "string" } }, required: ["title"] },
+  },
+  {
+    name: "set_part_campaign",
+    description: "部品の持ち主の企画と役目を変える（部品は動かない）。part_type・part_id は get_blueprint の type と id。role は 60 文字まで（中の名前の最後に入る。空なら外の名前）。campaign_id を空にすると企画から外す。しまった企画には入れられない。",
+    inputSchema: { type: "object", properties: { part_type: { type: "string" }, part_id: { type: "string" }, campaign_id: { type: ["string", "null"] }, role: { type: "string" } }, required: ["part_type", "part_id"] },
+  },
+  {
+    name: "archive_campaign",
+    description: "企画をしまう（restore が真なら戻す）。承認が要る道具。常設はしまえない。持ち主の部品が 1 つでも動いていたら（動いているステップ・送る列の一斉配信・売っている商品・これからのセミナーなど）しまわずに running で並べて返す。しまうと一覧と設計図から消えるが、部品と数字は残る。",
+    inputSchema: { type: "object", properties: { campaign_id: { type: "string" }, restore: { type: "boolean" } }, required: ["campaign_id"] },
+  },
 ];
 
 // 道具を 1 回実行する（権限の確かめは呼ぶ側で済ませる）。承認されたあとの実行もここを通る
@@ -1075,6 +1124,11 @@ async function runTool(env, name, args) {
   if (name === "cancel_broadcast") return await deliver.cancelBroadcast(env, args, "mcp");
   if (name === "list_steps") return await deliver.listSteps(env);
   if (name === "set_step") return await deliver.setStep(env, args, "mcp");
+  if (name === "get_blueprint") return await plan.blueprint(env, args);
+  if (name === "list_campaigns") return await plan.listCampaigns(env, args);
+  if (name === "create_campaign") return await plan.createCampaign(env, args, "mcp");
+  if (name === "set_part_campaign") return await plan.setPartCampaign(env, args, "mcp");
+  if (name === "archive_campaign") return await plan.archiveCampaign(env, args, "mcp");
   return { ok: false, error: "unknown_tool" };
 }
 

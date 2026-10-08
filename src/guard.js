@@ -6,7 +6,7 @@
 
 export const MODES = ["auto", "approve", "deny"];
 
-// 表に行が無い道具は「禁止」。新しい道具を足したら、ここと SQL（b3_permissions.sql・b4_products.sql・b5_delivery.sql・b6a_learn.sql・b6b_bridge.sql）の最初の値を両方足す
+// 表に行が無い道具は「禁止」。新しい道具を足したら、ここと SQL（b3_permissions.sql・b4_products.sql・b5_delivery.sql・b6a_learn.sql・b6b_bridge.sql・b7a_settings.sql・b8c_plan.sql）の最初の値を両方足す
 export const DEFAULT_MODES = {
   find_person: "auto", get_timeline: "auto", stats: "auto",
   list_rooms: "auto", get_room: "auto", list_consults: "auto", list_seminars: "auto",
@@ -20,6 +20,8 @@ export const DEFAULT_MODES = {
   list_lessons: "auto", list_corrections: "auto",
   get_meetings: "auto", list_tables: "auto",
   get_community_link: "auto", set_community_link: "approve",
+  list_campaigns: "auto", get_blueprint: "auto", create_campaign: "auto", set_part_campaign: "auto",
+  archive_campaign: "approve",
 };
 
 // 権限を問わず通す道具（承認待ちを見るための道具が承認待ちになると回らないため）

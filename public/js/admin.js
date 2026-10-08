@@ -1,11 +1,17 @@
 import { getClient, api, esc, fmtTime, SOURCE_LABEL, EVENT_LABEL, authImage } from "/js/common.js";
 import { correctionHtml, wireNotes } from "/js/correction.js";
+import { makeBlueprint } from "/js/blueprint.js";
 
 const $ = (id) => document.getElementById(id);
 const steps = ["step-login", "step-enroll", "step-mfa", "console"];
-const show = (id) => steps.forEach((s) => $(s).classList.toggle("hidden", s !== id));
-const fail = (t) => { $("err").textContent = t; $("err").classList.remove("hidden"); };
-const clearErr = () => $("err").classList.add("hidden");
+const show = (id) => {
+  steps.forEach((s) => $(s).classList.toggle("hidden", s !== id));
+  $("auth-wrap").classList.toggle("hidden", id === "console");
+};
+// 画面の中にいるときは上の欄、ログインの前はログインの欄に出す
+const errBox = () => ($("console").classList.contains("hidden") ? $("err") : $("err2"));
+const fail = (t) => { const b = errBox(); b.textContent = t; b.classList.remove("hidden"); };
+const clearErr = () => { $("err").classList.add("hidden"); $("err2").classList.add("hidden"); };
 let sb, token;
 
 async function start() {
@@ -15,7 +21,6 @@ async function start() {
   const { data } = await sb.auth.getSession();
   if (location.hash.includes("access_token")) history.replaceState(null, "", "/admin");
   if (!data.session) return show("step-login");
-  $("logout").classList.remove("hidden");
   // 2026-10-08 Naoki の指示で認証アプリの 6 桁を外した。メールのリンクで入ったらそのまま一覧を開く
   await openConsole();
 }
@@ -54,6 +59,7 @@ async function openConsole() {
     return fail(who.error === "not_admin" ? "このメールアドレスはシアニン用の画面に入れません。" : "入れませんでした（" + (who.error || who.status) + "）");
   }
   show("console");
+  $("who-admin").textContent = who.email;
   loadStats();
   search();
   setupViews();
@@ -63,6 +69,7 @@ async function openConsole() {
   loadApprovalBadge();
   // AI から渡された承認の URL（/admin#approval/<番号>）で開いたときは、AI と承認のタブを開く
   if (location.hash.startsWith("#approval/")) document.querySelector('[data-view="ai"]').click();
+  else bp.load();
   setInterval(() => { if (!document.hidden) loadRooms(); }, 30000);
   let t;
   $("q").addEventListener("input", () => { clearTimeout(t); t = setTimeout(search, 250); });
@@ -175,15 +182,20 @@ async function detail(id) {
 
 // ---------- 添削ルーム ----------
 let currentRoom = null;
+// 便 8c：左のメニュー。押した項目の画面だけを出し、上のナビにその名前を出す
+const VIEWS = ["blueprint", "people", "rooms", "deals", "ai", "products", "deliver", "settings"];
+function openView(name) {
+  const b = document.querySelector(`.side [data-view="${name}"]`);
+  if (b) b.click();
+}
 function setupViews() {
-  document.querySelectorAll("[data-view]").forEach((b) => b.addEventListener("click", () => {
-    document.querySelectorAll("[data-view]").forEach((x) => x.setAttribute("aria-selected", String(x === b)));
-    $("view-people").style.display = b.dataset.view === "people" ? "" : "none";
-    $("view-rooms").style.display = b.dataset.view === "rooms" ? "" : "none";
-    $("view-deals").style.display = b.dataset.view === "deals" ? "" : "none";
-    $("view-ai").style.display = b.dataset.view === "ai" ? "" : "none";
-    $("view-products").style.display = b.dataset.view === "products" ? "" : "none";
-    $("view-deliver").style.display = b.dataset.view === "deliver" ? "" : "none";
+  document.querySelectorAll(".side [data-view]").forEach((b) => b.addEventListener("click", () => {
+    clearErr();
+    document.querySelectorAll(".side [data-view]").forEach((x) => x.setAttribute("aria-selected", String(x === b)));
+    for (const v of VIEWS) $("view-" + v).style.display = b.dataset.view === v ? "" : "none";
+    $("view-people-wrap").style.display = b.dataset.view === "people" ? "" : "none";
+    $("crumb").textContent = b.firstChild.textContent.trim();
+    if (b.dataset.view === "blueprint") bp.load();
     if (b.dataset.view === "deliver") loadDeliver();
     if (b.dataset.view === "products") loadProducts();
     if (b.dataset.view === "deals") loadDeals();
@@ -608,5 +620,7 @@ $("send").addEventListener("click", async () => {
   $("sent").classList.remove("hidden");
 });
 $("logout").addEventListener("click", async (e) => { e.preventDefault(); await sb.auth.signOut(); location.reload(); });
+
+const bp = makeBlueprint({ $, api, esc, getToken: () => token, fail, openView });
 
 start().catch((e) => fail(e.message));

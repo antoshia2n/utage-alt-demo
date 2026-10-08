@@ -76,9 +76,14 @@ async function main() {
     if (name === "room") room.open();
     if (name === "review") loadReview(token);
     if (name === "booking") loadBooking(token);
-    document.querySelectorAll(".tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === name || (name === "lesson" && b.dataset.tab === "lessons"))));
+    // 便 8c：左のメニューの印と、上のナビの名前
+    document.querySelectorAll(".side [data-tab]").forEach((b) => {
+      const on = b.dataset.tab === name || (name === "lesson" && b.dataset.tab === "lessons");
+      b.setAttribute("aria-selected", String(on));
+      if (on) $("crumb").textContent = b.firstChild.textContent.trim();
+    });
   };
-  document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
+  document.querySelectorAll(".side [data-tab]").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
   $("back").addEventListener("click", (e) => { e.preventDefault(); showTab("lessons"); });
 
   const openLesson = async (id) => {

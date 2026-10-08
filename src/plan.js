@@ -1,0 +1,270 @@
+// B の便 8c：企画と設計図。
+// 設計図は別の表に描かない。部品（ページ・ステップ・一斉配信・セミナー・予約・商品・教材・添削・オプチャ）と、
+// 部品どうしのつながり（ステップのきっかけ・商品の権利・一斉配信の宛先の条件）から毎回組み立てる。
+// 企画は b_campaigns、部品の持ち主は b_campaign_parts（部品 1 つに持ち主は 1 つ）。「常設」は 1 つだけ。
+// 名前は 2 つ：外の名前（生徒に見える・各部品の名前や件名そのまま）と、中の名前（シアニン用・「企画名｜種類｜役目」で自動）。
+// 企画をしまえるのは、持ち主の部品が 1 つも動いていないときだけ。部品を消す道は作らない。
+
+import { SEMINARS } from "./bin4.js";
+import { MEMBER_KEYS } from "./bridge.js";
+
+export const LANES = [
+  { id: "collect", label: "集める" },
+  { id: "nurture", label: "育てる" },
+  { id: "sell", label: "売る" },
+  { id: "deliver", label: "届ける" },
+  { id: "refer", label: "紹介" },
+];
+
+export const PART_TYPES = {
+  page: "ページ", step: "ステップ", broadcast: "一斉配信", seminar: "セミナー", booking: "予約",
+  product: "商品", course: "教材", room: "添削", community: "オプチャ",
+};
+
+const UUID_RE = /^[0-9a-f-]{36}$/i;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const MONTH_PREFIX_RE = /^\d{4}-\d{2}\s/;
+const WEEK_TYPES = ["registered", "purchase_completed", "email_sent", "consult_booked", "lesson_viewed", "correction_submitted", "seminar_registered"];
+
+// 中の名前（シアニン用）。役目が空なら外の名前を使う
+export function innerName(campaignName, partType, role, outerName) {
+  const r = String(role || "").trim() || String(outerName || "").trim();
+  return `${campaignName || "未整理"}｜${PART_TYPES[partType] || partType}｜${r}`;
+}
+
+// 企画名の頭に年月を付ける（開催日があればその月、無ければ日本時間の今月）。もう付いていれば付けない
+export function campaignName(title, startsOn, now = new Date()) {
+  const t = String(title || "").trim().replace(/\s+/g, " ");
+  if (MONTH_PREFIX_RE.test(t)) return t;
+  const ym = startsOn && DATE_RE.test(startsOn) ? startsOn.slice(0, 7)
+    : new Date(now.getTime() + 9 * 3600e3).toISOString().slice(0, 7);
+  return `${ym} ${t}`;
+}
+
+// 部品の一覧（外の名前・レーン・状態）を、いまの表から作る
+export function buildParts({ products = [], steps = [], broadcasts = [], seminars = [], courseCount = 0, community = "" }, now = new Date()) {
+  const parts = [];
+  const add = (type, id, lane, name, state, extra = {}) => parts.push({ key: `${type}:${id}`, type, id: String(id), lane, name, state, ...extra });
+  add("page", "front", "collect", "トップの LP（/）", "running", { url: "/" });
+  add("page", "register", "collect", "無料登録（/register）", "running", { url: "/register" });
+  for (const s of steps) add("step", s.id, "nurture", s.subject || s.name || `ステップ ${s.id}`, s.active ? "running" : "draft", { trigger: s.trigger, product_id: s.product_id || null, note: s.name || "" });
+  for (const b of broadcasts) {
+    const st = b.status === "draft" ? "draft" : (b.status === "queued" || b.status === "sending") ? "running" : "stopped";
+    add("broadcast", b.id, "nurture", b.subject || "（件名なし）", st, { filter: b.filter || {} });
+  }
+  for (const s of seminars) add("seminar", s.id, "nurture", s.title, new Date(s.starts_at) < now ? "stopped" : "running", { starts_at: s.starts_at });
+  add("booking", "consult", "sell", "個別相談（30 分）", "running");
+  for (const p of products) add("product", p.id, "sell", p.name, p.active ? "running" : "stopped", { grants: p.grants || [] });
+  add("course", "mn", "deliver", `しあらぼの教材（${courseCount} 本）`, courseCount ? "running" : "stopped");
+  add("room", "correction", "deliver", "添削ルーム", "running");
+  add("community", "openchat", "deliver", "オプチャ", community ? "running" : "stopped");
+  return parts;
+}
+
+// つながり（線）。実際の設定にあるものだけを引く
+export function buildEdges(parts) {
+  const edges = [];
+  const has = new Set(parts.map((p) => p.key));
+  const add = (from, to, label = "") => { if (has.has(from) && has.has(to)) edges.push({ from, to, label }); };
+  const products = parts.filter((p) => p.type === "product");
+  add("page:front", "page:register", "登録");
+  for (const s of parts.filter((p) => p.type === "step")) {
+    if (s.trigger === "registered") add("page:register", s.key, "登録した人");
+    if (s.trigger === "purchase") {
+      if (s.product_id) add(`product:${s.product_id}`, s.key, "買った人");
+      else for (const p of products.filter((x) => x.state === "running")) add(p.key, s.key, "買った人");
+    }
+  }
+  for (const p of products) {
+    if ((p.grants || []).some((g) => MEMBER_KEYS.includes(g))) {
+      add(p.key, "course:mn", "権利");
+      add(p.key, "community:openchat", "権利");
+    }
+  }
+  for (const b of parts.filter((p) => p.type === "broadcast")) {
+    for (const id of (b.filter && Array.isArray(b.filter.bought) ? b.filter.bought : [])) add(`product:${id}`, b.key, "買った人へ");
+  }
+  return edges;
+}
+
+// 先週（7 日）の数を部品ごとに数える
+export function weekCounts(events) {
+  const c = {};
+  const inc = (k) => { c[k] = (c[k] || 0) + 1; };
+  for (const e of events) {
+    const p = e.payload || {};
+    if (e.type === "registered") inc("page:register");
+    else if (e.type === "purchase_completed" && p.product_id) inc(`product:${p.product_id}`);
+    else if (e.type === "email_sent" && p.kind === "step" && p.step_id != null) inc(`step:${p.step_id}`);
+    else if (e.type === "email_sent" && p.kind === "broadcast" && p.broadcast_id) inc(`broadcast:${p.broadcast_id}`);
+    else if (e.type === "consult_booked") inc("booking:consult");
+    else if (e.type === "lesson_viewed") inc("course:mn");
+    else if (e.type === "correction_submitted") inc("room:correction");
+    else if (e.type === "seminar_registered" && p.seminar_id) inc(`seminar:${p.seminar_id}`);
+  }
+  return c;
+}
+
+// 部品・線・企画・持ち主を合わせて、設計図 1 枚の形にする。view は all／unassigned／企画の番号
+export function assemble({ parts, edges, campaigns, owners, week }, view = "all") {
+  const cmap = Object.fromEntries(campaigns.map((c) => [c.id, c]));
+  const omap = Object.fromEntries(owners.map((o) => [`${o.part_type}:${o.part_id}`, o]));
+  const archived = new Set(campaigns.filter((c) => c.archived_at).map((c) => c.id));
+  const linked = new Map(parts.map((p) => [p.key, new Set()]));
+  for (const e of edges) { linked.get(e.from).add(e.to); linked.get(e.to).add(e.from); }
+  const full = parts.map((p) => {
+    const o = omap[p.key];
+    const c = o ? cmap[o.campaign_id] : null;
+    return {
+      ...p,
+      campaign_id: c ? c.id : null,
+      campaign_name: c ? c.name : null,
+      role: o ? o.role : "",
+      inner_name: innerName(c ? c.name : null, p.type, o ? o.role : "", p.name),
+      week: week[p.key] || 0,
+      isolated: linked.get(p.key).size === 0,
+    };
+  });
+  const byKey = Object.fromEntries(full.map((p) => [p.key, p]));
+  for (const p of full) {
+    const used = new Set();
+    for (const k of linked.get(p.key)) { const q = byKey[k]; if (q.campaign_id && q.campaign_id !== p.campaign_id) used.add(q.campaign_id); }
+    p.used_by = [...used].map((id) => ({ id, name: cmap[id].name }));
+  }
+  let shown;
+  if (view === "all") shown = full.filter((p) => !(p.campaign_id && archived.has(p.campaign_id)));
+  else {
+    const own = view === "unassigned" ? full.filter((p) => !p.campaign_id) : full.filter((p) => p.campaign_id === view);
+    const keys = new Set(own.map((p) => p.key));
+    const near = new Set();
+    for (const k of keys) for (const n of linked.get(k)) if (!keys.has(n)) near.add(n);
+    shown = [...own, ...[...near].map((k) => ({ ...byKey[k], outside: true }))];
+  }
+  const shownKeys = new Set(shown.map((p) => p.key));
+  // 線の数は行き先の先週の数。行き先に入る線が 2 本以上あると、どの線から来たかを分けられないので出さない（0）
+  const incoming = {};
+  for (const e of edges) incoming[e.to] = (incoming[e.to] || 0) + 1;
+  const sEdges = edges.filter((e) => shownKeys.has(e.from) && shownKeys.has(e.to)).map((e) => ({
+    ...e,
+    week: incoming[e.to] === 1 ? ((byKey[e.to] && byKey[e.to].week) || 0) : 0,
+  }));
+  const counts = {};
+  for (const p of full) { const k = p.campaign_id || "unassigned"; counts[k] = (counts[k] || 0) + 1; }
+  return {
+    lanes: LANES,
+    view,
+    parts: shown,
+    edges: sEdges,
+    unassigned_count: counts.unassigned || 0,
+    campaigns: campaigns.map((c) => ({ id: c.id, name: c.name, kind: c.kind, starts_on: c.starts_on, archived_at: c.archived_at, parts: counts[c.id] || 0 })),
+  };
+}
+
+export function makePlan(h) {
+  const { db, logInbound, communityLink } = h;
+
+  async function loadAll(env) {
+    const since = new Date(Date.now() - 7 * 864e5).toISOString();
+    const [products, steps, broadcasts, lessons, community, campaigns, owners, events] = await Promise.all([
+      db(env, "GET", "b_products?select=id,name,active,grants,sort&order=sort.asc"),
+      db(env, "GET", "b_steps?select=id,name,trigger,product_id,subject,active&order=sort.asc,id.asc"),
+      db(env, "GET", "b_broadcasts?select=id,subject,status,filter,created_at&order=created_at.desc&limit=50"),
+      db(env, "GET", "mn_lessons?select=lesson_id&limit=5000"),
+      communityLink(env),
+      db(env, "GET", "b_campaigns?select=*&order=kind.desc,created_at.asc"),
+      db(env, "GET", "b_campaign_parts?select=*"),
+      db(env, "GET", `events?select=type,payload&occurred_at=gte.${encodeURIComponent(since)}&type=in.(${WEEK_TYPES.join(",")})&limit=10000`),
+    ]);
+    const owned = new Set(owners.filter((o) => o.part_type === "product").map((o) => o.part_id));
+    const shownProducts = products.filter((p) => p.active || owned.has(p.id));
+    const parts = buildParts({
+      products: shownProducts, steps, broadcasts, seminars: SEMINARS,
+      courseCount: new Set(lessons.map((l) => l.lesson_id)).size, community: community.url,
+    });
+    return { parts, edges: buildEdges(parts), campaigns, owners, week: weekCounts(events), hiddenProducts: products.length - shownProducts.length };
+  }
+
+  async function blueprint(env, { campaign_id = "all" } = {}) {
+    if (!env.B_STORE) return { ok: false, error: "demo_store" };
+    const view = campaign_id === "unassigned" || campaign_id === "all" || !campaign_id ? (campaign_id || "all") : String(campaign_id);
+    if (view !== "all" && view !== "unassigned" && !UUID_RE.test(view)) return { ok: false, error: "bad_campaign_id" };
+    const all = await loadAll(env);
+    if (UUID_RE.test(view) && !all.campaigns.some((c) => c.id === view)) return { ok: false, error: "campaign_not_found" };
+    return { ok: true, ...assemble(all, view), stopped_products_hidden: all.hiddenProducts };
+  }
+
+  async function listCampaigns(env, { include_archived = false } = {}) {
+    if (!env.B_STORE) return { ok: false, error: "demo_store" };
+    const all = await loadAll(env);
+    const a = assemble(all, "all");
+    const list = a.campaigns.filter((c) => include_archived === true || include_archived === "true" || !c.archived_at);
+    return { ok: true, count: list.length, campaigns: list, unassigned_count: a.unassigned_count };
+  }
+
+  async function createCampaign(env, { title, starts_on = null }, actor) {
+    if (!env.B_STORE) return { ok: false, error: "demo_store" };
+    const t = String(title || "").trim();
+    if (!t || t.length > 60) return { ok: false, error: "bad_title", note: "1〜60 文字" };
+    if (starts_on && !DATE_RE.test(String(starts_on))) return { ok: false, error: "bad_starts_on", note: "YYYY-MM-DD" };
+    const name = campaignName(t, starts_on);
+    const dup = await db(env, "GET", `b_campaigns?select=id&name=eq.${encodeURIComponent(name)}&archived_at=is.null`);
+    if (dup.length) return { ok: false, error: "name_taken", name };
+    const now = new Date().toISOString();
+    const [row] = await db(env, "POST", "b_campaigns",
+      [{ name, kind: "campaign", starts_on: starts_on || null, created_by: String(actor).slice(0, 200), updated_by: String(actor).slice(0, 200), updated_at: now }],
+      "return=representation");
+    await logInbound(env, "campaign", { action: "create", id: row.id, name, by: actor }, { ok: true }, 200);
+    return { ok: true, campaign: row };
+  }
+
+  // 部品の持ち主と役目を変える。campaign_id を空にすると「企画に入っていない」に戻す
+  async function setPartCampaign(env, { part_type, part_id, campaign_id = null, role = "" }, actor) {
+    if (!env.B_STORE) return { ok: false, error: "demo_store" };
+    if (!PART_TYPES[part_type]) return { ok: false, error: "bad_part_type", types: Object.keys(PART_TYPES) };
+    const r = String(role || "").trim();
+    if (r.length > 60) return { ok: false, error: "role_too_long", max: 60 };
+    const all = await loadAll(env);
+    const key = `${part_type}:${String(part_id)}`;
+    if (!all.parts.some((p) => p.key === key)) return { ok: false, error: "part_not_found", key };
+    if (!campaign_id) {
+      await db(env, "DELETE", `b_campaign_parts?part_type=eq.${part_type}&part_id=eq.${encodeURIComponent(String(part_id))}`, undefined, "return=minimal");
+      await logInbound(env, "campaign", { action: "unassign", key, by: actor }, { ok: true }, 200);
+      return { ok: true, key, campaign_id: null };
+    }
+    if (!UUID_RE.test(String(campaign_id))) return { ok: false, error: "bad_campaign_id" };
+    const c = all.campaigns.find((x) => x.id === campaign_id);
+    if (!c) return { ok: false, error: "campaign_not_found" };
+    if (c.archived_at) return { ok: false, error: "campaign_archived" };
+    await db(env, "POST", "b_campaign_parts?on_conflict=part_type,part_id",
+      [{ part_type, part_id: String(part_id), campaign_id, role: r, updated_at: new Date().toISOString(), updated_by: String(actor).slice(0, 200) }],
+      "resolution=merge-duplicates,return=minimal");
+    await logInbound(env, "campaign", { action: "assign", key, campaign_id, role: r, by: actor }, { ok: true }, 200);
+    const outer = (all.parts.find((p) => p.key === key) || {}).name;
+    return { ok: true, key, campaign_id, campaign_name: c.name, role: r, inner_name: innerName(c.name, part_type, r, outer) };
+  }
+
+  // しまう（restore が真なら戻す）。常設はしまえない。持ち主の部品が 1 つでも動いていたらしまわずに並べて返す
+  async function archiveCampaign(env, { campaign_id, restore = false }, actor) {
+    if (!env.B_STORE) return { ok: false, error: "demo_store" };
+    if (!UUID_RE.test(String(campaign_id || ""))) return { ok: false, error: "bad_campaign_id" };
+    const all = await loadAll(env);
+    const c = all.campaigns.find((x) => x.id === campaign_id);
+    if (!c) return { ok: false, error: "campaign_not_found" };
+    if (c.kind === "standing") return { ok: false, error: "standing_cannot_archive" };
+    const back = restore === true || restore === "true";
+    if (back) {
+      const dup = all.campaigns.find((x) => x.id !== c.id && !x.archived_at && x.name === c.name);
+      if (dup) return { ok: false, error: "name_taken", name: c.name };
+    } else {
+      const mine = new Set(all.owners.filter((o) => o.campaign_id === c.id).map((o) => `${o.part_type}:${o.part_id}`));
+      const running = all.parts.filter((p) => mine.has(p.key) && p.state === "running").map((p) => ({ key: p.key, name: p.name }));
+      if (running.length) return { ok: false, error: "running_parts", running, note: "動いている部品がある間はしまえない。止めるか、別の企画へ移してから" };
+    }
+    const now = new Date().toISOString();
+    await db(env, "PATCH", `b_campaigns?id=eq.${c.id}`, { archived_at: back ? null : now, updated_at: now, updated_by: String(actor).slice(0, 200) }, "return=minimal");
+    await logInbound(env, "campaign", { action: back ? "restore" : "archive", id: c.id, by: actor }, { ok: true }, 200);
+    return { ok: true, campaign_id: c.id, archived: !back };
+  }
+
+  return { blueprint, listCampaigns, createCampaign, setPartCampaign, archiveCampaign };
+}
