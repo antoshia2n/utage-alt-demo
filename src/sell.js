@@ -301,9 +301,11 @@ export function makeSell(h) {
   }
 
   function mismatch(p, d, isSub) {
-    const amount = Number(d.amount ?? d.requested_amount);
+    // 定期は amount・currency、単発（charge）は requested_amount・requested_currency（通ったあとは charged_*）で返ってくる
+    const amount = Number(d.amount ?? d.requested_amount ?? d.charged_amount);
+    const currency = d.currency || d.requested_currency || d.charged_currency || "";
     if (amount !== p.amount) return { amount: { expected: p.amount, got: amount } };
-    if (String(d.currency || "").toLowerCase() !== String(p.currency || "jpy").toLowerCase()) return { currency: { expected: p.currency, got: d.currency } };
+    if (String(currency).toLowerCase() !== String(p.currency || "jpy").toLowerCase()) return { currency: { expected: p.currency, got: currency } };
     if (isSub && d.period && d.period !== p.period) return { period: { expected: p.period, got: d.period } };
     const meta = d.metadata || {};
     if (meta.product_id && meta.product_id !== p.id) return { product_id: { expected: p.id, got: meta.product_id } };
