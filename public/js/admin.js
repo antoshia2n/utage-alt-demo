@@ -106,6 +106,7 @@ async function detail(id) {
       <span class="pill gray">出来事 ${p.event_count} 件</span>
       ${p.entitlement && p.entitlement.member ? `<span class="pill">会員（${esc(p.entitlement.plan || "定期課金")}）</span>` : `<span class="pill gray">権利 ${esc(p.entitlement ? p.entitlement.status : "none")}</span>`}
     </div>
+    ${p.entitlement && (p.entitlement.gate_keys || []).length ? `<div class="note" style="margin:-8px 0 12px">門番の権利：${p.entitlement.gate_keys.map(esc).join("・")}</div>` : ""}
     <div class="deal-box">
       <h4>商談 ${p.deal && p.deal.stage !== "none" ? `<span class="pill warn">${esc(STAGE[p.deal.stage])}</span>` : '<span class="note">（まだ無し）</span>'}</h4>
       <dl>
@@ -124,6 +125,7 @@ async function detail(id) {
       ${p.contract ? `<h4 style="margin-top:14px">コンサルの契約と入金 <span class="note">（見本・sales-manager の形）</span></h4>
       <dl><dt>プラン</dt><dd>${esc(p.contract.plan)}・${Number(p.contract.amount).toLocaleString()} 円</dd><dt>状態</dt><dd>${esc(p.contract.status)}</dd>
       <dt>入金</dt><dd>${p.contract.paid.map((x) => esc(x.month) + " " + esc(x.state)).join("・")}</dd></dl>` : ""}
+      <details class="setup" id="meet-box"><summary>面談の記録（consult-manager）</summary><div id="meet" class="note" style="margin-top:8px">開くと読みます</div></details>
     </div>
     <details class="setup" style="margin:0 0 16px"><summary>メールを送る（テスト宛てだけに届く）</summary>
       <form id="mail" class="stack" style="margin-top:8px">
@@ -136,6 +138,15 @@ async function detail(id) {
     <ol class="timeline">${r.events.map((e) => `
       <li><time>${fmtTime(e.occurred_at)}</time>${esc(EVENT_LABEL[e.type] || e.type)}${detailText(e)}<span class="note"> · ${esc(e.actor)}</span></li>`).join("")}
     </ol>`;
+  // 便 6b：面談の記録は開いたときだけ読む（表をまたいで探すので重い）
+  $("meet-box").addEventListener("toggle", async () => {
+    if (!$("meet-box").open || $("meet").dataset.loaded) return;
+    const mr = await api(`/api/admin/people/${id}/meetings`, { token });
+    $("meet").dataset.loaded = "1";
+    if (!mr.ok) { $("meet").textContent = "読めませんでした（" + (mr.error || mr.status) + "）"; return; }
+    if (!mr.count) { $("meet").textContent = `この人の行は見つかりませんでした（見た表：${(mr.looked || []).map((t) => t.table + " " + t.rows + " 行").join("・") || "なし"}）`; return; }
+    $("meet").innerHTML = mr.records.map((x) => `<div class="card" style="margin-top:8px"><div class="reply-h">${esc(x.table)}</div><dl>${Object.entries(x.row).filter(([, v]) => v !== null && v !== "").map(([k, v]) => `<dt>${esc(k)}</dt><dd class="pre">${esc(typeof v === "object" ? JSON.stringify(v) : String(v))}</dd>`).join("")}</dl></div>`).join("");
+  });
   $("deal").addEventListener("submit", async (ev) => {
     ev.preventDefault();
     const res = await api(`/api/admin/people/${id}/deal`, { method: "POST", token, body: { stage: $("d-stage").value, memo: $("d-memo").value, amount: $("d-amount").value.replace(/[^0-9]/g, "") || null } });

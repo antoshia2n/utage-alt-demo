@@ -189,6 +189,8 @@ export function makeBin3(h) {
             webhook_key: event + ":" + (data.id || "") + ":" + (data.status || "") + ":" + (data.last_payment_date || data.next_payment && data.next_payment.id || ""),
           }, "webhook");
           result = { ok: true, recorded: true, type: map[event] };
+          // 便 6b：定期が止まった・戻ったら、門番の表の B の権利を合わせ直す
+          if (h.onSubEvent) result.grants = await h.onSubEvent(env, customerId);
         } else result = { ok: true, recorded: false, duplicate: true };
       } else result = { ok: true, recorded: false, reason: "unknown_subscription" };
     } else result = { ok: true, recorded: false, reason: "not_tracked" };
