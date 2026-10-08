@@ -10,6 +10,7 @@
 // B の便 4：売る（商品の台帳・単発・定期・年払い・紹介用の価格）。中身は src/sell.js。権利の計算もこちらへ移した。
 // B の便 5：届ける（ステップ配信・一斉配信・クリックの計測・送信元を温める・ログインのメール）。中身は src/deliver.js。
 // B の便 6a：寄せる（見る側）。学ぶくんの本物の教材・公開の面・添削の振り返り・長文の指摘。中身は src/learn.js。
+// B の便 6b：寄せる（裏側）。会員の権利を門番の表（member_entitlement）と 1 つにする・面談の記録を読む・表の目録。中身は src/bridge.js。
 
 import { makeBin3 } from "./bin3.js";
 import { makeBin4 } from "./bin4.js";
@@ -17,8 +18,9 @@ import { makeGuard } from "./guard.js";
 import { makeSell } from "./sell.js";
 import { makeDeliver } from "./deliver.js";
 import { makeLearn, normalizeNotes, LESSON_ID_RE } from "./learn.js";
+import { makeBridge } from "./bridge.js";
 
-const VERSION = "0.9.0-b6a";
+const VERSION = "0.10.0-b6b";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_read"];
@@ -61,10 +63,11 @@ export default {
   },
 };
 
-const bin3 = makeBin3({ db, addEvent, logInbound, json, onCharge: (env, event, data) => sell.onCharge(env, event, data) });
+const bin3 = makeBin3({ db, addEvent, logInbound, json, onCharge: (env, event, data) => sell.onCharge(env, event, data), onSubEvent: (env, id) => sell.syncGrants(env, id) });
 const bin4 = makeBin4({ db, addEvent, bin3 });
 const guard = makeGuard({ db, logInbound });
-const sell = makeSell({ db, addEvent, bin3 });
+const bridge = makeBridge({ db, rawDb, addEvent, secretHeaders });
+const sell = makeSell({ db, addEvent, bin3, bridge });
 const deliver = makeDeliver({ db, addEvent, logInbound, bin3, sell });
 const learn = makeLearn({ db });
 
@@ -658,6 +661,9 @@ async function handleApi(request, env, url) {
     }
     const m = path.match(/^\/api\/admin\/people\/([0-9a-f-]{36})$/i);
     if (m && method === "GET") return json(await core.getTimeline(env, { person_id: m[1] }));
+    // 便 6b：面談の記録（consult-manager の ic_ の表）
+    const mm = path.match(/^\/api\/admin\/people\/([0-9a-f-]{36})\/meetings$/i);
+    if (mm && method === "GET") return json(await bridge.meetings(env, { person_id: mm[1] }));
     if (m && method === "PATCH") {
       const body = await request.json().catch(() => ({}));
       return json(await core.setNoteMember(env, { person_id: m[1], value: body.note_member }, "admin"));
@@ -832,6 +838,16 @@ const TOOLS = [
     inputSchema: { type: "object", properties: { person_id: { type: "string" }, limit: { type: "integer", description: "最大件数（既定 20・最大 100）" } }, required: ["person_id"] },
   },
   {
+    name: "get_meetings",
+    description: "1 人分の面談の記録を返す（consult-manager の ic_ の表から、その人の番号・旧の番号・メールのどれかがそのまま入っている行）。表の欄は決め打ちせず、行をそのまま返す。looked は見た表と行数。0 件は count: 0。",
+    inputSchema: { type: "object", properties: { person_id: { type: "string" } }, required: ["person_id"] },
+  },
+  {
+    name: "list_tables",
+    description: "本番の表の目録から、欄の名前と行数を返す（中身は返さない）。見られる頭の名前は ic_・mn_tensaku_・member・shr_billing_logs・b_ だけ。prefix で絞れる。",
+    inputSchema: { type: "object", properties: { prefix: { type: "string" } } },
+  },
+  {
     name: "list_lessons",
     description: "学ぶくんの本物の教材の数を、プログラムとコースごとに返す（題名の一覧は返さない）。person_id を渡すと、その人に見える分だけ（受講の結びが無ければ member: false）。with_video は動画のある教材の数。",
     inputSchema: { type: "object", properties: { person_id: { type: "string" } } },
@@ -978,6 +994,8 @@ async function runTool(env, name, args) {
   if (name === "return_correction") return await core.returnCorrection(env, args, "mcp");
   if (name === "list_corrections") return await listCorrections(env, args);
   if (name === "list_lessons") return await learn.listLessons(env, args);
+  if (name === "get_meetings") return await bridge.meetings(env, args);
+  if (name === "list_tables") return await bridge.listTables(env, args);
   if (name === "send_email") return await bin3.sendMailTo(env, args, "mcp");
   if (name === "list_consults") return await bin4.listConsults(env, args);
   if (name === "set_deal_stage") return await bin4.setDealStage(env, args, "mcp");

@@ -5,7 +5,8 @@
 // 画面の言うことは信じない：決済の番号を秘密の鍵で UnivaPay に聞き直し、金額・通貨・周期・商品が台帳と合うときだけ積む。
 // 同じ決済の番号は 1 回しか積まない（画面の確かめと UnivaPay の知らせの両方から来ても 1 件）。
 // デモの置き場（B_STORE が無いとき）には商品の台帳が無いので、便 3 の見本のプラン 1 つだけを商品として見せる。
-// 権利（grants）は B の中の印。門番の権利の表（member_entitlement）へ書くのは便 6b（決済の受け口を寄せる回）。
+// 権利（grants）は B の中の印。便 6b から門番の権利の表（member_entitlement）へも書く（中身は src/bridge.js）。
+// 会員かどうかは、B で買ったものに加えて門番の表の shiarabo_basic（shr-webhook が付ける本番の会員）でも決まる。
 
 const KINDS = ["one_time", "subscription", "installment"];
 const PERIODS = ["monthly", "annually"];
@@ -175,8 +176,21 @@ export function makeSell(h) {
     };
   }
 
-  async function entitlement(env, customerId) {
+  // B で買ったものだけから計算した権利（門番の表へ書く元）
+  async function ownEntitlement(env, customerId) {
     return entitlementOf(await payEvents(env, customerId), await allProducts(env));
+  }
+
+  // 便 6b：門番の表の権利も合わせた権利（画面・AI・会員かどうかの判定はこちら）
+  async function entitlement(env, customerId) {
+    const own = await ownEntitlement(env, customerId);
+    return h.bridge ? await h.bridge.withGate(env, customerId, own) : own;
+  }
+
+  // 便 6b：B で買った権利の印を門番の表へ合わせる（何度呼んでも同じ結果）
+  async function syncGrants(env, customerId) {
+    if (!h.bridge) return { ok: true, skipped: "no_bridge" };
+    return await h.bridge.syncGrants(env, customerId, await ownEntitlement(env, customerId));
   }
 
   async function entitlementMap(env) {
@@ -186,6 +200,13 @@ export function makeSell(h) {
     for (const e of evs) { if (!by.has(e.customer_id)) by.set(e.customer_id, []); by.get(e.customer_id).push(e); }
     const out = {};
     for (const [id, list] of by) out[id] = entitlementOf(list, products);
+    // 便 6b：門番の表で会員の人（B で何も買っていない本番の会員を含む）
+    if (h.bridge) {
+      for (const id of await h.bridge.gateMembers(env)) {
+        out[id] = out[id] && out[id].member ? out[id]
+          : { ...(out[id] || { items: [], grants: [] }), member: true, status: "active", plan: "しあらぼ会員", via_gate: true };
+      }
+    }
     return out;
   }
 
@@ -250,6 +271,7 @@ export function makeSell(h) {
         period: p.period, product_id: p.id, mode: extra.mode || null, via,
       }, via === "webhook" ? "webhook" : "site");
     }
+    await syncGrants(env, customer.id);
     return ev;
   }
 
@@ -336,5 +358,5 @@ export function makeSell(h) {
     return { ok: true, recorded: true, type: "purchase_completed" };
   }
 
-  return { allProducts, product, listForSite, listProducts, setProduct, entitlement, entitlementMap, prepare, confirm, onCharge, priceText };
+  return { allProducts, product, listForSite, listProducts, setProduct, entitlement, entitlementMap, syncGrants, prepare, confirm, onCharge, priceText };
 }
