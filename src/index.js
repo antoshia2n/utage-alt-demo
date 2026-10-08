@@ -10,8 +10,9 @@
 
 import { makeBin3 } from "./bin3.js";
 import { makeBin4 } from "./bin4.js";
+import { makeGuard } from "./guard.js";
 
-const VERSION = "0.5.1-b2";
+const VERSION = "0.6.0-b3";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_read"];
@@ -52,6 +53,7 @@ export default {
 
 const bin3 = makeBin3({ db, addEvent, logInbound, json });
 const bin4 = makeBin4({ db, addEvent, bin3 });
+const guard = makeGuard({ db, logInbound });
 
 // ---------- 共通 ----------
 
@@ -641,6 +643,28 @@ async function handleApi(request, env, url) {
       const r = await core.returnCorrection(env, { ...body, person_id: rr[1] }, "admin");
       return json(r, r.ok === false ? 400 : 200);
     }
+    // B の便 3：承認待ち・権限の表・AI の操作の記録（入れるのは b_admins のメールだけ）
+    if (path === "/api/admin/approvals" && method === "GET") {
+      return json(await guard.listApprovals(env, { status: url.searchParams.get("status") || "pending" }));
+    }
+    const ap = path.match(/^[/]api[/]admin[/]approvals[/]([0-9a-f-]{36})$/i);
+    if (ap && method === "GET") return json(await guard.getApproval(env, { approval_id: ap[1] }));
+    if (ap && method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      const r = await guard.decide(env, { approval_id: ap[1], decision: body.decision }, a.email, async (tool, args) => {
+        const out = await runTool(env, tool, args);
+        await logInbound(env, "mcp", { tool, arguments: args, approved_by: a.email, approval_id: ap[1] }, summarize(out), out.ok === false ? 500 : 200);
+        return out;
+      });
+      return json(r, r.ok === false ? 400 : 200);
+    }
+    if (path === "/api/admin/permissions" && method === "GET") return json(await guard.listPermissions(env));
+    if (path === "/api/admin/permissions" && method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      const r = await guard.setPermission(env, body, a.email);
+      return json(r, r.ok === false ? 400 : 200);
+    }
+    if (path === "/api/admin/ai-log" && method === "GET") return json(await guard.aiLog(env, {}));
     if (path === "/api/admin/image" && method === "GET") {
       const key = url.searchParams.get("key") || "";
       if (!imageOwner(key)) return json({ ok: false, error: "not_found" }, 404);
@@ -741,7 +765,64 @@ const TOOLS = [
     description: "セミナーの一覧（架空の 2 回）。申込者の数・前日の知らせを送った数・アーカイブを配った数を返す。",
     inputSchema: { type: "object", properties: {} },
   },
+  {
+    name: "set_note_member",
+    description: "note のメンバーかどうかの印を付ける・外す（シアニン用の画面のチェックと同じ）。承認が要る道具：呼ぶと承認待ちになり approval_url が返る。",
+    inputSchema: { type: "object", properties: { person_id: { type: "string" }, value: { type: "boolean" } }, required: ["person_id", "value"] },
+  },
+  {
+    name: "send_seminar_reminder",
+    description: "セミナーの前日の知らせを、まだ受け取っていない申込者に 1 人 1 回だけ送る（決まった型のリマインド）。seminar_id を指定する。",
+    inputSchema: { type: "object", properties: { seminar_id: { type: "string" } }, required: ["seminar_id"] },
+  },
+  {
+    name: "send_seminar_archive",
+    description: "終わったセミナーのアーカイブを、まだ受け取っていない申込者に送る。承認が要る道具：呼ぶと承認待ちになり approval_url が返る。",
+    inputSchema: { type: "object", properties: { seminar_id: { type: "string" } }, required: ["seminar_id"] },
+  },
+  {
+    name: "list_approvals",
+    description: "承認待ちの一覧。status は pending（既定）・approved・rejected・expired・failed・all。承認の期限は頼んでから 24 時間。",
+    inputSchema: { type: "object", properties: { status: { type: "string" }, limit: { type: "integer" } } },
+  },
+  {
+    name: "get_approval",
+    description: "承認待ち 1 件の状態と、承認されて実行されたときの結果を返す。",
+    inputSchema: { type: "object", properties: { approval_id: { type: "string" } }, required: ["approval_id"] },
+  },
+  {
+    name: "list_permissions",
+    description: "道具ごとの権限（auto＝自動・approve＝承認が要る・deny＝禁止）を返す。表に無い道具は禁止。権限を変えられるのは Naoki だけ（シアニン用の画面）で、AI からは変えられない。",
+    inputSchema: { type: "object", properties: {} },
+  },
 ];
+
+// 道具を 1 回実行する（権限の確かめは呼ぶ側で済ませる）。承認されたあとの実行もここを通る
+async function runTool(env, name, args) {
+  if (name === "find_person") return await core.findPeople(env, args);
+  if (name === "get_timeline") return await core.getTimeline(env, args);
+  if (name === "stats") return await core.stats(env);
+  if (name === "list_rooms") return await core.listRooms(env, args);
+  if (name === "get_room") return await core.getRoom(env, { person_id: args.person_id, mark_read: false }, "mcp");
+  if (name === "return_correction") return await core.returnCorrection(env, args, "mcp");
+  if (name === "send_email") return await bin3.sendMailTo(env, args, "mcp");
+  if (name === "list_consults") return await bin4.listConsults(env, args);
+  if (name === "set_deal_stage") return await bin4.setDealStage(env, args, "mcp");
+  if (name === "list_seminars") return await bin4.seminarsAdmin(env);
+  if (name === "set_note_member") return await core.setNoteMember(env, { person_id: args.person_id, value: args.value }, "mcp");
+  if (name === "send_seminar_reminder") {
+    if (!/^[a-z0-9-]{1,40}$/.test(String(args.seminar_id || ""))) return { ok: false, error: "bad_seminar_id" };
+    return await bin4.remindSeminars(env, { force_seminar_id: args.seminar_id });
+  }
+  if (name === "send_seminar_archive") {
+    if (!/^[a-z0-9-]{1,40}$/.test(String(args.seminar_id || ""))) return { ok: false, error: "bad_seminar_id" };
+    return await bin4.sendArchive(env, args.seminar_id, "mcp");
+  }
+  if (name === "list_approvals") return await guard.listApprovals(env, args);
+  if (name === "get_approval") return await guard.getApproval(env, args);
+  if (name === "list_permissions") return await guard.listPermissions(env);
+  return { ok: false, error: "unknown_tool" };
+}
 
 async function handleMcp(request, env, url) {
   const missing = missingConfig(env);
@@ -757,7 +838,7 @@ async function handleMcp(request, env, url) {
     const tool = url.searchParams.get("tool");
     if (tool) {
       const args = Object.fromEntries([...url.searchParams].filter(([k]) => k !== "tool"));
-      const r = await rpc({ jsonrpc: "2.0", id: "get", method: "tools/call", params: { name: tool, arguments: args } }, env);
+      const r = await rpc({ jsonrpc: "2.0", id: "get", method: "tools/call", params: { name: tool, arguments: args } }, env, url.origin);
       return json(r.result || r);
     }
     return json({ ok: true, name: "utage-alt-demo", version: VERSION, tools: TOOLS.map((t) => t.name) });
@@ -768,14 +849,14 @@ async function handleMcp(request, env, url) {
   if (!msg) return json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "parse error" } }, 400);
   if (Array.isArray(msg)) {
     const out = [];
-    for (const m of msg) { const r = await rpc(m, env); if (r) out.push(r); }
+    for (const m of msg) { const r = await rpc(m, env, url.origin); if (r) out.push(r); }
     return out.length ? json(out) : new Response(null, { status: 202 });
   }
-  const r = await rpc(msg, env);
+  const r = await rpc(msg, env, url.origin);
   return r ? json(r) : new Response(null, { status: 202 });
 }
 
-async function rpc(msg, env) {
+async function rpc(msg, env, origin = "") {
   const { id, method, params = {} } = msg || {};
   if (id === undefined || id === null) return null; // 知らせ（notifications/*）には返事をしない
   const ok = (result) => ({ jsonrpc: "2.0", id, result });
@@ -793,17 +874,12 @@ async function rpc(msg, env) {
     const args = params.arguments || {};
     let result, isError = false;
     try {
-      if (name === "find_person") result = await core.findPeople(env, args);
-      else if (name === "get_timeline") result = await core.getTimeline(env, args);
-      else if (name === "stats") result = await core.stats(env);
-      else if (name === "list_rooms") result = await core.listRooms(env, args);
-      else if (name === "get_room") result = await core.getRoom(env, { person_id: args.person_id, mark_read: false }, "mcp");
-      else if (name === "return_correction") result = await core.returnCorrection(env, args, "mcp");
-      else if (name === "send_email") result = await bin3.sendMailTo(env, args, "mcp");
-      else if (name === "list_consults") result = await bin4.listConsults(env, args);
-      else if (name === "set_deal_stage") result = await bin4.setDealStage(env, args, "mcp");
-      else if (name === "list_seminars") result = await bin4.seminarsAdmin(env);
-      else { result = { ok: false, error: "unknown_tool" }; }
+      // B の便 3：道具ごとの権限（自動・承認・禁止）を先に見る
+      const known = TOOLS.some((t) => t.name === name);
+      const mode = known ? await guard.modeOf(env, name) : "auto";
+      if (mode === "deny") result = { ok: false, error: "denied_by_permission", tool: name, note: "この道具は権限の表で禁止になっている。変えられるのは Naoki だけ" };
+      else if (mode === "approve") result = await guard.requestApproval(env, name, args, origin);
+      else result = await runTool(env, name, args);
       isError = result.ok === false;
     } catch (e) {
       result = { ok: false, error: "failed", detail: String(e.message).slice(0, 300) };
@@ -822,6 +898,7 @@ function summarize(result) {
   if ("found" in result) s.found = result.found;
   if ("id" in result) s.id = result.id;
   if ("unreplied_total" in result) s.unreplied_total = result.unreplied_total;
+  if (result.pending_approval) { s.pending_approval = true; s.approval_id = result.approval_id; }
   if (result.error) s.error = result.error;
   return s;
 }
