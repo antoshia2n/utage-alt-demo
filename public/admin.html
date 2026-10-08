@@ -17,13 +17,11 @@
 </head>
 <body>
 <div class="demo-bar">これはデモです。架空のデータだけで動いています。</div>
-<div class="wrap wide">
+<div id="auth-wrap" class="wrap wide">
   <header class="top">
-    <a class="brand" href="/admin">シアニン用の画面<small>DEMO</small></a>
-    <nav class="top"><a href="#" id="logout" class="hidden">ログアウト</a></nav>
+    <a class="brand" href="/admin">シアニン用の画面<small>B</small></a>
   </header>
   <div id="err" class="msg err hidden" style="margin-bottom:12px"></div>
-
   <section id="step-login" class="card stack hidden" style="max-width:480px">
     <h2>ログイン（1 段目：メールのリンク）</h2>
     <div><label for="email">メールアドレス</label><input id="email" type="email" autocomplete="email"></div>
@@ -46,8 +44,59 @@
     <button class="btn block" id="verify2">入る</button>
   </section>
 
-  <section id="console" class="hidden">
-    <div class="stats" id="stats"></div>
+</div>
+
+<section id="console" class="shell hidden">
+  <nav class="side" aria-label="メニュー">
+    <a class="side-logo" href="/admin">シアラボ B</a>
+    <div class="grp">全体</div>
+    <button class="it" type="button" data-view="blueprint" aria-selected="true">設計図</button>
+    <button class="it" type="button" data-view="people" aria-selected="false">人</button>
+    <div class="grp">集める</div>
+    <button class="it" type="button" disabled title="8d で作ります">LP<span class="soon">準備中</span></button>
+    <button class="it" type="button" data-view="deals" aria-selected="false">セミナーと予約</button>
+    <button class="it" type="button" disabled title="8g で作ります">紹介<span class="soon">準備中</span></button>
+    <div class="grp">育てる</div>
+    <button class="it" type="button" data-view="deliver" aria-selected="false">配信</button>
+    <div class="grp">売る・届ける</div>
+    <button class="it" type="button" data-view="products" aria-selected="false">商品</button>
+    <button class="it" type="button" data-view="rooms" aria-selected="false">添削ルーム<span class="badge hidden" id="rooms-badge"></span></button>
+    <div class="grp">設定</div>
+    <button class="it" type="button" data-view="ai" aria-selected="false">AI と承認<span class="badge hidden" id="ai-badge"></span></button>
+    <button class="it" type="button" data-view="settings" aria-selected="false">決済・メール・オプチャ</button>
+  </nav>
+  <div class="main">
+    <div class="topnav">
+      <span class="crumb" id="crumb">設計図</span>
+      <span class="grow"></span>
+      <span class="note" id="who-admin"></span>
+      <a href="#" id="logout" class="note">ログアウト</a>
+    </div>
+    <div class="content">
+      <div id="err2" class="msg err hidden" style="margin-bottom:12px"></div>
+      <div id="view-blueprint">
+        <div class="bp-bar">
+          <div class="chips" id="bp-chips"></div>
+          <div class="bp-actions">
+            <button class="btn ghost small" type="button" id="bp-new">企画をつくる</button>
+            <button class="btn ghost small hidden" type="button" id="bp-archive">この企画をしまう</button>
+            <label class="check" style="margin:0"><input type="checkbox" id="bp-show-archived"> <span>しまった企画も出す</span></label>
+          </div>
+        </div>
+        <form id="bp-new-form" class="card stack hidden" style="margin-bottom:12px">
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <div style="flex:2 1 220px"><label for="bp-title">企画の名前（年月は頭に自動で付く）</label><input id="bp-title" type="text" maxlength="60" placeholder="例 図解セミナー"></div>
+            <div style="flex:1 1 160px"><label for="bp-date">開催日（任意）</label><input id="bp-date" type="text" inputmode="numeric" placeholder="2026-11-28"></div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="submit">つくる</button><span class="note" id="bp-new-status"></span></div>
+        </form>
+        <div class="legend"><span><i class="lg-run"></i>動いている</span><span><i class="lg-draft"></i>下書き</span><span><i class="lg-stop"></i>止まっている</span><span><i class="lg-iso"></i>どこともつながっていない</span><span class="note">線の数字は先週 7 日に次へ進んだ数</span></div>
+        <div class="bp-wrap">
+          <div class="card bp-canvas" id="bp-canvas"><p class="note">読み込んでいます…</p></div>
+          <div class="card bp-panel" id="bp-panel"><p class="note">箱を押すと、中の名前・外の名前・入口と出口・先週の数が出ます。持ち主の企画と役目もここで変えます。</p></div>
+        </div>
+      </div>
+      <div id="view-settings" style="display:none">
     <details class="setup card" id="setup"><summary>決済とメールの設定（UnivaPay の Webhook に入れる値）</summary><div id="setup-body" class="note">読み込んでいます…</div></details>
     <details class="setup card" id="community-box"><summary>オプチャの招待リンク（会員にだけ見える）</summary>
       <div class="stack" style="margin-top:8px">
@@ -56,14 +105,10 @@
         <div id="cm-status" class="note">読み込んでいます…</div>
       </div>
     </details>
-    <div class="tabs" role="tablist" style="margin-top:16px">
-      <button role="tab" aria-selected="true" data-view="people">人</button>
-      <button role="tab" aria-selected="false" data-view="rooms">添削ルーム<span class="badge hidden" id="rooms-badge"></span></button>
-      <button role="tab" aria-selected="false" data-view="deals">予約と商談</button>
-      <button role="tab" aria-selected="false" data-view="products">商品</button>
-      <button role="tab" aria-selected="false" data-view="deliver">配信</button>
-      <button role="tab" aria-selected="false" data-view="ai">AI と承認<span class="badge hidden" id="ai-badge"></span></button>
-    </div>
+      </div>
+      <div id="view-people-wrap" style="display:none">
+        <div class="stats" id="stats" style="margin-bottom:12px"></div>
+      </div>
     <div class="admin-layout" id="view-deliver" style="display:none">
       <div class="card">
         <h3 style="margin-top:0">一斉配信</h3>
@@ -147,7 +192,7 @@
       </div>
       <div class="card" id="room-detail"><p class="note">左から部屋を選ぶと、やりとりと返す欄が出ます。未返信のある部屋が上に来ます。</p></div>
     </div>
-    <div class="admin-layout" id="view-people">
+    <div class="admin-layout" id="view-people" style="display:none">
       <div class="card">
         <div style="display:flex;gap:8px">
           <input id="q" type="search" placeholder="名前かメールで探す">
@@ -160,8 +205,9 @@
       </div>
       <div class="card" id="detail"><p class="note">左から人を選ぶと、出来事が時系列で並びます。</p></div>
     </div>
-  </section>
-</div>
+    </div>
+  </div>
+</section>
 <script type="module" src="/js/admin.js"></script>
 </body>
 </html>

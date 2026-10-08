@@ -17,23 +17,30 @@
 </head>
 <body>
 <div class="demo-bar">これはデモです。架空のデータだけで動いています。</div>
-<div class="wrap">
-  <header class="top">
-    <a class="brand" href="/app">言語化ラボ<small>DEMO</small></a>
-    <nav class="top"><a href="#" id="logout">ログアウト</a></nav>
-  </header>
+<div class="shell">
+  <nav class="side" aria-label="メニュー">
+    <a class="side-logo" href="/app">言語化ラボ</a>
+    <div class="grp">学ぶ</div>
+    <button class="it" type="button" aria-selected="true" data-tab="lessons">教材</button>
+    <button class="it" type="button" aria-selected="false" data-tab="news">お知らせ</button>
+    <div class="grp">添削</div>
+    <button class="it" type="button" aria-selected="false" data-tab="room">添削ルーム<span class="badge hidden" id="room-badge"></span></button>
+    <button class="it" type="button" aria-selected="false" data-tab="review">振り返り</button>
+    <div class="grp">相談</div>
+    <button class="it" type="button" aria-selected="false" data-tab="booking">予約</button>
+  </nav>
+  <div class="main">
+  <div class="topnav">
+    <span class="crumb" id="crumb">教材</span>
+    <span class="grow"></span>
+    <span class="note">こんにちは、<b id="who"></b> さん</span>
+    <a href="#" id="logout" class="note">ログアウト</a>
+  </div>
+  <div class="content" style="max-width:880px">
   <div id="loading" class="note">読み込んでいます…</div>
   <div id="err" class="msg err hidden"></div>
 
   <main id="main" class="hidden">
-    <p style="margin:0">こんにちは、<b id="who"></b> さん</p>
-    <div class="tabs" role="tablist">
-      <button role="tab" aria-selected="true" data-tab="lessons">教材</button>
-      <button role="tab" aria-selected="false" data-tab="news">お知らせ</button>
-      <button role="tab" aria-selected="false" data-tab="room">添削ルーム<span class="badge hidden" id="room-badge"></span></button>
-      <button role="tab" aria-selected="false" data-tab="review">振り返り</button>
-      <button role="tab" aria-selected="false" data-tab="booking">予約</button>
-    </div>
 
     <div id="member" class="card member hidden"></div>
     <section id="tab-lessons" class="stack"></section>
@@ -87,6 +94,8 @@
       <div class="card community" id="community"></div>
     </section>
   </main>
+  </div>
+  </div>
 </div>
 
 <div id="a2hs" class="sheet-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="a2hs-t">

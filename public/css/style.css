@@ -241,3 +241,74 @@ details.review time { font-family: var(--mono); font-size: 12px; color: var(--mu
 .notes-edit .nrow { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; align-items: start; }
 .notes-edit .nrow + .nrow { margin-top: 6px; }
 .notes-edit textarea { min-height: 60px; font-size: 13px; }
+
+/* 便 8c：左のメニュー＋上のナビ（シアニン用と生徒の画面で同じ形） */
+.shell { display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: calc(100vh - 30px); }
+.side { background: var(--surface); border-right: 1px solid var(--line); padding: 14px 10px; position: sticky; top: 0; height: 100vh; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.side-logo { font-weight: 700; letter-spacing: .04em; text-decoration: none; color: var(--ink); padding: 4px 10px 12px; }
+.side .grp { font-size: 11px; color: var(--muted); letter-spacing: .1em; padding: 12px 10px 2px; }
+.side button.it { display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; text-align: left; background: none; border: 0; border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 14px; color: var(--ink); cursor: pointer; }
+.side button.it:hover:not(:disabled) { background: var(--bg); }
+.side button.it[aria-selected=true] { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+.side button.it:disabled { color: var(--muted); cursor: default; }
+.side .soon { font-size: 10px; border: 1px solid var(--line); border-radius: 999px; padding: 0 6px; color: var(--muted); }
+.main { min-width: 0; display: flex; flex-direction: column; }
+.topnav { display: flex; align-items: center; gap: 12px; padding: 10px 20px; border-bottom: 1px solid var(--line); background: var(--surface); position: sticky; top: 0; z-index: 5; min-height: 52px; }
+.topnav .crumb { font-weight: 700; }
+.topnav .grow { flex: 1; }
+.topnav a { text-decoration: none; }
+.content { padding: 20px; width: 100%; max-width: 1280px; }
+@media (max-width: 860px) {
+  .shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
+  .side { position: sticky; top: 0; z-index: 6; height: auto; flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 6px 8px; }
+  .side .grp, .side-logo, .side button.it:disabled { display: none; }
+  .side button.it { width: auto; white-space: nowrap; }
+  .topnav { position: static; padding: 8px 16px; }
+  .content { padding: 16px; }
+}
+
+/* 便 8c：設計図 */
+.bp-bar { display: flex; gap: 10px; justify-content: space-between; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+.bp-bar .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.bp-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.chip { font: inherit; font-size: 13px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 999px; padding: 4px 12px; cursor: pointer; }
+.chip .n { font-family: var(--mono); color: var(--muted); font-size: 12px; }
+.chip.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.chip.on .n { color: inherit; }
+.chip.standing:not(.on) { background: var(--bg); }
+.chip.warn:not(.on) { border-color: var(--warn); color: var(--warn); }
+.chip.archived { opacity: .6; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-bottom: 10px; align-items: center; }
+.legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+.lg-run { background: var(--surface); border: 2px solid var(--accent); }
+.lg-draft { border: 2px dashed var(--muted); }
+.lg-stop { background: var(--bg); border: 1px solid var(--line); }
+.lg-iso { background: var(--bg); border: 1px dashed var(--line); opacity: .6; }
+.bp-wrap { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr) 300px; align-items: start; }
+@media (max-width: 1100px) { .bp-wrap { grid-template-columns: minmax(0, 1fr); } }
+.bp-canvas { overflow-x: auto; padding: 16px; }
+.bp-lanes { position: relative; display: grid; grid-template-columns: repeat(5, minmax(150px, 1fr)); gap: 32px; min-width: 860px; padding-bottom: 28px; }
+.bp-lane { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 14px; }
+.bp-lane h4 { margin: 0 0 2px; font-size: 12px; color: var(--muted); letter-spacing: .1em; font-weight: 700; }
+.bp-empty { margin: 0; font-size: 12px; }
+.bp-lines { position: absolute; inset: 0; z-index: 0; overflow: visible; pointer-events: none; }
+.bp-lines .ln { fill: none; stroke: var(--accent); stroke-width: 1.5; opacity: .55; }
+.bp-lines .ln.on { opacity: 1; stroke-width: 2.5; }
+.bp-lines .ln.dim { opacity: .18; }
+.bp-lines .ah { fill: var(--accent); }
+.bp-lines .lb { font-size: 11px; fill: var(--muted); paint-order: stroke; stroke: var(--surface); stroke-width: 4px; }
+.bp-lines .lb.num { fill: var(--accent); font-family: var(--mono); font-weight: 700; font-size: 12px; }
+.bp-node { display: flex; flex-direction: column; gap: 1px; text-align: left; font: inherit; background: var(--surface); border: 2px solid var(--accent); border-radius: 10px; padding: 8px 10px; cursor: pointer; color: var(--ink); position: relative; }
+.bp-node .t { font-size: 10px; color: var(--muted); letter-spacing: .06em; }
+.bp-node .nm { font-size: 13px; font-weight: 700; line-height: 1.45; overflow-wrap: anywhere; }
+.bp-node .in { font-size: 10px; color: var(--muted); line-height: 1.4; overflow-wrap: anywhere; }
+.bp-node .wk { position: absolute; top: -9px; right: 8px; font-family: var(--mono); font-size: 10px; background: var(--accent); color: var(--accent-ink); border-radius: 999px; padding: 0 6px; }
+.bp-node.draft { border-style: dashed; border-color: var(--muted); }
+.bp-node.stopped { border: 1px solid var(--line); background: var(--bg); }
+.bp-node.iso { opacity: .55; }
+.bp-node.outside { border-style: dotted; opacity: .7; }
+.bp-node.sel { box-shadow: 0 0 0 3px var(--accent-soft); outline: 2px solid var(--accent); outline-offset: 1px; opacity: 1; }
+.bp-panel h3 { margin-top: 0; }
+.bp-dl { display: grid; grid-template-columns: 1fr; gap: 2px; margin: 0; font-size: 13px; }
+.bp-dl dt { color: var(--muted); font-size: 11px; margin-top: 8px; }
+.bp-dl dd { margin: 0; overflow-wrap: anywhere; }
