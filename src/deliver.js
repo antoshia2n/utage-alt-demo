@@ -333,6 +333,24 @@ export function makeDeliver(h) {
     invite: "ご招待", email_change: "メールアドレスの変更の確認", reauthentication: "確認コード",
   };
 
+  async function isAdmin(env, email) {
+    const rows = await db(env, "GET", `admins?select=email&email=eq.${encodeURIComponent(email)}`);
+    return rows.length > 0;
+  }
+
+  // 文字だけの本文に長いリンク 1 本、という形を避けるため、見た目を整えた本文も付ける
+  function authHtml(type, link, token) {
+    const e = (v) => String(v || "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    if (type === "reauthentication") {
+      return `<div style="font-family:sans-serif;line-height:1.8;color:#222"><p>確認コードは次の 6 桁です。</p><p style="font-size:24px;letter-spacing:4px;font-family:monospace">${e(token)}</p><p style="color:#777;font-size:13px">心当たりが無ければ、このメールは捨ててください。</p><p style="color:#777;font-size:12px">シアラボ（株式会社Best Life Consulting）</p></div>`;
+    }
+    const label = type === "magiclink" || type === "signup" ? "ログインする" : "手続きを進める";
+    return `<div style="font-family:sans-serif;line-height:1.8;color:#222"><p>シアラボからのお知らせです。下のボタンを押すと${type === "magiclink" || type === "signup" ? "ログインできます" : "手続きが進みます"}。リンクは 1 回だけ使えます。</p>`
+      + `<p style="margin:24px 0"><a href="${e(link)}" style="background:#1f5c4d;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;display:inline-block">${label}</a></p>`
+      + (token ? `<p style="color:#555;font-size:13px">ボタンが押せないときの確認コード：<span style="font-family:monospace">${e(token)}</span></p>` : "")
+      + `<p style="color:#777;font-size:13px">心当たりが無ければ、このメールは捨ててください。</p><p style="color:#777;font-size:12px">シアラボ（株式会社Best Life Consulting）</p></div>`;
+  }
+
   async function handleAuthEmail(request, env) {
     const raw = await request.text();
     const bad = await verifyHook(env, request, raw);
@@ -351,14 +369,18 @@ export function makeDeliver(h) {
     if (!(await bin3.mailAllowed(env, to, "auth"))) return await reply(400, { ok: false, error: "mail_not_open" });
     const cfg = await h.mailcfg.get(env);
     if (!env.EMAIL || !cfg.from) return await reply(500, { ok: false, error: "mail_not_configured" });
-    const base = String(env.SUPABASE_URL || "").replace(/[/]+$/, "");
-    const link = `${base}/auth/v1/verify?token=${encodeURIComponent(d.token_hash || "")}&type=${encodeURIComponent(type)}&redirect_to=${encodeURIComponent(d.redirect_to || d.site_url || origin(env))}`;
+    // B の便 7c-1 の続き：リンクは B 自身の住所の /auth を通す（送り元とリンク先の住所をそろえる）。
+    // 行き先は /app か /admin だけ。Supabase が行き先を既定の住所に置き換えたときは、シアニンなら /admin、それ以外は /app
+    let next = "";
+    try { next = new URL(d.redirect_to || "").pathname; } catch (_) {}
+    if (!["/app", "/admin"].includes(next)) next = (await isAdmin(env, to)) ? "/admin" : "/app";
+    const link = `${origin(env)}/auth?th=${encodeURIComponent(d.token_hash || "")}&ty=${encodeURIComponent(type)}&n=${encodeURIComponent(next)}`;
     const title = AUTH_SUBJECT[type] || "お知らせ";
     const lines = type === "reauthentication"
       ? ["確認コードは次の 6 桁です。", "", String(d.token || ""), "", "心当たりが無ければ、このメールは捨ててください。"]
       : [`下のリンクを押すと${type === "magiclink" || type === "signup" ? "ログインできます" : "手続きが進みます"}。リンクは 1 回だけ使えます。`, "", link, "", d.token ? `リンクが開けないときの確認コード：${d.token}` : "", "", "心当たりが無ければ、このメールは捨ててください。"];
     try {
-      const msg = { to, from: h.mailcfg.fromField(cfg), subject: `【シアラボ】${title}`, text: lines.join(NL) };
+      const msg = { to, from: h.mailcfg.fromField(cfg), subject: `【シアラボ】${title}`, text: lines.join(NL), html: authHtml(type, link, d.token) };
       if (cfg.reply_to) msg.replyTo = cfg.reply_to;
       const r = await env.EMAIL.send(msg);
       return await reply(200, { ok: true, message_id: (r && r.messageId) || null });

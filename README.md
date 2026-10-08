@@ -66,6 +66,7 @@ UTAGE の代わりになるサイト兼アプリ（PWA）のデモ。架空の�
 - 個別相談の枠とセミナーはまだ架空なので、本番の置き場ではシアニン以外に「準備中」だけを返す（本物は便 8f）
 - 登録の画面の試しのカードの案内は、決済が試し（`univapayMode` が test）のときだけ出す
 - 表：`supabase/b7c1_mail.sql` を SQL Editor で 1 回流す（何回流しても同じ・画面で変えた値は上書きしない）。流す前に Email Sending に `mail.shia2n.jp` を登録しておく
+- 続き（0.13.1）：B の住所を `https://lab.shia2n.jp` にした（wrangler.jsonc の `PUBLIC_ORIGIN`。Cloudflare の画面で Worker にこの住所を足す）。ログインのメールのリンクは Supabase の住所ではなく `/auth`（`public/auth.html`）を通し、ページの中で `verifyOtp`（token_hash）で確かめる。送り元とリンク先の住所をそろえて迷惑メールに入りにくくするため。メールには見た目を整えた本文も付ける
 
 ## 置き場
 

@@ -24,6 +24,8 @@
   // 公開の鍵はポータル・公式サイトと同じ旧形式。新しい形式への差し替えは「Supabase の鍵の廃止（2026 年末）」の行で 7 つのアプリと一緒に行う。
   "vars": {
     "MAIL_FROM": "noreply@demo.shia2n.jp",
+    // B の便 7c-1 の続き：メールの中のリンクの住所。送り元 mail.shia2n.jp とそろえるため shia2n.jp の下に置く（Cloudflare の画面で Worker に足した住所）
+    "PUBLIC_ORIGIN": "https://lab.shia2n.jp",
     "B_SUPABASE_URL": "https://htzadzpckcpdrmpjvaut.supabase.co",
     "B_SUPABASE_PUBLISHABLE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh0emFkenBja2NwZHJtcGp2YXV0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4MjA2MTAsImV4cCI6MjA4NzM5NjYxMH0.8TJ-X-UojNvL-H-OiF5aaYOEksiveJ3zl7Lt6TZ6pCU"
   },

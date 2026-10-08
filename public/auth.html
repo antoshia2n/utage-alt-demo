@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f5c4d">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css">
+<title>ログインしています｜シアラボ</title>
+</head>
+<body>
+<div class="wrap">
+  <header class="top"><a class="brand" href="/">シアラボ</a></header>
+  <main style="padding:32px 0">
+    <h1 style="font-size:22px">ログインしています…</h1>
+    <p class="note" id="msg">そのままお待ちください。</p>
+    <p class="hidden" id="again"><a class="btn" href="/login">ログインのページへ</a></p>
+  </main>
+</div>
+<script type="module">
+  // B の便 7c-1 の続き：メールのリンクは B 自身の住所（このページ）を通す。
+  // 送り元（mail.shia2n.jp）とリンク先の住所をそろえ、迷惑メールに入りにくくするため。
+  // 確かめは Supabase の verifyOtp（token_hash）でこのページの中で行う。行き先の許可の一覧に左右されない。
+  import { getClient } from "/js/common.js";
+  const q = new URLSearchParams(location.search);
+  const th = q.get("th") || "", ty = q.get("ty") || "magiclink";
+  const next = ["/app", "/admin"].includes(q.get("n")) ? q.get("n") : "/app";
+  const TYPES = ["magiclink", "signup", "recovery", "invite", "email_change", "email"];
+  const fail = (t) => { document.getElementById("msg").textContent = t; document.getElementById("again").classList.remove("hidden"); };
+  history.replaceState(null, "", "/auth");
+  (async () => {
+    if (!th || !TYPES.includes(ty)) return fail("リンクの形が正しくありません。もう一度ログインのメールを受け取ってください。");
+    try {
+      const sb = await getClient();
+      const { error } = await sb.auth.verifyOtp({ token_hash: th, type: ty });
+      if (error) return fail("リンクの期限が切れたか、もう使われています。もう一度ログインのメールを受け取ってください。");
+      location.replace(next);
+    } catch (e) {
+      fail("ログインできませんでした（" + (e && e.message || e) + "）。");
+    }
+  })();
+</script>
+</body>
+</html>
