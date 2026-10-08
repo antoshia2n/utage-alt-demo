@@ -11,7 +11,8 @@
 // B の便 5：届ける（ステップ配信・一斉配信・クリックの計測・送信元を温める・ログインのメール）。中身は src/deliver.js。
 // B の便 6a：寄せる（見る側）。学ぶくんの本物の教材・公開の面・添削の振り返り・長文の指摘。中身は src/learn.js。
 // B の便 6b：寄せる（裏側）。会員の権利を門番の表（member_entitlement）と 1 つにする・面談の記録を読む・表の目録。中身は src/bridge.js。
-// B の便 7a：オプチャの招待リンク（COMMUNITY_URL）は会員とシアニンにだけ返す。ログイン無しの /api/config からは外した。
+// B の便 7a：オプチャの招待リンクは会員とシアニンにだけ返す。リンクは表 b_settings の 1 行（key=community_url）に置き、
+//   シアニン用の画面と AI の道具（set_community_link・承認が要る）で差し替える。ログイン無しの /api/config からは外した。
 
 import { makeBin3 } from "./bin3.js";
 import { makeBin4 } from "./bin4.js";
@@ -21,7 +22,7 @@ import { makeDeliver } from "./deliver.js";
 import { makeLearn, normalizeNotes, LESSON_ID_RE } from "./learn.js";
 import { makeBridge } from "./bridge.js";
 
-const VERSION = "0.11.0-b7a";
+const VERSION = "0.11.1-b7a";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_read"];
@@ -91,6 +92,8 @@ const B_TABLES = {
   customer_summary: "b_customer_summary", customers: "b_customers",
   // 便 6a：学ぶくんの表を読む見る表（デモの置き場には無い）
   mn_lessons: "b_mn_lessons", mn_access: "b_mn_access",
+  // 便 7a：サイト全体の設定（いまはオプチャの招待リンクだけ）
+  settings: "b_settings",
 };
 
 function withStore(env) {
@@ -198,14 +201,33 @@ async function verifyUser(request, env) {
   return { user, claims, email: String(user.email || "").toLowerCase() };
 }
 
-// B の便 7a：オプチャの招待リンクを渡してよいか。会員（門番の表を含む）とシアニン（b_admins）だけ。
-// state：open（渡す）／locked（会員でない）／unset（リンクが未設定）
+// B の便 7a：オプチャの招待リンク。本番の置き場では表 b_settings の 1 行、デモの置き場では Cloudflare の値 COMMUNITY_URL。
+const COMMUNITY_KEY = "community_url";
+const COMMUNITY_URL_RE = /^https:[/][/][^\s<>"']{4,490}$/;
+async function communityLink(env) {
+  if (!env.B_STORE) return { url: env.COMMUNITY_URL || "", updated_at: null, updated_by: null };
+  const rows = await db(env, "GET", `settings?select=value,updated_at,updated_by&key=eq.${COMMUNITY_KEY}`);
+  return rows.length ? { url: rows[0].value || "", updated_at: rows[0].updated_at, updated_by: rows[0].updated_by } : { url: "", updated_at: null, updated_by: null };
+}
+// 差し替える。空の文字は「リンクを外す（入口を閉じる）」。actor は画面ならメール、AI なら mcp
+async function setCommunityLink(env, { url }, actor) {
+  if (!env.B_STORE) return { ok: false, error: "demo_store" };
+  const v = String(url == null ? "" : url).trim();
+  if (v && !COMMUNITY_URL_RE.test(v)) return { ok: false, error: "bad_url", note: "https:// で始まる 500 文字までのリンク。外すときは空にする" };
+  const before = await communityLink(env);
+  const rows = await db(env, "POST", "settings?on_conflict=key",
+    [{ key: COMMUNITY_KEY, value: v, updated_at: new Date().toISOString(), updated_by: String(actor).slice(0, 200) }],
+    "resolution=merge-duplicates,return=representation");
+  await logInbound(env, "community_set", { actor, cleared: !v, changed: before.url !== v }, { ok: true }, 200);
+  return { ok: true, url: rows[0].value, cleared: !v, changed: before.url !== v, updated_at: rows[0].updated_at, updated_by: rows[0].updated_by };
+}
+// 渡してよいか。会員（門番の表を含む）とシアニン（b_admins）だけ。state：open（渡す）／locked（会員でない）／unset（リンクが未設定）
 async function communityFor(env, ent, email) {
-  const configured = !!(env.COMMUNITY_URL && /^https:[/][/]/.test(env.COMMUNITY_URL));
   const allowed = !!(ent && ent.member) || await learn.isAdminEmail(env, email);
   if (!allowed) return { state: "locked", url: null };
-  if (!configured) return { state: "unset", url: null };
-  return { state: "open", url: env.COMMUNITY_URL };
+  const link = await communityLink(env);
+  if (!link.url) return { state: "unset", url: null };
+  return { state: "open", url: link.url };
 }
 
 async function requireAdmin(request, env) {
@@ -471,7 +493,6 @@ async function handleApi(request, env, url) {
       store: env.B_STORE ? "production" : "demo", manabu,
       univapay: { configured: pay.configured, mode: pay.mode, store: !!pay.store_id },
       mail: { binding: mail.binding, from: mail.from, open_to_all: env.MAIL_OPEN === "1", auth_hook: !!env.B_AUTH_HOOK_SECRET },
-      community: { configured: !!env.COMMUNITY_URL },
     });
   }
 
@@ -670,6 +691,13 @@ async function handleApi(request, env, url) {
     const a = await requireAdmin(request, env);
     if (a.error) return json({ ok: false, error: a.error }, a.status);
     if (path === "/api/admin/whoami") return json({ ok: true, email: a.email });
+    // 便 7a：オプチャの招待リンク（読む・差し替える）
+    if (path === "/api/admin/community" && method === "GET") return json({ ok: true, store: env.B_STORE ? "production" : "demo", ...(await communityLink(env)) });
+    if (path === "/api/admin/community" && method === "PUT") {
+      const body = await request.json().catch(() => ({}));
+      const r = await setCommunityLink(env, { url: body.url }, a.email);
+      return json(r, r.ok ? 200 : 400);
+    }
     if (path === "/api/admin/people" && method === "GET") {
       return json(await core.findPeople(env, { query: url.searchParams.get("q") || "", source: url.searchParams.get("source") || "" }));
     }
@@ -862,6 +890,16 @@ const TOOLS = [
     inputSchema: { type: "object", properties: { prefix: { type: "string" } } },
   },
   {
+    name: "get_community_link",
+    description: "オプチャの招待リンク（会員にだけ見えるもの）と、最後に変えた日時・人を返す。",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "set_community_link",
+    description: "オプチャの招待リンクを差し替える。url を空にするとリンクを外す（入口を閉じる）。https:// で始まる 500 文字まで。承認が要る道具：呼ぶと承認待ちになり approval_url が返る。",
+    inputSchema: { type: "object", properties: { url: { type: "string" } }, required: ["url"] },
+  },
+  {
     name: "list_lessons",
     description: "学ぶくんの本物の教材の数を、プログラムとコースごとに返す（題名の一覧は返さない）。person_id を渡すと、その人に見える分だけ（受講の結びが無ければ member: false）。with_video は動画のある教材の数。",
     inputSchema: { type: "object", properties: { person_id: { type: "string" } } },
@@ -1010,6 +1048,8 @@ async function runTool(env, name, args) {
   if (name === "list_lessons") return await learn.listLessons(env, args);
   if (name === "get_meetings") return await bridge.meetings(env, args);
   if (name === "list_tables") return await bridge.listTables(env, args);
+  if (name === "get_community_link") return { ok: true, ...(await communityLink(env)) };
+  if (name === "set_community_link") return await setCommunityLink(env, { url: args.url }, "mcp");
   if (name === "send_email") return await bin3.sendMailTo(env, args, "mcp");
   if (name === "list_consults") return await bin4.listConsults(env, args);
   if (name === "set_deal_stage") return await bin4.setDealStage(env, args, "mcp");

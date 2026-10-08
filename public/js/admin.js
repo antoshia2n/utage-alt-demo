@@ -59,6 +59,7 @@ async function openConsole() {
   setupViews();
   loadRooms();
   loadSetup();
+  setupCommunity();
   loadApprovalBadge();
   // AI から渡された承認の URL（/admin#approval/<番号>）で開いたときは、AI と承認のタブを開く
   if (location.hash.startsWith("#approval/")) document.querySelector('[data-view="ai"]').click();
@@ -539,6 +540,31 @@ function productDetail(id) {
     await loadProducts(p.id);
     $("pf-status").textContent = r.changed && Object.keys(r.changed).length ? "変えました：" + Object.keys(r.changed).join("・") : "変わったところはありません";
   });
+}
+
+// 便 7a：オプチャの招待リンク。表 b_settings の 1 行を読み、差し替える（AI の set_community_link と同じ処理）
+function communityStatus(r) {
+  if (!r.url) return "いまはリンクが入っていません（会員の画面は「準備中」）";
+  const when = r.updated_at ? new Date(r.updated_at).toLocaleString("ja-JP") : "";
+  return "会員にだけ見えています" + (when ? "。最後に変えたのは " + esc(when) + (r.updated_by ? "（" + esc(r.updated_by) + "）" : "") : "");
+}
+async function loadCommunity() {
+  const r = await api("/api/admin/community", { token });
+  if (!r.ok) { $("cm-status").textContent = "読めませんでした（" + (r.error || r.status) + "）"; return; }
+  $("cm-url").value = r.url || "";
+  $("cm-status").innerHTML = communityStatus(r);
+}
+function setupCommunity() {
+  const save = async (url) => {
+    $("cm-status").textContent = "変えています…";
+    const r = await api("/api/admin/community", { method: "PUT", token, body: { url } });
+    if (!r.ok) { $("cm-status").textContent = r.error === "bad_url" ? "https:// で始まるリンクを入れてください" : "変えられませんでした（" + (r.error || r.status) + "）"; return; }
+    $("cm-url").value = r.url || "";
+    $("cm-status").innerHTML = (r.changed ? (r.cleared ? "外しました。" : "差し替えました。") : "前と同じリンクです。") + communityStatus(r);
+  };
+  $("cm-save").addEventListener("click", () => save($("cm-url").value));
+  $("cm-clear").addEventListener("click", () => { if (confirm("招待リンクを外します。会員の画面からも消えます。")) save(""); });
+  loadCommunity();
 }
 
 async function loadSetup() {

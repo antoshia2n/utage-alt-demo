@@ -19,6 +19,7 @@ export const DEFAULT_MODES = {
   queue_broadcast: "approve", set_step: "approve",
   list_lessons: "auto", list_corrections: "auto",
   get_meetings: "auto", list_tables: "auto",
+  get_community_link: "auto", set_community_link: "approve",
 };
 
 // 権限を問わず通す道具（承認待ちを見るための道具が承認待ちになると回らないため）

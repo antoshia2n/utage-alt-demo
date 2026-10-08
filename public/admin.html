@@ -49,6 +49,13 @@
   <section id="console" class="hidden">
     <div class="stats" id="stats"></div>
     <details class="setup card" id="setup"><summary>決済とメールの設定（UnivaPay の Webhook に入れる値）</summary><div id="setup-body" class="note">読み込んでいます…</div></details>
+    <details class="setup card" id="community-box"><summary>オプチャの招待リンク（会員にだけ見える）</summary>
+      <div class="stack" style="margin-top:8px">
+        <div><label for="cm-url">招待リンク（https:// で始まる）</label><input id="cm-url" type="url" inputmode="url" maxlength="500" placeholder="https://line.me/ti/g2/..."></div>
+        <div><button class="btn" id="cm-save">差し替える</button> <button class="btn ghost" id="cm-clear">外す（入口を閉じる）</button></div>
+        <div id="cm-status" class="note">読み込んでいます…</div>
+      </div>
+    </details>
     <div class="tabs" role="tablist" style="margin-top:16px">
       <button role="tab" aria-selected="true" data-view="people">人</button>
       <button role="tab" aria-selected="false" data-view="rooms">添削ルーム<span class="badge hidden" id="rooms-badge"></span></button>
