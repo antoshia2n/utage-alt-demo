@@ -1,4 +1,4 @@
-// utage-alt-demo — UTAGE の代わりのサイト兼アプリのデモ（架空のデータだけ）
+// utage-alt-demo — UTAGE の代わりのサイト兼アプリ（B）。本番の置き場は htzadzpckcpdrmpjvaut（便 2〜）。デモの置き場の分は架空のデータ
 // 入口は 1 つ：シアニン用の画面（/api/admin/*）と AI（/mcp）が同じ処理（core）を呼ぶ。
 // 表の読み書きはこの Worker だけが秘密の鍵で行う。ブラウザからは表に触れない。
 // 便 2：添削ルーム（1 対 1）。やりとりは新しい表を作らず、出来事の記録（events）に積む。
@@ -14,6 +14,8 @@
 // B の便 7a：オプチャの招待リンクは会員とシアニンにだけ返す。リンクは表 b_settings の 1 行（key=community_url）に置き、
 //   シアニン用の画面と AI の道具（set_community_link・承認が要る）で差し替える。ログイン無しの /api/config からは外した。
 // B の便 8c：企画と設計図。部品の持ち主は b_campaign_parts、設計図は部品どうしのつながりから毎回組み立てる。中身は src/plan.js。
+// B の便 7c-1：メールの送り元・表示名・返信先・誰に送るか（test／login／all）を表 b_settings に置く（Cloudflare の値から移した）。
+//   変えるのはシアニン用の画面か、承認が要る AI の道具 set_mail_settings。中身は src/mailcfg.js。生徒に見える文と法定の頁を本物にした。
 
 import { makeBin3 } from "./bin3.js";
 import { makeBin4 } from "./bin4.js";
@@ -23,8 +25,9 @@ import { makeDeliver } from "./deliver.js";
 import { makeLearn, normalizeNotes, LESSON_ID_RE } from "./learn.js";
 import { makeBridge } from "./bridge.js";
 import { makePlan } from "./plan.js";
+import { makeMailCfg } from "./mailcfg.js";
 
-const VERSION = "0.12.0-b8c";
+const VERSION = "0.13.0-b7c1";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_read"];
@@ -67,12 +70,13 @@ export default {
   },
 };
 
-const bin3 = makeBin3({ db, addEvent, logInbound, json, onCharge: (env, event, data) => sell.onCharge(env, event, data), onSubEvent: (env, id) => sell.syncGrants(env, id) });
+const mailcfg = makeMailCfg({ db, logInbound });
+const bin3 = makeBin3({ db, addEvent, logInbound, json, mailcfg, onCharge: (env, event, data) => sell.onCharge(env, event, data), onSubEvent: (env, id) => sell.syncGrants(env, id) });
 const bin4 = makeBin4({ db, addEvent, bin3 });
 const guard = makeGuard({ db, logInbound });
 const bridge = makeBridge({ db, rawDb, addEvent, secretHeaders });
 const sell = makeSell({ db, addEvent, bin3, bridge });
-const deliver = makeDeliver({ db, addEvent, logInbound, bin3, sell });
+const deliver = makeDeliver({ db, addEvent, logInbound, bin3, sell, mailcfg });
 const learn = makeLearn({ db });
 const plan = makePlan({ db, logInbound, communityLink });
 
@@ -490,12 +494,14 @@ async function handleApi(request, env, url) {
     if (dbOk === true && env.B_STORE) {
       try { await db(env, "GET", "mn_lessons?select=lesson_id&limit=1"); manabu = true; } catch (e) { manabu = String(e.message).slice(0, 200); }
     }
-    const pay = bin3.univapayState(env), mail = bin3.mailState(env);
+    const pay = bin3.univapayState(env);
+    let mail;
+    try { mail = await bin3.mailState(env); } catch (e) { mail = { binding: !!env.EMAIL, from: null, scope: null, error: String(e.message).slice(0, 200) }; }
     return json({
       ok: missing.length === 0 && dbOk === true, version: VERSION, missing_settings: missing, db: dbOk, images: !!env.IMAGES,
       store: env.B_STORE ? "production" : "demo", manabu,
       univapay: { configured: pay.configured, mode: pay.mode, store: !!pay.store_id },
-      mail: { binding: mail.binding, from: mail.from, open_to_all: env.MAIL_OPEN === "1", auth_hook: !!env.B_AUTH_HOOK_SECRET },
+      mail: { binding: mail.binding, from: mail.from, from_name: mail.from_name || null, reply_to: mail.reply_to || null, scope: mail.scope, open_to_all: mail.scope === "all", auth_hook: !!env.B_AUTH_HOOK_SECRET, ...(mail.error ? { error: mail.error } : {}) },
     });
   }
 
@@ -504,6 +510,7 @@ async function handleApi(request, env, url) {
       supabaseUrl: env.SUPABASE_URL || null,
       supabaseKey: env.SUPABASE_PUBLISHABLE_KEY || null,
       univapayAppId: bin3.univapayState(env).app_id,
+      univapayMode: bin3.univapayState(env).mode || null,
       plan: env.B_STORE ? null : bin3.PLAN,
       version: VERSION,
     });
@@ -596,7 +603,12 @@ async function handleApi(request, env, url) {
     if (v.error) return json({ ok: false, error: v.error }, 401);
     const customer = await customerByEmail(env, v.email);
     if (!customer) return json({ ok: false, error: "not_registered" }, 404);
-    if (path === "/api/booking" && method === "GET") return json(await bin4.studentView(env, customer));
+    // B の便 7c-1：個別相談の枠とセミナーはまだ架空（本物は便 8f）。本番の置き場では、シアニン以外には「準備中」だけを返す
+    if (env.B_STORE && !(await learn.isAdminEmail(env, v.email))) {
+      if (method === "GET" && path === "/api/booking") return json({ ok: true, ready: false, note: "個別相談とセミナーの申し込みは準備中です" });
+      return json({ ok: false, error: "not_ready" }, 403);
+    }
+    if (path === "/api/booking" && method === "GET") return json({ ready: true, ...(await bin4.studentView(env, customer)) });
     if (path === "/api/booking" && method === "POST") {
       const r = await bin4.book(env, customer, await request.json().catch(() => ({})));
       return json(r, r.ok ? 200 : 400);
@@ -701,6 +713,15 @@ async function handleApi(request, env, url) {
       const r = await setCommunityLink(env, { url: body.url }, a.email);
       return json(r, r.ok ? 200 : 400);
     }
+    // 便 7c-1：メールの送り方（送り元・表示名・返信先・誰に送るか）
+    if (path === "/api/admin/mail" && method === "GET") return json({ ok: true, settings: mailcfg.view(await mailcfg.get(env)) });
+    if (path === "/api/admin/mail" && method === "PUT") {
+      const body = await request.json().catch(() => ({}));
+      const patch = {};
+      for (const k of ["from", "from_name", "reply_to", "scope"]) if (k in body) patch[k] = body[k];
+      const r = await mailcfg.set(env, patch, a.email);
+      return json(r, r.ok ? 200 : 400);
+    }
     if (path === "/api/admin/people" && method === "GET") {
       return json(await core.findPeople(env, { query: url.searchParams.get("q") || "", source: url.searchParams.get("source") || "" }));
     }
@@ -720,7 +741,7 @@ async function handleApi(request, env, url) {
         ok: true,
         univapay: { configured: pay.configured, mode: pay.mode, store: !!pay.store_id },
         webhook: { url: url.origin + "/api/webhooks/univapay", auth_token: await bin3.webhookAuth(env) },
-        mail: bin3.mailState(env),
+        mail: await bin3.mailState(env),
       });
     }
     if (path === "/api/admin/consults" && method === "GET") {
@@ -801,7 +822,7 @@ async function handleApi(request, env, url) {
     // B の便 5：配信（シアニン用の画面からは承認なしで送れる。AI からは一斉配信とステップの変更に承認が要る）
     if (path === "/api/admin/deliver" && method === "GET") {
       const [b, s, w] = await Promise.all([deliver.listBroadcasts(env, {}), deliver.listSteps(env), env.B_STORE ? deliver.warmState(env) : null]);
-      return json({ ok: true, broadcasts: b.broadcasts, steps: s.steps, warm: w, open_to_all: env.MAIL_OPEN === "1" });
+      return json({ ok: true, broadcasts: b.broadcasts, steps: s.steps, warm: w, open_to_all: (await mailcfg.get(env)).scope === "all" });
     }
     if (path === "/api/admin/deliver/run" && method === "POST") return json(await deliver.run(env));
     if (path === "/api/admin/audience" && method === "POST") {
@@ -924,13 +945,29 @@ const TOOLS = [
     inputSchema: { type: "object", properties: { url: { type: "string" } }, required: ["url"] },
   },
   {
+    name: "get_mail_settings",
+    description: "メールの送り方を返す：送り元（from）・表示名（from_name）・返信先（reply_to）・誰に送るか（scope：test＝テスト宛てだけ／login＝ログインと手続きのメールは誰にでも・お知らせはテスト宛てだけ／all＝お知らせも誰にでも）と、最後に変えた日時・人。",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "set_mail_settings",
+    description: "メールの送り方を変える。渡した欄だけ変わる。from は mail.shia2n.jp か demo.shia2n.jp の住所だけ。reply_to を空にすると返信先を外す。scope は test／login／all。承認が要る道具：呼ぶと承認待ちになり approval_url が返る。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        from: { type: "string" }, from_name: { type: "string" }, reply_to: { type: "string" },
+        scope: { type: "string", enum: ["test", "login", "all"] },
+      },
+    },
+  },
+  {
     name: "list_lessons",
     description: "学ぶくんの本物の教材の数を、プログラムとコースごとに返す（題名の一覧は返さない）。person_id を渡すと、その人に見える分だけ（受講の結びが無ければ member: false）。with_video は動画のある教材の数。",
     inputSchema: { type: "object", properties: { person_id: { type: "string" } } },
   },
   {
     name: "send_email",
-    description: "1 人にメールを送る（デモではテスト宛て＝シアニン用の画面に入れるメールとその + 付きの別名だけに届く。それ以外は送らずに email_blocked を台帳に積む）。全メールの末尾に配信停止のリンクが付く。結果は result: sent / blocked / failed。",
+    description: "1 人にメールを送る。届く相手は get_mail_settings の scope で決まる（test のときはテスト宛て＝シアニン用の画面に入れるメールとその + 付きの別名だけ。届かない相手には送らずに email_blocked を台帳に積む）。全メールの末尾に事業者の表記と配信停止のリンクが付く。結果は result: sent / blocked / failed。",
     inputSchema: {
       type: "object",
       properties: {
@@ -1099,6 +1136,12 @@ async function runTool(env, name, args) {
   if (name === "list_tables") return await bridge.listTables(env, args);
   if (name === "get_community_link") return { ok: true, ...(await communityLink(env)) };
   if (name === "set_community_link") return await setCommunityLink(env, { url: args.url }, "mcp");
+  if (name === "get_mail_settings") return { ok: true, settings: mailcfg.view(await mailcfg.get(env)) };
+  if (name === "set_mail_settings") {
+    const patch = {};
+    for (const k of ["from", "from_name", "reply_to", "scope"]) if (args && k in args) patch[k] = args[k];
+    return await mailcfg.set(env, patch, "mcp");
+  }
   if (name === "send_email") return await bin3.sendMailTo(env, args, "mcp");
   if (name === "list_consults") return await bin4.listConsults(env, args);
   if (name === "set_deal_stage") return await bin4.setDealStage(env, args, "mcp");

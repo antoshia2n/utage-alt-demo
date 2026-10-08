@@ -17,6 +17,7 @@
   "r2_buckets": [{ "binding": "IMAGES" }],
   // 便 3：メール（Cloudflare Email Service）。送信元は下の住所 demo.shia2n.jp（shia2n.jp そのものの送信の決まりに触らないため）。
   // 送り先はデモの間、シアニン用の画面に入れるメール（と + 付きの別名）だけに限る（src/bin3.js）。
+  // B の便 7c-1：本番の置き場の送り元・表示名・返信先・誰に送るかは表 b_settings（src/mailcfg.js）。下の MAIL_FROM は表に行が無いときの戻り先。
   "send_email": [{ "name": "EMAIL" }],
   // B の便 2：本番のプロジェクト（htzadzpckcpdrmpjvaut）の住所と公開の鍵。どちらもブラウザに出る値なのでここに書く。
   // 秘密の鍵 B_SUPABASE_SECRET_KEY だけは Cloudflare の画面に Secret として置く。それが入るまではデモのプロジェクトで動く（src/index.js の withStore）。

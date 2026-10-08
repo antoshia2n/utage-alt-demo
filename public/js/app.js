@@ -94,7 +94,7 @@ async function main() {
     $("l-player").classList.toggle("hidden", !l.youtube_id && lib.source === "manabu");
     $("l-player").innerHTML = l.youtube_id
       ? `<iframe src="https://www.youtube-nocookie.com/embed/${esc(l.youtube_id)}" style="width:100%;height:100%;border:0;border-radius:10px" allow="fullscreen; picture-in-picture" allowfullscreen></iframe>`
-      : "動画の場所（本番は YouTube の限定公開を埋め込みます。デモでは架空の教材のため動画はありません）";
+      : "この教材には動画がありません";
     showTab("lesson");
     window.scrollTo(0, 0);
     const res = await api("/api/events", { method: "POST", token, body: { type: "lesson_viewed", lesson_id: id } });
@@ -145,6 +145,12 @@ let pickedSlot = null;
 async function loadBooking(token) {
   const r = await api("/api/booking", { token });
   if (!r.ok) { $("bk-status").textContent = "読めませんでした（" + (r.error || r.status) + "）"; return; }
+  // B の便 7c-1：本番では、本物の枠ができるまで（便 8f）準備中だけを出す
+  if (r.ready === false) {
+    $("bk-mine").innerHTML = ""; $("bk-slots").innerHTML = `<p class="note" style="margin:0">${esc(r.note || "準備中です")}</p>`;
+    $("bk-form").classList.add("hidden"); $("bk-seminars").innerHTML = ""; $("bk-status").textContent = "";
+    return;
+  }
   $("bk-mine").innerHTML = r.mine.length
     ? r.mine.map((b) => `<div class="msg ok booked"><div><b>予約中：${esc(b.label)}</b>${b.topic ? `<div class="note">${esc(b.topic)}</div>` : ""}</div><button class="btn ghost small" data-cancel="${esc(b.slot)}" type="button">取り消す</button></div>`).join("")
     : "";

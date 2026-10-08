@@ -2,7 +2,7 @@
 // 表は 3 本（b_steps・b_broadcasts・b_links）。送った・押した・送らなかったは、これまでどおり出来事の記録に積む：
 //   email_sent / email_blocked / email_failed … payload.kind が step（ステップ）・broadcast（一斉）、step_id や broadcast_id 付き
 //   email_clicked … メールの中のリンクを押した（token・url・kind・ref）
-// 送る先の制限（テスト宛てだけ）は bin3 の mailAllowed のまま。MAIL_OPEN が "1" のときだけ誰にでも送る（便 7 で Naoki が決める）。
+// 送る先の制限は bin3 の mailAllowed。誰に送るかは設定の mail_scope（src/mailcfg.js・便 7c-1）。一斉配信とステップは scope が all のときだけ誰にでも。
 // 送信元を温める：ステップと一斉配信の 1 日の数に上限を置き、最初に送った日から少しずつ増やす。ログインや購入の確認のメールは数えない。
 // ログインのメール：Supabase の「メールを送る引き金（Send Email Hook）」がここを呼ぶ。Supabase の既定の送り方は組織の人にしか届かないため。
 
@@ -134,7 +134,7 @@ export function makeDeliver(h) {
       ok: true, filter: a.filter, count: a.people.length, unsubscribed: a.unsubscribed,
       will_send: a.people.length - a.unsubscribed,
       sample: a.people.slice(0, 5).map((p) => ({ id: p.id, name: p.name, source: p.source })),
-      open_to_all: env.MAIL_OPEN === "1",
+      open_to_all: (await h.mailcfg.get(env)).scope === "all",
     };
   }
 
@@ -232,7 +232,7 @@ export function makeDeliver(h) {
         b.clicked_people = new Set(mine.filter((e) => e.type === "email_clicked").map((e) => e.customer_id)).size;
       }
     }
-    return { ok: true, count: rows.length, broadcasts: rows, open_to_all: env.MAIL_OPEN === "1" };
+    return { ok: true, count: rows.length, broadcasts: rows, open_to_all: (await h.mailcfg.get(env)).scope === "all" };
   }
 
   // 下書きを作る・直す（送らない）。送るのは queueBroadcast
@@ -348,8 +348,9 @@ export function makeDeliver(h) {
     };
     if (bad) return await reply(401, { ok: false, error: bad });
     if (!to || !type) return await reply(400, { ok: false, error: "bad_body" });
-    if (!(await bin3.mailAllowed(env, to))) return await reply(400, { ok: false, error: "mail_not_open" });
-    if (!env.EMAIL || !env.MAIL_FROM) return await reply(500, { ok: false, error: "mail_not_configured" });
+    if (!(await bin3.mailAllowed(env, to, "auth"))) return await reply(400, { ok: false, error: "mail_not_open" });
+    const cfg = await h.mailcfg.get(env);
+    if (!env.EMAIL || !cfg.from) return await reply(500, { ok: false, error: "mail_not_configured" });
     const base = String(env.SUPABASE_URL || "").replace(/[/]+$/, "");
     const link = `${base}/auth/v1/verify?token=${encodeURIComponent(d.token_hash || "")}&type=${encodeURIComponent(type)}&redirect_to=${encodeURIComponent(d.redirect_to || d.site_url || origin(env))}`;
     const title = AUTH_SUBJECT[type] || "お知らせ";
@@ -357,7 +358,9 @@ export function makeDeliver(h) {
       ? ["確認コードは次の 6 桁です。", "", String(d.token || ""), "", "心当たりが無ければ、このメールは捨ててください。"]
       : [`下のリンクを押すと${type === "magiclink" || type === "signup" ? "ログインできます" : "手続きが進みます"}。リンクは 1 回だけ使えます。`, "", link, "", d.token ? `リンクが開けないときの確認コード：${d.token}` : "", "", "心当たりが無ければ、このメールは捨ててください。"];
     try {
-      const r = await env.EMAIL.send({ to, from: env.MAIL_FROM, subject: `【シアラボ】${title}`, text: lines.join(NL) });
+      const msg = { to, from: h.mailcfg.fromField(cfg), subject: `【シアラボ】${title}`, text: lines.join(NL) };
+      if (cfg.reply_to) msg.replyTo = cfg.reply_to;
+      const r = await env.EMAIL.send(msg);
       return await reply(200, { ok: true, message_id: (r && r.messageId) || null });
     } catch (e) {
       return await reply(500, { ok: false, error: "send_failed", detail: String(e && e.message || e).slice(0, 200) });

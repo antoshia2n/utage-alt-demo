@@ -199,10 +199,11 @@ export function makeBin3(h) {
   }
 
   // ---------- メール ----------
-  // デモでは送り先をテスト用に限る：シアニン用の画面に入れるメール（とその + 付きの別名）と、MAIL_ALLOW に並べた宛先だけ
-  async function mailAllowed(env, to) {
-    // B の便 5：MAIL_OPEN が "1" のときだけ、誰にでも送る（本番の宛先に送るかは便 7 で Naoki が決める）
-    if (env.MAIL_OPEN === "1") return true;
+  // 送り先の制限。誰にでも送るかは設定の mail_scope（src/mailcfg.js）で決まる。
+  // 誰にでも送らないときは、シアニン用の画面に入れるメール（とその + 付きの別名）と、MAIL_ALLOW に並べた宛先だけ
+  async function mailAllowed(env, to, kind) {
+    const cfg = await h.mailcfg.get(env);
+    if (h.mailcfg.openFor(cfg, kind)) return true;
     const addr = String(to || "").toLowerCase();
     const [local, domain] = addr.split("@");
     if (!local || !domain) return false;
@@ -218,8 +219,10 @@ export function makeBin3(h) {
     return rows.length > 0;
   }
 
-  function mailState(env) {
-    return { binding: !!env.EMAIL, from: env.MAIL_FROM || null, configured: !!(env.EMAIL && env.MAIL_FROM) };
+  // B の便 7c-1：送り元・表示名・返信先・誰に送るかは表 b_settings（デモの置き場は Cloudflare の値）
+  async function mailState(env) {
+    const cfg = await h.mailcfg.get(env);
+    return { binding: !!env.EMAIL, from: cfg.from || null, from_name: cfg.from_name || null, reply_to: cfg.reply_to || null, scope: cfg.scope, configured: !!(env.EMAIL && cfg.from) };
   }
 
   // 送った・送らなかった・失敗した、のどれでも出来事として積む（0 件と失敗を混ぜない）
@@ -229,26 +232,29 @@ export function makeBin3(h) {
       await addEvent(env, customer.id, "email_blocked", { ...base, reason: "unsubscribed" }, actor);
       return { result: "blocked", reason: "unsubscribed" };
     }
-    if (!(await mailAllowed(env, customer.email))) {
+    if (!(await mailAllowed(env, customer.email, kind))) {
       await addEvent(env, customer.id, "email_blocked", { ...base, reason: "not_test_recipient" }, actor);
       return { result: "blocked", reason: "not_test_recipient" };
     }
-    const ms = mailState(env);
+    const ms = await mailState(env);
     if (!ms.configured) {
       await addEvent(env, customer.id, "email_failed", { ...base, error: "mail_not_configured" }, actor);
       return { result: "failed", error: "mail_not_configured" };
     }
+    const cfg = await h.mailcfg.get(env);
     const origin = env.PUBLIC_ORIGIN || "https://utage-alt-demo.gameister1.workers.dev";
     const unsubUrl = `${origin}/api/unsubscribe?c=${customer.id}&t=${await unsubToken(env, customer.id)}`;
-    const footer = `\n\n――――\n言語化ラボ（デモ）— 架空の事業者です。このメールはデモの試しで送っています。\n配信を止める：${unsubUrl}`;
-    const bodyText = String(text) + footer;
+    const foot = h.mailcfg.footer(env, cfg, unsubUrl);
+    const bodyText = String(text) + foot.text;
     const html = "<div style=\"font-family:sans-serif;line-height:1.8;white-space:pre-wrap\">" + escapeHtml(String(text)) + "</div>"
-      + "<hr style=\"border:0;border-top:1px solid #ddd;margin:24px 0\"><div style=\"font-size:12px;color:#777;font-family:sans-serif\">言語化ラボ（デモ）— 架空の事業者です。このメールはデモの試しで送っています。<br><a href=\"" + unsubUrl + "\">配信を止める</a></div>";
+      + "<hr style=\"border:0;border-top:1px solid #ddd;margin:24px 0\"><div style=\"font-size:12px;color:#777;font-family:sans-serif\">" + foot.html + "</div>";
     try {
-      const r = await env.EMAIL.send({
-        to: customer.email, from: env.MAIL_FROM, subject, text: bodyText, html,
+      const msg = {
+        to: customer.email, from: h.mailcfg.fromField(cfg), subject, text: bodyText, html,
         headers: { "List-Unsubscribe": `<${unsubUrl}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" },
-      });
+      };
+      if (cfg.reply_to) msg.replyTo = cfg.reply_to;
+      const r = await env.EMAIL.send(msg);
       await addEvent(env, customer.id, "email_sent", { ...base, message_id: r && r.messageId || null }, actor);
       return { result: "sent", message_id: r && r.messageId || null };
     } catch (e) {
@@ -274,7 +280,7 @@ export function makeBin3(h) {
 
   async function handleUnsubscribe(request, env, url) {
     const c = url.searchParams.get("c") || "", t = url.searchParams.get("t") || "";
-    const page = (msg) => new Response(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>配信の停止</title><body style="font-family:sans-serif;max-width:520px;margin:48px auto;padding:0 16px;line-height:1.8"><h1 style="font-size:20px">配信の停止</h1><p>${msg}</p><p><a href="/">言語化ラボ（デモ）へ</a></p></body>`, { headers: { "content-type": "text/html; charset=utf-8" } });
+    const page = (msg) => new Response(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>配信の停止</title><body style="font-family:sans-serif;max-width:520px;margin:48px auto;padding:0 16px;line-height:1.8"><h1 style="font-size:20px">配信の停止</h1><p>${msg}</p><p><a href="/">${env.B_STORE ? "シアラボ" : "言語化ラボ（デモ）"}へ</a></p></body>`, { headers: { "content-type": "text/html; charset=utf-8" } });
     if (!/^[0-9a-f-]{36}$/i.test(c) || !safeEqual(t, await unsubToken(env, c))) return page("このリンクは使えません。");
     if (!(await unsubscribed(env, c))) await addEvent(env, c, "email_unsubscribed", { via: request.method === "POST" ? "one_click" : "link" }, "site");
     return page("お知らせのメールを止めました。ログインのリンクなど、手続きに要るメールは届きます。");
@@ -307,8 +313,8 @@ export function makeBin3(h) {
   async function sendMailWithUpto(env, customer, upto, n) {
     return await sendMail(env, customer, {
       kind: "room_unread",
-      subject: "【言語化ラボ・デモ】添削が返っています",
-      text: `${customer.name || ""} さん\n\n添削ルームに、まだ読んでいない添削が ${n} 件あります。\n\nhttps://utage-alt-demo.gameister1.workers.dev/app#room`,
+      subject: env.B_STORE ? "【シアラボ】添削が返っています" : "【言語化ラボ・デモ】添削が返っています",
+      text: `${customer.name || ""} さん\n\n添削ルームに、まだ読んでいない添削が ${n} 件あります。\n\n${env.PUBLIC_ORIGIN || "https://utage-alt-demo.gameister1.workers.dev"}/app#room`,
       extra: { upto: String(upto) },
     });
   }

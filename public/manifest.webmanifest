@@ -1,6 +1,6 @@
 {
-  "name": "言語化ラボ（デモ）",
-  "short_name": "言語化ラボ",
+  "name": "シアラボ",
+  "short_name": "シアラボ",
   "start_url": "/app",
   "scope": "/",
   "display": "standalone",
