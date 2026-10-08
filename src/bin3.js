@@ -199,6 +199,8 @@ export function makeBin3(h) {
   // ---------- メール ----------
   // デモでは送り先をテスト用に限る：シアニン用の画面に入れるメール（とその + 付きの別名）と、MAIL_ALLOW に並べた宛先だけ
   async function mailAllowed(env, to) {
+    // B の便 5：MAIL_OPEN が "1" のときだけ、誰にでも送る（本番の宛先に送るかは便 7 で Naoki が決める）
+    if (env.MAIL_OPEN === "1") return true;
     const addr = String(to || "").toLowerCase();
     const [local, domain] = addr.split("@");
     if (!local || !domain) return false;
@@ -311,6 +313,6 @@ export function makeBin3(h) {
 
   return {
     PLAN, univapayState, mailState, webhookAuth, entitlement, entitlementMap,
-    confirmCheckout, handleWebhook, sendMail, sendMailTo, handleUnsubscribe, remindUnread,
+    confirmCheckout, handleWebhook, sendMail, sendMailTo, handleUnsubscribe, remindUnread, mailAllowed,
   };
 }

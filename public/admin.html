@@ -54,7 +54,50 @@
       <button role="tab" aria-selected="false" data-view="rooms">添削ルーム<span class="badge hidden" id="rooms-badge"></span></button>
       <button role="tab" aria-selected="false" data-view="deals">予約と商談</button>
       <button role="tab" aria-selected="false" data-view="products">商品</button>
+      <button role="tab" aria-selected="false" data-view="deliver">配信</button>
       <button role="tab" aria-selected="false" data-view="ai">AI と承認<span class="badge hidden" id="ai-badge"></span></button>
+    </div>
+    <div class="admin-layout" id="view-deliver" style="display:none">
+      <div class="card">
+        <h3 style="margin-top:0">一斉配信</h3>
+        <p class="note" id="dv-warm" style="margin:0"></p>
+        <form id="bf" class="stack" style="margin-top:8px">
+          <div><label for="bf-subject">件名</label><input id="bf-subject" type="text" maxlength="200"></div>
+          <div><label for="bf-body">本文（{{name}} は名前に置き換わる。https のリンクは押したかを数える）</label><textarea id="bf-body" rows="6"></textarea></div>
+          <div class="note">宛先の条件（空なら全員）</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap" id="bf-src"></div>
+          <div><label for="bf-bought">買った商品（id をカンマ区切り）</label><input id="bf-bought" type="text" placeholder="例 next-premium"></div>
+          <div><label for="bf-member">会員か</label><select id="bf-member" class="inline"><option value="">問わない</option><option value="true">会員だけ</option><option value="false">会員でない人だけ</option></select></div>
+          <div><label for="bf-emails">メールで指定（試しに送るとき。カンマ区切り）</label><input id="bf-emails" type="text"></div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <button class="btn ghost small" type="button" id="bf-count">人数を数える</button>
+            <button class="btn small" type="submit">下書きに保存</button>
+            <span class="note" id="bf-status"></span>
+          </div>
+        </form>
+        <h4>これまでの一斉配信</h4>
+        <div id="broadcasts" class="stack"></div>
+        <button class="btn ghost small" type="button" id="dv-run" style="margin-top:8px">いま送る（毎時を待たずに 1 回）</button>
+        <p class="note" id="dv-run-status"></p>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">ステップ配信</h3>
+        <div id="steps" class="stack"></div>
+        <h4>足す・直す</h4>
+        <form id="sf" class="stack">
+          <input type="hidden" id="sf-id">
+          <div><label for="sf-name">名前（自分用）</label><input id="sf-name" type="text" maxlength="120"></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <div><label for="sf-trigger">きっかけ</label><select id="sf-trigger" class="inline"><option value="registered">無料登録</option><option value="purchase">購入</option></select></div>
+            <div><label for="sf-product">商品の id（購入のとき・空ならどれでも）</label><input id="sf-product" type="text"></div>
+            <div><label for="sf-delay">何時間後</label><input id="sf-delay" type="text" inputmode="numeric" value="0" style="max-width:120px"></div>
+          </div>
+          <div><label for="sf-subject">件名</label><input id="sf-subject" type="text" maxlength="200"></div>
+          <div><label for="sf-body">本文</label><textarea id="sf-body" rows="5"></textarea></div>
+          <label class="check"><input type="checkbox" id="sf-active"> <span>動かす（動かした時刻より後の登録・購入だけが対象）</span></label>
+          <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="submit">保存</button><button class="btn ghost small" type="button" id="sf-new">新しく</button><span class="note" id="sf-status"></span></div>
+        </form>
+      </div>
     </div>
     <div class="admin-layout" id="view-products" style="display:none">
       <div class="card">

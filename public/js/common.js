@@ -60,6 +60,7 @@ export const EVENT_LABEL = {
   seminar_reminded: "セミナーの前日の知らせ",
   seminar_archive_sent: "セミナーのアーカイブを配った",
   purchase_completed: "購入（決済が通った）",
+  email_clicked: "メールのリンクを押した",
 };
 
 // ログインが要る画像を読み、画面に出せる住所に変える（img の src に鍵を付けられないため）
