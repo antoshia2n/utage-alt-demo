@@ -11,7 +11,7 @@
 import { makeBin3 } from "./bin3.js";
 import { makeBin4 } from "./bin4.js";
 
-const VERSION = "0.5.0-b2";
+const VERSION = "0.5.1-b2";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_read"];
@@ -180,7 +180,7 @@ async function requireAdmin(request, env) {
   if (v.error) return { error: v.error, status: 401 };
   const rows = await db(env, "GET", `admins?select=email&email=eq.${encodeURIComponent(v.email)}`);
   if (rows.length === 0) return { error: "not_admin", status: 403 };
-  if (v.claims.aal !== "aal2") return { error: "need_second_factor", status: 403 };
+  // 2026-10-08 Naoki の指示で認証アプリの 6 桁（aal2）を外した。入れるのは b_admins に載ったメールでリンクを受け取った人だけ
   return { ok: true, email: v.email };
 }
 

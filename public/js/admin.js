@@ -15,7 +15,8 @@ async function start() {
   if (location.hash.includes("access_token")) history.replaceState(null, "", "/admin");
   if (!data.session) return show("step-login");
   $("logout").classList.remove("hidden");
-  await secondFactor();
+  // 2026-10-08 Naoki の指示で認証アプリの 6 桁を外した。メールのリンクで入ったらそのまま一覧を開く
+  await openConsole();
 }
 
 async function secondFactor() {
