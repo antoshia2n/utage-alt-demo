@@ -58,6 +58,9 @@ async function openConsole() {
   setupViews();
   loadRooms();
   loadSetup();
+  loadApprovalBadge();
+  // AI から渡された承認の URL（/admin#approval/<番号>）で開いたときは、AI と承認のタブを開く
+  if (location.hash.startsWith("#approval/")) document.querySelector('[data-view="ai"]').click();
   setInterval(() => { if (!document.hidden) loadRooms(); }, 30000);
   let t;
   $("q").addEventListener("input", () => { clearTimeout(t); t = setTimeout(search, 250); });
@@ -165,7 +168,9 @@ function setupViews() {
     $("view-people").style.display = b.dataset.view === "people" ? "" : "none";
     $("view-rooms").style.display = b.dataset.view === "rooms" ? "" : "none";
     $("view-deals").style.display = b.dataset.view === "deals" ? "" : "none";
+    $("view-ai").style.display = b.dataset.view === "ai" ? "" : "none";
     if (b.dataset.view === "deals") loadDeals();
+    if (b.dataset.view === "ai") loadAi();
   }));
   $("only-unreplied").addEventListener("change", loadRooms);
 }
@@ -263,6 +268,69 @@ async function loadDeals() {
   };
   document.querySelectorAll("[data-arc]").forEach((b) => b.addEventListener("click", () => run(b.dataset.arc, "archive")));
   document.querySelectorAll("[data-rem]").forEach((b) => b.addEventListener("click", () => run(b.dataset.rem, "remind")));
+}
+
+// ---------- B の便 3：AI と承認 ----------
+const MODE_LABEL = { auto: "自動", approve: "承認", deny: "禁止" };
+const AP_LABEL = { pending: "承認待ち", approved: "承認して実行した", rejected: "却下した", expired: "期限切れ", failed: "実行に失敗" };
+
+async function loadApprovalBadge() {
+  const r = await api("/api/admin/approvals?status=pending", { token });
+  const n = r.ok ? r.count : 0;
+  $("ai-badge").textContent = n > 0 ? String(n) : "";
+  $("ai-badge").classList.toggle("hidden", !(n > 0));
+}
+
+async function loadAi() {
+  const focus = location.hash.startsWith("#approval/") ? location.hash.slice(10) : "";
+  const r = await api("/api/admin/approvals?status=all", { token });
+  if (!r.ok) { $("ap-count").textContent = "読めませんでした（" + (r.error || r.status) + "）"; }
+  else {
+    const pending = r.approvals.filter((x) => x.status === "pending");
+    $("ap-count").textContent = pending.length === 0 ? "承認待ちは 0 件です" : `承認待ち ${pending.length} 件（頼まれてから 24 時間で期限切れ）`;
+    $("approvals").innerHTML = r.approvals.slice(0, 20).map((x) => `
+      <div class="deal-box" ${x.id === focus ? 'style="outline:2px solid var(--accent)"' : ""}>
+        <div class="note">${fmtTime(x.created_at)}・AI が頼んだ・<span class="pill ${x.status === "pending" ? "warn" : "gray"}">${esc(AP_LABEL[x.status] || x.status)}</span></div>
+        <h4 style="margin:4px 0">${esc(x.tool)}</h4>
+        <pre class="note" style="white-space:pre-wrap;margin:0">${esc(JSON.stringify(x.args, null, 2))}</pre>
+        ${x.status === "pending" ? `<div class="stage-btns" style="margin-top:8px">
+          <button class="btn small" data-ap="${x.id}" data-d="approve" type="button">承認して実行</button>
+          <button class="btn ghost small" data-ap="${x.id}" data-d="reject" type="button">却下</button></div>`
+        : (x.decided_by ? `<div class="note">${esc(x.decided_by)}・${fmtTime(x.decided_at)}</div>` : "")}
+      </div>`).join("");
+    document.querySelectorAll("[data-ap]").forEach((b) => b.addEventListener("click", async () => {
+      b.disabled = true;
+      const d = await api(`/api/admin/approvals/${b.dataset.ap}`, { method: "POST", token, body: { decision: b.dataset.d } });
+      if (!d.ok) fail("できませんでした（" + (d.error || d.status) + "）");
+      loadAi(); loadApprovalBadge();
+    }));
+  }
+  const p = await api("/api/admin/permissions", { token });
+  if (p.ok) {
+    $("perms").innerHTML = p.permissions.map((x) => `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <div style="min-width:0"><div>${esc(x.tool)}</div><div class="sub">${esc(x.note || "")}</div></div>
+        <select data-tool="${esc(x.tool)}" style="min-height:40px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink)">
+          ${["auto", "approve", "deny"].map((m) => `<option value="${m}" ${m === x.mode ? "selected" : ""}>${MODE_LABEL[m]}</option>`).join("")}
+        </select>
+      </div>`).join("") || '<p class="note">権限の表がまだありません</p>';
+    document.querySelectorAll("[data-tool]").forEach((sel) => sel.addEventListener("change", async () => {
+      const r2 = await api("/api/admin/permissions", { method: "POST", token, body: { tool: sel.dataset.tool, mode: sel.value } });
+      if (!r2.ok) fail("変えられませんでした（" + (r2.error || r2.status) + "）");
+      loadAi();
+    }));
+  }
+  const l = await api("/api/admin/ai-log", { token });
+  if (l.ok) {
+    $("ailog").innerHTML = l.items.slice(0, 50).map((x) => {
+      const q = x.request || {};
+      const what = x.channel === "mcp" ? `AI：${q.tool || ""}${q.approved_by ? "（承認して実行）" : ""}`
+        : x.channel === "approval" ? `承認：${q.action === "requested" ? "頼まれた" : q.action === "approve" ? "承認した" : "却下した"}・${q.tool || ""}`
+        : `権限：${q.tool || ""} を ${MODE_LABEL[q.from] || "なし"} → ${MODE_LABEL[q.to] || q.to}`;
+      return `<li><div style="min-width:0"><div>${esc(what)}</div><div class="sub">${esc(q.by || q.approved_by || (x.channel === "mcp" ? "AI" : ""))}</div></div>
+        <div class="sub" style="flex-shrink:0">${fmtTime(x.at)}${x.status >= 400 ? "・失敗" : ""}</div></li>`;
+    }).join("") || '<li class="note">まだありません</li>';
+  }
 }
 
 async function loadSetup() {

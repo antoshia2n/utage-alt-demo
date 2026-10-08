@@ -53,6 +53,21 @@
       <button role="tab" aria-selected="true" data-view="people">人</button>
       <button role="tab" aria-selected="false" data-view="rooms">添削ルーム<span class="badge hidden" id="rooms-badge"></span></button>
       <button role="tab" aria-selected="false" data-view="deals">予約と商談</button>
+      <button role="tab" aria-selected="false" data-view="ai">AI と承認<span class="badge hidden" id="ai-badge"></span></button>
+    </div>
+    <div class="admin-layout" id="view-ai" style="display:none">
+      <div class="card">
+        <h3 style="margin-top:0">承認待ち</h3>
+        <p class="note" id="ap-count" style="margin:0"></p>
+        <div id="approvals" class="stack" style="margin-top:8px"></div>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">AI の権限</h3>
+        <p class="note" style="margin:0">自動＝そのまま動く／承認＝ここで「承認して実行」を押すまで動かない／禁止＝動かない。変えられるのはこの画面だけです。</p>
+        <div id="perms" class="stack" style="margin-top:8px"></div>
+        <h3>AI の操作の記録</h3>
+        <ul class="people" id="ailog"></ul>
+      </div>
     </div>
     <div class="admin-layout" id="view-deals" style="display:none">
       <div class="card">
