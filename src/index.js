@@ -11,6 +11,7 @@
 // B の便 5：届ける（ステップ配信・一斉配信・クリックの計測・送信元を温める・ログインのメール）。中身は src/deliver.js。
 // B の便 6a：寄せる（見る側）。学ぶくんの本物の教材・公開の面・添削の振り返り・長文の指摘。中身は src/learn.js。
 // B の便 6b：寄せる（裏側）。会員の権利を門番の表（member_entitlement）と 1 つにする・面談の記録を読む・表の目録。中身は src/bridge.js。
+// B の便 7a：オプチャの招待リンク（COMMUNITY_URL）は会員とシアニンにだけ返す。ログイン無しの /api/config からは外した。
 
 import { makeBin3 } from "./bin3.js";
 import { makeBin4 } from "./bin4.js";
@@ -20,7 +21,7 @@ import { makeDeliver } from "./deliver.js";
 import { makeLearn, normalizeNotes, LESSON_ID_RE } from "./learn.js";
 import { makeBridge } from "./bridge.js";
 
-const VERSION = "0.10.0-b6b";
+const VERSION = "0.11.0-b7a";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_read"];
@@ -195,6 +196,16 @@ async function verifyUser(request, env) {
   const user = await res.json();
   const claims = decodeJwtPayload(token) || {};
   return { user, claims, email: String(user.email || "").toLowerCase() };
+}
+
+// B の便 7a：オプチャの招待リンクを渡してよいか。会員（門番の表を含む）とシアニン（b_admins）だけ。
+// state：open（渡す）／locked（会員でない）／unset（リンクが未設定）
+async function communityFor(env, ent, email) {
+  const configured = !!(env.COMMUNITY_URL && /^https:[/][/]/.test(env.COMMUNITY_URL));
+  const allowed = !!(ent && ent.member) || await learn.isAdminEmail(env, email);
+  if (!allowed) return { state: "locked", url: null };
+  if (!configured) return { state: "unset", url: null };
+  return { state: "open", url: env.COMMUNITY_URL };
 }
 
 async function requireAdmin(request, env) {
@@ -460,6 +471,7 @@ async function handleApi(request, env, url) {
       store: env.B_STORE ? "production" : "demo", manabu,
       univapay: { configured: pay.configured, mode: pay.mode, store: !!pay.store_id },
       mail: { binding: mail.binding, from: mail.from, open_to_all: env.MAIL_OPEN === "1", auth_hook: !!env.B_AUTH_HOOK_SECRET },
+      community: { configured: !!env.COMMUNITY_URL },
     });
   }
 
@@ -467,7 +479,6 @@ async function handleApi(request, env, url) {
     return json({
       supabaseUrl: env.SUPABASE_URL || null,
       supabaseKey: env.SUPABASE_PUBLISHABLE_KEY || null,
-      communityUrl: env.COMMUNITY_URL || null,
       univapayAppId: bin3.univapayState(env).app_id,
       plan: env.B_STORE ? null : bin3.PLAN,
       version: VERSION,
@@ -541,14 +552,17 @@ async function handleApi(request, env, url) {
     const viewed = await db(env, "GET", `events?select=payload&customer_id=eq.${customer.id}&type=eq.lesson_viewed`);
     const viewedIds = [...new Set(viewed.map((e) => e.payload && e.payload.lesson_id).filter(Boolean))];
     const room = roomState(await roomEvents(env, customer.id));
+    const ent = await sell.entitlement(env, customer.id);
+    const community = await communityFor(env, ent, v.email);
     return json({
       ok: true,
       me: { name: customer.name, email: customer.email, source: customer.source },
       lessons: lib.flat, announcements, viewed: viewedIds,
       library: { source: lib.source, member: lib.member, lesson_count: lib.lesson_count, programs: lib.programs },
       room_unread: room.unreadForStudent,
-      entitlement: await sell.entitlement(env, customer.id),
-      community_url: env.COMMUNITY_URL || null,
+      entitlement: ent,
+      community: community.state,
+      community_url: community.url,
     });
   }
 
