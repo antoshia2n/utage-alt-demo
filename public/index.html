@@ -38,6 +38,19 @@
     <div class="card"><h3>アプリとして使える</h3><p class="note">ホーム画面に追加すれば、アプリのように開けます。</p></div>
   </section>
 
+  <!-- 便 6a：公開の面（公式サイトの公開中の記事と、教材の棚の数。中身は会員だけ） -->
+  <section id="front" class="hidden" style="margin-bottom:32px">
+    <div class="card stack" id="front-articles-box">
+      <h2>新着の記事</h2>
+      <ul class="front-list" id="front-articles"></ul>
+      <p style="margin:0"><a id="front-site" href="https://evolab.shia2n.jp/" target="_blank" rel="noopener">公式サイトで読む →</a></p>
+    </div>
+    <div class="card stack" style="margin-top:12px" id="front-catalog-box">
+      <h2>会員が見られる教材 <span class="note" id="front-count"></span></h2>
+      <div class="catalog" id="front-catalog"></div>
+    </div>
+  </section>
+
   <section class="card" style="margin-bottom:32px">
     <h2>note のメンバーの方へ</h2>
     <p class="note">note の特典記事のリンクから無料登録すると、メンバー向けの教材の入口がここに用意されます。</p>
@@ -49,8 +62,17 @@
   <div style="margin-top:8px">© 言語化ラボ（デモ）— 架空の事業者です</div>
 </footer>
 <script type="module">
-  import { rememberSource } from "/js/common.js";
+  import { rememberSource, esc } from "/js/common.js";
   rememberSource();
+  fetch("/api/public/front").then((r) => r.json()).then((f) => {
+    if (!f.ok || (!f.articles.length && !f.catalog.length)) return;
+    document.getElementById("front-articles").innerHTML = f.articles.map((a) => `<li><h3>${esc(a.title)}</h3>${a.summary ? `<p class="note" style="margin:4px 0 0">${esc(a.summary)}</p>` : ""}${a.tags.length ? `<div style="margin-top:6px">${a.tags.map((t) => `<span class="pill gray">${esc(t)}</span>`).join(" ")}</div>` : ""}</li>`).join("");
+    document.getElementById("front-articles-box").classList.toggle("hidden", !f.articles.length);
+    document.getElementById("front-count").textContent = f.lesson_count ? `${f.lesson_count} 本` : "";
+    document.getElementById("front-catalog").innerHTML = f.catalog.map((c) => `<span class="pill gray">${esc(c.title)}・${c.count}</span>`).join("");
+    document.getElementById("front-catalog-box").classList.toggle("hidden", !f.catalog.length);
+    document.getElementById("front").classList.remove("hidden");
+  }).catch(() => {});
   const src = new URLSearchParams(location.search).get("src");
   if (src) document.getElementById("cta").href = "/register?src=" + encodeURIComponent(src);
 </script>

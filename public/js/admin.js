@@ -1,4 +1,5 @@
 import { getClient, api, esc, fmtTime, SOURCE_LABEL, EVENT_LABEL, authImage } from "/js/common.js";
+import { correctionHtml, wireNotes } from "/js/correction.js";
 
 const $ = (id) => document.getElementById(id);
 const steps = ["step-login", "step-enroll", "step-mfa", "console"];
@@ -208,7 +209,7 @@ async function openRoom(id, focusId) {
     <div class="room">${r.messages.map((m) => m.from === "student"
       ? `<div class="msg-them"><div class="bubble">${m.text ? `<div class="pre">${esc(m.text)}</div>` : ""}${m.images.length ? `<div class="imgs">${m.images.map((k) => `<img data-key="${esc(k)}" alt="生徒の画像">`).join("")}</div>` : ""}</div>
           <div class="meta"><time>${fmtTime(m.at)}</time>${m.replied ? '<span class="pill gray">返信済み</span>' : `<button class="link" data-reply="${m.id}">${target && target.id === m.id ? "この投稿に返す（選択中）" : "この投稿に返す"}</button>`}</div></div>`
-      : `<div class="msg-me"><div class="reply card"><div class="reply-h">返した添削${m.actor === "mcp" ? "（AI から）" : ""}</div>${block("原文", m.original)}${block("添削後", m.corrected)}${block("コメント", m.comment)}</div>
+      : `<div class="msg-me"><div class="reply card"><div class="reply-h">返した添削${m.actor === "mcp" ? "（AI から）" : ""}</div>${correctionHtml(m)}</div>
           <div class="meta"><time>${fmtTime(m.at)}</time>${m.read_by_student ? '<span class="pill gray">既読</span>' : ""}</div></div>`).join("") || '<p class="note">やりとりはまだありません。</p>'}</div>
     ${target ? `
     <form id="reply" class="stack reply-form">
@@ -216,6 +217,11 @@ async function openRoom(id, focusId) {
       <div><label for="r-orig">原文</label><textarea id="r-orig" rows="4">${esc(target.text)}</textarea></div>
       <div><label for="r-corr">添削後</label><textarea id="r-corr" rows="5">${esc(target.text)}</textarea></div>
       <div><label for="r-com">コメント</label><textarea id="r-com" rows="3" placeholder="どこを、なぜ直したか"></textarea></div>
+      <details class="notes-edit" id="r-notes-box"><summary class="note">長文の指摘を足す（原文の範囲に番号を付けて、生徒の画面で左右に並べる）</summary>
+        <p class="note">原文の欄で範囲を選んでから「選んだ部分を引用にする」を押すか、引用の欄に原文の一部をそのまま写してください。</p>
+        <div id="r-notes"></div>
+        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><button class="btn ghost small" type="button" id="r-quote">選んだ部分を引用にする</button><button class="btn ghost small" type="button" id="r-addnote">指摘を 1 つ足す</button></div>
+      </details>
       <div style="display:flex;gap:8px;align-items:center"><button class="btn" type="submit" id="r-send">返す</button><span class="note" id="r-status"></span></div>
     </form>` : '<p class="note" style="margin-top:12px">この部屋に未返信はありません。</p>'}`;
   $("room-detail").querySelectorAll("img[data-key]").forEach(async (img) => {
@@ -223,14 +229,37 @@ async function openRoom(id, focusId) {
     catch (_) { img.alt = "画像を読めませんでした"; img.classList.add("broken"); }
   });
   $("room-detail").querySelectorAll("[data-reply]").forEach((b) => b.addEventListener("click", () => openRoom(id, Number(b.dataset.reply))));
+  wireNotes($("room-detail"));
+  if (target) {
+    // 便 6a：長文の指摘の行（引用・指摘・外す）
+    const addNote = (quote = "") => {
+      const row = document.createElement("div");
+      row.className = "nrow";
+      row.innerHTML = `<textarea class="n-q" placeholder="引用（原文の一部）"></textarea><textarea class="n-t" placeholder="指摘"></textarea><button class="btn ghost small" type="button" aria-label="この指摘を外す">×</button>`;
+      row.querySelector(".n-q").value = quote;
+      row.querySelector("button").addEventListener("click", () => row.remove());
+      $("r-notes").appendChild(row);
+      $("r-notes-box").open = true;
+      row.querySelector(quote ? ".n-t" : ".n-q").focus();
+    };
+    $("r-addnote").addEventListener("click", () => addNote());
+    $("r-quote").addEventListener("click", () => {
+      const ta = $("r-orig");
+      const sel = ta.value.slice(ta.selectionStart, ta.selectionEnd).trim();
+      if (!sel) { $("r-status").textContent = "原文の欄で範囲を選んでから押してください"; return; }
+      addNote(sel);
+    });
+  }
   if (target) $("reply").addEventListener("submit", async (e) => {
     e.preventDefault();
     if (!$("r-corr").value.trim()) { $("r-status").textContent = "添削後を入れてください"; return; }
     $("r-send").disabled = true;
     const res = await api(`/api/admin/rooms/${id}/reply`, { method: "POST", token, body: {
       reply_to: target.id, original: $("r-orig").value, corrected: $("r-corr").value, comment: $("r-com").value,
+      notes: [...document.querySelectorAll("#r-notes .nrow")].map((r) => ({ quote: r.querySelector(".n-q").value, text: r.querySelector(".n-t").value })),
     } });
-    if (!res.ok) { $("r-send").disabled = false; $("r-status").textContent = "返せませんでした（" + (res.error || res.status) + "）"; return; }
+    const why = { quote_not_in_original: "引用が原文に見つかりません", note_without_text: "指摘が空の行があります", too_many_notes: "指摘は 30 件までです" };
+    if (!res.ok) { $("r-send").disabled = false; $("r-status").textContent = (why[res.error] ? why[res.error] + (res.index !== undefined ? `（上から ${res.index + 1} つ目）` : "") : "返せませんでした（" + (res.error || res.status) + "）"); return; }
     await openRoom(id); loadRooms(); if (current === id) detail(id);
   });
   loadRooms();
