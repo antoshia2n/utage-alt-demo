@@ -33,6 +33,14 @@ UTAGE の代わりになるサイト兼アプリ（PWA）のデモ。架空の�
 - MCP：`send_email`
 - 秘密の値の追加：`UNIVAPAY_APP_TOKEN`・`UNIVAPAY_APP_SECRET`（Cloudflare の画面）
 
+## 便 4 で足したもの
+
+- 個別相談の予約：`/app` の「予約」タブ。平日 10・14・20 時（日本時間）の 30 分枠を 14 日先まで。1 人 1 件まで・取り消しできる。予約すると確認のメール
+- セミナー：架空の 2 回（`src/bin4.js` の SEMINARS）。申し込むと Zoom の URL をメール、開始の 24 時間前を過ぎたら前日の知らせ（毎時の定時の処理）、終わったらシアニン用の画面からアーカイブを配る
+- 商談の段階：相談予約 → 面談済 → 成約／失注。シアニン用の画面の詳しい画面で、メモと成約額をつけて進める。段階は出来事から計算する
+- コンサルの請求を読む見本：sales-manager の形を真似た架空のデータ（`CONTRACT_SAMPLES`）を、詳しい画面に読むだけで出す。本物には触れない
+- MCP：`list_consults`・`set_deal_stage`・`list_seminars`
+
 ## 置き場
 
 - Cloudflare Workers（静的ページ＋API）

@@ -81,7 +81,7 @@ async function search() {
   $("people").innerHTML = r.people.map((p) => `
     <li data-id="${p.id}" ${p.id === current ? 'aria-current="true"' : ""}>
       <div><div>${esc(p.name || "（名前なし）")}</div><div class="sub">${esc(p.email)}</div></div>
-      <div style="text-align:right">${p.member ? '<span class="pill">会員</span> ' : ""}<span class="pill gray">${esc(p.stage)}</span><div class="sub">${SOURCE_LABEL[p.source] || esc(p.source)}${p.note_member ? "・note" : ""}</div></div>
+      <div style="text-align:right">${p.deal_stage && p.deal_stage !== "none" ? `<span class="pill warn">${esc(STAGE[p.deal_stage])}</span> ` : ""}${p.member ? '<span class="pill">会員</span> ' : ""}<span class="pill gray">${esc(p.stage)}</span><div class="sub">${SOURCE_LABEL[p.source] || esc(p.source)}${p.note_member ? "・note" : ""}</div></div>
     </li>`).join("");
   document.querySelectorAll("#people li").forEach((li) => li.addEventListener("click", () => detail(li.dataset.id)));
 }
@@ -101,6 +101,25 @@ async function detail(id) {
       <span class="pill gray">出来事 ${p.event_count} 件</span>
       ${p.entitlement && p.entitlement.member ? '<span class="pill">会員（定期課金）</span>' : `<span class="pill gray">権利 ${esc(p.entitlement ? p.entitlement.status : "none")}</span>`}
     </div>
+    <div class="deal-box">
+      <h4>商談 ${p.deal && p.deal.stage !== "none" ? `<span class="pill warn">${esc(STAGE[p.deal.stage])}</span>` : '<span class="note">（まだ無し）</span>'}</h4>
+      <dl>
+        ${p.deal && p.deal.booking ? `<dt>予約</dt><dd>${fmtTime(p.deal.booking)}</dd>` : ""}
+        ${p.deal && p.deal.memo ? `<dt>メモ</dt><dd class="pre">${esc(p.deal.memo)}</dd>` : ""}
+        ${p.deal && p.deal.amount != null ? `<dt>成約額</dt><dd>${Number(p.deal.amount).toLocaleString()} 円</dd>` : ""}
+      </dl>
+      <form id="deal" class="stack" style="margin-top:10px">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <select id="d-stage" class="inline"><option value="done">面談した</option><option value="won">成約</option><option value="lost">失注</option></select>
+          <input id="d-amount" type="text" inputmode="numeric" placeholder="成約額（円・成約のとき）" style="max-width:220px;min-height:40px">
+        </div>
+        <textarea id="d-memo" rows="2" placeholder="面談のメモ"></textarea>
+        <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="submit">段階を進める</button><span class="note" id="d-status"></span></div>
+      </form>
+      ${p.contract ? `<h4 style="margin-top:14px">コンサルの契約と入金 <span class="note">（見本・sales-manager の形）</span></h4>
+      <dl><dt>プラン</dt><dd>${esc(p.contract.plan)}・${Number(p.contract.amount).toLocaleString()} 円</dd><dt>状態</dt><dd>${esc(p.contract.status)}</dd>
+      <dt>入金</dt><dd>${p.contract.paid.map((x) => esc(x.month) + " " + esc(x.state)).join("・")}</dd></dl>` : ""}
+    </div>
     <details class="setup" style="margin:0 0 16px"><summary>メールを送る（テスト宛てだけに届く）</summary>
       <form id="mail" class="stack" style="margin-top:8px">
         <div><label for="m-sub">件名</label><input id="m-sub" type="text" maxlength="200"></div>
@@ -112,6 +131,12 @@ async function detail(id) {
     <ol class="timeline">${r.events.map((e) => `
       <li><time>${fmtTime(e.occurred_at)}</time>${esc(EVENT_LABEL[e.type] || e.type)}${detailText(e)}<span class="note"> · ${esc(e.actor)}</span></li>`).join("")}
     </ol>`;
+  $("deal").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const res = await api(`/api/admin/people/${id}/deal`, { method: "POST", token, body: { stage: $("d-stage").value, memo: $("d-memo").value, amount: $("d-amount").value.replace(/[^0-9]/g, "") || null } });
+    if (!res.ok) { $("d-status").textContent = "進められませんでした（" + (res.error || res.status) + "）"; return; }
+    await detail(id); search();
+  });
   $("mail").addEventListener("submit", async (ev) => {
     ev.preventDefault();
     $("m-status").textContent = "送っています…";
@@ -138,6 +163,8 @@ function setupViews() {
     document.querySelectorAll("[data-view]").forEach((x) => x.setAttribute("aria-selected", String(x === b)));
     $("view-people").style.display = b.dataset.view === "people" ? "" : "none";
     $("view-rooms").style.display = b.dataset.view === "rooms" ? "" : "none";
+    $("view-deals").style.display = b.dataset.view === "deals" ? "" : "none";
+    if (b.dataset.view === "deals") loadDeals();
   }));
   $("only-unreplied").addEventListener("change", loadRooms);
 }
@@ -199,6 +226,44 @@ async function openRoom(id, focusId) {
   loadRooms();
 }
 
+// ---------- 予約と商談（便 4） ----------
+const STAGE = { booked: "相談予約", done: "面談済", won: "成約", lost: "失注", none: "" };
+async function loadDeals() {
+  const c = await api("/api/admin/consults", { token });
+  if (!c.ok) { $("consults-count").textContent = "読めませんでした（" + (c.error || c.status) + "）"; }
+  else {
+    $("consults-count").textContent = c.count === 0 ? "これからの予約は 0 件です" : `これからの予約 ${c.count} 件`;
+    $("consults").innerHTML = c.consults.map((x) => `
+      <li data-id="${x.person_id}">
+        <div style="min-width:0"><div>${esc(x.label)}　${esc(x.name || x.email)}</div><div class="sub ellip">${esc(x.topic || "（相談したいことは未記入）")}</div></div>
+        <div style="text-align:right;flex-shrink:0"><span class="pill warn">${esc(STAGE[x.stage] || x.stage)}</span></div>
+      </li>`).join("");
+    document.querySelectorAll("#consults li").forEach((li) => li.addEventListener("click", () => {
+      document.querySelector('[data-view="people"]').click();
+      detail(li.dataset.id);
+    }));
+  }
+  const s = await api("/api/admin/seminars", { token });
+  if (!s.ok) { $("seminars").textContent = "読めませんでした"; return; }
+  $("seminars").innerHTML = s.seminars.map((x) => `
+    <div class="deal-box">
+      <div class="note">${esc(x.label)}${x.past ? "・終了" : ""}</div>
+      <h4>${esc(x.title)}</h4>
+      <div class="note">申込 ${x.registrants} 人・前日の知らせ ${x.reminded} 人・アーカイブ ${x.archive_sent} 人</div>
+      <div class="stage-btns" style="margin-top:8px">
+        ${x.past ? `<button class="btn small" data-arc="${esc(x.id)}" type="button">アーカイブを配る</button>` : `<button class="btn ghost small" data-rem="${esc(x.id)}" type="button">前日の知らせを今送る（試し）</button>`}
+      </div>
+    </div>`).join("");
+  const run = async (idv, kind) => {
+    $("sem-status").textContent = "送っています…";
+    const r = await api(`/api/admin/seminars/${idv}/${kind}`, { method: "POST", token });
+    $("sem-status").textContent = r.ok ? `送った ${r.sent}・テスト宛てでないので送らなかった ${r.blocked}・失敗 ${r.failed}${r.skipped ? "・送り済み " + r.skipped : ""}` : "送れませんでした（" + (r.error || r.status) + "）";
+    loadDeals();
+  };
+  document.querySelectorAll("[data-arc]").forEach((b) => b.addEventListener("click", () => run(b.dataset.arc, "archive")));
+  document.querySelectorAll("[data-rem]").forEach((b) => b.addEventListener("click", () => run(b.dataset.rem, "remind")));
+}
+
 async function loadSetup() {
   const s = await api("/api/admin/setup", { token });
   if (!s.ok) { $("setup-body").textContent = "読めませんでした（" + (s.error || s.status) + "）"; return; }
@@ -214,6 +279,9 @@ async function loadSetup() {
 
 function detailText(e) {
   const p = e.payload || {};
+  if (e.type === "consult_booked" || e.type === "consult_canceled") return `<span class="note">（${p.slot ? esc(fmtTime(p.slot)) : ""}${p.topic ? "・" + esc(String(p.topic).slice(0, 30)) : ""}）</span>`;
+  if (e.type === "consult_done" || e.type === "deal_won" || e.type === "deal_lost") return `<span class="note">（${p.amount != null ? Number(p.amount).toLocaleString() + " 円・" : ""}${esc(String(p.memo || "").slice(0, 30))}）</span>`;
+  if (e.type.startsWith("seminar_")) return `<span class="note">（${esc(p.seminar_id || "")}${p.mail ? "・メール " + esc(p.mail) : ""}）</span>`;
   if (e.type.startsWith("subscription_")) return `<span class="note">（${esc(p.status || "")}${p.amount ? "・" + Number(p.amount).toLocaleString() + " 円" : ""}）</span>`;
   if (e.type.startsWith("email_") && e.type !== "email_unsubscribed") return `<span class="note">（${esc(p.subject || "")}${p.reason ? "・" + esc(p.reason) : ""}${p.error ? "・" + esc(p.error) : ""}）</span>`;
   if (e.type === "correction_submitted") return `<span class="note">（${esc(String(p.text || "").slice(0, 30))}${(p.images || []).length ? " 画像" + p.images.length : ""}）</span>`;

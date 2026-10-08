@@ -52,6 +52,19 @@
     <div class="tabs" role="tablist" style="margin-top:16px">
       <button role="tab" aria-selected="true" data-view="people">人</button>
       <button role="tab" aria-selected="false" data-view="rooms">添削ルーム<span class="badge hidden" id="rooms-badge"></span></button>
+      <button role="tab" aria-selected="false" data-view="deals">予約と商談</button>
+    </div>
+    <div class="admin-layout" id="view-deals" style="display:none">
+      <div class="card">
+        <h3 style="margin-top:0">個別相談の予約</h3>
+        <p class="note" id="consults-count" style="margin:0"></p>
+        <ul class="people" id="consults"></ul>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">セミナー</h3>
+        <div id="seminars" class="stack"></div>
+        <p class="note" id="sem-status"></p>
+      </div>
     </div>
     <div class="admin-layout" id="view-rooms" style="display:none">
       <div class="card">

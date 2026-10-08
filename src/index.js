@@ -9,8 +9,9 @@
 // 便 3：決済（UnivaPay のテスト）とメール（Cloudflare Email Service）。中身は src/bin3.js。
 
 import { makeBin3 } from "./bin3.js";
+import { makeBin4 } from "./bin4.js";
 
-const VERSION = "0.3.0-bin3";
+const VERSION = "0.4.0-bin4";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_read"];
@@ -38,7 +39,8 @@ export default {
       if (missingConfig(env).length) return;
       try {
         const r = await bin3.remindUnread(env, roomEvents, roomState);
-        await logInbound(env, "cron", { cron: event.cron }, r, 200);
+        const s = await bin4.remindSeminars(env);
+        await logInbound(env, "cron", { cron: event.cron }, { room: r, seminars: s }, 200);
       } catch (e) {
         await logInbound(env, "cron", { cron: event.cron }, { ok: false, error: String(e.message).slice(0, 200) }, 500);
       }
@@ -47,6 +49,7 @@ export default {
 };
 
 const bin3 = makeBin3({ db, addEvent, logInbound, json });
+const bin4 = makeBin4({ db, addEvent, bin3 });
 
 // ---------- 共通 ----------
 
@@ -137,7 +140,11 @@ const core = {
     if (source && SOURCES.includes(source)) q += `&source=eq.${source}`;
     const people = await db(env, "GET", q);
     const ent = await bin3.entitlementMap(env);
-    for (const p of people) p.member = !!(ent[p.id] && ent[p.id].member);
+    const dm = await bin4.dealMap(env);
+    for (const p of people) {
+      p.member = !!(ent[p.id] && ent[p.id].member);
+      p.deal_stage = dm[p.id] ? dm[p.id].stage : "none";
+    }
     return { ok: true, count: people.length, people };
   },
 
@@ -146,7 +153,11 @@ const core = {
     const [person] = await db(env, "GET", `customer_summary?select=*&id=eq.${person_id}`);
     if (!person) return { ok: true, found: false };
     const events = await db(env, "GET", `events?select=id,type,payload,actor,occurred_at&customer_id=eq.${person_id}&order=occurred_at.desc&limit=200`);
-    return { ok: true, found: true, person: { ...person, entitlement: await bin3.entitlement(env, person_id) }, events };
+    return {
+      ok: true, found: true,
+      person: { ...person, entitlement: await bin3.entitlement(env, person_id), deal: await bin4.deal(env, person_id), contract: bin4.contractOf(person.email) },
+      events,
+    };
   },
 
   async setNoteMember(env, { person_id, value }, actor) {
@@ -423,6 +434,29 @@ async function handleApi(request, env, url) {
     });
   }
 
+  // 生徒：個別相談の予約とセミナー（便 4）
+  if (path === "/api/booking" || path.startsWith("/api/booking/") || path.startsWith("/api/seminars/")) {
+    const v = await verifyUser(request, env);
+    if (v.error) return json({ ok: false, error: v.error }, 401);
+    const customer = await customerByEmail(env, v.email);
+    if (!customer) return json({ ok: false, error: "not_registered" }, 404);
+    if (path === "/api/booking" && method === "GET") return json(await bin4.studentView(env, customer));
+    if (path === "/api/booking" && method === "POST") {
+      const r = await bin4.book(env, customer, await request.json().catch(() => ({})));
+      return json(r, r.ok ? 200 : 400);
+    }
+    if (path === "/api/booking/cancel" && method === "POST") {
+      const r = await bin4.cancel(env, customer, await request.json().catch(() => ({})));
+      return json(r, r.ok ? 200 : 400);
+    }
+    const sm = path.match(/^\/api\/seminars\/([a-z0-9-]+)\/register$/);
+    if (sm && method === "POST") {
+      const r = await bin4.registerSeminar(env, customer, sm[1]);
+      return json(r, r.ok ? 200 : 400);
+    }
+    return json({ ok: false, error: "not_found" }, 404);
+  }
+
   // 生徒：添削ルーム（自分の部屋だけ）
   if (path.startsWith("/api/room")) {
     const v = await verifyUser(request, env);
@@ -519,6 +553,21 @@ async function handleApi(request, env, url) {
         mail: bin3.mailState(env),
       });
     }
+    if (path === "/api/admin/consults" && method === "GET") {
+      return json(await bin4.listConsults(env, { include_past: url.searchParams.get("past") === "1" }));
+    }
+    const dl = path.match(/^\/api\/admin\/people\/([0-9a-f-]{36})\/deal$/i);
+    if (dl && method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      const r = await bin4.setDealStage(env, { ...body, person_id: dl[1] }, "admin");
+      return json(r, r.ok === false ? 400 : 200);
+    }
+    if (path === "/api/admin/seminars" && method === "GET") return json(await bin4.seminarsAdmin(env));
+    const sr = path.match(/^\/api\/admin\/seminars\/([a-z0-9-]+)\/(remind|archive)$/);
+    if (sr && method === "POST") {
+      const r = sr[2] === "remind" ? await bin4.remindSeminars(env, { force_seminar_id: sr[1] }) : await bin4.sendArchive(env, sr[1], "admin");
+      return json({ ok: r.ok !== false, ...r }, r.ok === false ? 400 : 200);
+    }
     const em = path.match(/^\/api\/admin\/people\/([0-9a-f-]{36})\/email$/i);
     if (em && method === "POST") {
       const body = await request.json().catch(() => ({}));
@@ -612,6 +661,30 @@ const TOOLS = [
       required: ["person_id", "subject", "body"],
     },
   },
+  {
+    name: "list_consults",
+    description: "個別相談の予約の一覧（近い順）。各予約に人と商談の段階（booked・done・won・lost）が付く。0 件は count: 0。include_past で終わった枠も含める。",
+    inputSchema: { type: "object", properties: { include_past: { type: "boolean" } } },
+  },
+  {
+    name: "set_deal_stage",
+    description: "商談の段階を進める。stage は done（面談した）・won（成約）・lost（失注）。memo に面談のメモ、won のときは amount（円）。台帳に出来事として積まれ、シアニン用の画面の時系列に出る。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        person_id: { type: "string" },
+        stage: { type: "string", enum: ["done", "won", "lost"] },
+        memo: { type: "string" },
+        amount: { type: "integer", minimum: 0 },
+      },
+      required: ["person_id", "stage"],
+    },
+  },
+  {
+    name: "list_seminars",
+    description: "セミナーの一覧（架空の 2 回）。申込者の数・前日の知らせを送った数・アーカイブを配った数を返す。",
+    inputSchema: { type: "object", properties: {} },
+  },
 ];
 
 async function handleMcp(request, env, url) {
@@ -671,6 +744,9 @@ async function rpc(msg, env) {
       else if (name === "get_room") result = await core.getRoom(env, { person_id: args.person_id, mark_read: false }, "mcp");
       else if (name === "return_correction") result = await core.returnCorrection(env, args, "mcp");
       else if (name === "send_email") result = await bin3.sendMailTo(env, args, "mcp");
+      else if (name === "list_consults") result = await bin4.listConsults(env, args);
+      else if (name === "set_deal_stage") result = await bin4.setDealStage(env, args, "mcp");
+      else if (name === "list_seminars") result = await bin4.seminarsAdmin(env);
       else { result = { ok: false, error: "unknown_tool" }; }
       isError = result.ok === false;
     } catch (e) {
