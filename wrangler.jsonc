@@ -18,7 +18,14 @@
   // 便 3：メール（Cloudflare Email Service）。送信元は下の住所 demo.shia2n.jp（shia2n.jp そのものの送信の決まりに触らないため）。
   // 送り先はデモの間、シアニン用の画面に入れるメール（と + 付きの別名）だけに限る（src/bin3.js）。
   "send_email": [{ "name": "EMAIL" }],
-  "vars": { "MAIL_FROM": "noreply@demo.shia2n.jp" },
+  // B の便 2：本番のプロジェクト（htzadzpckcpdrmpjvaut）の住所と公開の鍵。どちらもブラウザに出る値なのでここに書く。
+  // 秘密の鍵 B_SUPABASE_SECRET_KEY だけは Cloudflare の画面に Secret として置く。それが入るまではデモのプロジェクトで動く（src/index.js の withStore）。
+  // 公開の鍵はポータル・公式サイトと同じ旧形式。新しい形式への差し替えは「Supabase の鍵の廃止（2026 年末）」の行で 7 つのアプリと一緒に行う。
+  "vars": {
+    "MAIL_FROM": "noreply@demo.shia2n.jp",
+    "B_SUPABASE_URL": "https://htzadzpckcpdrmpjvaut.supabase.co",
+    "B_SUPABASE_PUBLISHABLE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh0emFkenBja2NwZHJtcGp2YXV0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4MjA2MTAsImV4cCI6MjA4NzM5NjYxMH0.8TJ-X-UojNvL-H-OiF5aaYOEksiveJ3zl7Lt6TZ6pCU"
+  },
   // 便 3：1 時間ごとに、添削が返って読まれていない人へメールを 1 通
   "triggers": { "crons": ["7 * * * *"] },
   // ブランチとプルリクの試しの組み立て（npx wrangler preview）に要る。中身は空でよい

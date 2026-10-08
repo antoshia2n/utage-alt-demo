@@ -11,7 +11,7 @@
 import { makeBin3 } from "./bin3.js";
 import { makeBin4 } from "./bin4.js";
 
-const VERSION = "0.4.0-bin4";
+const VERSION = "0.5.0-b2";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_read"];
@@ -22,6 +22,7 @@ const UUID_RE = /^[0-9a-f-]{36}$/i;
 
 export default {
   async fetch(request, env) {
+    env = withStore(env);
     const url = new URL(request.url);
     const path = url.pathname;
     try {
@@ -35,6 +36,7 @@ export default {
 
   // 定時の処理（1 時間ごと）：添削が返って 1 時間読まれていない人へメールを 1 通
   async scheduled(event, env, ctx) {
+    env = withStore(env);
     ctx.waitUntil((async () => {
       if (missingConfig(env).length) return;
       try {
@@ -60,6 +62,26 @@ function json(body, status = 200, extra = {}) {
   });
 }
 
+// B の便 2：置き場をいまの本番のプロジェクトへ移す。
+// B_SUPABASE_SECRET_KEY（Cloudflare の秘密の値）が入っているときだけ本番のプロジェクトを使い、
+// 入っていなければデモのプロジェクトのまま動く（入れる前に組み立てが走っても止まらないため）。
+// 本番では表の名前に b_ を付け、顧客の台帳は作らずに member（門番の表）へ寄せる。
+const B_TABLES = {
+  events: "b_events", inbound_log: "b_inbound_log", lessons: "b_lessons",
+  announcements: "b_announcements", admins: "b_admins",
+  customer_summary: "b_customer_summary", customers: "b_customers",
+};
+
+function withStore(env) {
+  if (!env.B_SUPABASE_SECRET_KEY || !env.B_SUPABASE_URL || !env.B_SUPABASE_PUBLISHABLE_KEY) return env;
+  return Object.assign(Object.create(env), {
+    SUPABASE_URL: env.B_SUPABASE_URL,
+    SUPABASE_PUBLISHABLE_KEY: env.B_SUPABASE_PUBLISHABLE_KEY,
+    SUPABASE_SECRET_KEY: env.B_SUPABASE_SECRET_KEY,
+    B_STORE: true,
+  });
+}
+
 function missingConfig(env) {
   const need = ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY", "SUPABASE_SECRET_KEY", "MCP_SECRET"];
   return need.filter((k) => !env[k] || String(env[k]).startsWith("SET_"));
@@ -74,7 +96,40 @@ function secretHeaders(env) {
 }
 
 // PostgREST を秘密の鍵で呼ぶ。失敗は投げる（0 件と失敗を混ぜない）
+// 本番の置き場では表の名前を b_ に読み替える。顧客の台帳への書き込みだけは別の道（storeCustomerWrite）を通る
 async function db(env, method, pathAndQuery, body, prefer) {
+  if (env.B_STORE) {
+    const i = pathAndQuery.search(/[?]/);
+    const table = i < 0 ? pathAndQuery : pathAndQuery.slice(0, i);
+    if (table === "customers" && method !== "GET") return await storeCustomerWrite(env, method, pathAndQuery, body);
+    if (B_TABLES[table]) pathAndQuery = B_TABLES[table] + (i < 0 ? "" : pathAndQuery.slice(i));
+  }
+  return await rawDb(env, method, pathAndQuery, body, prefer);
+}
+
+// 本番の置き場の顧客の台帳は「member（門番の表）＋ b_profile（B だけが使う欄）」を合わせた見る表 b_customers。
+// 見る表へは書けないので、新規は関数 b_register、直しは b_profile への書き込みに置き換える。
+// 返す形はデモの customers と同じ（呼ぶ側を変えないため）。
+async function storeCustomerWrite(env, method, pathAndQuery, body) {
+  if (method === "POST") {
+    const row = Array.isArray(body) ? body[0] : body;
+    const r = await rawDb(env, "POST", "rpc/b_register", { p_email: row.email, p_name: row.name || "", p_source: row.source || "direct" });
+    return await rawDb(env, "GET", `b_customers?select=*&id=eq.${r.id}`);
+  }
+  const m = pathAndQuery.match(/^customers[?]id=eq[.]([0-9a-f-]{36})$/i);
+  if (method === "PATCH" && m) {
+    const patch = { member_id: m[1] };
+    if ("note_member" in body) patch.note_member = !!body.note_member;
+    if ("auth_user_id" in body) patch.sb_auth_uid = body.auth_user_id;
+    const exists = await rawDb(env, "GET", `b_customers?select=id&id=eq.${m[1]}`);
+    if (exists.length === 0) return [];
+    await rawDb(env, "POST", "b_profile?on_conflict=member_id", [patch], "resolution=merge-duplicates,return=minimal");
+    return await rawDb(env, "GET", `b_customers?select=*&id=eq.${m[1]}`);
+  }
+  throw new Error(`db ${method} customers: 本番の置き場では使えない書き方`);
+}
+
+async function rawDb(env, method, pathAndQuery, body, prefer) {
   const headers = secretHeaders(env);
   if (prefer) headers.prefer = prefer;
   const res = await fetch(`${env.SUPABASE_URL}/rest/v1/${pathAndQuery}`, {
@@ -358,6 +413,7 @@ async function handleApi(request, env, url) {
     const pay = bin3.univapayState(env), mail = bin3.mailState(env);
     return json({
       ok: missing.length === 0 && dbOk === true, version: VERSION, missing_settings: missing, db: dbOk, images: !!env.IMAGES,
+      store: env.B_STORE ? "production" : "demo",
       univapay: { configured: pay.configured, mode: pay.mode, store: !!pay.store_id },
       mail: { binding: mail.binding, from: mail.from },
     });
