@@ -14,7 +14,7 @@ import { makeBin4 } from "./bin4.js";
 import { makeGuard } from "./guard.js";
 import { makeSell } from "./sell.js";
 
-const VERSION = "0.7.0-b4";
+const VERSION = "0.7.1-b4";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_read"];
