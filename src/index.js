@@ -16,7 +16,7 @@ import { makeGuard } from "./guard.js";
 import { makeSell } from "./sell.js";
 import { makeDeliver } from "./deliver.js";
 
-const VERSION = "0.8.0-b5";
+const VERSION = "0.8.1-b5";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_read"];

@@ -212,7 +212,8 @@ export function makeDeliver(h) {
   async function sendOne(env, customer, { kind, ref, subject, body, extra }) {
     const fill = (t) => String(t).split("{{name}}").join(customer.name || "");
     const text = await trackLinks(env, fill(body), kind, ref, customer.id);
-    return await bin3.sendMail(env, customer, { kind, subject: fill(subject), text, actor: "cron", extra });
+    // 出来事の記録の actor は site・admin・mcp・webhook・seed のどれか（b_events の決まり）。定時の処理は site で積む
+    return await bin3.sendMail(env, customer, { kind, subject: fill(subject), text, actor: "site", extra });
   }
 
   // ---------- 一斉配信 ----------
