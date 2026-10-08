@@ -13,7 +13,7 @@
   // すべて Cloudflare の画面に Secret として置く。ここに書かないので、上げ直しても消えない。
   "keep_vars": true,
   // 便 2：添削の画像の置き場（R2）。名前を書かないので、初回の組み立てで Cloudflare が自動で作る（wrangler 4.45 以上）。
-  // 任意の設定 COMMUNITY_URL（生徒同士の場の招待リンク）。無ければ画面は「準備中」と出す。
+  // 任意の設定 COMMUNITY_URL（オプチャの招待リンク・https:// で始まる）。会員とシアニンにだけ返す（便 7a）。無ければ画面は「準備中」と出す。
   "r2_buckets": [{ "binding": "IMAGES" }],
   // 便 3：メール（Cloudflare Email Service）。送信元は下の住所 demo.shia2n.jp（shia2n.jp そのものの送信の決まりに触らないため）。
   // 送り先はデモの間、シアニン用の画面に入れるメール（と + 付きの別名）だけに限る（src/bin3.js）。

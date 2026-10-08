@@ -105,7 +105,7 @@ async function main() {
   });
 
   setupMember(r.entitlement, r.me.email);
-  const room = setupRoom(token, r.community_url);
+  const room = setupRoom(token, r.community_url, r.community);
   room.setBadge(r.room_unread);
   if (location.hash === "#room") showTab("room");
   if (location.hash === "#review") showTab("review");
@@ -221,12 +221,15 @@ function setupMember(ent, email) {
 }
 
 // ---------- 添削ルーム ----------
-function setupRoom(token, communityUrl) {
+function setupRoom(token, communityUrl, communityState) {
   let opened = false, pending = [], timer = null, lastCount = -1, lastSig = "";
 
+  // 便 7a：招待リンクは会員にだけ届く（会員でない人には URL そのものが返らない）
   $("community").innerHTML = communityUrl
-    ? `<h3>生徒同士の場</h3><p class="note">ほかの受講生と話せる場所です（こことはつながっていません）。</p><a class="btn ghost" href="${esc(communityUrl)}" target="_blank" rel="noopener">開く</a>`
-    : `<h3>生徒同士の場</h3><p class="note">Discord かオープンチャットの招待リンクをここに置きます（デモでは準備中）。</p>`;
+    ? `<h3>生徒同士の場</h3><p class="note">ほかの受講生と話せるオープンチャットです（こことはつながっていません）。</p><a class="btn ghost" href="${esc(communityUrl)}" target="_blank" rel="noopener">開く</a>`
+    : communityState === "locked"
+      ? `<h3>生徒同士の場</h3><p class="note">会員になると、ほかの受講生と話せるオープンチャットの招待リンクがここに出ます。</p>`
+      : `<h3>生徒同士の場</h3><p class="note">オープンチャットの招待リンクを準備中です。</p>`;
 
   const setBadge = (n) => {
     const b = $("room-badge");
