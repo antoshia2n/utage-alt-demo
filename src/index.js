@@ -9,14 +9,16 @@
 // 便 3：決済（UnivaPay のテスト）とメール（Cloudflare Email Service）。中身は src/bin3.js。
 // B の便 4：売る（商品の台帳・単発・定期・年払い・紹介用の価格）。中身は src/sell.js。権利の計算もこちらへ移した。
 // B の便 5：届ける（ステップ配信・一斉配信・クリックの計測・送信元を温める・ログインのメール）。中身は src/deliver.js。
+// B の便 6a：寄せる（見る側）。学ぶくんの本物の教材・公開の面・添削の振り返り・長文の指摘。中身は src/learn.js。
 
 import { makeBin3 } from "./bin3.js";
 import { makeBin4 } from "./bin4.js";
 import { makeGuard } from "./guard.js";
 import { makeSell } from "./sell.js";
 import { makeDeliver } from "./deliver.js";
+import { makeLearn, normalizeNotes, LESSON_ID_RE } from "./learn.js";
 
-const VERSION = "0.8.1-b5";
+const VERSION = "0.9.0-b6a";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_read"];
@@ -64,6 +66,7 @@ const bin4 = makeBin4({ db, addEvent, bin3 });
 const guard = makeGuard({ db, logInbound });
 const sell = makeSell({ db, addEvent, bin3 });
 const deliver = makeDeliver({ db, addEvent, logInbound, bin3, sell });
+const learn = makeLearn({ db });
 
 // ---------- 共通 ----------
 
@@ -82,6 +85,8 @@ const B_TABLES = {
   events: "b_events", inbound_log: "b_inbound_log", lessons: "b_lessons",
   announcements: "b_announcements", admins: "b_admins",
   customer_summary: "b_customer_summary", customers: "b_customers",
+  // 便 6a：学ぶくんの表を読む見る表（デモの置き場には無い）
+  mn_lessons: "b_mn_lessons", mn_access: "b_mn_access",
 };
 
 function withStore(env) {
@@ -307,7 +312,7 @@ const core = {
   },
 
   // 3 欄で返す。reply_to を省くと、いちばん古い未返信に返す
-  async returnCorrection(env, { person_id, reply_to, original, corrected, comment = "" }, actor) {
+  async returnCorrection(env, { person_id, reply_to, original, corrected, comment = "", notes }, actor) {
     if (!UUID_RE.test(String(person_id || ""))) return { ok: false, error: "bad_person_id" };
     const corr = String(corrected ?? "").trim();
     if (!corr) return { ok: false, error: "need_corrected" };
@@ -327,15 +332,31 @@ const core = {
       if (!target) return { ok: false, error: "nothing_to_return" };
     }
     const orig = String(original ?? "").trim() || String((target.payload && target.payload.text) || "");
+    // 便 6a：長文の指摘。引用は原文に必ずある文字列（無ければ返さずに止める）
+    const nn = normalizeNotes(notes, orig);
+    if (!nn.ok) return nn;
     const ev = await addEvent(env, person_id, "correction_returned", {
       reply_to: target.id,
       original: orig,
       corrected: corr,
       comment: String(comment || "").trim(),
+      ...(nn.notes.length ? { notes: nn.notes } : {}),
     }, actor);
     return { ok: true, found: true, id: ev.id, reply_to: target.id, remaining_unreplied: s.unreplied.filter((e) => e.id !== target.id).length };
   },
 };
+
+// 便 6a：返した添削を新しい順に（生徒の振り返りと同じ中身）
+async function listCorrections(env, { person_id, limit } = {}) {
+  if (!UUID_RE.test(String(person_id || ""))) return { ok: false, error: "bad_person_id" };
+  const [person] = await db(env, "GET", `customers?select=id&id=eq.${person_id}`);
+  if (!person) return { ok: true, found: false };
+  const evs = await roomEvents(env, person_id);
+  const s = roomState(evs);
+  const n = Math.min(Math.max(Number(limit) || 20, 1), 100);
+  const items = evs.filter((e) => e.type === "correction_returned").reverse().slice(0, n).map((e) => toMessage(e, s));
+  return { ok: true, found: true, count: items.length, total: evs.filter((e) => e.type === "correction_returned").length, corrections: items };
+}
 
 // 添削ルームの出来事を古い順に読む（person_id を省くと全部屋）
 async function roomEvents(env, personId) {
@@ -376,6 +397,7 @@ function toMessage(e, s) {
   return {
     id: e.id, from: "cyanin", at: e.occurred_at, actor: e.actor,
     reply_to: p.reply_to, original: p.original || "", corrected: p.corrected || "", comment: p.comment || "",
+    notes: Array.isArray(p.notes) ? p.notes : [],
     read_by_student: e.id <= s.studentReadUpto,
   };
 }
@@ -424,10 +446,15 @@ async function handleApi(request, env, url) {
     if (!missing.includes("SUPABASE_URL") && !missing.includes("SUPABASE_SECRET_KEY")) {
       try { await db(env, "GET", "lessons?select=id&limit=1"); dbOk = true; } catch (e) { dbOk = String(e.message).slice(0, 200); }
     }
+    // 便 6a：学ぶくんの教材を読めるか（本番の置き場だけ）
+    let manabu = null;
+    if (dbOk === true && env.B_STORE) {
+      try { await db(env, "GET", "mn_lessons?select=lesson_id&limit=1"); manabu = true; } catch (e) { manabu = String(e.message).slice(0, 200); }
+    }
     const pay = bin3.univapayState(env), mail = bin3.mailState(env);
     return json({
       ok: missing.length === 0 && dbOk === true, version: VERSION, missing_settings: missing, db: dbOk, images: !!env.IMAGES,
-      store: env.B_STORE ? "production" : "demo",
+      store: env.B_STORE ? "production" : "demo", manabu,
       univapay: { configured: pay.configured, mode: pay.mode, store: !!pay.store_id },
       mail: { binding: mail.binding, from: mail.from, open_to_all: env.MAIL_OPEN === "1", auth_hook: !!env.B_AUTH_HOOK_SECRET },
     });
@@ -469,6 +496,11 @@ async function handleApi(request, env, url) {
     return json({ ok: true, is_new: isNew });
   }
 
+  // B の便 6a：公開の面（公式サイトの公開中の記事と教材の数。ログイン不要・中身や動画は出さない）
+  if (path === "/api/public/front" && method === "GET") {
+    return json(await learn.publicFront(env), 200, { "cache-control": "public, max-age=300" });
+  }
+
   // B の便 4：商品の一覧（サイトに出すものだけ。?id= を付けると、出していなくても売っているもの 1 つ＝紹介用のリンク）
   if (path === "/api/products" && method === "GET") {
     return json(await sell.listForSite(env, url.searchParams.get("id") || ""));
@@ -501,7 +533,7 @@ async function handleApi(request, env, url) {
       [customer] = await db(env, "PATCH", `customers?id=eq.${customer.id}`, { auth_user_id: v.user.id }, "return=representation");
     }
     if (url.searchParams.get("fresh") === "1") await addEvent(env, customer.id, "login", {}, "site");
-    const lessons = await db(env, "GET", "lessons?select=id,sort,title,summary,minutes,youtube_id&published=eq.true&order=sort.asc");
+    const lib = await learn.lessonsFor(env, customer, v.email);
     const announcements = await db(env, "GET", "announcements?select=id,title,body,published_at&order=published_at.desc&limit=20");
     const viewed = await db(env, "GET", `events?select=payload&customer_id=eq.${customer.id}&type=eq.lesson_viewed`);
     const viewedIds = [...new Set(viewed.map((e) => e.payload && e.payload.lesson_id).filter(Boolean))];
@@ -509,7 +541,8 @@ async function handleApi(request, env, url) {
     return json({
       ok: true,
       me: { name: customer.name, email: customer.email, source: customer.source },
-      lessons, announcements, viewed: viewedIds,
+      lessons: lib.flat, announcements, viewed: viewedIds,
+      library: { source: lib.source, member: lib.member, lesson_count: lib.lesson_count, programs: lib.programs },
       room_unread: room.unreadForStudent,
       entitlement: await sell.entitlement(env, customer.id),
       community_url: env.COMMUNITY_URL || null,
@@ -605,7 +638,11 @@ async function handleApi(request, env, url) {
     const [customer] = await db(env, "GET", `customers?select=id&email=eq.${encodeURIComponent(v.email)}`);
     if (!customer) return json({ ok: false, error: "not_registered" }, 404);
     const payload = {};
-    if (body.lesson_id) payload.lesson_id = String(body.lesson_id).slice(0, 20);
+    // 便 6a：学ぶくんの教材の番号は 36 文字（uuid）。切らずに入れ、形が違えば受け付けない
+    if (body.lesson_id !== undefined) {
+      if (!LESSON_ID_RE.test(String(body.lesson_id))) return json({ ok: false, error: "bad_lesson_id" }, 400);
+      payload.lesson_id = String(body.lesson_id);
+    }
     if (body.announcement_id) payload.announcement_id = Number(body.announcement_id) || null;
     const ev = await addEvent(env, customer.id, body.type, payload, "site");
     return json({ ok: true, id: ev.id });
@@ -780,9 +817,24 @@ const TOOLS = [
         original: { type: "string", description: "原文（省くと投稿の文章）" },
         corrected: { type: "string", description: "添削後（必須）" },
         comment: { type: "string", description: "コメント" },
+        notes: {
+          type: "array", maxItems: 30,
+          description: "長文の指摘（任意）。quote は原文の一部をそのまま写したもの（原文に無いと quote_not_in_original で止まる）、text は指摘。番号は上から 1 から振られ、生徒の画面で原文の色の範囲と右の指摘が同じ番号で結ばれる",
+          items: { type: "object", properties: { quote: { type: "string" }, text: { type: "string" } }, required: ["text"] },
+        },
       },
       required: ["person_id", "corrected"],
     },
+  },
+  {
+    name: "list_corrections",
+    description: "1 人に返した添削を新しい順に返す（原文・添削後・コメント・指摘・返した日時・出した文章の id）。生徒の「振り返り」の画面と同じ中身。0 件は count: 0。",
+    inputSchema: { type: "object", properties: { person_id: { type: "string" }, limit: { type: "integer", description: "最大件数（既定 20・最大 100）" } }, required: ["person_id"] },
+  },
+  {
+    name: "list_lessons",
+    description: "学ぶくんの本物の教材の数を、プログラムとコースごとに返す（題名の一覧は返さない）。person_id を渡すと、その人に見える分だけ（受講の結びが無ければ member: false）。with_video は動画のある教材の数。",
+    inputSchema: { type: "object", properties: { person_id: { type: "string" } } },
   },
   {
     name: "send_email",
@@ -924,6 +976,8 @@ async function runTool(env, name, args) {
   if (name === "list_rooms") return await core.listRooms(env, args);
   if (name === "get_room") return await core.getRoom(env, { person_id: args.person_id, mark_read: false }, "mcp");
   if (name === "return_correction") return await core.returnCorrection(env, args, "mcp");
+  if (name === "list_corrections") return await listCorrections(env, args);
+  if (name === "list_lessons") return await learn.listLessons(env, args);
   if (name === "send_email") return await bin3.sendMailTo(env, args, "mcp");
   if (name === "list_consults") return await bin4.listConsults(env, args);
   if (name === "set_deal_stage") return await bin4.setDealStage(env, args, "mcp");

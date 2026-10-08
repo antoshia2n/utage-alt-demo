@@ -31,6 +31,7 @@
       <button role="tab" aria-selected="true" data-tab="lessons">教材</button>
       <button role="tab" aria-selected="false" data-tab="news">お知らせ</button>
       <button role="tab" aria-selected="false" data-tab="room">添削ルーム<span class="badge hidden" id="room-badge"></span></button>
+      <button role="tab" aria-selected="false" data-tab="review">振り返り</button>
       <button role="tab" aria-selected="false" data-tab="booking">予約</button>
     </div>
 
@@ -41,7 +42,14 @@
       <a href="#" id="back" class="note">← 教材の一覧へ</a>
       <h2 id="l-title"></h2>
       <div class="player" id="l-player"></div>
-      <p id="l-summary"></p>
+      <p id="l-summary" class="pre"></p>
+      <div id="l-mindmap"></div>
+    </section>
+
+    <section id="tab-review" class="hidden">
+      <p class="note" style="margin-top:0">返ってきた添削だけを、新しい順に並べています。番号の付いた色の範囲を押すと、右の指摘が光ります。</p>
+      <p class="note" id="review-count"></p>
+      <div id="review-list" class="stack"></div>
     </section>
 
     <section id="tab-news" class="stack hidden"></section>

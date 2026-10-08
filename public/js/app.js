@@ -1,4 +1,5 @@
 import { getClient, api, esc, fmtTime, authImage, shrinkImage } from "/js/common.js";
+import { correctionHtml, wireNotes } from "/js/correction.js";
 
 const $ = (id) => document.getElementById(id);
 const fresh = /access_token=/.test(location.hash);
@@ -32,21 +33,48 @@ async function main() {
   $("who").textContent = r.me.name || r.me.email;
 
   const viewed = new Set(r.viewed);
-  $("tab-lessons").innerHTML = r.lessons.map((l, i) => `
-    <div class="card lesson" data-id="${esc(l.id)}" tabindex="0" role="button">
+  const lib = r.library || { source: "demo", member: true, programs: [] };
+  // 便 6a：学ぶくんの本物の教材（プログラム → コース → 教材）。デモの置き場では今までどおり仮の教材の一覧
+  const lessons = {};
+  const pill = (id) => viewed.has(id) ? ' <span class="pill">視聴済み</span>' : "";
+  const lessonRow = (l, i) => {
+    lessons[l.id] = l;
+    return `<div class="card lesson" data-id="${esc(l.id)}" data-q="${esc(String(l.title).toLowerCase())}" tabindex="0" role="button">
       <div class="num">${String(i + 1).padStart(2, "0")}</div>
-      <div style="flex:1"><h3>${esc(l.title)}</h3><div class="meta">${l.minutes} 分 ${viewed.has(l.id) ? '<span class="pill">視聴済み</span>' : ""}</div></div>
-    </div>`).join("") || '<p class="note">教材はまだありません。</p>';
+      <div style="flex:1;min-width:0"><h3>${esc(l.title)}</h3><div class="meta">${l.youtube_id ? "動画" : "文章"}${l.mindmap_url ? "・マインドマップ" : ""}${l.minutes ? "・" + l.minutes + " 分" : ""}${pill(l.id)}</div></div>
+    </div>`;
+  };
+  if (lib.source === "manabu" && !lib.member) {
+    $("tab-lessons").innerHTML = '<div class="card"><h3>教材は会員向けです</h3><p class="note" style="margin:0">しあらぼの会員になると、セミナーのアーカイブと講座の教材がここで見られます。</p></div>';
+  } else if (lib.source === "manabu") {
+    $("tab-lessons").innerHTML = `
+      <div class="lib-head"><span class="note">教材 ${lib.lesson_count} 本</span>
+        <label for="lib-q" class="sr">教材を探す</label><input id="lib-q" type="search" placeholder="題名で探す" autocomplete="off"></div>
+      ${lib.programs.map((p, pi) => `<details class="prog"${pi === 0 ? " open" : ""}><summary><b>${esc(p.title)}</b><span class="note">${p.courses.reduce((a, c) => a + c.lessons.length, 0)} 本</span></summary>
+        ${p.courses.map((c) => `<div class="course"><div class="course-h">${esc(c.title)}<span class="note">${c.lessons.length} 本</span></div><div class="stack">${c.lessons.map(lessonRow).join("")}</div></div>`).join("")}
+      </details>`).join("") || '<p class="note">教材はまだありません。</p>'}
+      <p class="note hidden" id="lib-none">見つかりませんでした。</p>`;
+    $("lib-q").addEventListener("input", (e) => {
+      const q = e.target.value.trim().toLowerCase();
+      let hits = 0;
+      document.querySelectorAll("#tab-lessons .lesson").forEach((el) => { const ok = !q || el.dataset.q.includes(q); el.classList.toggle("hidden", !ok); if (ok) hits++; });
+      document.querySelectorAll("#tab-lessons .course").forEach((c) => c.classList.toggle("hidden", !c.querySelector(".lesson:not(.hidden)")));
+      document.querySelectorAll("#tab-lessons details.prog").forEach((d) => { const has = !!d.querySelector(".lesson:not(.hidden)"); d.classList.toggle("hidden", !has); if (q && has) d.open = true; });
+      $("lib-none").classList.toggle("hidden", hits > 0);
+    });
+  } else {
+    $("tab-lessons").innerHTML = r.lessons.map(lessonRow).join("") || '<p class="note">教材はまだありません。</p>';
+  }
 
   $("tab-news").innerHTML = r.announcements.map((a) => `
     <div class="card"><time class="note">${fmtTime(a.published_at)}</time><h3>${esc(a.title)}</h3><p class="note" style="margin:0">${esc(a.body)}</p></div>`).join("")
     || '<p class="note">お知らせはまだありません。</p>';
 
-  const lessons = Object.fromEntries(r.lessons.map((l) => [l.id, l]));
-  const sections = ["lessons", "lesson", "news", "room", "booking"];
+  const sections = ["lessons", "lesson", "news", "room", "review", "booking"];
   const showTab = (name) => {
     sections.forEach((s) => $("tab-" + s).classList.toggle("hidden", s !== name));
     if (name === "room") room.open();
+    if (name === "review") loadReview(token);
     if (name === "booking") loadBooking(token);
     document.querySelectorAll(".tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === name || (name === "lesson" && b.dataset.tab === "lessons"))));
   };
@@ -56,9 +84,11 @@ async function main() {
   const openLesson = async (id) => {
     const l = lessons[id]; if (!l) return;
     $("l-title").textContent = l.title;
-    $("l-summary").textContent = l.summary;
+    $("l-summary").textContent = l.summary || "";
+    $("l-mindmap").innerHTML = l.mindmap_url ? `<a class="btn ghost small" href="${esc(l.mindmap_url)}" target="_blank" rel="noopener">マインドマップを開く</a>` : "";
+    $("l-player").classList.toggle("hidden", !l.youtube_id && lib.source === "manabu");
     $("l-player").innerHTML = l.youtube_id
-      ? `<iframe src="https://www.youtube-nocookie.com/embed/${esc(l.youtube_id)}" style="width:100%;height:100%;border:0;border-radius:10px" allowfullscreen></iframe>`
+      ? `<iframe src="https://www.youtube-nocookie.com/embed/${esc(l.youtube_id)}" style="width:100%;height:100%;border:0;border-radius:10px" allow="fullscreen; picture-in-picture" allowfullscreen></iframe>`
       : "動画の場所（本番は YouTube の限定公開を埋め込みます。デモでは架空の教材のため動画はありません）";
     showTab("lesson");
     window.scrollTo(0, 0);
@@ -66,8 +96,7 @@ async function main() {
     // 記録できたら一覧の印をその場で付ける（読み直さなくても見える）
     if (res.ok && !viewed.has(id)) {
       viewed.add(id);
-      const meta = document.querySelector(`.lesson[data-id="${CSS.escape(id)}"] .meta`);
-      if (meta) meta.insertAdjacentHTML("beforeend", ' <span class="pill">視聴済み</span>');
+      document.querySelectorAll(`.lesson[data-id="${CSS.escape(id)}"] .meta`).forEach((meta) => meta.insertAdjacentHTML("beforeend", ' <span class="pill">視聴済み</span>'));
     }
   };
   document.querySelectorAll(".lesson").forEach((el) => {
@@ -79,11 +108,31 @@ async function main() {
   const room = setupRoom(token, r.community_url);
   room.setBadge(r.room_unread);
   if (location.hash === "#room") showTab("room");
+  if (location.hash === "#review") showTab("review");
   if (location.hash === "#booking") showTab("booking");
 
   $("logout").addEventListener("click", async (e) => { e.preventDefault(); await sb.auth.signOut(); location.replace("/"); });
 
   if (fresh) maybeShowA2hs();
+}
+
+// ---------- 添削の振り返り（便 6a）：返ってきた添削だけを新しい順に。出した文章の日付と並べる ----------
+async function loadReview(token) {
+  const box = $("review-list");
+  const r = await api("/api/room", { token });
+  if (!r.ok) { box.innerHTML = `<div class="msg err">読めませんでした（${esc(r.error || r.status)}）</div>`; return; }
+  const subs = Object.fromEntries(r.messages.filter((m) => m.from === "student").map((m) => [String(m.id), m]));
+  const back = r.messages.filter((m) => m.from === "cyanin").reverse();
+  $("review-count").textContent = back.length ? `これまでに返ってきた添削 ${back.length} 件（新しい順）` : "";
+  box.innerHTML = back.map((m, i) => {
+    const sub = subs[String(m.reply_to)];
+    return `<details class="card review"${i === 0 ? " open" : ""}>
+      <summary><time>${fmtTime(m.at).slice(0, 10)}</time><span class="review-t">${esc(String(m.comment || m.corrected || "").replace(/\s+/g, " ").slice(0, 40))}</span>${(m.notes || []).length ? `<span class="pill gray">指摘 ${m.notes.length}</span>` : ""}</summary>
+      ${sub ? `<div class="note" style="margin:8px 0">出した日：${fmtTime(sub.at)}</div>` : ""}
+      ${correctionHtml(m)}
+    </details>`;
+  }).join("") || '<div class="empty note card">まだ返ってきた添削はありません。添削ルームから文章を出すと、ここに積み上がります。</div>';
+  wireNotes(box);
 }
 
 // ---------- 予約とセミナー（便 4） ----------
@@ -199,8 +248,9 @@ function setupRoom(token, communityUrl) {
           <div class="meta"><time>${fmtTime(m.at)}</time>${m.replied ? '<span class="pill">返信済み</span>' : m.read_by_cyanin ? '<span class="pill gray">既読</span>' : ""}</div></div>`
       : `<div class="msg-them"><div class="reply card">
           <div class="reply-h">シアニンからの添削</div>
-          ${block("原文", m.original, "orig")}${block("添削後", m.corrected, "corr")}${block("コメント", m.comment)}
+          ${correctionHtml(m)}
         </div><div class="meta"><time>${fmtTime(m.at)}</time></div></div>`).join("");
+    wireNotes(list);
     list.querySelectorAll("img[data-key]").forEach(async (img) => {
       try { img.src = await authImage("/api/room/image?key=" + encodeURIComponent(img.dataset.key), token); }
       catch (_) { img.alt = "画像を読めませんでした"; img.classList.add("broken"); }
