@@ -54,6 +54,19 @@ UTAGE の代わりになるサイト兼アプリ（PWA）のデモ。架空の�
 - MCP：`get_blueprint`・`list_campaigns`・`create_campaign`・`set_part_campaign`（自動）、`archive_campaign`（承認が要る）
 - 表：`supabase/b8c_plan.sql` を SQL Editor で 1 回流す（何回流しても同じ）
 
+## B の便 7c-1 で足したもの
+
+- メールの送り方を表 `b_settings` の 4 行に置いた（Cloudflare の値から移した）：`mail_from`（送り元）・`mail_from_name`（表示名）・`mail_reply_to`（返信先・空なら付けない）・`mail_scope`（誰に送るか）
+  - `mail_scope`：`test`（テスト宛てだけ）／`login`（ログインと手続きのメールは誰にでも・一斉配信とステップはテスト宛てだけ）／`all`（全部誰にでも）
+  - 送り元は `mail.shia2n.jp` か `demo.shia2n.jp` の住所だけ（Cloudflare の Email Sending に登録した下の住所。shia2n.jp そのものは XServer の送信の決まりがあるので使わない）
+  - 表に行が無いときは wrangler.jsonc の `MAIL_FROM` と `test` に戻る。本番では Cloudflare の値 `MAIL_OPEN` を読まない
+  - 変えるのはシアニン用の画面「決済・メール・オプチャ」の「メールの送り方」か、AI の `set_mail_settings`（承認が要る）。読むのは `get_mail_settings`（自動）
+- メールの末尾：事業者名・所在地・お問い合わせ先・特商法の頁・配信停止（デモの置き場では今までどおりデモの文）
+- 生徒に見える頁と法定の頁を本物にした：名前はシアラボ。特商法とプライバシーポリシーは UTAGE のファネル「特商法・プライバシーポリシー」から写した。利用規約は本物が無いのでリンクを外し、頁は「準備中」
+- 個別相談の枠とセミナーはまだ架空なので、本番の置き場ではシアニン以外に「準備中」だけを返す（本物は便 8f）
+- 登録の画面の試しのカードの案内は、決済が試し（`univapayMode` が test）のときだけ出す
+- 表：`supabase/b7c1_mail.sql` を SQL Editor で 1 回流す（何回流しても同じ・画面で変えた値は上書きしない）。流す前に Email Sending に `mail.shia2n.jp` を登録しておく
+
 ## 置き場
 
 - Cloudflare Workers（静的ページ＋API）

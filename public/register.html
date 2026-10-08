@@ -13,26 +13,25 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/css/style.css">
-<title>無料登録｜言語化ラボ（デモ）</title>
+<title>無料登録｜シアラボ</title>
 </head>
 <body>
-<div class="demo-bar">これはデモです。架空のデータだけで動いています。</div>
 <div class="wrap">
-  <header class="top"><a class="brand" href="/">言語化ラボ<small>DEMO</small></a><nav class="top"><a href="/login">ログイン</a></nav></header>
+  <header class="top"><a class="brand" href="/">シアラボ</a><nav class="top"><a href="/login">ログイン</a></nav></header>
   <main style="padding:24px 0 8px">
     <h1 style="font-size:26px">無料登録</h1>
     <p class="note">登録すると、ログイン用のリンクがメールで届きます。リンクを開くとそのまま教材の画面に入れます。</p>
     <form id="f" class="card stack" novalidate>
       <div><label for="name">お名前</label><input id="name" type="text" autocomplete="name" required maxlength="60"></div>
       <div><label for="email">メールアドレス</label><input id="email" type="email" autocomplete="email" required></div>
-      <label class="check"><input id="consent" type="checkbox"> <span><a href="/legal/terms" target="_blank">利用規約</a>と<a href="/legal/privacy" target="_blank">プライバシーポリシー</a>に同意し、お知らせのメールを受け取ります（いつでも配信を止められます）。</span></label>
+      <label class="check"><input id="consent" type="checkbox"> <span><a href="/legal/privacy" target="_blank">プライバシーポリシー</a>と<a href="/legal/tokushoho" target="_blank">特定商取引法に基づく表記</a>を確かめ、お知らせのメールを受け取ります（いつでも配信を止められます）。</span></label>
       <button class="btn block" id="go" type="submit">登録してリンクを受け取る</button>
       <div id="msg" class="msg hidden" role="status"></div>
     </form>
     <section id="join" class="card stack hidden" style="margin-top:16px">
-      <h2 style="margin:0">続けて入会する（テスト決済）</h2>
+      <h2 style="margin:0">続けて申し込む</h2>
       <p class="note" style="margin:0" id="join-plan"></p>
-      <p class="note" style="margin:0">デモなので本当の請求はされません。カード番号は 4000 0200 0000 0000、期限は未来の月、セキュリティコードは 3 桁なら何でも通ります。</p>
+      <p class="note hidden" style="margin:0" id="test-note">いまは試しの決済です（本当の請求はされません）。カード番号は 4000 0200 0000 0000、期限は未来の月、セキュリティコードは 3 桁なら何でも通ります。</p>
       <button class="btn block" id="pay" type="button">入会する</button>
       <div id="paymsg" class="msg hidden" role="status"></div>
     </section>
@@ -40,8 +39,8 @@
   </main>
 </div>
 <footer class="site wrap">
-  <a href="/legal/tokushoho">特定商取引法に基づく表記</a><a href="/legal/privacy">プライバシーポリシー</a><a href="/legal/terms">利用規約</a>
-  <div style="margin-top:8px">© 言語化ラボ（デモ）— 架空の事業者です</div>
+  <a href="/legal/tokushoho">特定商取引法に基づく表記</a><a href="/legal/privacy">プライバシーポリシー</a>
+  <div style="margin-top:8px">© シアラボ（株式会社Best Life Consulting）</div>
 </footer>
 <script type="module">
   import { getClient, api, rememberSource, currentSource, SOURCE_LABEL } from "/js/common.js";
@@ -51,7 +50,7 @@
   const $ = (id) => document.getElementById(id);
   const show = (text, ok) => { const m = $("msg"); m.textContent = text; m.className = "msg " + (ok ? "ok" : "err"); };
   const payShow = (text, ok) => { const m = $("paymsg"); m.textContent = text; m.className = "msg " + (ok ? "ok" : "err"); };
-  // B の便 4：?product=<商品の id> で来たら、その商品を申し込む（紹介用の価格のリンクもこれ）。無ければデモの見本のプラン
+  // B の便 4：?product=<商品の id> で来たら、その商品を申し込む（紹介用の価格のリンクもこれ）。無ければデモの置き場の見本のプラン（本番の置き場には無いので出さない）
   const productId = new URLSearchParams(location.search).get("product") || "";
   async function openJoin(email) {
     const cfg = await fetch("/api/config").then((r) => r.json()).catch(() => ({}));
@@ -66,6 +65,8 @@
     } else if (cfg.plan) {
       $("join-plan").textContent = cfg.plan.name + "：月 " + cfg.plan.amount.toLocaleString() + " 円";
     } else return;
+    // B の便 7c-1：試しの決済のときだけ、試しのカードの案内を出す
+    $("test-note").classList.toggle("hidden", cfg.univapayMode !== "test");
     $("join").classList.remove("hidden");
     $("pay").onclick = async () => {
       $("pay").disabled = true;
