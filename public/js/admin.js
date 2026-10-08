@@ -103,7 +103,7 @@ async function detail(id) {
       <span class="pill">${esc(p.stage)}</span>
       <span class="pill gray">流入元 ${SOURCE_LABEL[p.source] || esc(p.source)}</span>
       <span class="pill gray">出来事 ${p.event_count} 件</span>
-      ${p.entitlement && p.entitlement.member ? '<span class="pill">会員（定期課金）</span>' : `<span class="pill gray">権利 ${esc(p.entitlement ? p.entitlement.status : "none")}</span>`}
+      ${p.entitlement && p.entitlement.member ? `<span class="pill">会員（${esc(p.entitlement.plan || "定期課金")}）</span>` : `<span class="pill gray">権利 ${esc(p.entitlement ? p.entitlement.status : "none")}</span>`}
     </div>
     <div class="deal-box">
       <h4>商談 ${p.deal && p.deal.stage !== "none" ? `<span class="pill warn">${esc(STAGE[p.deal.stage])}</span>` : '<span class="note">（まだ無し）</span>'}</h4>
@@ -169,6 +169,8 @@ function setupViews() {
     $("view-rooms").style.display = b.dataset.view === "rooms" ? "" : "none";
     $("view-deals").style.display = b.dataset.view === "deals" ? "" : "none";
     $("view-ai").style.display = b.dataset.view === "ai" ? "" : "none";
+    $("view-products").style.display = b.dataset.view === "products" ? "" : "none";
+    if (b.dataset.view === "products") loadProducts();
     if (b.dataset.view === "deals") loadDeals();
     if (b.dataset.view === "ai") loadAi();
   }));
@@ -333,6 +335,73 @@ async function loadAi() {
   }
 }
 
+// ---------- 商品（B の便 4） ----------
+const KIND_LABEL = { one_time: "単発", subscription: "定期", installment: "分割" };
+let productsCache = [];
+function priceOf(p) {
+  const yen = Number(p.amount).toLocaleString() + " 円";
+  if (p.kind === "subscription") return (p.period === "annually" ? "年 " : "月 ") + yen;
+  if (p.kind === "installment") return yen + " × " + p.installments + " 回";
+  return yen + (p.grant_days ? "（" + p.grant_days + " 日）" : "");
+}
+async function loadProducts(focusId) {
+  const r = await api("/api/admin/products", { token });
+  if (!r.ok) { $("pr-count").textContent = "読めませんでした（" + (r.error || r.status) + "）"; return; }
+  productsCache = r.products;
+  const sellable = r.products.filter((p) => p.active).length, shown = r.products.filter((p) => p.public).length;
+  $("pr-count").textContent = `${r.count} 件・売っている ${sellable}・サイトに出している ${shown}${r.store === "demo" ? "（デモの置き場：見本だけ）" : ""}`;
+  $("products").innerHTML = r.products.map((p) => `
+    <li data-pid="${esc(p.id)}"><div style="min-width:0"><div>${esc(p.name)}</div><div class="sub">${esc(KIND_LABEL[p.kind] || p.kind)}・${esc(priceOf(p))}・売れた ${p.sold}</div></div>
+      <div style="flex-shrink:0;display:flex;gap:4px">${p.active ? '<span class="pill">売る</span>' : '<span class="pill gray">売らない</span>'}${p.public ? '<span class="pill">サイト</span>' : ""}</div></li>`).join("");
+  document.querySelectorAll("#products li").forEach((li) => li.addEventListener("click", () => productDetail(li.dataset.pid)));
+  if (focusId) productDetail(focusId);
+}
+function productDetail(id) {
+  const p = productsCache.find((x) => x.id === id);
+  if (!p) return;
+  document.querySelectorAll("#products li").forEach((li) => li.toggleAttribute("aria-current", li.dataset.pid === id));
+  const link = location.origin + "/register?product=" + encodeURIComponent(p.id);
+  const ro = p.kind === "installment" ? "disabled" : "";
+  $("product-detail").innerHTML = `
+    <h2 style="margin-bottom:2px">${esc(p.name)}</h2>
+    <div class="note">${esc(p.id)}・${esc(KIND_LABEL[p.kind] || p.kind)}・売れた ${p.sold}${p.list_price_of ? "・紹介用（元：" + esc(p.list_price_of) + "）" : ""}</div>
+    ${p.note ? `<p class="note">${esc(p.note)}</p>` : ""}
+    <form id="pf" class="stack" style="margin-top:12px">
+      <div><label for="pf-name">名前</label><input id="pf-name" type="text" maxlength="120" value="${esc(p.name)}"></div>
+      <div><label for="pf-amount">金額（円）</label><input id="pf-amount" type="text" inputmode="numeric" value="${p.amount}"></div>
+      ${p.kind === "subscription" ? `<div><label for="pf-period">周期</label><select id="pf-period" class="inline"><option value="monthly" ${p.period === "monthly" ? "selected" : ""}>毎月</option><option value="annually" ${p.period === "annually" ? "selected" : ""}>毎年</option></select></div>` : ""}
+      ${p.kind === "one_time" ? `<div><label for="pf-days">権利の日数（空なら期限なし）</label><input id="pf-days" type="text" inputmode="numeric" value="${p.grant_days ?? ""}"></div>` : ""}
+      <div><label for="pf-limit">販売数の上限（空なら無し）</label><input id="pf-limit" type="text" inputmode="numeric" value="${p.sales_limit ?? ""}"></div>
+      <div><label for="pf-grants">権利の印（カンマ区切り。例 shiarabo_basic）</label><input id="pf-grants" type="text" value="${esc((p.grants || []).join(","))}"></div>
+      <div><label for="pf-desc">説明（生徒に見える）</label><textarea id="pf-desc" rows="2">${esc(p.description || "")}</textarea></div>
+      <label class="check"><input type="checkbox" id="pf-multi" ${p.deny_multiple ? "checked" : ""}> <span>重ねて買えない</span></label>
+      <label class="check"><input type="checkbox" id="pf-active" ${p.active ? "checked" : ""} ${ro}> <span>売る</span></label>
+      <label class="check"><input type="checkbox" id="pf-public" ${p.public ? "checked" : ""} ${ro}> <span>サイトの一覧に出す（出さなくても、下のリンクを渡した人は買える）</span></label>
+      <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="submit" ${ro}>変える</button><span class="note" id="pf-status"></span></div>
+    </form>
+    <h4 style="margin-top:16px">申し込みのリンク</h4>
+    <p class="note" style="word-break:break-all;margin:0"><code>${esc(link)}</code></p>
+    <button class="btn ghost small" id="pf-copy" type="button" style="margin-top:8px">リンクを写す</button>`;
+  $("pf-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText(link); $("pf-copy").textContent = "写しました"; } catch (_) { $("pf-copy").textContent = "写せませんでした"; } });
+  $("pf").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const num = (v) => { const t = String(v || "").replace(/[^0-9]/g, ""); return t ? Number(t) : null; };
+    const body = {
+      id: p.id, name: $("pf-name").value, amount: num($("pf-amount").value),
+      sales_limit: num($("pf-limit").value), description: $("pf-desc").value,
+      grants: $("pf-grants").value.split(",").map((x) => x.trim()).filter(Boolean),
+      deny_multiple: $("pf-multi").checked, active: $("pf-active").checked, public: $("pf-public").checked,
+    };
+    if ($("pf-period")) body.period = $("pf-period").value;
+    if ($("pf-days")) body.grant_days = num($("pf-days").value);
+    $("pf-status").textContent = "変えています…";
+    const r = await api("/api/admin/products", { method: "POST", token, body });
+    if (!r.ok) { $("pf-status").textContent = "変えられませんでした（" + (r.error || r.status) + "）"; return; }
+    await loadProducts(p.id);
+    $("pf-status").textContent = r.changed && Object.keys(r.changed).length ? "変えました：" + Object.keys(r.changed).join("・") : "変わったところはありません";
+  });
+}
+
 async function loadSetup() {
   const s = await api("/api/admin/setup", { token });
   if (!s.ok) { $("setup-body").textContent = "読めませんでした（" + (s.error || s.status) + "）"; return; }
@@ -351,6 +420,7 @@ function detailText(e) {
   if (e.type === "consult_booked" || e.type === "consult_canceled") return `<span class="note">（${p.slot ? esc(fmtTime(p.slot)) : ""}${p.topic ? "・" + esc(String(p.topic).slice(0, 30)) : ""}）</span>`;
   if (e.type === "consult_done" || e.type === "deal_won" || e.type === "deal_lost") return `<span class="note">（${p.amount != null ? Number(p.amount).toLocaleString() + " 円・" : ""}${esc(String(p.memo || "").slice(0, 30))}）</span>`;
   if (e.type.startsWith("seminar_")) return `<span class="note">（${esc(p.seminar_id || "")}${p.mail ? "・メール " + esc(p.mail) : ""}）</span>`;
+  if (e.type === "purchase_completed") return `<span class="note">（${esc(p.product_name || p.product_id || "")}・${Number(p.amount || 0).toLocaleString()} 円${p.grant_until ? "・" + esc(fmtTime(p.grant_until).slice(0, 10)) + " まで" : ""}${p.over_limit ? "・上限を超えた：" + esc(p.over_limit) : ""}）</span>`;
   if (e.type.startsWith("subscription_")) return `<span class="note">（${esc(p.status || "")}${p.amount ? "・" + Number(p.amount).toLocaleString() + " 円" : ""}）</span>`;
   if (e.type.startsWith("email_") && e.type !== "email_unsubscribed") return `<span class="note">（${esc(p.subject || "")}${p.reason ? "・" + esc(p.reason) : ""}${p.error ? "・" + esc(p.error) : ""}）</span>`;
   if (e.type === "correction_submitted") return `<span class="note">（${esc(String(p.text || "").slice(0, 30))}${(p.images || []).length ? " 画像" + p.images.length : ""}）</span>`;
