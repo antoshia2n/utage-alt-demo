@@ -8,13 +8,15 @@
 // 画像は R2（IMAGES）に置き、ログインした本人とシアニンだけが読める。
 // 便 3：決済（UnivaPay のテスト）とメール（Cloudflare Email Service）。中身は src/bin3.js。
 // B の便 4：売る（商品の台帳・単発・定期・年払い・紹介用の価格）。中身は src/sell.js。権利の計算もこちらへ移した。
+// B の便 5：届ける（ステップ配信・一斉配信・クリックの計測・送信元を温める・ログインのメール）。中身は src/deliver.js。
 
 import { makeBin3 } from "./bin3.js";
 import { makeBin4 } from "./bin4.js";
 import { makeGuard } from "./guard.js";
 import { makeSell } from "./sell.js";
+import { makeDeliver } from "./deliver.js";
 
-const VERSION = "0.7.1-b4";
+const VERSION = "0.8.0-b5";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_read"];
@@ -31,6 +33,9 @@ export default {
     try {
       if (path === "/mcp" || path.startsWith("/mcp/")) return await handleMcp(request, env, url);
       if (path.startsWith("/api/")) return await handleApi(request, env, url);
+      // B の便 5：メールの中のリンク（押したら記録して元の住所へ）
+      const rl = path.match(/^[/]r[/]([0-9a-f]{12})$/);
+      if (rl && !missingConfig(env).length) return await deliver.handleClick(env, url, rl[1]);
       return env.ASSETS.fetch(request);
     } catch (err) {
       return json({ ok: false, error: "internal_error", detail: String(err && err.message || err) }, 500);
@@ -45,7 +50,8 @@ export default {
       try {
         const r = await bin3.remindUnread(env, roomEvents, roomState);
         const s = await bin4.remindSeminars(env);
-        await logInbound(env, "cron", { cron: event.cron }, { room: r, seminars: s }, 200);
+        const d = await deliver.run(env);
+        await logInbound(env, "cron", { cron: event.cron }, { room: r, seminars: s, deliver: d }, 200);
       } catch (e) {
         await logInbound(env, "cron", { cron: event.cron }, { ok: false, error: String(e.message).slice(0, 200) }, 500);
       }
@@ -57,6 +63,7 @@ const bin3 = makeBin3({ db, addEvent, logInbound, json, onCharge: (env, event, d
 const bin4 = makeBin4({ db, addEvent, bin3 });
 const guard = makeGuard({ db, logInbound });
 const sell = makeSell({ db, addEvent, bin3 });
+const deliver = makeDeliver({ db, addEvent, logInbound, bin3, sell });
 
 // ---------- 共通 ----------
 
@@ -422,7 +429,7 @@ async function handleApi(request, env, url) {
       ok: missing.length === 0 && dbOk === true, version: VERSION, missing_settings: missing, db: dbOk, images: !!env.IMAGES,
       store: env.B_STORE ? "production" : "demo",
       univapay: { configured: pay.configured, mode: pay.mode, store: !!pay.store_id },
-      mail: { binding: mail.binding, from: mail.from },
+      mail: { binding: mail.binding, from: mail.from, open_to_all: env.MAIL_OPEN === "1", auth_hook: !!env.B_AUTH_HOOK_SECRET },
     });
   }
 
@@ -481,6 +488,8 @@ async function handleApi(request, env, url) {
   }
   if (path === "/api/webhooks/univapay" && method === "POST") return await bin3.handleWebhook(request, env);
   if (path === "/api/unsubscribe") return await bin3.handleUnsubscribe(request, env, url);
+  // B の便 5：Supabase の「メールを送る引き金」。ログインのリンクを Cloudflare から送る（署名で Supabase からと確かめる）
+  if (path === "/api/auth/send-email" && method === "POST") return await deliver.handleAuthEmail(request, env);
 
   // 生徒：自分の情報・教材・お知らせ
   if (path === "/api/me" && method === "GET") {
@@ -680,6 +689,31 @@ async function handleApi(request, env, url) {
       return json(r, r.ok === false ? 400 : 200);
     }
     if (path === "/api/admin/ai-log" && method === "GET") return json(await guard.aiLog(env, {}));
+    // B の便 5：配信（シアニン用の画面からは承認なしで送れる。AI からは一斉配信とステップの変更に承認が要る）
+    if (path === "/api/admin/deliver" && method === "GET") {
+      const [b, s, w] = await Promise.all([deliver.listBroadcasts(env, {}), deliver.listSteps(env), env.B_STORE ? deliver.warmState(env) : null]);
+      return json({ ok: true, broadcasts: b.broadcasts, steps: s.steps, warm: w, open_to_all: env.MAIL_OPEN === "1" });
+    }
+    if (path === "/api/admin/deliver/run" && method === "POST") return json(await deliver.run(env));
+    if (path === "/api/admin/audience" && method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      return json(await deliver.previewAudience(env, body));
+    }
+    if (path === "/api/admin/broadcasts" && method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      const r = await deliver.draftBroadcast(env, body, a.email);
+      return json(r, r.ok === false ? 400 : 200);
+    }
+    const bq = path.match(/^[/]api[/]admin[/]broadcasts[/]([0-9a-f-]{36})[/](queue|cancel)$/i);
+    if (bq && method === "POST") {
+      const r = bq[2] === "queue" ? await deliver.queueBroadcast(env, { id: bq[1] }, a.email) : await deliver.cancelBroadcast(env, { id: bq[1] }, a.email);
+      return json(r, r.ok === false ? 400 : 200);
+    }
+    if (path === "/api/admin/steps" && method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      const r = await deliver.setStep(env, body, a.email);
+      return json(r, r.ok === false ? 400 : 200);
+    }
     // B の便 4：商品の台帳（シアニン用の画面からは承認なしで変えられる。AI からは承認が要る）
     if (path === "/api/admin/products" && method === "GET") return json(await sell.listProducts(env, {}));
     if (path === "/api/admin/products" && method === "POST") {
@@ -838,6 +872,48 @@ const TOOLS = [
       required: ["id"],
     },
   },
+  {
+    name: "preview_audience",
+    description: "一斉配信の宛先を、条件で絞って数える（送らない）。filter の欄：source（流入元の配列 x／note／youtube／direct／other）・purchased（買った商品の id の配列）・not_purchased（買っていない商品の id の配列）・member（会員か true／false）・note_member（true／false）・registered_after／registered_before（日時）・emails（メールの配列。試しに送るとき）。配信を止めている人の数も返す。",
+    inputSchema: { type: "object", properties: { filter: { type: "object" } } },
+  },
+  {
+    name: "draft_broadcast",
+    description: "一斉配信の下書きを作る、または直す（送らない）。subject・body・filter（preview_audience と同じ形）。本文の {{name}} は名前に置き換わり、https のリンクは押したかを数える住所に置き換わる。id を渡すと下書きのままのものを直す。宛先の人数も返す。",
+    inputSchema: { type: "object", properties: { id: { type: "string" }, subject: { type: "string" }, body: { type: "string" }, filter: { type: "object" } }, required: ["subject", "body"] },
+  },
+  {
+    name: "queue_broadcast",
+    description: "下書きの一斉配信を送る列に入れる。承認が要る道具：呼ぶと承認待ちになり approval_url が返る。送るのは毎時の定時の処理で、送信元を温めるための 1 日の上限の中から少しずつ送る。",
+    inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+  },
+  {
+    name: "cancel_broadcast",
+    description: "一斉配信を止める（下書き・列の中・送っている途中のどれでも）。もう送った分は戻らない。",
+    inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+  },
+  {
+    name: "list_broadcasts",
+    description: "一斉配信の一覧と結果（状態・宛先の人数・送った・送らなかった・失敗・リンクを押した回数と人数）。open_to_all が false の間は、テスト宛て以外へは送らない。",
+    inputSchema: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 100 } } },
+  },
+  {
+    name: "list_steps",
+    description: "ステップ配信の決まりの一覧（きっかけ registered＝登録／purchase＝購入・商品・何時間後・件名・動いているか・送った数・リンクを押した数）。",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "set_step",
+    description: "ステップ配信の決まりを足す・直す・動かす・止める。承認が要る道具。欄：id（直すとき）・name・trigger（registered／purchase）・product_id（購入のとき。省くとどの購入でも）・delay_hours（何時間後）・subject・body・active。動かした時刻より後の登録・購入だけが対象になる。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "integer" }, name: { type: "string" }, trigger: { type: "string", enum: ["registered", "purchase"] },
+        product_id: { type: ["string", "null"] }, delay_hours: { type: "integer" }, subject: { type: "string" }, body: { type: "string" },
+        active: { type: "boolean" }, sort: { type: "integer" },
+      },
+    },
+  },
 ];
 
 // 道具を 1 回実行する（権限の確かめは呼ぶ側で済ませる）。承認されたあとの実行もここを通る
@@ -866,6 +942,13 @@ async function runTool(env, name, args) {
   if (name === "list_permissions") return await guard.listPermissions(env);
   if (name === "list_products") return await sell.listProducts(env, args);
   if (name === "set_product") return await sell.setProduct(env, args, "mcp");
+  if (name === "preview_audience") return await deliver.previewAudience(env, args);
+  if (name === "list_broadcasts") return await deliver.listBroadcasts(env, args);
+  if (name === "draft_broadcast") return await deliver.draftBroadcast(env, args, "mcp");
+  if (name === "queue_broadcast") return await deliver.queueBroadcast(env, args, "mcp");
+  if (name === "cancel_broadcast") return await deliver.cancelBroadcast(env, args, "mcp");
+  if (name === "list_steps") return await deliver.listSteps(env);
+  if (name === "set_step") return await deliver.setStep(env, args, "mcp");
   return { ok: false, error: "unknown_tool" };
 }
 

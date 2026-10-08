@@ -170,6 +170,8 @@ function setupViews() {
     $("view-deals").style.display = b.dataset.view === "deals" ? "" : "none";
     $("view-ai").style.display = b.dataset.view === "ai" ? "" : "none";
     $("view-products").style.display = b.dataset.view === "products" ? "" : "none";
+    $("view-deliver").style.display = b.dataset.view === "deliver" ? "" : "none";
+    if (b.dataset.view === "deliver") loadDeliver();
     if (b.dataset.view === "products") loadProducts();
     if (b.dataset.view === "deals") loadDeals();
     if (b.dataset.view === "ai") loadAi();
@@ -335,6 +337,103 @@ async function loadAi() {
   }
 }
 
+// ---------- 配信（B の便 5） ----------
+const BC_LABEL = { draft: "下書き", queued: "送る列", sending: "送っている", done: "送り終えた", canceled: "止めた" };
+let stepsCache = [];
+function bfFilter() {
+  const f = {};
+  const src = [...document.querySelectorAll("#bf-src input:checked")].map((x) => x.value);
+  if (src.length) f.source = src;
+  const bought = $("bf-bought").value.split(",").map((x) => x.trim()).filter(Boolean);
+  if (bought.length) f.purchased = bought;
+  if ($("bf-member").value) f.member = $("bf-member").value === "true";
+  const emails = $("bf-emails").value.split(",").map((x) => x.trim()).filter(Boolean);
+  if (emails.length) f.emails = emails;
+  return f;
+}
+function filterText(f) {
+  const parts = [];
+  if (f.source) parts.push("流入元 " + f.source.map((x) => SOURCE_LABEL[x] || x).join("・"));
+  if (f.purchased) parts.push("買った " + f.purchased.join("・"));
+  if ("member" in f) parts.push(f.member ? "会員だけ" : "会員でない人");
+  if (f.emails) parts.push("メール指定 " + f.emails.length + " 件");
+  return parts.join("／") || "全員";
+}
+let deliverReady = false;
+async function loadDeliver() {
+  if (!deliverReady) {
+    deliverReady = true;
+    $("bf-src").innerHTML = ["x", "note", "youtube", "direct", "other"].map((s) => `<label class="check" style="margin:0"><input type="checkbox" value="${s}"> <span>${esc(SOURCE_LABEL[s] || s)}</span></label>`).join("");
+    $("bf-count").addEventListener("click", async () => {
+      const r = await api("/api/admin/audience", { method: "POST", token, body: { filter: bfFilter() } });
+      $("bf-status").textContent = r.ok ? `宛先 ${r.count} 人（配信を止めている人 ${r.unsubscribed}）${r.open_to_all ? "" : "・いまはテスト宛てにだけ届く"}` : "数えられませんでした（" + (r.error || r.status) + "）";
+    });
+    $("bf").addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const r = await api("/api/admin/broadcasts", { method: "POST", token, body: { subject: $("bf-subject").value, body: $("bf-body").value, filter: bfFilter() } });
+      $("bf-status").textContent = r.ok ? `下書きにしました（宛先 ${r.audience.count} 人）。下の一覧の「送る」で送ります` : "保存できませんでした（" + (r.error || r.status) + "）";
+      if (r.ok) loadDeliver();
+    });
+    $("dv-run").addEventListener("click", async () => {
+      $("dv-run").disabled = true;
+      const r = await api("/api/admin/deliver/run", { method: "POST", token });
+      $("dv-run").disabled = false;
+      $("dv-run-status").textContent = r.ok ? `ステップ：送った ${r.steps.sent}・送らなかった ${r.steps.blocked}・失敗 ${r.steps.failed}／一斉：送った ${r.broadcasts.sent}・送らなかった ${r.broadcasts.blocked}・失敗 ${r.broadcasts.failed}` : "動かせませんでした（" + (r.error || r.status) + "）";
+      loadDeliver();
+    });
+    $("sf").addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const body = {
+        name: $("sf-name").value, trigger: $("sf-trigger").value, product_id: $("sf-product").value.trim() || null,
+        delay_hours: Number($("sf-delay").value.replace(/[^0-9]/g, "") || 0), subject: $("sf-subject").value, body: $("sf-body").value,
+        active: $("sf-active").checked,
+      };
+      if ($("sf-id").value) body.id = Number($("sf-id").value);
+      const r = await api("/api/admin/steps", { method: "POST", token, body });
+      $("sf-status").textContent = r.ok ? "保存しました" : "保存できませんでした（" + (r.error || r.status) + "）";
+      if (r.ok) { $("sf-id").value = r.step.id; loadDeliver(); }
+    });
+    $("sf-new").addEventListener("click", () => { $("sf").reset(); $("sf-id").value = ""; $("sf-status").textContent = ""; });
+  }
+  const r = await api("/api/admin/deliver", { token });
+  if (!r.ok) { $("dv-warm").textContent = "読めませんでした（" + (r.error || r.status) + "）"; return; }
+  $("dv-warm").textContent = (r.warm ? `今日の上限 ${r.warm.cap} 通（送り始めて ${r.warm.day + 1} 日目・今日 ${r.warm.sent_today} 通）` : "デモの置き場") + (r.open_to_all ? "" : "・いまはテスト宛てにだけ届く");
+  $("broadcasts").innerHTML = r.broadcasts.map((b) => `
+    <div class="deal-box">
+      <div class="note">${fmtTime(b.created_at)}・<span class="pill ${b.status === "draft" ? "gray" : "warn"}">${esc(BC_LABEL[b.status] || b.status)}</span>・${esc(filterText(b.filter || {}))}</div>
+      <h4 style="margin:4px 0">${esc(b.subject)}</h4>
+      <div class="note">宛先 ${b.target_count ?? "-"}・送った ${b.sent}・送らなかった ${b.blocked}・失敗 ${b.failed}・リンクを押した ${b.clicked_people} 人（${b.clicks} 回）</div>
+      <div class="stage-btns" style="margin-top:6px">
+        ${b.status === "draft" ? `<button class="btn small" data-bq="${b.id}" type="button">送る</button>` : ""}
+        ${["draft", "queued", "sending"].includes(b.status) ? `<button class="btn ghost small" data-bc="${b.id}" type="button">止める</button>` : ""}
+      </div>
+    </div>`).join("") || '<p class="note">まだありません</p>';
+  document.querySelectorAll("[data-bq]").forEach((x) => x.addEventListener("click", async () => {
+    if (!confirm("この一斉配信を送る列に入れます。毎時の定時の処理で、今日の上限の中から送ります。")) return;
+    const q = await api(`/api/admin/broadcasts/${x.dataset.bq}/queue`, { method: "POST", token });
+    if (!q.ok) fail("送る列に入れられませんでした（" + (q.error || q.status) + "）");
+    loadDeliver();
+  }));
+  document.querySelectorAll("[data-bc]").forEach((x) => x.addEventListener("click", async () => {
+    const q = await api(`/api/admin/broadcasts/${x.dataset.bc}/cancel`, { method: "POST", token });
+    if (!q.ok) fail("止められませんでした（" + (q.error || q.status) + "）");
+    loadDeliver();
+  }));
+  stepsCache = r.steps;
+  $("steps").innerHTML = r.steps.map((s) => `
+    <div class="deal-box" data-step="${s.id}" style="cursor:pointer">
+      <div class="note">${s.trigger === "registered" ? "無料登録" : "購入" + (s.product_id ? "（" + esc(s.product_id) + "）" : "")}から ${s.delay_hours} 時間後・${s.active ? '<span class="pill">動いている</span>' : '<span class="pill gray">止めている</span>'}</div>
+      <h4 style="margin:4px 0">${esc(s.name)}</h4>
+      <div class="note">${esc(s.subject)}・送った ${s.sent}・リンクを押した ${s.clicks} 回</div>
+    </div>`).join("") || '<p class="note">まだありません</p>';
+  document.querySelectorAll("[data-step]").forEach((x) => x.addEventListener("click", () => {
+    const s = stepsCache.find((y) => String(y.id) === x.dataset.step);
+    $("sf-id").value = s.id; $("sf-name").value = s.name; $("sf-trigger").value = s.trigger; $("sf-product").value = s.product_id || "";
+    $("sf-delay").value = s.delay_hours; $("sf-subject").value = s.subject; $("sf-body").value = s.body; $("sf-active").checked = s.active;
+    $("sf-status").textContent = "直しています：" + s.name;
+  }));
+}
+
 // ---------- 商品（B の便 4） ----------
 const KIND_LABEL = { one_time: "単発", subscription: "定期", installment: "分割" };
 let productsCache = [];
@@ -422,6 +521,7 @@ function detailText(e) {
   if (e.type.startsWith("seminar_")) return `<span class="note">（${esc(p.seminar_id || "")}${p.mail ? "・メール " + esc(p.mail) : ""}）</span>`;
   if (e.type === "purchase_completed") return `<span class="note">（${esc(p.product_name || p.product_id || "")}・${Number(p.amount || 0).toLocaleString()} 円${p.grant_until ? "・" + esc(fmtTime(p.grant_until).slice(0, 10)) + " まで" : ""}${p.over_limit ? "・上限を超えた：" + esc(p.over_limit) : ""}）</span>`;
   if (e.type.startsWith("subscription_")) return `<span class="note">（${esc(p.status || "")}${p.amount ? "・" + Number(p.amount).toLocaleString() + " 円" : ""}）</span>`;
+  if (e.type === "email_clicked") return `<span class="note">（${esc(String(p.url || "").slice(0, 60))}）</span>`;
   if (e.type.startsWith("email_") && e.type !== "email_unsubscribed") return `<span class="note">（${esc(p.subject || "")}${p.reason ? "・" + esc(p.reason) : ""}${p.error ? "・" + esc(p.error) : ""}）</span>`;
   if (e.type === "correction_submitted") return `<span class="note">（${esc(String(p.text || "").slice(0, 30))}${(p.images || []).length ? " 画像" + p.images.length : ""}）</span>`;
   if (e.type === "correction_returned") return `<span class="note">（${esc(String(p.comment || p.corrected || "").slice(0, 30))}）</span>`;

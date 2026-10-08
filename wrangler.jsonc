@@ -7,7 +7,7 @@
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
-    "run_worker_first": ["/api/*", "/mcp", "/mcp/*"]
+    "run_worker_first": ["/api/*", "/mcp", "/mcp/*", "/r/*"]
   },
   // 設定の値 4 つ（SUPABASE_URL・SUPABASE_PUBLISHABLE_KEY・SUPABASE_SECRET_KEY・MCP_SECRET）は
   // すべて Cloudflare の画面に Secret として置く。ここに書かないので、上げ直しても消えない。
