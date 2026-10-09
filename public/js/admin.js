@@ -909,8 +909,18 @@ $("send").addEventListener("click", async () => {
   if (!email) return fail("メールアドレスを入れてください。");
   const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.origin + "/admin", shouldCreateUser: true } });
   if (error) return fail("送れませんでした：" + error.message);
-  $("sent").textContent = email + " にリンクを送りました。";
+  $("sent").textContent = email + " にリンクを送りました。この画面で入るときは、メールの確認コードを下に入れてください。";
   $("sent").classList.remove("hidden");
+  $("code-box").classList.remove("hidden");
+});
+// 便 8f-3：確認コードで入る（ホーム画面に足した Lab OS では、メールのリンクがこの画面ではなくブラウザで開くため）
+$("otp-go").addEventListener("click", async () => {
+  clearErr();
+  const email = $("email").value.trim(), token = $("otp").value.replace(/\s/g, "");
+  if (!email || !/^[0-9]{6,10}$/.test(token)) return fail("メールアドレスと、メールにある数字の確認コードを入れてください。");
+  const { error } = await sb.auth.verifyOtp({ email, token, type: "email" });
+  if (error) return fail("確認コードが合いませんでした：" + error.message);
+  await openConsole();
 });
 $("logout").addEventListener("click", async (e) => { e.preventDefault(); await sb.auth.signOut(); location.reload(); });
 
