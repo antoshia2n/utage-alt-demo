@@ -33,8 +33,14 @@ export const LABEL_EVENT_TYPES = ["registered", "login", "lesson_viewed", "corre
 
 const byTime = (a, b) => String(a.occurred_at).localeCompare(String(b.occurred_at)) || (Number(a.id || 0) - Number(b.id || 0));
 
-// 1 人分の自動ラベル。ownerOf は部品の鍵（step:12・broadcast:uuid）→ 企画名（常設は入れない）
-export function autoLabels({ person, events = [], member = false, ownerOf = {}, now = Date.now() }) {
+// 商品の外の名前（生徒に見える名前）をラベルに使える形にする。空白は詰め、カンマや引用符は「・」に、36 文字まで（「買った:」と合わせて 40）
+export function productLabelName(name) {
+  const s = String(name || "").replace(/\s+/g, "").replace(/[,<>"'`]+/g, "・").replace(/^・+|・+$/g, "");
+  return s.slice(0, 36);
+}
+
+// 1 人分の自動ラベル。ownerOf は部品の鍵（step:12・broadcast:uuid）→ 企画名（常設は入れない）。productNames は商品の番号 → 外の名前
+export function autoLabels({ person, events = [], member = false, ownerOf = {}, productNames = {}, now = Date.now() }) {
   const out = new Set();
   out.add("流入元:" + (SOURCE_NAME[person.source] || person.source || "不明"));
   out.add(member ? "会員" : "会員でない");
@@ -42,7 +48,8 @@ export function autoLabels({ person, events = [], member = false, ownerOf = {}, 
   for (const e of events) {
     const p = e.payload || {};
     if (ACTIVE_TYPES.has(e.type)) last = Math.max(last, new Date(e.occurred_at).getTime());
-    if (e.type === "purchase_completed" && p.product_id) { out.add("購入者"); out.add("買った:" + p.product_id); }
+    // 便 8f-1：商品の中の番号ではなく外の名前で出す（統括 2026-10-09 13:18）。名前が引けないときだけ番号
+    if (e.type === "purchase_completed" && p.product_id) { out.add("購入者"); out.add("買った:" + (productLabelName(productNames[p.product_id] || p.product_name) || p.product_id)); }
     else if (e.type === "email_clicked") out.add("リンクを押した");
     else if (e.type === "lesson_viewed") out.add("教材を見た");
     else if (e.type === "correction_submitted") out.add("添削を出した");
@@ -96,18 +103,23 @@ export function makeConnect(h) {
     return out;
   }
 
+  async function productNameMap(env) {
+    if (!env.B_STORE) return {};
+    return Object.fromEntries((await db(env, "GET", "b_products?select=id,name")).map((p) => [p.id, p.name]));
+  }
+
   // 全員のラベル（Map：人の番号 → [{label, auto}]）。onlyIds を渡すとその人だけ
   async function labelMap(env, onlyIds = null) {
     let pq = "customer_summary?select=id,source,created_at&limit=10000";
     let eq = `events?select=id,customer_id,type,payload,occurred_at&type=in.(${LABEL_EVENT_TYPES.join(",")})&order=id.asc&limit=50000`;
     if (onlyIds && onlyIds.length) { pq += `&id=in.(${onlyIds.join(",")})`; eq += `&customer_id=in.(${onlyIds.join(",")})`; }
-    const [people, events, ent, ownerOf] = await Promise.all([db(env, "GET", pq), db(env, "GET", eq), sell.entitlementMap(env), ownersMap(env)]);
+    const [people, events, ent, ownerOf, productNames] = await Promise.all([db(env, "GET", pq), db(env, "GET", eq), sell.entitlementMap(env), ownersMap(env), productNameMap(env)]);
     const byPerson = new Map();
     for (const e of events) { if (!byPerson.has(e.customer_id)) byPerson.set(e.customer_id, []); byPerson.get(e.customer_id).push(e); }
     const out = new Map();
     for (const p of people) {
       const evs = byPerson.get(p.id) || [];
-      out.set(p.id, mergeLabels(autoLabels({ person: p, events: evs, member: !!(ent[p.id] && ent[p.id].member), ownerOf }), manualLabels(evs)));
+      out.set(p.id, mergeLabels(autoLabels({ person: p, events: evs, member: !!(ent[p.id] && ent[p.id].member), ownerOf, productNames }), manualLabels(evs)));
     }
     return out;
   }

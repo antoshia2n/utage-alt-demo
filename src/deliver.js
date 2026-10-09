@@ -269,8 +269,10 @@ export function makeDeliver(h) {
         if (!c) continue;
         if (action === "notify_admin") {
           const what = TRIGGERS[s.trigger].label;
-          const subject = fillText(s.subject, c, t) || `【Lab OS】${what}：${c.name || c.email}`;
-          const text = (fillText(s.body, c, t) || `${c.name || "（名前なし）"}（${c.email}）が「${what}」。`) + `\n\nコネクタ：${s.name}\nシアニン用の画面：${origin(env)}/admin`;
+          // 便 8f-1：名前が空の人は、知らせの中ではメールで呼ぶ（件名に空白が出たため）
+          const who = { ...c, name: c.name || c.email };
+          const subject = fillText(s.subject, who, t) || `【Lab OS】${what}：${who.name}`;
+          const text = (fillText(s.body, who, t) || `${who.name}（${c.email}）が「${what}」。`) + `\n\nコネクタ：${s.name}\nシアニン用の画面：${origin(env)}/admin`;
           const r = await connect.notifyAdmins(env, { subject, text });
           if (r.sent > 0) { await addEvent(env, c.id, "admin_notified", { ...extra, to: r.sent }, "site"); out.notified++; }
           else { await addEvent(env, c.id, "admin_notify_failed", { ...extra, error: r.error || "send_failed" }, "site"); out.failed++; }

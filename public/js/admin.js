@@ -67,10 +67,11 @@ async function openConsole() {
   loadSetup();
   setupCommunity();
   setupMail();
+  setupCalendar();
   loadApprovalBadge();
   // AI から渡された承認の URL（/admin#approval/<番号>）で開いたときは、AI と承認のタブを開く
   if (location.hash.startsWith("#approval/")) document.querySelector('[data-view="ai"]').click();
-  else bp.load();
+  else loadHome();
   setInterval(() => { if (!document.hidden) loadRooms(); }, 30000);
   let t;
   $("q").addEventListener("input", () => { clearTimeout(t); t = setTimeout(search, 250); });
@@ -202,7 +203,7 @@ async function detail(id) {
 // ---------- 添削ルーム ----------
 let currentRoom = null;
 // 便 8c：左のメニュー。押した項目の画面だけを出し、上のナビにその名前を出す
-const VIEWS = ["blueprint", "people", "rooms", "deals", "ai", "products", "deliver", "settings"];
+const VIEWS = ["home", "blueprint", "people", "rooms", "deals", "ai", "products", "deliver", "settings"];
 function openView(name) {
   const b = document.querySelector(`.side [data-view="${name}"]`);
   if (b) b.click();
@@ -214,6 +215,7 @@ function setupViews() {
     for (const v of VIEWS) $("view-" + v).style.display = b.dataset.view === v ? "" : "none";
     $("view-people-wrap").style.display = b.dataset.view === "people" ? "" : "none";
     $("crumb").textContent = b.firstChild.textContent.trim();
+    if (b.dataset.view === "home") loadHome();
     if (b.dataset.view === "blueprint") bp.load();
     if (b.dataset.view === "deliver") loadDeliver();
     if (b.dataset.view === "products") loadProducts();
@@ -652,6 +654,54 @@ function setupCommunity() {
   $("cm-save").addEventListener("click", () => save($("cm-url").value));
   $("cm-clear").addEventListener("click", () => { if (confirm("招待リンクを外します。会員の画面からも消えます。")) save(""); });
   loadCommunity();
+}
+
+// ---------- 便 8f-1：ホームの今日の 1 枚と段階のボード ----------
+const fmtHm = (iso) => new Date(iso).toLocaleTimeString("ja-JP", { timeZone: "Asia/Tokyo", hour: "2-digit", minute: "2-digit" });
+const TOOL_LABEL = { apply_tidy: "片付け案を当てる", add_label: "ラベルを付ける", remove_label: "ラベルを外す", set_step: "コネクタを変える", queue_broadcast: "一斉配信を送る", set_mail_settings: "メールの送り方を変える", set_community_link: "オプチャのリンクを変える", set_calendar_url: "カレンダーを変える", return_correction: "添削を返す", send_email: "メールを送る" };
+async function loadHome() {
+  const [r, b] = await Promise.all([api("/api/admin/today", { token }), api("/api/admin/board", { token })]);
+  if (!r.ok) { $("hm-cal").textContent = "読めませんでした（" + (r.error || r.status) + "）"; $("hm-todo").textContent = ""; }
+  else {
+    $("hm-day").textContent = r.day;
+    const c = r.calendar;
+    $("hm-cal").innerHTML = c.state === "unset"
+      ? `カレンダーがまだつながっていません。<a href="#" id="hm-cal-set">決済・メール・オプチャ</a> の「Google カレンダー」に非公開 URL を貼ると、ここに今日の予定が出ます`
+      : c.state === "error" ? `カレンダーを読めませんでした（${esc(c.error)}）`
+      : (c.events.length ? `<ul class="home-list">${c.events.map((e) => `<li><span class="tm">${e.all_day ? "終日" : esc(fmtHm(e.start)) + "–" + esc(fmtHm(e.end))}</span><span>${esc(e.title)}${e.location ? `<span class="sub">${esc(e.location)}</span>` : ""}</span></li>`).join("")}</ul>` : "今日の予定はありません")
+        + (c.not_expanded ? `<p class="note">広げられない繰り返しの予定が ${c.not_expanded} 件あります（「第 2 火曜」などの形）</p>` : "");
+    const a = $("hm-cal-set"); if (a) a.addEventListener("click", (ev) => { ev.preventDefault(); openView("settings"); $("calendar-box").open = true; });
+    const t = r.todo;
+    const row = (n, label, view, items) => `<li class="todo"><button type="button" class="todo-h" data-open="${view}"><b>${n}</b> ${label}</button>${items}</li>`;
+    $("hm-todo").innerHTML = `<ul class="home-list">`
+      + row(t.approvals.count, "承認待ち", "ai", t.approvals.items.length ? `<span class="sub">${t.approvals.items.map((x) => esc(TOOL_LABEL[x.tool] || x.tool)).join("・")}</span>` : "")
+      + row(t.rooms.count, "未返信の添削", "rooms", t.rooms.items.length ? `<span class="sub">${t.rooms.items.map((x) => esc(x.name)).join("・")}</span>` : "")
+      + row(t.consults.count, "今日の個別相談", "deals", t.consults.items.length ? `<span class="sub">${t.consults.items.map((x) => esc(fmtHm(x.slot)) + " " + esc(x.name)).join("・")}</span>` : "")
+      + row(t.notices.count, "今日の知らせ", "deliver", t.notices.items.length ? `<span class="sub">${t.notices.items.map((x) => esc(x.connector) + "：" + esc(x.name)).join("・")}</span>` : "")
+      + `</ul>`;
+    document.querySelectorAll("#hm-todo [data-open]").forEach((x) => x.addEventListener("click", () => openView(x.dataset.open)));
+  }
+  if (!b.ok) { $("hm-board").innerHTML = `<p class="note">読めませんでした（${esc(b.error || b.status)}）</p>`; return; }
+  $("hm-total").textContent = `${b.total} 人`;
+  $("hm-board").innerHTML = b.lanes.map((l) => `<div class="stage-col"><h4>${esc(l.label)} <span class="n">${l.count}</span></h4>${l.people.map((p) => `<button type="button" class="stage-card" data-person="${p.id}"><span class="nm">${esc(p.name || p.email)}</span>${p.name ? `<span class="sub">${esc(p.email)}</span>` : ""}</button>`).join("") || `<p class="note">${l.id === "meet" ? "まだ登録していない人は記録が無い" : l.id === "refer" ? "紹介は 8g で足す" : "0 人"}</p>`}</div>`).join("");
+  document.querySelectorAll("#hm-board [data-person]").forEach((x) => x.addEventListener("click", () => { openView("people"); detail(x.dataset.person); }));
+}
+async function loadCalendar() {
+  const r = await api("/api/admin/calendar", { token });
+  if (!r.ok) { $("cal-status").textContent = "読めませんでした（" + (r.error || r.status) + "）"; return; }
+  $("cal-url").value = "";
+  $("cal-status").textContent = r.set ? `つながっています（${r.shown}）` + (r.updated_at ? "。最後に変えたのは " + new Date(r.updated_at).toLocaleString("ja-JP") : "") : "まだつながっていません";
+}
+function setupCalendar() {
+  const save = async (url) => {
+    $("cal-status").textContent = "変えています…";
+    const r = await api("/api/admin/calendar", { method: "PUT", token, body: { url } });
+    if (!r.ok) { $("cal-status").textContent = r.error === "bad_url" ? "「iCal 形式の非公開 URL」（https://calendar.google.com/calendar/ical/ で始まり .ics で終わる）を貼ってください" : "変えられませんでした（" + (r.error || r.status) + "）"; return; }
+    await loadCalendar();
+  };
+  $("cal-save").addEventListener("click", () => save($("cal-url").value.trim()));
+  $("cal-clear").addEventListener("click", () => { if (confirm("カレンダーを外します。ホームに今日の予定が出なくなります。")) save(""); });
+  loadCalendar();
 }
 
 // 便 7c-1：メールの送り方。表 b_settings の 4 行を読み、変える（AI の set_mail_settings と同じ処理）

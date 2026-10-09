@@ -29,6 +29,8 @@ export const DEFAULT_MODES = {
   get_tidy_plan: "auto", apply_tidy: "approve", list_changes: "auto", undo_change: "approve",
   // 便 8e：ラベルを読むのは自動、人の行を変える手のラベルは承認（B の原則 3 の最初の値に合わせる）
   get_labels: "auto", add_label: "approve", remove_label: "approve",
+  // 便 8f-1：読むのは自動、カレンダーの非公開 URL を変えるのは承認
+  get_today: "auto", get_stage_board: "auto", set_calendar_url: "approve",
 };
 
 // 権限を問わず通す道具（承認待ちを見るための道具が承認待ちになると回らないため）
