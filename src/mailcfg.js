@@ -18,7 +18,7 @@ export const SENDER_DOMAINS = ["mail.shia2n.jp", "demo.shia2n.jp"];
 export const ORG = {
   brand: "シアラボ",
   company: "株式会社Best Life Consulting",
-  address: "東京都八王子市明神町３丁目20-5 エイトビル３F",
+  address: "〒530-0001 大阪府大阪市北区梅田一丁目1番3号 大阪駅前第3ビル11階2号室", // 2026-10-10 Naoki：所在地は大阪だけ（東京の住所は古い）
   contact: "bestlifeconsulting.inc@gmail.com",
 };
 
