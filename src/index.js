@@ -27,7 +27,7 @@ import { makeBridge } from "./bridge.js";
 import { makePlan } from "./plan.js";
 import { makeMailCfg } from "./mailcfg.js";
 
-const VERSION = "0.13.2-b7c1";
+const VERSION = "0.13.3-b7c1";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_read"];
@@ -527,6 +527,23 @@ async function handleApi(request, env, url) {
   if (missing.length) return json({ ok: false, error: "not_configured", missing_settings: missing }, 503);
 
   // 登録（公開の面）
+  // 便 7c-1 の続き：台帳（member）にいるのに、まだ Supabase のログインの番号が無い人（ポータル時代の会員）が、ログインの頁でリンクを受け取れるようにする。
+  // 台帳にいる人だけ、ログインの番号を先に作る（メールは確かめ済みにする）。台帳にいない人には何も作らない。返事はどちらも同じ形
+  if (path === "/api/login/prepare" && method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    const email = String(body.email || "").trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({ ok: false, error: "bad_email" }, 400);
+    const [c] = await db(env, "GET", `customers?select=id,auth_user_id&email=eq.${encodeURIComponent(email)}`);
+    let created = false;
+    if (c && !c.auth_user_id) {
+      const res = await fetch(`${env.SUPABASE_URL}/auth/v1/admin/users`, { method: "POST", headers: secretHeaders(env), body: JSON.stringify({ email, email_confirm: true }) });
+      created = res.ok; // 既にある（422）ときは作らずに進む
+      if (!res.ok && res.status !== 422) await logInbound(env, "login_prepare", { email }, { ok: false, status: res.status, body: (await res.text()).slice(0, 200) }, res.status);
+    }
+    if (created) await logInbound(env, "login_prepare", { email }, { ok: true, created: true }, 200);
+    return json({ ok: true });
+  }
+
   if (path === "/api/register" && method === "POST") {
     const body = await request.json().catch(() => ({}));
     const email = String(body.email || "").trim().toLowerCase();
