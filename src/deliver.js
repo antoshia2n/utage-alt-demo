@@ -87,10 +87,13 @@ export function makeDeliver(h) {
     const [link] = /^[0-9a-f]{12}$/.test(token) ? await db(env, "GET", `b_links?select=*&token=eq.${token}`) : [];
     if (!link) return new Response("リンクが見つかりません", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
     const cid = url.searchParams.get("c") || "", sig = url.searchParams.get("s") || "";
+    let to = link.url;
     if (UUID_RE.test(cid) && safeEqual(sig, await clickSig(env, token, cid))) {
       try { await addEvent(env, cid, "email_clicked", { token, url: link.url, kind: link.kind, ref: link.ref }, "site"); } catch (_) { /* 記録の失敗で飛び先を止めない */ }
+      // 便 12a：行き先が公開のページなら、押した人の印を付ける（ページの中で押したボタンがその人の出来事になる）
+      if (h.decorateClick) to = await h.decorateClick(env, link.url, cid);
     }
-    return Response.redirect(link.url, 302);
+    return Response.redirect(to, 302);
   }
 
   // ---------- 宛先の絞り込み ----------
@@ -186,6 +189,9 @@ export function makeDeliver(h) {
       if (t.label) { if (!LABEL_RE.test(String(t.label))) return { ok: false, error: "bad_trigger_label" }; out.label = String(t.label); }
       if (t.url) { if (!/^https?:[/][/]\S{1,480}$/.test(String(t.url))) return { ok: false, error: "bad_trigger_url" }; out.url = String(t.url); }
       if (t.form) { if (!SLUG_RE.test(String(t.form))) return { ok: false, error: "bad_trigger_form" }; out.form = String(t.form); }
+      // 便 12a：ページ（住所の名前）とボタンの名前で絞る
+      if (t.page) { if (!SLUG_RE.test(String(t.page))) return { ok: false, error: "bad_trigger_page" }; out.page = String(t.page); }
+      if (t.button) { if (!/^[a-z0-9][a-z0-9-]{0,39}$|^checkout:[a-z0-9-]{2,40}$/.test(String(t.button))) return { ok: false, error: "bad_trigger_button" }; out.button = String(t.button); }
       patch.trigger_args = out;
     }
     if ("selector" in args) patch.selector = normFilter(args.selector || {});
@@ -235,6 +241,8 @@ export function makeDeliver(h) {
     if (s.trigger === "label_added" && ta.label) q += `&payload->>label=eq.${encodeURIComponent(ta.label)}`;
     if (s.trigger === "clicked" && ta.url) q += `&payload->>url=eq.${encodeURIComponent(ta.url)}`;
     if (s.trigger === "form_submitted" && ta.form) q += `&payload->>slug=eq.${encodeURIComponent(ta.form)}`;
+    if ((s.trigger === "page_viewed" || s.trigger === "page_clicked") && ta.page) q += `&payload->>slug=eq.${encodeURIComponent(ta.page)}`;
+    if (s.trigger === "page_clicked" && ta.button) q += `&payload->>button=eq.${encodeURIComponent(ta.button)}`;
     return q;
   }
 
@@ -279,7 +287,10 @@ export function makeDeliver(h) {
           // 便 8f-1：名前が空の人は、知らせの中ではメールで呼ぶ（件名に空白が出たため）
           const who = { ...c, name: c.name || c.email };
           const subject = fillText(s.subject, who, t) || `【Lab OS】${what}：${who.name}`;
-          const text = (fillText(s.body, who, t) || `${who.name}（${c.email}）が「${what}」。`) + `\n\nコネクタ：${s.name}\nシアニン用の画面：${origin(env)}/admin`;
+          // 便 12a：ページのきっかけは、どのページのどのボタンかも書く
+          const tp = t.payload || {};
+          const where = tp.title && String(s.trigger).startsWith("page_") ? `（ページ「${tp.title}」${tp.button ? `・ボタン ${tp.button}` : ""}）` : "";
+          const text = (fillText(s.body, who, t) || `${who.name}（${c.email}）が「${what}」${where}。`) + `\n\nコネクタ：${s.name}\nシアニン用の画面：${origin(env)}/admin`;
           const r = await connect.notifyAdmins(env, { subject, text });
           if (r.sent > 0) { await addEvent(env, c.id, "admin_notified", { ...extra, to: r.sent }, "site"); out.notified++; }
           else { await addEvent(env, c.id, "admin_notify_failed", { ...extra, error: r.error || "send_failed" }, "site"); out.failed++; }

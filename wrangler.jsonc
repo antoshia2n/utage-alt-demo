@@ -7,7 +7,9 @@
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
-    "run_worker_first": ["/api/*", "/mcp", "/mcp/*", "/r/*"]
+    // 便 12a：公開のページの住所（lp.shia2n.jp）でシアニン用の画面などの静的ファイルを返さないよう、すべて Worker を先に通す。
+    // Worker は lab の住所なら今までどおり静的ファイル（ASSETS）を返し、lp の住所ならページと /api/p/ の下だけを返す（src/index.js の handlePagesHost）
+    "run_worker_first": true
   },
   // 設定の値 4 つ（SUPABASE_URL・SUPABASE_PUBLISHABLE_KEY・SUPABASE_SECRET_KEY・MCP_SECRET）は
   // すべて Cloudflare の画面に Secret として置く。ここに書かないので、上げ直しても消えない。
@@ -26,6 +28,8 @@
     "MAIL_FROM": "noreply@demo.shia2n.jp",
     // B の便 7c-1 の続き：メールの中のリンクの住所。送り元 mail.shia2n.jp とそろえるため shia2n.jp の下に置く（Cloudflare の画面で Worker に足した住所）
     "PUBLIC_ORIGIN": "https://lab.shia2n.jp",
+    // B の便 12a：公開のページの住所。会員の画面（PUBLIC_ORIGIN）と別の住所にして、ページの中の仕掛けがログイン中の人の鍵に届かないようにする（Cloudflare の画面で Worker に足した住所）
+    "PAGES_ORIGIN": "https://lp.shia2n.jp",
     "B_SUPABASE_URL": "https://htzadzpckcpdrmpjvaut.supabase.co",
     "B_SUPABASE_PUBLISHABLE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh0emFkenBja2NwZHJtcGp2YXV0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4MjA2MTAsImV4cCI6MjA4NzM5NjYxMH0.8TJ-X-UojNvL-H-OiF5aaYOEksiveJ3zl7Lt6TZ6pCU"
   },

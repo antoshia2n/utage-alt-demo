@@ -209,14 +209,17 @@ export function makeForms(h) {
       else values[it.key] = r.value;
     }
     if (bad.length) return { ok: false, error: "bad_answers", fields: bad };
-    const reg = await registerPerson(env, { email: body.email, name: form.ask_name ? body.name : "", source: body.source, consent: body.consent, ref: body.ref, via: "form:" + form.slug });
+    // 便 12a：公開のページ（lp の住所）から来たときは、経路（route）とページ（page_id）も一緒に残す
+    const fromPage = UUID_RE.test(String(body.page_id || "")) ? String(body.page_id) : undefined;
+    const route = /^[\p{L}\p{N}][\p{L}\p{N}_\-ー・]{0,39}$/u.test(String(body.route || "")) ? String(body.route) : undefined; // pages.js の ROUTE_RE と同じ
+    const reg = await registerPerson(env, { email: body.email, name: form.ask_name ? body.name : "", source: body.source, consent: body.consent, ref: body.ref, via: "form:" + form.slug, route, page_id: fromPage });
     if (!reg.ok) return reg;
     const [ans] = await db(env, "POST", "b_answers", [{ form_id: frow.id, customer_id: reg.id, answers: values }], "return=representation");
     const upserts = Object.entries(values).filter(([, v]) => v !== "").map(([key, value]) => ({ customer_id: reg.id, key, value, updated_at: now() }));
     if (upserts.length) await db(env, "POST", "b_person_values?on_conflict=customer_id,key", upserts, "resolution=merge-duplicates,return=minimal");
-    await addEvent(env, reg.id, "form_submitted", { form_id: frow.id, slug: form.slug, title: form.title, answer_id: ans.id }, "site");
+    await addEvent(env, reg.id, "form_submitted", { form_id: frow.id, slug: form.slug, title: form.title, answer_id: ans.id, ...(fromPage ? { page_id: fromPage } : {}), ...(route ? { route } : {}) }, "site");
     await logInbound(env, "form", { slug: form.slug, keys: Object.keys(values) }, { ok: true, is_new: reg.is_new, answer_id: ans.id }, 200);
-    return { ok: true, thanks: form.thanks || "", is_new: reg.is_new };
+    return { ok: true, thanks: form.thanks || "", is_new: reg.is_new, id: reg.id };
   }
 
   // 回答の一覧（フォームごと、または人ごと）。答えは項目の名前つきで返す

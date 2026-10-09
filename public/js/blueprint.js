@@ -8,6 +8,8 @@ const TYPE_LABEL = { page: "ページ", step: "ステップ", broadcast: "一斉
 const STATE_LABEL = { running: "動いている", draft: "下書き", stopped: "止まっている" };
 // 「開いて直す」で開く左のメニューの項目
 const EDIT_VIEW = { form: "forms", step: "connect", broadcast: "deliver", seminar: "deals", booking: "deals", product: "products", room: "rooms", community: "settings" };
+// 便 12a：Claude が作ったページ（lp）は「ページ」の画面で開く。トップの LP と無料登録は固定なので開く先が無い
+const editView = (p) => (p.type === "page" ? (p.lp ? "pages" : null) : EDIT_VIEW[p.type]);
 
 export function makeBlueprint({ $, api, esc, getToken, fail, openView }) {
   let view = "all";
@@ -299,7 +301,7 @@ export function makeBlueprint({ $, api, esc, getToken, fail, openView }) {
         <div><label for="bp-block">ブロック（同じ名前の部品が 1 箱にまとまる・空ならブロックに入れない）</label><input id="bp-block" type="text" maxlength="60" value="${esc(p.block_name || "")}" placeholder="例 申込から当日まで"></div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <button class="btn small" type="submit">保存</button>
-          ${EDIT_VIEW[p.type] ? '<button class="btn ghost small" type="button" id="bp-open">開いて直す</button>' : ""}
+          ${editView(p) ? '<button class="btn ghost small" type="button" id="bp-open">開いて直す</button>' : ""}
           ${p.url ? `<a class="btn ghost small" href="${esc(p.url)}" target="_blank" rel="noopener">ページを見る</a>` : ""}
           <span class="note" id="bp-assign-status"></span>
         </div>
@@ -314,7 +316,7 @@ export function makeBlueprint({ $, api, esc, getToken, fail, openView }) {
       const s = $("bp-assign-status"); if (s) s.textContent = "保存しました";
     });
     const open = $("bp-open");
-    if (open) open.addEventListener("click", () => openView(EDIT_VIEW[p.type], p));
+    if (open) open.addEventListener("click", () => openView(editView(p), p));
   }
 
   // 便 8d：片付け案（企画に入っていない部品を常設へ入れる案。当てると 1 件ずつ変えた記録に残り、元に戻せる）

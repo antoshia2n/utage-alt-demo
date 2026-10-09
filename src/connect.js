@@ -16,6 +16,10 @@ export const TRIGGERS = {
   label_added:          { type: "label_added",          label: "ラベルが付いた" },
   // 便 11a：フォームに答えた（trigger_args.form にフォームの住所の名前 slug を入れると、そのフォームだけ）
   form_submitted:       { type: "form_submitted",       label: "フォームに答えた" },
+  // 便 12a：公開のページ（trigger_args.page にページの住所の名前、page_clicked は trigger_args.button にボタンの名前を入れると絞れる）。
+  // 台帳にいる人だけ（メールのリンクから来た・その端末でフォームに答えた）が出来事になる。まだ登録していない人は数えるだけ
+  page_viewed:          { type: "page_viewed",          label: "ページを見た" },
+  page_clicked:         { type: "page_clicked",         label: "ページのボタンを押した" },
 };
 
 export const ACTIONS = { send_email: "メールを送る", notify_admin: "Naoki に知らせる", add_label: "ラベルを付ける" };
@@ -29,10 +33,10 @@ export const LABEL_RE = /^[^\s,<>"'`]{1,40}$/u;
 
 const SOURCE_NAME = { x: "X", note: "note", youtube: "YouTube", direct: "直接", other: "その他" };
 // 「最後に動いた日」に数える、本人が動いた出来事
-const ACTIVE_TYPES = new Set(["registered", "login", "lesson_viewed", "correction_submitted", "email_clicked", "purchase_completed", "seminar_registered", "consult_booked", "announcement_opened", "form_submitted"]);
+const ACTIVE_TYPES = new Set(["registered", "login", "lesson_viewed", "correction_submitted", "email_clicked", "purchase_completed", "seminar_registered", "consult_booked", "announcement_opened", "form_submitted", "page_viewed", "page_clicked"]);
 export const LABEL_EVENT_TYPES = ["registered", "login", "lesson_viewed", "correction_submitted", "email_clicked", "email_sent",
   "purchase_completed", "seminar_registered", "consult_booked", "announcement_opened", "label_added", "label_removed",
-  "referred", "referral_reward"];
+  "referred", "referral_reward", "form_submitted", "page_viewed", "page_clicked"];
 
 const byTime = (a, b) => String(a.occurred_at).localeCompare(String(b.occurred_at)) || (Number(a.id || 0) - Number(b.id || 0));
 
@@ -49,6 +53,9 @@ export function autoLabels({ person, events = [], member = false, ownerOf = {}, 
   out.add("流入元:" + (SOURCE_NAME[person.source] || person.source || "不明"));
   out.add(member ? "会員" : "会員でない");
   let last = person.created_at ? new Date(person.created_at).getTime() : 0;
+  // 便 12a：経路。初めて登録したときの経路（registered の payload.route）
+  const firstReg = [...events].filter((e) => e.type === "registered").sort(byTime)[0];
+  if (firstReg && firstReg.payload && firstReg.payload.route) out.add("経路:" + String(firstReg.payload.route).slice(0, 37));
   for (const e of events) {
     const p = e.payload || {};
     if (ACTIVE_TYPES.has(e.type)) last = Math.max(last, new Date(e.occurred_at).getTime());

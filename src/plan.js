@@ -42,7 +42,7 @@ export const PART_TYPES = {
 const UUID_RE = /^[0-9a-f-]{36}$/i;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MONTH_PREFIX_RE = /^\d{4}-\d{2}\s/;
-const WEEK_TYPES = ["registered", "purchase_completed", "email_sent", "consult_booked", "lesson_viewed", "correction_submitted", "seminar_registered", "form_submitted"];
+const WEEK_TYPES = ["registered", "purchase_completed", "email_sent", "consult_booked", "lesson_viewed", "correction_submitted", "seminar_registered", "form_submitted", "page_viewed"];
 
 // 中の名前（シアニン用）。役目が空なら外の名前を使う
 export function innerName(campaignName, partType, role, outerName) {
@@ -60,11 +60,13 @@ export function campaignName(title, startsOn, now = new Date()) {
 }
 
 // 部品の一覧（外の名前・レーン・状態）を、いまの表から作る
-export function buildParts({ products = [], steps = [], broadcasts = [], seminars = [], courseCount = 0, community = "", forms = [] }, now = new Date()) {
+export function buildParts({ products = [], steps = [], broadcasts = [], seminars = [], courseCount = 0, community = "", forms = [], pages = [], pageParts = {} }, now = new Date()) {
   const parts = [];
   const add = (type, id, lane, name, state, extra = {}) => parts.push({ key: `${type}:${id}`, type, id: String(id), lane, name, state, ...extra });
   add("page", "front", "meet", "トップの LP（/）", "running", { url: "/" });
   add("page", "register", "signup", "無料登録（/register）", "running", { url: "/register" });
+  // 便 12a：Claude が作ったページ（出会うのレーン）。lp_parts は公開中（無ければ最新）の版の印
+  for (const pg of pages) add("page", pg.id, "meet", pg.title, pg.status === "published" ? "running" : pg.status === "stopped" ? "stopped" : "draft", { slug: pg.slug, url: pg.url, lp: true, lp_parts: pageParts[pg.id] || {} });
   // 便 19：フォーム（答えた人は台帳に入るので、登録のレーンに置く）
   for (const f of forms) add("form", f.id, "signup", f.title, f.active ? "running" : "draft", { slug: f.slug, url: "/form?f=" + f.slug });
   // 便 8e：ステップの表はコネクタ（トリガー → セレクタ → アクション）。メールを送らないコネクタは名前で出す
@@ -98,6 +100,11 @@ export function buildEdges(parts) {
   const add = (from, to, label = "") => { if (has.has(from) && has.has(to)) edges.push({ from, to, label }); };
   const products = parts.filter((p) => p.type === "product");
   add("page:front", "page:register", "登録");
+  // 便 12a：ページの中の申込の枠 → そのフォーム、決済の枠 → その商品
+  for (const pg of parts.filter((p) => p.type === "page" && p.lp)) {
+    for (const slug of (pg.lp_parts && pg.lp_parts.forms) || []) for (const f of parts.filter((x) => x.type === "form" && x.slug === slug)) add(pg.key, f.key, "申込");
+    for (const id of (pg.lp_parts && pg.lp_parts.checkouts) || []) add(pg.key, `product:${id}`, "申し込む");
+  }
   for (const s of parts.filter((p) => p.type === "step")) {
     if (s.trigger === "registered") add("page:register", s.key, "登録した人");
     if (s.trigger === "purchase") {
@@ -135,6 +142,8 @@ export function partKeyOf(e) {
   if (e.type === "correction_submitted") return "room:correction";
   if (e.type === "seminar_registered" && p.seminar_id) return `seminar:${p.seminar_id}`;
   if (e.type === "form_submitted" && p.form_id) return `form:${p.form_id}`;
+  // 便 12a：ページを見た（台帳にいる人だけ。見た人の数そのものは b_page_hits から数える）
+  if (e.type === "page_viewed" && p.page_id) return `page:${p.page_id}`;
   return null;
 }
 
@@ -171,6 +180,23 @@ export function edgeCounts(edges, events, since) {
       if (fromAt != null && fromAt <= h.at) people.add(h.cid);
     }
     out[`${ed.from}>${ed.to}`] = people.size;
+  }
+  return out;
+}
+
+// 便 12a：ページの先週の数は「見た人」（端末ごと 1 回・まだ登録していない人も含む）
+export function pageWeek(pages, hits) {
+  const out = {};
+  for (const pg of pages) out[`page:${pg.id}`] = new Set(hits.filter((x) => x.page_id === pg.id && x.kind === "view").map((x) => x.vid)).size;
+  return out;
+}
+// 便 12a：ページ → フォームの線は、そのページから答えた人（form_submitted の payload.page_id）。登録前の人も数えられる
+export function pageEdgeWeek(edges, recent) {
+  const out = {};
+  for (const ed of edges) {
+    if (!ed.from.startsWith("page:") || !ed.to.startsWith("form:")) continue;
+    const pageId = ed.from.slice(5), formId = ed.to.slice(5);
+    out[`${ed.from}>${ed.to}`] = new Set(recent.filter((e) => e.type === "form_submitted" && e.payload && e.payload.page_id === pageId && e.payload.form_id === formId).map((e) => e.customer_id)).size;
   }
   return out;
 }
@@ -238,7 +264,7 @@ export function assemble({ parts, edges, campaigns, owners, week, edgeWeek = {} 
 }
 
 export function makePlan(h) {
-  const { db, logInbound, communityLink, changes } = h;
+  const { db, logInbound, communityLink, changes, pages: pagesMod } = h;
 
   async function loadAll(env) {
     const since = new Date(Date.now() - 7 * 864e5).toISOString();
@@ -255,16 +281,23 @@ export function makePlan(h) {
       // 便 19：フォーム（表がまだ無い置き場でも設計図は出す）
       db(env, "GET", "b_forms?select=id,title,slug,active&order=created_at.asc").catch(() => []),
     ]);
+    // 便 12a：ページ（表がまだ無い置き場でも設計図は出す）と、先週の見た人（まだ登録していない人も含む）
+    const lp = pagesMod ? await pagesMod.forPlan(env).catch(() => ({ pages: [], partsOf: {} })) : { pages: [], partsOf: {} };
+    const lpHits = lp.pages.length && pagesMod ? await pagesMod.hitsSince(env, since).catch(() => []) : [];
     const owned = new Set(owners.filter((o) => o.part_type === "product").map((o) => o.part_id));
     const shownProducts = products.filter((p) => p.active || owned.has(p.id));
     const parts = buildParts({
       products: shownProducts, steps, broadcasts, seminars: SEMINARS,
-      courseCount: new Set(lessons.map((l) => l.lesson_id)).size, community: community.url, forms,
+      courseCount: new Set(lessons.map((l) => l.lesson_id)).size, community: community.url, forms, pages: lp.pages, pageParts: lp.partsOf,
     });
     const edges = buildEdges(parts);
     const t0 = new Date(since).getTime();
     const recent = events.filter((e) => new Date(e.occurred_at).getTime() >= t0);
-    return { parts, edges, campaigns, owners, week: weekCounts(recent), edgeWeek: edgeCounts(edges, events, since), hiddenProducts: products.length - shownProducts.length };
+    const week = weekCounts(recent);
+    const edgeWeek = edgeCounts(edges, events, since);
+    Object.assign(week, pageWeek(lp.pages, lpHits));
+    Object.assign(edgeWeek, pageEdgeWeek(edges, recent));
+    return { parts, edges, campaigns, owners, week, edgeWeek, hiddenProducts: products.length - shownProducts.length };
   }
 
   async function blueprint(env, { campaign_id = "all" } = {}) {

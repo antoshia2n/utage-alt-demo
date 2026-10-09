@@ -73,6 +73,8 @@ export const EVENT_LABEL = {
   referral_reward: "紹介した人が買った（報酬）",
   referral_paid: "紹介の報酬を払った",
   form_submitted: "フォームに答えた",
+  page_viewed: "ページを見た",
+  page_clicked: "ページのボタンを押した",
   grants_synced: "権利を合わせた",
 };
 
