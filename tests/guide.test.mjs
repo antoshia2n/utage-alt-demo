@@ -23,6 +23,18 @@ test("画面の名前は Lab OS のメニューにあるものだけ", () => {
   for (const t of TOOLS) assert.ok(SCREENS.includes(t.screen), t.name + " の screen：" + t.screen);
 });
 
+// 便 20：SCREENS は手で書いた並びなので、メニューの組み替えで古い名前（つなぐ・connect など）が残ると上の試験は通ってしまう。
+// 左のメニュー（public/admin.html の .side の data-view）を読み、SCREENS の名前がすべてそこにあるかを見る
+const HTML = readFileSync(new URL("../public/admin.html", import.meta.url), "utf-8");
+const SIDE = HTML.slice(HTML.indexOf('<nav class="side"'), HTML.indexOf("</nav>", HTML.indexOf('<nav class="side"')));
+const MENU = [...SIDE.matchAll(/data-view="([a-z_]+)"/g)].map((m) => m[1]);
+
+test("SCREENS の画面名は、いまの左のメニューにあるものだけ（ai_only を除く）", () => {
+  assert.ok(MENU.length > 0, "左のメニューが読めない");
+  const stale = SCREENS.filter((v) => v !== "ai_only" && !MENU.includes(v));
+  assert.deepEqual(stale, [], "メニューに無い画面名：" + JSON.stringify(stale));
+});
+
 test("どの道具にも最初の権限がある（権限の表に行が入る）", () => {
   const noMode = TOOLS.map((t) => t.name).filter((n) => !DEFAULT_MODES[n]);
   assert.deepEqual(noMode, []);
