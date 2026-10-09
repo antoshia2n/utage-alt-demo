@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#1f5c4d">
-<link rel="manifest" href="/manifest.webmanifest">
+<link rel="manifest" href="/admin.webmanifest">
 <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/icons/icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -135,6 +135,13 @@
         </select></div>
         <div><button class="btn" id="ml-save">保存する</button></div>
         <div id="ml-status" class="note">読み込んでいます…</div>
+      </div>
+    </details>
+    <details class="setup card" id="push-box" open><summary>スマホの通知（Naoki への知らせ・生徒からのメッセージ・承認待ち）</summary>
+      <div class="stack" style="margin-top:8px">
+        <p class="note" style="margin:0" id="push-howto">知らせを受け取りたい端末でこの画面を開き、「この端末で受け取る」を押して、出てきた確認で「許可」を選ぶ。iPhone はホーム画面に追加した Lab OS から開いたときだけ押せる</p>
+        <div><button class="btn" id="push-on">この端末で受け取る</button> <button class="btn ghost" id="push-test">試しに送る</button> <button class="btn ghost" id="push-off">この端末で受け取らない</button></div>
+        <div id="push-status" class="note">読み込んでいます…</div>
       </div>
     </details>
     <details class="setup card" id="calendar-box"><summary>Google カレンダー（ホームに今日の予定を出す）</summary>

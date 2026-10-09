@@ -68,14 +68,24 @@ async function openConsole() {
   setupCommunity();
   setupMail();
   setupCalendar();
+  setupPush();
   loadApprovalBadge();
   // AI から渡された承認の URL（/admin#approval/<番号>）で開いたときは、AI と承認のタブを開く
-  if (location.hash.startsWith("#approval/")) document.querySelector('[data-view="ai"]').click();
-  else loadHome();
+  // 便 8f-3：通知から開いたとき（#room/<人の番号>）は、その人の部屋を開く。開いたままの画面で通知を押したときも同じ
+  if (!routeHash()) loadHome();
+  window.addEventListener("hashchange", routeHash);
   setInterval(() => { if (!document.hidden) loadRooms(); }, 30000);
   let t;
   $("q").addEventListener("input", () => { clearTimeout(t); t = setTimeout(search, 250); });
   $("src").addEventListener("change", search);
+}
+
+function routeHash() {
+  const h = location.hash;
+  if (h.startsWith("#approval/")) { document.querySelector('[data-view="ai"]').click(); return true; }
+  const rm = h.match(/^#room[/]([0-9a-f-]{36})$/i);
+  if (rm) { openView("rooms"); openRoom(rm[1]); return true; }
+  return false;
 }
 
 async function loadStats() {
@@ -111,7 +121,8 @@ async function detail(id) {
     <h2 style="margin-bottom:2px">${esc(p.name || "（名前なし）")}</h2>
     <div class="note">${esc(p.email)}</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 16px">
-      <span class="pill">${esc(p.stage)}</span>
+      ${r.stage ? `<span class="pill">段階 ${esc(r.stage.label)}</span>` : ""}
+      <span class="pill gray">${esc(p.stage)}</span>
       <span class="pill gray">流入元 ${SOURCE_LABEL[p.source] || esc(p.source)}</span>
       <span class="pill gray">出来事 ${p.event_count} 件</span>
       ${p.entitlement && p.entitlement.member ? `<span class="pill">会員（${esc(p.entitlement.plan || "定期課金")}）</span>` : `<span class="pill gray">権利 ${esc(p.entitlement ? p.entitlement.status : "none")}</span>`}
@@ -119,6 +130,10 @@ async function detail(id) {
     ${p.entitlement && (p.entitlement.gate_keys || []).length ? `<div class="note" style="margin:-8px 0 12px">門番の権利：${p.entitlement.gate_keys.map(esc).join("・")}</div>` : ""}
     <div class="note" style="margin:-4px 0 4px">ラベル（自動で付く。手で付けたものは「手」）</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin:0 0 6px" id="labels">${(r.labels || []).map((x) => `<span class="pill ${x.auto ? "gray" : "warn"}">${esc(x.label)}${x.auto ? "" : ` ・手 <a href="#" data-unlabel="${esc(x.label)}" aria-label="外す">×</a>`}</span>`).join("") || '<span class="note">（無し）</span>'}</div>
+    ${r.room ? `<div class="card chat-entry" style="margin:0 0 12px;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap">
+      <div><b>チャット</b> <span class="note">${r.room.messages ? `シアニンが読んでいない ${r.room.unread_for_admin}・添削の未返信 ${r.room.unreplied}・相手が読んでいない ${r.room.unread_for_student}` : "まだやりとりはありません"}</span></div>
+      <button class="btn small" type="button" id="open-chat">チャットを開く</button></div>` : ""}
+    ${r.purchases && r.purchases.length ? `<div class="note" style="margin:0 0 4px">買ったもの</div><ul class="plain" style="margin:0 0 12px;padding-left:18px">${r.purchases.map((x) => `<li>${esc(x.name)}${x.amount != null ? "・" + Number(x.amount).toLocaleString() + " 円" : ""}${x.mode === "test" ? "（テスト）" : ""} <span class="note">${fmtTime(x.at)}</span></li>`).join("")}</ul>` : ""}
     <form id="lb" style="display:flex;gap:6px;align-items:center;margin:0 0 16px"><input id="lb-name" type="text" maxlength="40" placeholder="ラベルを手で付ける" style="max-width:220px;min-height:36px"><button class="btn ghost small" type="submit">付ける</button><span class="note" id="lb-status"></span></form>
     <div class="deal-box">
       <h4>商談 ${p.deal && p.deal.stage !== "none" ? `<span class="pill warn">${esc(STAGE[p.deal.stage])}</span>` : '<span class="note">（まだ無し）</span>'}</h4>
@@ -151,6 +166,8 @@ async function detail(id) {
     <ol class="timeline">${r.events.map((e) => `
       <li><time>${fmtTime(e.occurred_at)}</time>${esc(EVENT_LABEL[e.type] || e.type)}${detailText(e)}<span class="note"> · ${esc(e.actor)}</span></li>`).join("")}
     </ol>`;
+  // 便 8f-3：人の 1 枚からその人の部屋へ
+  if ($("open-chat")) $("open-chat").addEventListener("click", () => { openView("rooms"); openRoom(id); });
   // 便 8e：ラベルを手で付ける・外す（画面からは承認なし。AI からは承認が要る）
   $("lb").addEventListener("submit", async (ev) => {
     ev.preventDefault();
@@ -235,7 +252,7 @@ async function loadRooms() {
   $("rooms").innerHTML = r.rooms.map((x) => `
     <li data-id="${x.person_id}" ${x.person_id === currentRoom ? 'aria-current="true"' : ""}>
       <div style="min-width:0"><div>${esc(x.name || x.email)}</div><div class="sub ellip">${x.last_from === "cyanin" ? "返した：" : ""}${esc(x.last_text)}</div></div>
-      <div style="text-align:right;flex-shrink:0">${x.unreplied > 0 ? `<span class="pill warn">未返信 ${x.unreplied}</span>` : '<span class="pill gray">返信済み</span>'}<div class="sub">${fmtTime(x.last_at)}</div></div>
+      <div style="text-align:right;flex-shrink:0">${x.unreplied > 0 ? `<span class="pill warn">未返信 ${x.unreplied}</span>` : x.unread_for_admin > 0 ? `<span class="pill warn">未読 ${x.unread_for_admin}</span>` : '<span class="pill gray">読んだ</span>'}<div class="sub">${fmtTime(x.last_at)}</div></div>
     </li>`).join("");
   document.querySelectorAll("#rooms li").forEach((li) => li.addEventListener("click", () => openRoom(li.dataset.id)));
 }
@@ -245,13 +262,19 @@ async function openRoom(id, focusId) {
   document.querySelectorAll("#rooms li").forEach((li) => li.toggleAttribute("aria-current", li.dataset.id === id));
   const r = await api("/api/admin/rooms/" + id, { token });
   if (!r.ok || !r.found) { $("room-detail").innerHTML = '<p class="note">読めませんでした。</p>'; return; }
-  const subs = Object.fromEntries(r.messages.filter((m) => m.from === "student").map((m) => [m.id, m]));
+  const subs = Object.fromEntries(r.messages.filter((m) => m.from === "student" && m.kind !== "chat").map((m) => [m.id, m]));
   const target = focusId && subs[focusId] && !subs[focusId].replied ? subs[focusId] : subs[r.unreplied[0]];
   const block = (label, text) => `<div class="rb"><div class="rb-l">${label}</div><div class="rb-t">${esc(text) || '<span class="note">（なし）</span>'}</div></div>`;
   $("room-detail").innerHTML = `
     <h2 style="margin-bottom:2px">${esc(r.person.name || "（名前なし）")}</h2>
     <div class="note" style="margin-bottom:12px">${esc(r.person.email)}</div>
-    <div class="room">${r.messages.map((m) => m.from === "student"
+    <div class="room">${r.messages.map((m) => m.kind === "chat"
+      ? (m.from === "student"
+        ? `<div class="msg-them"><div class="bubble chat">${m.text ? `<div class="pre">${esc(m.text)}</div>` : ""}${m.images.length ? `<div class="imgs">${m.images.map((k) => `<img data-key="${esc(k)}" alt="生徒の画像">`).join("")}</div>` : ""}</div>
+          <div class="meta"><time>${fmtTime(m.at)}</time><span class="pill gray">メッセージ</span></div></div>`
+        : `<div class="msg-me"><div class="bubble chat mine"><div class="pre">${esc(m.text)}</div></div>
+          <div class="meta"><time>${fmtTime(m.at)}</time>${m.actor === "mcp" ? '<span class="pill gray">AI から</span>' : ""}${m.read_by_student ? '<span class="pill gray">既読</span>' : ""}</div></div>`)
+      : m.from === "student"
       ? `<div class="msg-them"><div class="bubble">${m.text ? `<div class="pre">${esc(m.text)}</div>` : ""}${m.images.length ? `<div class="imgs">${m.images.map((k) => `<img data-key="${esc(k)}" alt="生徒の画像">`).join("")}</div>` : ""}</div>
           <div class="meta"><time>${fmtTime(m.at)}</time>${m.replied ? '<span class="pill gray">返信済み</span>' : `<button class="link" data-reply="${m.id}">${target && target.id === m.id ? "この投稿に返す（選択中）" : "この投稿に返す"}</button>`}</div></div>`
       : `<div class="msg-me"><div class="reply card"><div class="reply-h">返した添削${m.actor === "mcp" ? "（AI から）" : ""}</div>${correctionHtml(m)}</div>
@@ -268,7 +291,21 @@ async function openRoom(id, focusId) {
         <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><button class="btn ghost small" type="button" id="r-quote">選んだ部分を引用にする</button><button class="btn ghost small" type="button" id="r-addnote">指摘を 1 つ足す</button></div>
       </details>
       <div style="display:flex;gap:8px;align-items:center"><button class="btn" type="submit" id="r-send">返す</button><span class="note" id="r-status"></span></div>
-    </form>` : '<p class="note" style="margin-top:12px">この部屋に未返信はありません。</p>'}`;
+    </form>` : '<p class="note" style="margin-top:12px">この部屋に添削の未返信はありません。</p>'}
+    <form id="chat" class="stack reply-form">
+      <h3>メッセージを送る</h3>
+      <label for="ch-text" class="sr">メッセージ</label><textarea id="ch-text" rows="3" maxlength="8000" placeholder="添削以外のやりとり（質問への答え・連絡など）"></textarea>
+      <div style="display:flex;gap:8px;align-items:center"><button class="btn" type="submit" id="ch-send">送る</button><span class="note" id="ch-status"></span></div>
+    </form>`;
+  $("chat").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const text = $("ch-text").value.trim();
+    if (!text) { $("ch-status").textContent = "メッセージを入れてください"; return; }
+    $("ch-send").disabled = true;
+    const res = await api(`/api/admin/rooms/${id}/message`, { method: "POST", token, body: { text } });
+    if (!res.ok) { $("ch-send").disabled = false; $("ch-status").textContent = "送れませんでした（" + (res.error || res.status) + "）"; return; }
+    await openRoom(id); if (current === id) detail(id);
+  });
   $("room-detail").querySelectorAll("img[data-key]").forEach(async (img) => {
     try { img.src = await authImage("/api/admin/image?key=" + encodeURIComponent(img.dataset.key), token); }
     catch (_) { img.alt = "画像を読めませんでした"; img.classList.add("broken"); }
@@ -658,7 +695,7 @@ function setupCommunity() {
 
 // ---------- 便 8f-1：ホームの今日の 1 枚と段階のボード ----------
 const fmtHm = (iso) => new Date(iso).toLocaleTimeString("ja-JP", { timeZone: "Asia/Tokyo", hour: "2-digit", minute: "2-digit" });
-const TOOL_LABEL = { apply_tidy: "片付け案を当てる", add_label: "ラベルを付ける", remove_label: "ラベルを外す", set_step: "コネクタを変える", queue_broadcast: "一斉配信を送る", set_mail_settings: "メールの送り方を変える", set_community_link: "オプチャのリンクを変える", set_calendar_url: "カレンダーを変える", return_correction: "添削を返す", send_email: "メールを送る" };
+const TOOL_LABEL = { apply_tidy: "片付け案を当てる", add_label: "ラベルを付ける", remove_label: "ラベルを外す", set_step: "コネクタを変える", queue_broadcast: "一斉配信を送る", set_mail_settings: "メールの送り方を変える", set_community_link: "オプチャのリンクを変える", set_calendar_url: "カレンダーを変える", return_correction: "添削を返す", send_email: "メールを送る", send_chat: "メッセージを送る" };
 async function loadHome() {
   const [r, b] = await Promise.all([api("/api/admin/today", { token }), api("/api/admin/board", { token })]);
   if (!r.ok) { $("hm-cal").textContent = "読めませんでした（" + (r.error || r.status) + "）"; $("hm-todo").textContent = ""; }
@@ -762,6 +799,75 @@ function setupMail() {
   });
 }
 
+// ---------- スマホの通知（便 8f-3） ----------
+const pushSupported = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+const pushDevice = () => {
+  const ua = navigator.userAgent;
+  const os = /iphone|ipad|ipod/i.test(ua) ? "iPhone" : /android/i.test(ua) ? "Android" : /mac os/i.test(ua) ? "Mac" : /windows/i.test(ua) ? "Windows" : "端末";
+  const br = /edg[/]/i.test(ua) ? "Edge" : /crios|chrome[/]/i.test(ua) ? "Chrome" : /fxios|firefox[/]/i.test(ua) ? "Firefox" : /safari/i.test(ua) ? "Safari" : "";
+  const app = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone ? "・ホーム画面" : "";
+  return `${os}${br ? " " + br : ""}${app}`;
+};
+const keyBytes = (b64) => { const t = b64.replace(/-/g, "+").replace(/_/g, "/"); const s = atob(t + "===".slice((t.length + 3) % 4)); return Uint8Array.from(s, (c) => c.charCodeAt(0)); };
+// 画面の裏の仕組み（sw.js）が 5 秒で用意できなければ、使えないものとして扱う（「読み込んでいます」のまま止まらないため）
+async function pushSub() {
+  const reg = await Promise.race([navigator.serviceWorker.ready, new Promise((_, no) => setTimeout(() => no(new Error("sw_not_ready")), 5000))]);
+  return { reg, sub: await reg.pushManager.getSubscription() };
+}
+async function loadPush() {
+  const st = $("push-status");
+  const r = await api("/api/admin/push", { token });
+  if (!r.ok) { st.textContent = "読めませんでした（" + (r.error || r.status) + "）"; return null; }
+  let here = "この端末では使えません（ブラウザが通知に対応していない）";
+  if (pushSupported()) {
+    const ps = await pushSub().catch(() => null);
+    const sub = ps && ps.sub;
+    const on = sub && r.devices.some((d) => sub.endpoint.endsWith(d.endpoint_tail));
+    here = !ps ? "この端末では通知の準備ができませんでした（画面を開き直すと直ることがあります）" : on ? "この端末は受け取っています" : Notification.permission === "denied" ? "この端末は通知を止めています（端末の設定で Lab OS の通知を許可すると押せます）" : "この端末はまだ受け取っていません";
+  } else if (/iphone|ipad|ipod/i.test(navigator.userAgent) && !navigator.standalone) {
+    here = "iPhone は、共有ボタン →「ホーム画面に追加」で Lab OS を足し、そこから開くと押せます";
+  }
+  st.innerHTML = `${esc(here)}<br>受け取る端末 ${r.count} 台${r.devices.length ? "：" + r.devices.map((d) => esc(d.device || d.service)).join("・") : ""}`;
+  return r;
+}
+function setupPush() {
+  loadPush();
+  $("push-on").addEventListener("click", async () => {
+    clearErr();
+    if (!pushSupported()) return loadPush();
+    const r = await api("/api/admin/push", { token });
+    if (!r.ok) return fail("鍵を読めませんでした（" + (r.error || r.status) + "）");
+    const perm = await Notification.requestPermission();
+    if (perm !== "granted") { $("push-status").textContent = "許可されなかったので受け取れません"; return; }
+    const ps = await pushSub().catch(() => null);
+    if (!ps) return loadPush();
+    const { reg, sub: old } = ps;
+    let sub = old;
+    if (sub && sub.options && sub.options.applicationServerKey) {
+      const k = new Uint8Array(sub.options.applicationServerKey);
+      if (k.join() !== keyBytes(r.public_key).join()) { await sub.unsubscribe(); sub = null; }
+    }
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(r.public_key) });
+    const j = sub.toJSON();
+    const res = await api("/api/admin/push", { method: "POST", token, body: { endpoint: j.endpoint, keys: j.keys, device: pushDevice() } });
+    if (!res.ok) return fail("登録できませんでした（" + (res.error || res.status) + "）");
+    await loadPush();
+  });
+  $("push-test").addEventListener("click", async () => {
+    const r = await api("/api/admin/push/test", { method: "POST", token });
+    $("push-status").textContent = r.ok ? `${r.devices} 台に送り、届けた ${r.sent}・失敗 ${r.failed}${r.gone ? "・使えなくなった " + r.gone : ""}` : "送れませんでした（" + (r.error || r.status) + "）";
+  });
+  $("push-off").addEventListener("click", async () => {
+    if (!pushSupported()) return;
+    const ps = await pushSub().catch(() => null);
+    const sub = ps && ps.sub;
+    if (!sub) { $("push-status").textContent = "この端末は受け取っていません"; return; }
+    await api("/api/admin/push", { method: "DELETE", token, body: { endpoint: sub.endpoint } });
+    await sub.unsubscribe().catch(() => {});
+    await loadPush();
+  });
+}
+
 async function loadSetup() {
   const s = await api("/api/admin/setup", { token });
   if (!s.ok) { $("setup-body").textContent = "読めませんでした（" + (s.error || s.status) + "）"; return; }
@@ -786,6 +892,8 @@ function detailText(e) {
   if (e.type.startsWith("email_") && e.type !== "email_unsubscribed") return `<span class="note">（${esc(p.subject || "")}${p.reason ? "・" + esc(p.reason) : ""}${p.error ? "・" + esc(p.error) : ""}）</span>`;
   if (e.type === "correction_submitted") return `<span class="note">（${esc(String(p.text || "").slice(0, 30))}${(p.images || []).length ? " 画像" + p.images.length : ""}）</span>`;
   if (e.type === "correction_returned") return `<span class="note">（${esc(String(p.comment || p.corrected || "").slice(0, 30))}）</span>`;
+  if (e.type === "room_chat") return `<span class="note">（${p.from === "student" ? "生徒から" : "シアニンから"}・${esc(String(p.text || "").slice(0, 30))}${(p.images || []).length ? " 画像" + p.images.length : ""}）</span>`;
+  if (e.type === "push_subscribed" || e.type === "push_unsubscribed") return `<span class="note">（${esc(p.device || "")}${p.reason ? "・" + esc(p.reason) : ""}）</span>`;
   if (e.type === "room_read") return `<span class="note">（${p.by === "admin" ? "シアニン" : "生徒"}）</span>`;
   if (e.type === "label_added" || e.type === "label_removed") return `<span class="note">（${esc(p.label || "")}${p.step_id != null ? "・コネクタ " + esc(p.step_id) : ""}）</span>`;
   if (e.type === "admin_notified" || e.type === "admin_notify_failed" || e.type === "connector_skipped") return `<span class="note">（コネクタ ${esc(p.step_id)}${p.reason ? "・" + esc(p.reason) : ""}${p.error ? "・" + esc(p.error) : ""}）</span>`;

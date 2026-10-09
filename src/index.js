@@ -19,6 +19,9 @@
 // B の便 8e：コネクタ（トリガー → セレクタ → アクション）・自動で付くラベル・Naoki への知らせ。表は増やさず b_steps を広げた。中身は src/connect.js と src/deliver.js。
 // B の便 8f-1：シアニン用のホーム「今日の 1 枚」（Google カレンダーの予定・やること・段階ごとの人数）と段階のボード。表は増やさない。中身は src/today.js。
 // B の便 8f-2：ホームの仕上げ。UTAGE のカレンダーを 2 つ目の読み元に・繰り返しの予定の形を広げた・タスクマスターの今日の分（shia2n-mcp の TaskmasterReader をサービスの結びで読む）。表は増やさない。
+// B の便 8f-3：人の 1 枚（段階・ラベル・買ったもの・部屋の状態・時系列）とチャット、Naoki のスマホへの通知。表も Cloudflare の値も増やさない。
+//   チャット … 添削ルームと同じ部屋に、出来事 room_chat（payload.from：student／cyanin）として積む。添削の未返信には数えない
+//   通知     … Web Push。中身は src/push.js。知らせるのは、コネクタの「Naoki に知らせる」・生徒からのメッセージ・AI の承認待ち
 
 import { makeBin3 } from "./bin3.js";
 import { makeBin4 } from "./bin4.js";
@@ -31,12 +34,16 @@ import { makePlan } from "./plan.js";
 import { makeMailCfg } from "./mailcfg.js";
 import { makeChanges } from "./changes.js";
 import { makeConnect } from "./connect.js";
-import { makeToday } from "./today.js";
+import { makeToday, stageOf } from "./today.js";
+import { makePush } from "./push.js";
+import { LANES } from "./plan.js";
 
-const VERSION = "0.17.0-b8f2";
+const VERSION = "0.18.0-b8f3";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
-const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_read"];
+const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
+// 出来事の種類と中身から、どちらが出したか（生徒／シアニン）
+const fromOf = (e) => e.type === "correction_submitted" ? "student" : e.type === "correction_returned" ? "cyanin" : (e.payload && e.payload.from === "student" ? "student" : "cyanin");
 const IMAGE_TYPES = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif" };
 const IMAGE_MAX_BYTES = 5 * 1024 * 1024;
 const TEXT_MAX = 8000;
@@ -83,7 +90,8 @@ const bin4 = makeBin4({ db, addEvent, bin3 });
 const guard = makeGuard({ db, logInbound });
 const bridge = makeBridge({ db, rawDb, addEvent, secretHeaders });
 const sell = makeSell({ db, addEvent, bin3, bridge });
-const connect = makeConnect({ db, addEvent, logInbound, sell, mailcfg });
+const push = makePush({ db, addEvent, logInbound });
+const connect = makeConnect({ db, addEvent, logInbound, sell, mailcfg, push });
 const deliver = makeDeliver({ db, addEvent, logInbound, bin3, sell, mailcfg, connect });
 const learn = makeLearn({ db });
 const plan = makePlan({ db, logInbound, communityLink, changes });
@@ -275,17 +283,41 @@ const core = {
     return { ok: true, count: people.length, people };
   },
 
+  // 便 8f-3：人の 1 枚。段階（設計図のレーンと同じ決め方）・買ったもの・部屋の状態を足した。
+  // 通知の購読（push_*）の中身は端末の宛先なので、時系列には種類と端末の名前だけを出す
   async getTimeline(env, { person_id }) {
     if (!/^[0-9a-f-]{36}$/i.test(String(person_id || ""))) return { ok: false, error: "bad_person_id" };
     const [person] = await db(env, "GET", `customer_summary?select=*&id=eq.${person_id}`);
     if (!person) return { ok: true, found: false };
-    const events = await db(env, "GET", `events?select=id,type,payload,actor,occurred_at&customer_id=eq.${person_id}&order=occurred_at.desc&limit=200`);
+    const events = (await db(env, "GET", `events?select=id,type,payload,actor,occurred_at&customer_id=eq.${person_id}&order=occurred_at.desc&limit=200`))
+      .map((e) => String(e.type).startsWith("push_") ? { ...e, payload: { device: (e.payload && e.payload.device) || "", reason: (e.payload && e.payload.reason) || undefined } } : e);
+    const deal = await bin4.deal(env, person_id);
+    const labels = env.B_STORE ? ((await connect.getLabels(env, { person_id })).labels || []) : [];
+    const lane = stageOf({ labels: labels.map((x) => x.label), deal: deal ? deal.stage : "none", logins: person.login_count || 0 });
+    const purchases = (await db(env, "GET", `events?select=id,payload,occurred_at&customer_id=eq.${person_id}&type=eq.purchase_completed&order=occurred_at.desc&limit=50`))
+      .map((e) => ({ at: e.occurred_at, product_id: e.payload.product_id || null, name: e.payload.product_name || e.payload.product_id || "", amount: e.payload.amount ?? null, kind: e.payload.kind || null, mode: e.payload.mode || null }));
+    const rs = roomState(await roomEvents(env, person_id));
     return {
       ok: true, found: true,
-      person: { ...person, entitlement: await sell.entitlement(env, person_id), deal: await bin4.deal(env, person_id), contract: bin4.contractOf(person.email) },
-      labels: env.B_STORE ? ((await connect.getLabels(env, { person_id })).labels || []) : [],
+      person: { ...person, entitlement: await sell.entitlement(env, person_id), deal, contract: bin4.contractOf(person.email) },
+      stage: { id: lane, label: (LANES.find((l) => l.id === lane) || {}).label || lane },
+      labels,
+      purchases,
+      room: { messages: rs.lastMessageId ? true : false, unread_for_admin: rs.unreadForAdmin, unreplied: rs.unreplied.length, unread_for_student: rs.unreadForStudent },
       events,
     };
+  },
+
+  // 便 8f-3：シアニンからチャットを 1 通（添削の 3 欄ではない、ふつうのやりとり）。生徒の画面の部屋に新着として出る
+  async sendChat(env, { person_id, text }, actor) {
+    if (!UUID_RE.test(String(person_id || ""))) return { ok: false, error: "bad_person_id" };
+    const t = String(text ?? "").trim();
+    if (!t) return { ok: false, error: "empty" };
+    if (t.length > TEXT_MAX) return { ok: false, error: "too_long", max: TEXT_MAX };
+    const [person] = await db(env, "GET", `customers?select=id&id=eq.${person_id}`);
+    if (!person) return { ok: true, found: false };
+    const ev = await addEvent(env, person_id, "room_chat", { from: "cyanin", text: t }, actor === "mcp" ? "mcp" : "admin");
+    return { ok: true, found: true, id: ev.id };
   },
 
   async setNoteMember(env, { person_id, value }, actor) {
@@ -341,7 +373,7 @@ const core = {
         oldest_unreplied_at: s.unreplied.length ? s.unreplied[0].occurred_at : null,
         unread_for_admin: s.unreadForAdmin,
         last_at: last ? last.occurred_at : null,
-        last_from: last ? (last.type === "correction_submitted" ? "student" : "cyanin") : null,
+        last_from: last ? fromOf(last) : null,
         last_text: last ? snippet(last) : "",
       };
     }).filter((r) => r.last_at);
@@ -349,6 +381,7 @@ const core = {
     rooms.sort((a, b) =>
       (b.unreplied > 0) - (a.unreplied > 0)
       || (a.unreplied > 0 ? String(a.oldest_unreplied_at).localeCompare(String(b.oldest_unreplied_at)) : 0)
+      || (b.unread_for_admin > 0) - (a.unread_for_admin > 0)
       || String(b.last_at).localeCompare(String(a.last_at)));
     return { ok: true, count: rooms.length, unreplied_total: rooms.reduce((n, r) => n + r.unreplied, 0), rooms };
   },
@@ -439,24 +472,33 @@ function roomState(evs) {
     studentReadUpto,
     adminReadUpto,
     lastMessageId: msgs.length ? msgs[msgs.length - 1].id : 0,
-    unreadForAdmin: msgs.filter((e) => e.type === "correction_submitted" && e.id > adminReadUpto).length,
-    unreadForStudent: msgs.filter((e) => e.type === "correction_returned" && e.id > studentReadUpto).length,
+    unreadForAdmin: msgs.filter((e) => fromOf(e) === "student" && e.id > adminReadUpto).length,
+    unreadForStudent: msgs.filter((e) => fromOf(e) === "cyanin" && e.id > studentReadUpto).length,
     replied,
   };
 }
 
 function toMessage(e, s) {
   const p = e.payload || {};
+  // 便 8f-3：チャット（添削以外のやりとり）。kind で添削と分ける
+  if (e.type === "room_chat") {
+    const from = fromOf(e);
+    return {
+      id: e.id, kind: "chat", from, at: e.occurred_at, actor: e.actor,
+      text: p.text || "", images: Array.isArray(p.images) ? p.images : [],
+      ...(from === "student" ? { read_by_cyanin: e.id <= s.adminReadUpto } : { read_by_student: e.id <= s.studentReadUpto }),
+    };
+  }
   if (e.type === "correction_submitted") {
     return {
-      id: e.id, from: "student", at: e.occurred_at,
+      id: e.id, kind: "correction", from: "student", at: e.occurred_at,
       text: p.text || "", images: Array.isArray(p.images) ? p.images : [],
       replied: s.replied.has(String(e.id)),
       read_by_cyanin: e.id <= s.adminReadUpto,
     };
   }
   return {
-    id: e.id, from: "cyanin", at: e.occurred_at, actor: e.actor,
+    id: e.id, kind: "correction", from: "cyanin", at: e.occurred_at, actor: e.actor,
     reply_to: p.reply_to, original: p.original || "", corrected: p.corrected || "", comment: p.comment || "",
     notes: Array.isArray(p.notes) ? p.notes : [],
     read_by_student: e.id <= s.studentReadUpto,
@@ -465,7 +507,7 @@ function toMessage(e, s) {
 
 function snippet(e) {
   const p = e.payload || {};
-  const t = e.type === "correction_submitted"
+  const t = e.type === "correction_submitted" || e.type === "room_chat"
     ? (p.text || (p.images && p.images.length ? "（画像）" : ""))
     : (p.comment || p.corrected || "");
   return String(t).replace(/\s+/g, " ").slice(0, 60);
@@ -682,8 +724,12 @@ async function handleApi(request, env, url) {
       if (text.length > TEXT_MAX) return json({ ok: false, error: "too_long", max: TEXT_MAX }, 400);
       if (images.length > 4) return json({ ok: false, error: "too_many_images", max: 4 }, 400);
       if (images.some((k) => imageOwner(k) !== customer.id)) return json({ ok: false, error: "bad_image" }, 400);
-      const ev = await addEvent(env, customer.id, "correction_submitted", { text, images }, "site");
-      await logInbound(env, "room", { customer_id: customer.id, chars: text.length, images: images.length }, { ok: true, id: ev.id }, 200);
+      // 便 8f-3：kind が chat なら添削の依頼ではなくメッセージ（未返信に数えない）。省くと今までどおり添削の依頼
+      const isChat = body.kind === "chat";
+      const ev = await addEvent(env, customer.id, isChat ? "room_chat" : "correction_submitted", isChat ? { from: "student", text, images } : { text, images }, "site");
+      await logInbound(env, "room", { customer_id: customer.id, kind: isChat ? "chat" : "correction", chars: text.length, images: images.length }, { ok: true, id: ev.id }, 200);
+      // 生徒からのメッセージはすぐ Naoki のスマホへ（添削の依頼はコネクタの知らせで届く）
+      if (isChat) await push.send(env, { title: `メッセージ：${customer.name || customer.email}`, body: text ? text.replace(/\s+/g, " ").slice(0, 120) : "（画像）", url: `/admin#room/${customer.id}`, tag: `room-${customer.id}` });
       return json({ ok: true, id: ev.id });
     }
 
@@ -805,6 +851,28 @@ async function handleApi(request, env, url) {
     }
     const rm = path.match(/^\/api\/admin\/rooms\/([0-9a-f-]{36})$/i);
     if (rm && method === "GET") return json(await core.getRoom(env, { person_id: rm[1], mark_read: true }, "admin"));
+    // 便 8f-3：シアニンからチャットを送る（画面からは承認なし。AI の send_chat は承認が要る）
+    const rmsg = path.match(/^[/]api[/]admin[/]rooms[/]([0-9a-f-]{36})[/]message$/i);
+    if (rmsg && method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      const r = await core.sendChat(env, { person_id: rmsg[1], text: body.text }, "admin");
+      return json(r, r.ok === false ? 400 : 200);
+    }
+    // 便 8f-3：スマホの通知（鍵の公開の半分・購読の一覧・購読する／やめる・試しに送る）
+    if (path === "/api/admin/push" && method === "GET") { const r = await push.status(env); return json(r, r.ok === false ? 400 : 200); }
+    if (path === "/api/admin/push" && method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      const r = await push.subscribe(env, a.email, body);
+      return json(r, r.ok === false ? 400 : 200);
+    }
+    if (path === "/api/admin/push" && method === "DELETE") {
+      const body = await request.json().catch(() => ({}));
+      return json(await push.unsubscribe(env, a.email, body));
+    }
+    if (path === "/api/admin/push/test" && method === "POST") {
+      const r = await push.send(env, { title: "Lab OS の通知の試し", body: "この知らせが見えたら、スマホへの通知は届いています", url: "/admin", tag: "test" });
+      return json(r, r.ok === false ? 400 : 200);
+    }
     const rr = path.match(/^\/api\/admin\/rooms\/([0-9a-f-]{36})\/reply$/i);
     if (rr && method === "POST") {
       const body = await request.json().catch(() => ({}));
@@ -941,7 +1009,7 @@ const TOOLS = [
   },
   {
     name: "get_timeline",
-    description: "1 人の出来事を新しい順に返す（登録・ログイン・視聴など）。person_id は find_person の id。",
+    description: "人の 1 枚。1 人の出来事を新しい順に返す（登録・ログイン・視聴など）に加えて、いまの段階 stage（出会う・登録・温める・相談・購入・受講・紹介のどれか）・ラベル labels（auto が false は手かコネクタで付けたもの）・買ったもの purchases・部屋の状態 room（シアニンが読んでいない数・添削の未返信・生徒が読んでいない数）を返す。person_id は find_person の id。",
     inputSchema: { type: "object", properties: { person_id: { type: "string" } }, required: ["person_id"] },
   },
   {
@@ -959,7 +1027,7 @@ const TOOLS = [
   },
   {
     name: "get_room",
-    description: "1 人の添削ルームのやりとりを古い順に返す。生徒の投稿は text・images・replied、返したものは original・corrected・comment。unreplied は未返信の投稿の id。読んだ印は付けない。",
+    description: "1 人の添削ルームのやりとりを古い順に返す。kind が correction は添削（生徒の投稿は text・images・replied、返したものは original・corrected・comment）、chat はふつうのメッセージ（from：student／cyanin・text）。unreplied は添削の未返信の投稿の id（メッセージは数えない）。読んだ印は付けない。",
     inputSchema: { type: "object", properties: { person_id: { type: "string" } }, required: ["person_id"] },
   },
   {
@@ -981,6 +1049,21 @@ const TOOLS = [
       },
       required: ["person_id", "corrected"],
     },
+  },
+  {
+    name: "send_chat",
+    description: "シアニンとして 1 人にメッセージを送る（添削の 3 欄ではない、ふつうのやりとり）。生徒の画面の添削ルームに新着として出る。文字だけ・8000 文字まで。承認が要る道具：呼ぶと承認待ちになり approval_url が返る。",
+    inputSchema: { type: "object", properties: { person_id: { type: "string" }, text: { type: "string" } }, required: ["person_id", "text"] },
+  },
+  {
+    name: "notify_naoki",
+    description: "Naoki のスマホへ通知を 1 つ送る（Web Push）。title は 120 文字・body は 300 文字まで。url は押したときに開くシアニン用の画面の場所（/admin で始まる。省くとホーム）。届けた端末の数 sent を返す。端末が 0 なら devices: 0。",
+    inputSchema: { type: "object", properties: { title: { type: "string" }, body: { type: "string" }, url: { type: "string" } }, required: ["title"] },
+  },
+  {
+    name: "get_push_status",
+    description: "スマホへの通知を受け取る端末の一覧（メール・端末の名前・通知の仕組みの住所の名前・いつから）。端末の宛先そのものと鍵は返さない。",
+    inputSchema: { type: "object", properties: {} },
   },
   {
     name: "list_corrections",
@@ -1238,6 +1321,9 @@ const TOOLS = [
   },
 ];
 
+// 承認待ちの知らせに出す道具の名前（画面の TOOL_LABEL と同じ言い方）
+const TOOL_NAMES = { apply_tidy: "片付け案を当てる", add_label: "ラベルを付ける", remove_label: "ラベルを外す", set_step: "コネクタを変える", queue_broadcast: "一斉配信を送る", set_mail_settings: "メールの送り方を変える", set_community_link: "オプチャのリンクを変える", set_calendar_url: "カレンダーを変える", return_correction: "添削を返す", send_email: "メールを送る", send_chat: "メッセージを送る", set_product: "商品を変える", set_deal_stage: "商談を進める", set_note_member: "note の印を変える", send_seminar_archive: "アーカイブを配る", archive_campaign: "企画をしまう", undo_change: "元に戻す" };
+
 // 道具を 1 回実行する（権限の確かめは呼ぶ側で済ませる）。承認されたあとの実行もここを通る
 async function runTool(env, name, args) {
   if (name === "find_person") return await core.findPeople(env, args);
@@ -1247,6 +1333,13 @@ async function runTool(env, name, args) {
   if (name === "get_room") return await core.getRoom(env, { person_id: args.person_id, mark_read: false }, "mcp");
   if (name === "return_correction") return await core.returnCorrection(env, args, "mcp");
   if (name === "list_corrections") return await listCorrections(env, args);
+  if (name === "send_chat") return await core.sendChat(env, args, "mcp");
+  if (name === "notify_naoki") {
+    const u = String(args.url || "/admin");
+    if (!String(args.title || "").trim()) return { ok: false, error: "need_title" };
+    return await push.send(env, { title: args.title, body: args.body || "", url: u.startsWith("/admin") ? u : "/admin", tag: "ai" });
+  }
+  if (name === "get_push_status") { const r = await push.status(env); if (r.ok) delete r.public_key; return r; }
   if (name === "list_lessons") return await learn.listLessons(env, args);
   if (name === "get_meetings") return await bridge.meetings(env, args);
   if (name === "list_tables") return await bridge.listTables(env, args);
@@ -1355,7 +1448,11 @@ async function rpc(msg, env, origin = "") {
       const known = TOOLS.some((t) => t.name === name);
       const mode = known ? await guard.modeOf(env, name) : "auto";
       if (mode === "deny") result = { ok: false, error: "denied_by_permission", tool: name, note: "この道具は権限の表で禁止になっている。変えられるのは Naoki だけ" };
-      else if (mode === "approve") result = await guard.requestApproval(env, name, args, origin);
+      else if (mode === "approve") {
+        result = await guard.requestApproval(env, name, args, origin);
+        // 便 8f-3：承認待ちができたら Naoki のスマホへ（押すとその承認の画面が開く）
+        if (result.pending_approval) await push.send(env, { title: "承認待ち：" + (TOOL_NAMES[name] || name), body: "AI が承認を頼んでいます。開いて中身を見て決めてください", url: `/admin#approval/${result.approval_id}`, tag: "approval" });
+      }
       else result = await runTool(env, name, args);
       isError = result.ok === false;
     } catch (e) {

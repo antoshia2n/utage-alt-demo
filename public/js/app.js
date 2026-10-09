@@ -257,7 +257,12 @@ function setupRoom(token, communityUrl, communityState) {
       list.innerHTML = '<div class="empty note">まだやりとりはありません。下の欄から最初の文章を出してください。</div>';
       return;
     }
-    list.innerHTML = msgs.map((m) => m.from === "student"
+    list.innerHTML = msgs.map((m) => m.kind === "chat"
+      ? (m.from === "student"
+        ? `<div class="msg-me"><div class="bubble chat mine">${m.text ? `<div class="pre">${esc(m.text)}</div>` : ""}${m.images.length ? `<div class="imgs">${m.images.map((k) => `<img data-key="${esc(k)}" alt="出した画像">`).join("")}</div>` : ""}</div>
+          <div class="meta"><time>${fmtTime(m.at)}</time>${m.read_by_cyanin ? '<span class="pill gray">既読</span>' : ""}</div></div>`
+        : `<div class="msg-them"><div class="bubble chat"><div class="reply-h">シアニン</div><div class="pre">${esc(m.text)}</div></div><div class="meta"><time>${fmtTime(m.at)}</time></div></div>`)
+      : m.from === "student"
       ? `<div class="msg-me"><div class="bubble">${m.text ? `<div class="pre">${esc(m.text)}</div>` : ""}${m.images.length ? `<div class="imgs">${m.images.map((k) => `<img data-key="${esc(k)}" alt="出した画像">`).join("")}</div>` : ""}</div>
           <div class="meta"><time>${fmtTime(m.at)}</time>${m.replied ? '<span class="pill">返信済み</span>' : m.read_by_cyanin ? '<span class="pill gray">既読</span>' : ""}</div></div>`
       : `<div class="msg-them"><div class="reply card">
@@ -274,7 +279,7 @@ function setupRoom(token, communityUrl, communityState) {
   const load = async (markRead) => {
     const r = await api("/api/room", { token });
     if (!r.ok) { $("room-list").innerHTML = `<div class="msg err">読めませんでした（${esc(r.error || r.status)}）</div>`; return; }
-    const sig = JSON.stringify(r.messages.map((m) => [m.id, m.replied, m.read_by_cyanin]));
+    const sig = JSON.stringify(r.messages.map((m) => [m.id, m.replied, m.read_by_cyanin, m.read_by_student]));
     if (sig !== lastSig) {
       render(r.messages);
       if (opened && lastCount !== -1 && r.count > lastCount) $("room-list").lastElementChild?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -299,6 +304,15 @@ function setupRoom(token, communityUrl, communityState) {
     drawThumbs();
   });
 
+  // 便 8f-3：出し方（添削を頼む／メッセージ）で、欄の案内とボタンの文字を替える
+  const kindOf = () => (document.querySelector('input[name="c-kind"]:checked') || {}).value === "chat" ? "chat" : "correction";
+  const showKind = () => {
+    const chat = kindOf() === "chat";
+    $("c-text").placeholder = chat ? "シアニンへのメッセージ（質問・連絡など）" : "添削してほしい文章を貼ってください";
+    $("c-send").textContent = chat ? "送る" : "出す";
+  };
+  document.querySelectorAll('input[name="c-kind"]').forEach((x) => x.addEventListener("change", showKind));
+
   $("composer").addEventListener("submit", async (e) => {
     e.preventDefault();
     const text = $("c-text").value.trim();
@@ -314,10 +328,11 @@ function setupRoom(token, communityUrl, communityState) {
         keys.push(d.key);
       }
       status("出しています…");
-      const r = await api("/api/room", { method: "POST", token, body: { text, images: keys } });
+      const kind = kindOf();
+      const r = await api("/api/room", { method: "POST", token, body: { text, images: keys, kind } });
       if (!r.ok) throw new Error("出せませんでした（" + (r.error || r.status) + "）");
       $("c-text").value = ""; pending = []; drawThumbs();
-      status("出しました。返ってきたらこの部屋とタブの数字でお知らせします");
+      status(kind === "chat" ? "送りました。返事が来たらこの部屋とタブの数字でお知らせします" : "出しました。返ってきたらこの部屋とタブの数字でお知らせします");
       await load(true);
     } catch (err) {
       status(err.message);

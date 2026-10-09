@@ -2,7 +2,7 @@
 // 表は増やさない。コネクタは表 b_steps を広げた行（supabase/b8e_connect.sql）。動かすのは src/deliver.js の毎時の処理。
 //   トリガー（〜したら）… 出来事の記録の種類。下の TRIGGERS から選ぶ
 //   セレクタ（誰に）   … 一斉配信の宛先と同じ形の条件（流入元・買った・会員か・ラベル）。空なら全員
-//   アクション（〜する）… メールを送る／Naoki に知らせる／ラベルを付ける
+//   アクション（〜する）… メールを送る／Naoki に知らせる（便 8f-3 からスマホの通知も）／ラベルを付ける
 // ラベルは出来事の記録から毎回計算する（流入元・会員かどうか・買った商品・押したリンク・参加した企画・最後に動いた日）。
 // 手で付けるラベルは例外で、出来事 label_added／label_removed に積む（コネクタの「ラベルを付ける」も同じ出来事）。
 
@@ -171,7 +171,10 @@ export function makeConnect(h) {
       catch (e) { failed++; error = String(e && e.message || e).slice(0, 200); }
     }
     if (failed) await logInbound(env, "notify", { subject, admins: admins.length }, { ok: false, sent, failed, error }, 500);
-    return { sent, failed, error };
+    // 便 8f-3：同じ知らせをスマホへも（端末が 0 なら何もしない・失敗してもメールの結果は変えない）
+    let pushed = 0;
+    if (h.push) { const pr = await h.push.send(env, { title: subject, body: String(text || "").split("\n")[0], url: "/admin", tag: "notify" }); pushed = pr.sent || 0; }
+    return { sent, failed, error, pushed };
   }
 
   return { labelMap, getLabels, addLabel, removeLabel, notifyAdmins };

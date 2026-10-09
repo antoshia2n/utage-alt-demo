@@ -66,6 +66,9 @@ export const EVENT_LABEL = {
   admin_notified: "シアニンに知らせた",
   admin_notify_failed: "シアニンに知らせられなかった",
   connector_skipped: "コネクタの条件に当たらなかった",
+  room_chat: "メッセージ",
+  push_subscribed: "スマホの通知を受け取り始めた",
+  push_unsubscribed: "スマホの通知をやめた",
 };
 
 // ログインが要る画像を読み、画面に出せる住所に変える（img の src に鍵を付けられないため）
