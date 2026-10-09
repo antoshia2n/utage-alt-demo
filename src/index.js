@@ -16,6 +16,7 @@
 // B の便 8c：企画と設計図。部品の持ち主は b_campaign_parts、設計図は部品どうしのつながりから毎回組み立てる。中身は src/plan.js。
 // B の便 7c-1：メールの送り元・表示名・返信先・誰に送るか（test／login／all）を表 b_settings に置く（Cloudflare の値から移した）。
 //   変えるのはシアニン用の画面か、承認が要る AI の道具 set_mail_settings。中身は src/mailcfg.js。生徒に見える文と法定の頁を本物にした。
+// B の便 8e：コネクタ（トリガー → セレクタ → アクション）・自動で付くラベル・Naoki への知らせ。表は増やさず b_steps を広げた。中身は src/connect.js と src/deliver.js。
 
 import { makeBin3 } from "./bin3.js";
 import { makeBin4 } from "./bin4.js";
@@ -27,8 +28,9 @@ import { makeBridge } from "./bridge.js";
 import { makePlan } from "./plan.js";
 import { makeMailCfg } from "./mailcfg.js";
 import { makeChanges } from "./changes.js";
+import { makeConnect } from "./connect.js";
 
-const VERSION = "0.14.1-b8d";
+const VERSION = "0.15.0-b8e";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_read"];
@@ -78,7 +80,8 @@ const bin4 = makeBin4({ db, addEvent, bin3 });
 const guard = makeGuard({ db, logInbound });
 const bridge = makeBridge({ db, rawDb, addEvent, secretHeaders });
 const sell = makeSell({ db, addEvent, bin3, bridge });
-const deliver = makeDeliver({ db, addEvent, logInbound, bin3, sell, mailcfg });
+const connect = makeConnect({ db, addEvent, logInbound, sell, mailcfg });
+const deliver = makeDeliver({ db, addEvent, logInbound, bin3, sell, mailcfg, connect });
 const learn = makeLearn({ db });
 const plan = makePlan({ db, logInbound, communityLink, changes });
 
@@ -276,6 +279,7 @@ const core = {
     return {
       ok: true, found: true,
       person: { ...person, entitlement: await sell.entitlement(env, person_id), deal: await bin4.deal(env, person_id), contract: bin4.contractOf(person.email) },
+      labels: env.B_STORE ? ((await connect.getLabels(env, { person_id })).labels || []) : [],
       events,
     };
   },
@@ -878,6 +882,13 @@ async function handleApi(request, env, url) {
       const r = bq[2] === "queue" ? await deliver.queueBroadcast(env, { id: bq[1] }, a.email) : await deliver.cancelBroadcast(env, { id: bq[1] }, a.email);
       return json(r, r.ok === false ? 400 : 200);
     }
+    // B の便 8e：ラベル（自動の一覧と人数・手で付ける／外す）
+    if (path === "/api/admin/labels" && method === "GET") { const r = await connect.getLabels(env, { person_id: url.searchParams.get("person_id") || undefined }); return json(r, r.ok === false ? 400 : 200); }
+    if (path === "/api/admin/labels" && method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      const r = body.remove ? await connect.removeLabel(env, body, a.email) : await connect.addLabel(env, body, a.email);
+      return json(r, r.ok === false ? 400 : 200);
+    }
     if (path === "/api/admin/steps" && method === "POST") {
       const body = await request.json().catch(() => ({}));
       const r = await deliver.setStep(env, body, a.email);
@@ -1094,7 +1105,7 @@ const TOOLS = [
   },
   {
     name: "preview_audience",
-    description: "一斉配信の宛先を、条件で絞って数える（送らない）。filter の欄：source（流入元の配列 x／note／youtube／direct／other）・purchased（買った商品の id の配列）・not_purchased（買っていない商品の id の配列）・member（会員か true／false）・note_member（true／false）・registered_after／registered_before（日時）・emails（メールの配列。試しに送るとき）。配信を止めている人の数も返す。",
+    description: "一斉配信の宛先を、条件で絞って数える（送らない）。filter の欄：source（流入元の配列 x／note／youtube／direct／other）・purchased（買った商品の id の配列）・not_purchased（買っていない商品の id の配列）・member（会員か true／false）・note_member（true／false）・registered_after／registered_before（日時）・emails（メールの配列。試しに送るとき）・labels（このラベルを全部持つ人。get_labels の名前）・not_labels（このラベルをどれも持たない人）。配信を止めている人の数も返す。コネクタのセレクタも同じ形。",
     inputSchema: { type: "object", properties: { filter: { type: "object" } } },
   },
   {
@@ -1119,20 +1130,37 @@ const TOOLS = [
   },
   {
     name: "list_steps",
-    description: "ステップ配信の決まりの一覧（きっかけ registered＝登録／purchase＝購入・商品・何時間後・件名・動いているか・送った数・リンクを押した数）。",
+    description: "コネクタ（トリガー → セレクタ → アクション）の一覧。便 5 のステップ配信もここに入る。欄：trigger（きっかけ）・trigger_args・product_id・delay_hours（何時間後）・selector（誰に。preview_audience の filter と同じ形・空なら全員）・action（send_email／notify_admin／add_label）・action_args・subject・body・active。結果の数（sent・clicks・notified・labeled・skipped）と、選べるきっかけ triggers・アクション actions も返す。",
     inputSchema: { type: "object", properties: {} },
   },
   {
     name: "set_step",
-    description: "ステップ配信の決まりを足す・直す・動かす・止める。承認が要る道具。欄：id（直すとき）・name・trigger（registered／purchase）・product_id（購入のとき。省くとどの購入でも）・delay_hours（何時間後）・subject・body・active。動かした時刻より後の登録・購入だけが対象になる。",
+    description: "コネクタを足す・直す・動かす・止める。承認が要る道具。欄：id（直すとき）・name・trigger（registered 登録した／purchase 買った／clicked メールのリンクを押した／lesson_viewed 教材を見た／correction_submitted 添削を出した／login ログインした／label_added ラベルが付いた）・trigger_args（label：label_added のときのラベル・url：clicked のときのリンク）・product_id（purchase のとき。省くとどの購入でも）・delay_hours（何時間後）・selector（誰に。preview_audience の filter と同じ形）・action（send_email メールを送る／notify_admin Naoki に知らせる／add_label ラベルを付ける）・action_args（label：add_label のとき）・subject・body（{{name}}・{{email}}・{{product}}・{{label}}・{{url}} が置き換わる）・active。動かした時刻より後のきっかけだけが対象。セレクタに当たらない人は connector_skipped として残る。",
     inputSchema: {
       type: "object",
       properties: {
-        id: { type: "integer" }, name: { type: "string" }, trigger: { type: "string", enum: ["registered", "purchase"] },
-        product_id: { type: ["string", "null"] }, delay_hours: { type: "integer" }, subject: { type: "string" }, body: { type: "string" },
-        active: { type: "boolean" }, sort: { type: "integer" },
+        id: { type: "integer" }, name: { type: "string" },
+        trigger: { type: "string", enum: ["registered", "purchase", "clicked", "lesson_viewed", "correction_submitted", "login", "label_added"] },
+        trigger_args: { type: "object" }, product_id: { type: ["string", "null"] }, delay_hours: { type: "integer" },
+        selector: { type: "object" }, action: { type: "string", enum: ["send_email", "notify_admin", "add_label"] }, action_args: { type: "object" },
+        subject: { type: "string" }, body: { type: "string" }, active: { type: "boolean" }, sort: { type: "integer" },
       },
     },
+  },
+  {
+    name: "get_labels",
+    description: "ラベル。person_id を渡すとその人のラベル（auto が true は出来事から自動で付いたもの・false は手かコネクタで付けたもの）、省くと全員のラベルの名前と人数。自動のラベル：流入元:X など・会員／会員でない・購入者・買った:商品の id・リンクを押した・教材を見た・添削を出した・セミナーに申し込んだ・個別相談を予約した・企画:企画名・最後に動いた:7日以内／30日以内／30日より前。",
+    inputSchema: { type: "object", properties: { person_id: { type: "string" } } },
+  },
+  {
+    name: "add_label",
+    description: "1 人にラベルを手で付ける。承認が要る道具。ラベルは空白・カンマ・山かっこ・引用符を含まない 1〜40 文字。もう付いていれば何もしない。付けると「ラベルが付いた」のコネクタのきっかけになる。",
+    inputSchema: { type: "object", properties: { person_id: { type: "string" }, label: { type: "string" } }, required: ["person_id", "label"] },
+  },
+  {
+    name: "remove_label",
+    description: "手かコネクタで付けたラベルを 1 人から外す。承認が要る道具。自動で付いたラベルは外せない（出来事から毎回計算するため）。",
+    inputSchema: { type: "object", properties: { person_id: { type: "string" }, label: { type: "string" } }, required: ["person_id", "label"] },
   },
   {
     name: "get_blueprint",
@@ -1162,13 +1190,13 @@ const TOOLS = [
   // 便 8d：片付けと元に戻す
   {
     name: "get_tidy_plan",
-    description: "片付け案を返す（何も変えない）。企画に入っていない部品ごとに、入れる先の企画と役目の案（既定は常設・商品はまとまりの名前）。別の企画へ入れたいものは campaign_id を変えて apply_tidy に渡す。",
+    description: "片付け案を返す（何も変えない）。企画に入っていない部品ごとに、入れる先の企画と役目の案（既定は常設・商品はまとまりの名前）と、部品が 1 つも無い企画をしまう案（archives）。別の企画へ入れたいものは campaign_id を変えて apply_tidy に渡す。",
     inputSchema: { type: "object", properties: {} },
   },
   {
     name: "apply_tidy",
-    description: "片付け案を当てる。承認が要る道具。assignments（part_type・part_id・campaign_id・role の並び・200 件まで）を渡すとそのとおり、渡さなければ get_tidy_plan の案のまま。1 件ずつ変えた記録に残り、list_changes の番号で undo_change すると戻せる。",
-    inputSchema: { type: "object", properties: { assignments: { type: "array", items: { type: "object" } } } },
+    description: "片付け案を当てる。承認が要る道具。assignments（part_type・part_id・campaign_id・role の並び・200 件まで）と archives（しまう企画の campaign_id の並び）を渡すとそのとおり、どちらも渡さなければ get_tidy_plan の案のまま。部品の振り分けは 1 件ずつ変えた記録に残り、list_changes の番号で undo_change すると戻せる。しまった企画は archive_campaign（restore true）で戻す。",
+    inputSchema: { type: "object", properties: { assignments: { type: "array", items: { type: "object" } }, archives: { type: "array", items: { type: "string" } } } },
   },
   {
     name: "list_changes",
@@ -1227,6 +1255,9 @@ async function runTool(env, name, args) {
   if (name === "cancel_broadcast") return await deliver.cancelBroadcast(env, args, "mcp");
   if (name === "list_steps") return await deliver.listSteps(env);
   if (name === "set_step") return await deliver.setStep(env, args, "mcp");
+  if (name === "get_labels") return await connect.getLabels(env, args);
+  if (name === "add_label") return await connect.addLabel(env, args, "mcp");
+  if (name === "remove_label") return await connect.removeLabel(env, args, "mcp");
   if (name === "get_blueprint") return await plan.blueprint(env, args);
   if (name === "list_campaigns") return await plan.listCampaigns(env, args);
   if (name === "create_campaign") return await plan.createCampaign(env, args, "mcp");

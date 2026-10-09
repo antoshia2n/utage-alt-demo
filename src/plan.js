@@ -63,7 +63,12 @@ export function buildParts({ products = [], steps = [], broadcasts = [], seminar
   const add = (type, id, lane, name, state, extra = {}) => parts.push({ key: `${type}:${id}`, type, id: String(id), lane, name, state, ...extra });
   add("page", "front", "meet", "トップの LP（/）", "running", { url: "/" });
   add("page", "register", "signup", "無料登録（/register）", "running", { url: "/register" });
-  for (const s of steps) add("step", s.id, "warm", s.subject || s.name || `ステップ ${s.id}`, s.active ? "running" : "draft", { trigger: s.trigger, product_id: s.product_id || null, note: s.name || "" });
+  // 便 8e：ステップの表はコネクタ（トリガー → セレクタ → アクション）。メールを送らないコネクタは名前で出す
+  for (const s of steps) {
+    const mail = !s.action || s.action === "send_email";
+    add("step", s.id, "warm", (mail ? s.subject || s.name : s.name || s.subject) || `コネクタ ${s.id}`, s.active ? "running" : "draft",
+      { trigger: s.trigger, product_id: s.product_id || null, action: s.action || "send_email", note: s.name || "" });
+  }
   for (const b of broadcasts) {
     const st = b.status === "draft" ? "draft" : (b.status === "queued" || b.status === "sending") ? "running" : "stopped";
     add("broadcast", b.id, "warm", b.subject || "（件名なし）", st, { filter: b.filter || {} });
@@ -95,6 +100,8 @@ export function buildEdges(parts) {
       if (s.product_id) add(`product:${s.product_id}`, s.key, "買った人");
       else for (const p of products.filter((x) => x.state === "running")) add(p.key, s.key, "買った人");
     }
+    if (s.trigger === "lesson_viewed") add("course:mn", s.key, "教材を見た人");
+    if (s.trigger === "correction_submitted") add("room:correction", s.key, "添削を出した人");
   }
   for (const p of products) {
     if ((p.grants || []).some((g) => MEMBER_KEYS.includes(g))) {
@@ -188,7 +195,7 @@ export function makePlan(h) {
     const since = new Date(Date.now() - 7 * 864e5).toISOString();
     const [products, steps, broadcasts, lessons, community, campaigns, owners, events] = await Promise.all([
       db(env, "GET", "b_products?select=id,name,active,grants,sort,utage_product_id&order=sort.asc"),
-      db(env, "GET", "b_steps?select=id,name,trigger,product_id,subject,active&order=sort.asc,id.asc"),
+      db(env, "GET", "b_steps?select=id,name,trigger,product_id,subject,active,action&order=sort.asc,id.asc"),
       db(env, "GET", "b_broadcasts?select=id,subject,status,filter,created_at&order=created_at.desc&limit=50"),
       db(env, "GET", "mn_lessons?select=lesson_id&limit=5000"),
       communityLink(env),
@@ -305,20 +312,29 @@ export function makePlan(h) {
       campaign_id: standing ? standing.id : null, campaign_name: standing ? standing.name : null,
       role: p.type === "product" ? (p.group_name || p.name) : p.type === "broadcast" && p.state === "stopped" ? "過去の一斉配信" : (TIDY_ROLE[p.type] || ""),
     }));
-    return { ok: true, count: assignments.length, assignments, note: standing ? "案のまま当てると、すべて常設に入る。企画へ入れたいものは assignments の campaign_id を変えて渡す" : "常設の企画が無い（b8c_plan.sql を流すと作られる）" };
+    // 便 8e：部品が 1 つも無い企画（常設としまったものを除く）は、しまう案にする
+    const used = new Set(all.owners.map((o) => o.campaign_id));
+    const archives = all.campaigns.filter((c) => c.kind !== "standing" && !c.archived_at && !used.has(c.id)).map((c) => ({ campaign_id: c.id, name: c.name }));
+    return { ok: true, count: assignments.length, assignments, archives, note: standing ? "案のまま当てると、部品はすべて常設に入り、空の企画はしまわれる。企画へ入れたいものは assignments の campaign_id を変えて渡す" : "常設の企画が無い（b8c_plan.sql を流すと作られる）" };
   }
 
-  async function applyTidy(env, { assignments } = {}, actor) {
+  async function applyTidy(env, { assignments, archives } = {}, actor) {
     if (!env.B_STORE) return { ok: false, error: "demo_store" };
     let list = Array.isArray(assignments) ? assignments : null;
-    if (!list) { const p = await tidyPlan(env); if (!p.ok) return p; list = p.assignments; }
-    if (list.length > 200) return { ok: false, error: "too_many", max: 200 };
-    const applied = [], failed = [];
+    let arch = Array.isArray(archives) ? archives.map((x) => (typeof x === "string" ? x : x && x.campaign_id)).filter(Boolean) : null;
+    if (!list && !arch) { const p = await tidyPlan(env); if (!p.ok) return p; list = p.assignments; arch = p.archives.map((x) => x.campaign_id); }
+    list = list || []; arch = arch || [];
+    if (list.length > 200 || arch.length > 50) return { ok: false, error: "too_many", max: { assignments: 200, archives: 50 } };
+    const applied = [], failed = [], archived = [];
     for (const x of list) {
       const r = await setPartCampaign(env, { part_type: x.part_type, part_id: x.part_id, campaign_id: x.campaign_id, role: x.role || "" }, actor);
       if (r.ok) applied.push(r.key); else failed.push({ part_type: x.part_type, part_id: x.part_id, error: r.error });
     }
-    return { ok: failed.length === 0, applied: applied.length, failed, note: "元に戻すときは list_changes で番号を見て undo_change" };
+    for (const id of arch) {
+      const r = await archiveCampaign(env, { campaign_id: id }, actor);
+      if (r.ok) archived.push(id); else failed.push({ campaign_id: id, error: r.error });
+    }
+    return { ok: failed.length === 0, applied: applied.length, archived: archived.length, failed, note: "部品は list_changes の番号で undo_change、しまった企画は archive_campaign（restore true）で戻す" };
   }
 
   return { blueprint, listCampaigns, createCampaign, setPartCampaign, archiveCampaign, tidyPlan, applyTidy };
