@@ -72,6 +72,8 @@ export const EVENT_LABEL = {
   referred: "紹介のリンクから登録",
   referral_reward: "紹介した人が買った（報酬）",
   referral_paid: "紹介の報酬を払った",
+  form_submitted: "フォームに答えた",
+  grants_synced: "権利を合わせた",
 };
 
 // ログインが要る画像を読み、画面に出せる住所に変える（img の src に鍵を付けられないため）

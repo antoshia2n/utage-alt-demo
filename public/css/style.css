@@ -409,3 +409,61 @@ details.review time { font-family: var(--mono); font-size: 12px; color: var(--mu
 .err-text { color: var(--warn); margin-top: 4px; }
 .fm-items { display: grid; gap: 6px; }
 .fm-items label.check { margin: 0; }
+
+/* ---------- 便 17：左のメニューの開閉・上の帯・顧客管理 ---------- */
+.side .grp { display: flex; align-items: center; justify-content: space-between; width: 100%; background: none; border: 0; cursor: pointer; font: inherit; font-size: 11px; color: var(--muted); letter-spacing: .1em; padding: 12px 10px 4px; text-align: left; }
+.side .grp::after { content: ""; width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg); margin: 0 4px 3px 0; transition: transform .15s; }
+.side .grp-box.closed .grp::after { transform: rotate(-45deg); margin-bottom: 0; }
+.side .grp:hover { color: var(--ink); }
+.side .grp-items { display: flex; flex-direction: column; gap: 2px; }
+.side .grp-box.closed .grp-items { display: none; }
+.topnav .crumb-sub { color: var(--muted); font-weight: 400; }
+.gsearch { margin: 0; }
+.gsearch input { min-height: 36px; width: 240px; padding: 6px 12px; font-size: 14px; border-radius: 999px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--warn); background: var(--warn-soft); color: var(--warn); font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
+.chip b { font-weight: 700; }
+.cust-tools { display: flex; gap: 8px; flex-wrap: wrap; }
+.cust-tools input { flex: 1 1 220px; }
+.cust-tools select { min-height: 48px; }
+.table-wrap { overflow-x: auto; }
+.cust-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.cust-table th { text-align: left; font-weight: 400; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--line); padding: 6px 8px; white-space: nowrap; }
+.cust-table th button { background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; }
+.cust-table th button[data-dir="asc"]::after { content: " ↑"; }
+.cust-table th button[data-dir="desc"]::after { content: " ↓"; }
+.cust-table th button[data-dir="asc"], .cust-table th button[data-dir="desc"] { color: var(--ink); font-weight: 700; }
+.cust-table td { padding: 10px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.cust-table tbody tr { cursor: pointer; }
+.cust-table tbody tr:hover, .cust-table tbody tr:focus { background: var(--bg); outline: none; }
+.cust-table .c-name { font-weight: 700; }
+.cust-table .sub { font-size: 12px; color: var(--muted); word-break: break-all; }
+.back-link { background: none; border: 0; padding: 4px 0; margin: 0 0 10px; font: inherit; font-size: 14px; color: var(--accent); cursor: pointer; }
+.cust-head-top { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+.cust-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.pill-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+.lb-inline { display: inline-flex; gap: 4px; align-items: center; margin: 0; }
+.lb-inline input { min-height: 30px; width: 120px; padding: 2px 10px; font-size: 13px; border-radius: 999px; }
+.cust-tabs { margin: 16px 0 12px; }
+.kv { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 8px 16px; margin: 0; }
+.kv dt { color: var(--muted); font-size: 13px; }
+.kv dd { margin: 0; }
+@media (max-width: 860px) {
+  .side .grp-box, .side .grp-items { display: contents; }
+  .side .grp { display: none; }
+  .side .grp-box.closed .grp-items { display: contents; }
+  .topnav { flex-wrap: wrap; }
+  .gsearch { order: 5; flex: 1 1 100%; }
+  .gsearch input { width: 100%; }
+  .topnav .who { display: none; }
+}
+@media (max-width: 640px) {
+  .cust-table .c-src, .cust-table .c-reg { display: none; }
+  .kv { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .kv dd { margin-bottom: 8px; }
+}
+.cust-table .sub { overflow-wrap: anywhere; word-break: normal; }
+@media (max-width: 860px) {
+  .topnav .grow { display: none; }
+  .topnav .crumb { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+@media (max-width: 860px) { .topnav .crumb { flex: 1 1 0; } .chip { padding: 0 10px; font-size: 12px; } }

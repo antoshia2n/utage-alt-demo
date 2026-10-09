@@ -92,53 +92,116 @@ async function loadStats() {
   const s = await api("/api/admin/stats", { token });
   if (!s.ok) return;
   const box = (label, n) => `<div class="stat"><b>${n}</b>${esc(label)}</div>`;
-  $("stats").innerHTML = box("人", s.customers)
+  $("stats").innerHTML = box("顧客", s.customers)
     + Object.entries(s.by_stage).map(([k, v]) => box(k, v)).join("")
     + Object.entries(s.by_source).map(([k, v]) => box("流入元 " + (SOURCE_LABEL[k] || k), v)).join("");
 }
 
+// ---------- 顧客管理（便 17：一覧の表 → 1 人の詳細。詳細は上に要点、下にタブ） ----------
 let current = null;
-async function search() {
-  const q = encodeURIComponent($("q").value.trim());
-  const r = await api(`/api/admin/people?q=${q}&source=${$("src").value}`, { token });
-  if (!r.ok) { $("count").textContent = "読めませんでした（" + (r.error || r.status) + "）"; $("people").innerHTML = ""; return; }
-  $("count").textContent = r.count === 0 ? "当てはまる人は 0 人です" : r.count + " 人";
-  $("people").innerHTML = r.people.map((p) => `
-    <li data-id="${p.id}" ${p.id === current ? 'aria-current="true"' : ""}>
-      <div><div>${esc(p.name || "（名前なし）")}</div><div class="sub">${esc(p.email)}</div></div>
-      <div style="text-align:right">${p.deal_stage && p.deal_stage !== "none" ? `<span class="pill warn">${esc(STAGE[p.deal_stage])}</span> ` : ""}${p.member ? '<span class="pill">会員</span> ' : ""}<span class="pill gray">${esc(p.stage)}</span><div class="sub">${SOURCE_LABEL[p.source] || esc(p.source)}${p.note_member ? "・note" : ""}</div></div>
-    </li>`).join("");
-  document.querySelectorAll("#people li").forEach((li) => li.addEventListener("click", () => detail(li.dataset.id)));
+let custRows = [], custSort = { key: "last_event_at", dir: -1 }, custTab = "overview";
+const dayOf = (iso) => (iso ? fmtTime(iso).slice(0, 10) : "—");
+function ago(iso) {
+  if (!iso) return "—";
+  const d = Math.floor((Date.now() - new Date(iso).getTime()) / 864e5);
+  return d <= 0 ? "今日" : d === 1 ? "昨日" : d < 31 ? d + " 日前" : dayOf(iso);
+}
+const stageText = (p) => (p.member ? "会員" : p.stage || "");
+
+function custList() {
+  current = null;
+  $("cust-list").classList.remove("hidden");
+  $("cust-detail").classList.add("hidden");
+  $("view-people-wrap").style.display = "";
+  setCrumbSub("");
 }
 
+async function search() {
+  const q = encodeURIComponent($("q").value.trim());
+  const r = await api(`/api/admin/people?q=${q}&source=${$("src").value}&limit=200`, { token });
+  if (!r.ok) { $("count").textContent = "読めませんでした（" + (r.error || r.status) + "）"; $("people").innerHTML = ""; return; }
+  custRows = r.people;
+  renderCustomers();
+}
+
+function renderCustomers() {
+  const mem = $("mem").value;
+  let rows = custRows.filter((p) => mem === "" || String(p.member ? 1 : 0) === mem);
+  const { key, dir } = custSort;
+  const val = (p) => key === "stage" ? stageText(p) : key === "source" ? (SOURCE_LABEL[p.source] || p.source || "") : (p[key] || "");
+  rows = rows.slice().sort((a, b) => (val(a) > val(b) ? 1 : val(a) < val(b) ? -1 : 0) * dir);
+  $("count").textContent = rows.length === 0 ? "当てはまる顧客は 0 人です" : `${rows.length} 人${custRows.length >= 200 ? "（新しく動いた順に 200 人まで。名前かメールで探すと全員から探します）" : ""}`;
+  document.querySelectorAll(".cust-table [data-sort]").forEach((b) => b.dataset.dir = b.dataset.sort === key ? (dir > 0 ? "asc" : "desc") : "");
+  $("people").innerHTML = rows.map((p) => `
+    <tr data-id="${p.id}" tabindex="0">
+      <td><div class="c-name">${esc(p.name || "（名前なし）")}</div><div class="sub">${esc(p.email)}</div></td>
+      <td><span class="pill ${p.member ? "" : "gray"}">${esc(stageText(p))}</span>${p.deal_stage && p.deal_stage !== "none" ? ` <span class="pill warn">${esc(STAGE[p.deal_stage])}</span>` : ""}</td>
+      <td class="c-src">${esc(SOURCE_LABEL[p.source] || p.source || "")}${p.note_member ? "・note" : ""}</td>
+      <td>${esc(ago(p.last_event_at))}</td>
+      <td class="c-reg">${esc(dayOf(p.created_at))}</td>
+    </tr>`).join("");
+  document.querySelectorAll("#people tr").forEach((tr) => {
+    tr.addEventListener("click", () => detail(tr.dataset.id));
+    tr.addEventListener("keydown", (ev) => { if (ev.key === "Enter") detail(tr.dataset.id); });
+  });
+}
+
+const CUST_TABS = [["overview", "概要"], ["values", "項目と回答"], ["events", "出来事"], ["deal", "商談と面談"], ["mail", "メール"]];
 async function detail(id) {
+  if (current !== id) custTab = "overview";
   current = id;
-  document.querySelectorAll("#people li").forEach((li) => li.toggleAttribute("aria-current", li.dataset.id === id));
+  $("cust-list").classList.add("hidden");
+  $("cust-detail").classList.remove("hidden");
+  $("view-people-wrap").style.display = "none";
   const r = await api("/api/admin/people/" + id, { token });
+  if (current !== id) return;
   if (!r.ok || !r.found) { $("detail").innerHTML = '<p class="note">読めませんでした。</p>'; return; }
   const p = r.person;
+  setCrumbSub(p.name || p.email);
+  const member = p.entitlement && p.entitlement.member;
   $("detail").innerHTML = `
-    <h2 style="margin-bottom:2px">${esc(p.name || "（名前なし）")}</h2>
-    <div class="note">${esc(p.email)}</div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 16px">
-      ${r.stage ? `<span class="pill">段階 ${esc(r.stage.label)}</span>` : ""}
-      <span class="pill gray">${esc(p.stage)}</span>
-      <span class="pill gray">流入元 ${SOURCE_LABEL[p.source] || esc(p.source)}</span>
-      <span class="pill gray">出来事 ${p.event_count} 件</span>
-      ${p.entitlement && p.entitlement.member ? `<span class="pill">会員（${esc(p.entitlement.plan || "定期課金")}）</span>` : `<span class="pill gray">権利 ${esc(p.entitlement ? p.entitlement.status : "none")}</span>`}
+    <div class="card cust-head">
+      <div class="cust-head-top">
+        <div style="min-width:0">
+          <h2 style="margin:0 0 2px">${esc(p.name || "（名前なし）")}</h2>
+          <div class="note ellip">${esc(p.email)}</div>
+        </div>
+        <div class="cust-actions">
+          ${r.room ? `<button class="btn small" type="button" id="open-chat">チャットを開く</button>` : ""}
+          <button class="btn ghost small" type="button" data-tabgo="mail">メールを送る</button>
+        </div>
+      </div>
+      <div class="pill-row">
+        ${r.stage ? `<span class="pill">段階 ${esc(r.stage.label)}</span>` : ""}
+        ${member ? `<span class="pill">会員（${esc(p.entitlement.plan || "定期課金")}）</span>` : ""}
+        ${p.deal && p.deal.stage !== "none" ? `<span class="pill warn">${esc(STAGE[p.deal.stage])}</span>` : ""}
+        ${r.room && r.room.unreplied ? `<span class="pill warn">添削の未返信 ${r.room.unreplied}</span>` : ""}
+      </div>
+      <div class="pill-row" id="labels">${(r.labels || []).map((x) => `<span class="pill ${x.auto ? "gray" : "warn"}" title="${x.auto ? "自動で付いた" : "手で付けた"}">${esc(x.label)}${x.auto ? "" : ` <a href="#" data-unlabel="${esc(x.label)}" aria-label="外す">×</a>`}</span>`).join("") || '<span class="note">ラベルは無し</span>'}
+        <form id="lb" class="lb-inline"><input id="lb-name" type="text" maxlength="40" placeholder="＋ ラベル" list="label-names" aria-label="ラベルを手で付ける"><button class="btn ghost small" type="submit">付ける</button><span class="note" id="lb-status"></span></form>
+      </div>
     </div>
-    ${p.entitlement && (p.entitlement.gate_keys || []).length ? `<div class="note" style="margin:-8px 0 12px">門番の権利：${p.entitlement.gate_keys.map(esc).join("・")}</div>` : ""}
-    <div class="note" style="margin:-4px 0 4px">ラベル（自動で付く。手で付けたものは「手」）</div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin:0 0 6px" id="labels">${(r.labels || []).map((x) => `<span class="pill ${x.auto ? "gray" : "warn"}">${esc(x.label)}${x.auto ? "" : ` ・手 <a href="#" data-unlabel="${esc(x.label)}" aria-label="外す">×</a>`}</span>`).join("") || '<span class="note">（無し）</span>'}</div>
-    ${r.room ? `<div class="card chat-entry" style="margin:0 0 12px;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap">
-      <div><b>チャット</b> <span class="note">${r.room.messages ? `シアニンが読んでいない ${r.room.unread_for_admin}・添削の未返信 ${r.room.unreplied}・相手が読んでいない ${r.room.unread_for_student}` : "まだやりとりはありません"}</span></div>
-      <button class="btn small" type="button" id="open-chat">チャットを開く</button></div>` : ""}
-    ${r.purchases && r.purchases.length ? `<div class="note" style="margin:0 0 4px">買ったもの</div><ul class="plain" style="margin:0 0 12px;padding-left:18px">${r.purchases.map((x) => `<li>${esc(x.name)}${x.amount != null ? "・" + Number(x.amount).toLocaleString() + " 円" : ""}${x.mode === "test" ? "（テスト）" : ""} <span class="note">${fmtTime(x.at)}</span></li>`).join("")}</ul>` : ""}
-    <div id="pv-box" style="margin:0 0 12px"></div>
-    <form id="lb" style="display:flex;gap:6px;align-items:center;margin:0 0 16px"><input id="lb-name" type="text" maxlength="40" placeholder="ラベルを手で付ける" style="max-width:220px;min-height:36px"><button class="btn ghost small" type="submit">付ける</button><span class="note" id="lb-status"></span></form>
-    <div class="deal-box">
-      <h4>商談 ${p.deal && p.deal.stage !== "none" ? `<span class="pill warn">${esc(STAGE[p.deal.stage])}</span>` : '<span class="note">（まだ無し）</span>'}</h4>
-      <dl>
+    <div class="tabs cust-tabs" role="tablist">${CUST_TABS.map(([k, v]) => `<button type="button" role="tab" data-tab="${k}" aria-selected="${k === custTab}">${v}${k === "events" ? ` <span class="note">${p.event_count}</span>` : ""}</button>`).join("")}</div>
+    <section class="card" data-pane="overview">
+      <dl class="kv">
+        <dt>登録した日</dt><dd>${esc(dayOf(p.created_at))}・流入元 ${esc(SOURCE_LABEL[p.source] || p.source)}</dd>
+        <dt>最後に動いた</dt><dd>${esc(ago(p.last_event_at))}</dd>
+        <dt>ログイン</dt><dd>${p.login_count || 0} 回・教材を開いた ${p.lesson_view_count || 0} 回</dd>
+        <dt>チャット</dt><dd>${r.room && r.room.messages ? `シアニンが読んでいない ${r.room.unread_for_admin}・添削の未返信 ${r.room.unreplied}・相手が読んでいない ${r.room.unread_for_student}` : "まだやりとりはありません"}</dd>
+        ${p.entitlement && (p.entitlement.gate_keys || []).length ? `<dt>門番の権利</dt><dd>${p.entitlement.gate_keys.map(esc).join("・")}</dd>` : ""}
+        <dt>買ったもの</dt><dd>${r.purchases && r.purchases.length ? `<ul class="plain" style="margin:0;padding-left:18px">${r.purchases.map((x) => `<li>${esc(x.name)}${x.amount != null ? "・" + Number(x.amount).toLocaleString() + " 円" : ""}${x.mode === "test" ? "（テスト）" : ""} <span class="note">${fmtTime(x.at)}</span></li>`).join("")}</ul>` : "まだ無し"}</dd>
+      </dl>
+      <label class="check" style="margin-top:12px"><input type="checkbox" id="nm" ${p.note_member ? "checked" : ""}> <span>note のメンバー（手で付ける印）</span></label>
+    </section>
+    <section class="card" data-pane="values"><div id="pv-box" class="note">読み込んでいます…</div></section>
+    <section class="card" data-pane="events">
+      <ol class="timeline">${r.events.map((e) => `
+        <li><time>${fmtTime(e.occurred_at)}</time>${esc(EVENT_LABEL[e.type] || e.type)}${detailText(e)}<span class="note"> · ${esc(ACTOR_LABEL[e.actor] || e.actor)}</span></li>`).join("") || '<li class="note">まだありません</li>'}
+      </ol>
+    </section>
+    <section class="card" data-pane="deal">
+      <h4 style="margin-top:0">商談 ${p.deal && p.deal.stage !== "none" ? `<span class="pill warn">${esc(STAGE[p.deal.stage])}</span>` : '<span class="note">（まだ無し）</span>'}</h4>
+      <dl class="kv">
         ${p.deal && p.deal.booking ? `<dt>予約</dt><dd>${fmtTime(p.deal.booking)}</dd>` : ""}
         ${p.deal && p.deal.memo ? `<dt>メモ</dt><dd class="pre">${esc(p.deal.memo)}</dd>` : ""}
         ${p.deal && p.deal.amount != null ? `<dt>成約額</dt><dd>${Number(p.deal.amount).toLocaleString()} 円</dd>` : ""}
@@ -152,22 +215,28 @@ async function detail(id) {
         <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="submit">段階を進める</button><span class="note" id="d-status"></span></div>
       </form>
       ${p.contract ? `<h4 style="margin-top:14px">コンサルの契約と入金 <span class="note">（見本・sales-manager の形）</span></h4>
-      <dl><dt>プラン</dt><dd>${esc(p.contract.plan)}・${Number(p.contract.amount).toLocaleString()} 円</dd><dt>状態</dt><dd>${esc(p.contract.status)}</dd>
+      <dl class="kv"><dt>プラン</dt><dd>${esc(p.contract.plan)}・${Number(p.contract.amount).toLocaleString()} 円</dd><dt>状態</dt><dd>${esc(p.contract.status)}</dd>
       <dt>入金</dt><dd>${p.contract.paid.map((x) => esc(x.month) + " " + esc(x.state)).join("・")}</dd></dl>` : ""}
       <details class="setup" id="meet-box"><summary>面談の記録（consult-manager）</summary><div id="meet" class="note" style="margin-top:8px">開くと読みます</div></details>
-    </div>
-    <details class="setup" style="margin:0 0 16px"><summary>メールを送る（テスト宛てだけに届く）</summary>
-      <form id="mail" class="stack" style="margin-top:8px">
+    </section>
+    <section class="card" data-pane="mail">
+      <h4 style="margin-top:0">メールを送る <span class="note">（いまはテスト宛てだけに届く）</span></h4>
+      <form id="mail" class="stack">
         <div><label for="m-sub">件名</label><input id="m-sub" type="text" maxlength="200"></div>
-        <div><label for="m-body">本文</label><textarea id="m-body" rows="4"></textarea></div>
+        <div><label for="m-body">本文</label><textarea id="m-body" rows="5"></textarea></div>
         <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="submit">送る</button><span class="note" id="m-status"></span></div>
       </form>
-    </details>
-    <label class="check" style="margin-bottom:16px"><input type="checkbox" id="nm" ${p.note_member ? "checked" : ""}> <span>note のメンバー（手で付ける印）</span></label>
-    <ol class="timeline">${r.events.map((e) => `
-      <li><time>${fmtTime(e.occurred_at)}</time>${esc(EVENT_LABEL[e.type] || e.type)}${detailText(e)}<span class="note"> · ${esc(e.actor)}</span></li>`).join("")}
-    </ol>`;
+    </section>`;
+  const showTab = (k) => {
+    custTab = k;
+    document.querySelectorAll(".cust-tabs [data-tab]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === k)));
+    document.querySelectorAll("#detail [data-pane]").forEach((s) => s.classList.toggle("hidden", s.dataset.pane !== k));
+  };
+  document.querySelectorAll(".cust-tabs [data-tab]").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
+  document.querySelectorAll("[data-tabgo]").forEach((b) => b.addEventListener("click", () => { showTab(b.dataset.tabgo); $("m-sub").focus(); }));
+  showTab(custTab);
   loadPersonValues(id);
+  loadLabelNames();
   // 便 8f-3：人の 1 枚からその人の部屋へ
   if ($("open-chat")) $("open-chat").addEventListener("click", () => { openView("rooms"); openRoom(id); });
   // 便 8e：ラベルを手で付ける・外す（画面からは承認なし。AI からは承認が要る）
@@ -209,7 +278,6 @@ async function detail(id) {
       : res.result === "blocked" ? (why[res.reason] || "送りませんでした") + "（記録には残しました）"
       : "送れませんでした（" + (res.error || res.status) + "）";
     await detail(id);
-    $("mail").closest("details").open = true;
     $("m-status").textContent = msg;
   });
   $("nm").addEventListener("change", async (ev) => {
@@ -217,6 +285,44 @@ async function detail(id) {
     if (!res.ok) { ev.target.checked = !ev.target.checked; return fail("変えられませんでした（" + (res.error || res.status) + "）"); }
     detail(id); search();
   });
+}
+const ACTOR_LABEL = { site: "サイト", admin: "画面", mcp: "AI", system: "自動", cron: "定時", connector: "コネクタ", student: "本人", univapay: "決済" };
+
+// 上の帯：いまの場所の続き（顧客の名前など）
+function setCrumbSub(t) { $("crumb-sub").textContent = t ? " › " + t : ""; }
+
+// 便 17：左のメニューのまとまりを開閉する。開閉はこのブラウザに覚える（読めなくても全部開いた形で動く）
+function setupGroups() {
+  let closed = [];
+  try { closed = JSON.parse(localStorage.getItem("labos-closed-groups") || "[]"); } catch { closed = []; }
+  const save = () => { try { localStorage.setItem("labos-closed-groups", JSON.stringify(closed)); } catch { /* 覚えられなくても動く */ } };
+  document.querySelectorAll(".side .grp-box").forEach((box) => {
+    const btn = box.querySelector(".grp");
+    const set = (open) => { box.classList.toggle("closed", !open); btn.setAttribute("aria-expanded", String(open)); };
+    set(!closed.includes(box.dataset.grp) || !!box.querySelector('[aria-selected="true"]'));
+    btn.addEventListener("click", () => {
+      const open = box.classList.contains("closed");
+      set(open);
+      closed = closed.filter((g) => g !== box.dataset.grp).concat(open ? [] : [box.dataset.grp]);
+      save();
+    });
+  });
+}
+
+// 便 17：上の帯の検索と、待っているものの数
+function setupTopbar() {
+  $("gsearch").addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    $("q").value = $("gq").value.trim();
+    openView("people");
+    search();
+  });
+  $("chip-ai").addEventListener("click", () => openView("ai"));
+  $("chip-rooms").addEventListener("click", () => { $("only-unreplied").checked = true; openView("rooms"); loadRooms(); });
+}
+function setChip(id, n) {
+  $(id + "-n").textContent = n > 0 ? String(n) : "";
+  $(id).classList.toggle("hidden", !(n > 0));
 }
 
 // ---------- 添削ルーム ----------
@@ -234,6 +340,11 @@ function setupViews() {
     for (const v of VIEWS) $("view-" + v).style.display = b.dataset.view === v ? "" : "none";
     $("view-people-wrap").style.display = b.dataset.view === "people" ? "" : "none";
     $("crumb").textContent = b.firstChild.textContent.trim();
+    setCrumbSub("");
+    // 便 17：顧客管理はメニューから開くと一覧に戻る。開いた画面のまとまりは閉じない
+    if (b.dataset.view === "people") custList();
+    const box = b.closest(".grp-box");
+    if (box && box.classList.contains("closed")) box.querySelector(".grp").click();
     if (b.dataset.view === "home") loadHome();
     if (b.dataset.view === "blueprint") bp.load();
     if (b.dataset.view === "deliver") loadDeliver();
@@ -245,6 +356,14 @@ function setupViews() {
     if (b.dataset.view === "forms") loadForms();
   }));
   $("hm-guide").addEventListener("click", () => openView("guide"));
+  $("cust-back").addEventListener("click", custList);
+  document.querySelectorAll(".cust-table [data-sort]").forEach((b) => b.addEventListener("click", () => {
+    custSort = { key: b.dataset.sort, dir: custSort.key === b.dataset.sort ? -custSort.dir : (b.dataset.sort === "name" ? 1 : -1) };
+    renderCustomers();
+  }));
+  $("mem").addEventListener("change", renderCustomers);
+  setupGroups();
+  setupTopbar();
   $("only-unreplied").addEventListener("change", loadRooms);
 }
 
@@ -254,6 +373,7 @@ async function loadRooms() {
   const badge = $("rooms-badge");
   badge.textContent = r.unreplied_total > 0 ? String(r.unreplied_total) : "";
   badge.classList.toggle("hidden", !(r.unreplied_total > 0));
+  setChip("chip-rooms", r.unreplied_total);
   $("rooms-count").textContent = r.count === 0 ? "部屋は 0 件です" : `${r.count} 部屋・未返信 ${r.unreplied_total} 件`;
   $("rooms").innerHTML = r.rooms.map((x) => `
     <li data-id="${x.person_id}" ${x.person_id === currentRoom ? 'aria-current="true"' : ""}>
@@ -366,7 +486,7 @@ async function loadDeals() {
         <div style="text-align:right;flex-shrink:0"><span class="pill warn">${esc(STAGE[x.stage] || x.stage)}</span></div>
       </li>`).join("");
     document.querySelectorAll("#consults li").forEach((li) => li.addEventListener("click", () => {
-      document.querySelector('[data-view="people"]').click();
+      openView("people");
       detail(li.dataset.id);
     }));
   }
@@ -400,6 +520,7 @@ async function loadApprovalBadge() {
   const n = r.ok ? r.count : 0;
   $("ai-badge").textContent = n > 0 ? String(n) : "";
   $("ai-badge").classList.toggle("hidden", !(n > 0));
+  setChip("chip-ai", n);
 }
 
 // 便 8g-4：承認の中身。まとめて動かす（publish_block）は、動かす部品の一覧（種類・名前・宛先の人数）を表で並べる
@@ -669,10 +790,12 @@ async function loadFieldOptions(force) {
 async function loadPersonValues(id) {
   const r = await api(`/api/admin/people/${id}/values`, { token });
   if (current !== id || !$("pv-box")) return;
-  if (!r.ok || (!r.values.length && !r.answers.length)) { $("pv-box").innerHTML = ""; return; }
+  if (!r.ok) { $("pv-box").textContent = "読めませんでした（" + (r.error || r.status) + "）"; return; }
+  if (!r.values.length && !r.answers.length) { $("pv-box").textContent = "フォームの答えはまだありません。答えると、ここに項目と回答の履歴が並びます。"; return; }
+  $("pv-box").classList.remove("note");
   $("pv-box").innerHTML = `
-    <div class="note" style="margin:0 0 4px">項目（フォームの答えの新しい方）</div>
-    <dl style="margin:0 0 8px">${r.values.map((v) => `<dt>${esc(v.label)}</dt><dd class="pre">${esc(v.value)}</dd>`).join("") || "<dd class=\"note\">（無し）</dd>"}</dl>
+    <div class="note" style="margin:0 0 8px">項目（フォームの答えの新しい方）</div>
+    <dl class="kv" style="margin:0 0 12px">${r.values.map((v) => `<dt>${esc(v.label)}</dt><dd class="pre">${esc(v.value)}</dd>`).join("") || "<dd class=\"note\">（無し）</dd>"}</dl>
     <details class="setup"><summary>回答の履歴 ${r.answers.length} 件</summary>
       ${r.answers.map((a) => `<div class="card" style="margin-top:8px"><div class="reply-h">${esc(a.form.title)}・${fmtTime(a.submitted_at)}</div><dl>${a.items.map((i) => `<dt>${esc(i.label)}</dt><dd class="pre">${esc(i.value) || '<span class="note">（空）</span>'}</dd>`).join("")}</dl></div>`).join("")}
     </details>`;
