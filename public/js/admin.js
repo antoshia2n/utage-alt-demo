@@ -814,6 +814,9 @@ async function pushSub() {
   const reg = await Promise.race([navigator.serviceWorker.ready, new Promise((_, no) => setTimeout(() => no(new Error("sw_not_ready")), 5000))]);
   return { reg, sub: await reg.pushManager.getSubscription() };
 }
+// iPhone（Safari）は、ボタンを押した直後に間に通信を挟まず購読を頼まないと、許可の確認を出さない。
+// そのため鍵と画面の裏の仕組み（sw.js）は開いたときに先に用意しておき、押したら最初に subscribe を呼ぶ
+let pushReady = null;
 async function loadPush() {
   const st = $("push-status");
   const r = await api("/api/admin/push", { token });
@@ -821,9 +824,14 @@ async function loadPush() {
   let here = "この端末では使えません（ブラウザが通知に対応していない）";
   if (pushSupported()) {
     const ps = await pushSub().catch(() => null);
-    const sub = ps && ps.sub;
+    let sub = ps && ps.sub;
+    // 前の鍵で購読したままなら先に外す（違う鍵のままでは新しく購読できない）
+    if (sub && sub.options && sub.options.applicationServerKey && new Uint8Array(sub.options.applicationServerKey).join() !== keyBytes(r.public_key).join()) {
+      await sub.unsubscribe().catch(() => {}); sub = null;
+    }
+    pushReady = ps ? { reg: ps.reg, key: keyBytes(r.public_key) } : null;
     const on = sub && r.devices.some((d) => sub.endpoint.endsWith(d.endpoint_tail));
-    here = !ps ? "この端末では通知の準備ができませんでした（画面を開き直すと直ることがあります）" : on ? "この端末は受け取っています" : Notification.permission === "denied" ? "この端末は通知を止めています（端末の設定で Lab OS の通知を許可すると押せます）" : "この端末はまだ受け取っていません";
+    here = !ps ? "この端末では通知の準備ができませんでした（画面を開き直すと直ることがあります）" : on ? "この端末は受け取っています" : Notification.permission === "denied" ? "この端末は通知を止めています（端末の設定 → 通知 → Lab OS で許可にすると押せます）" : "この端末はまだ受け取っていません";
   } else if (/iphone|ipad|ipod/i.test(navigator.userAgent) && !navigator.standalone) {
     here = "iPhone は、共有ボタン →「ホーム画面に追加」で Lab OS を足し、そこから開くと押せます";
   }
@@ -832,26 +840,26 @@ async function loadPush() {
 }
 function setupPush() {
   loadPush();
-  $("push-on").addEventListener("click", async () => {
+  $("push-on").addEventListener("click", () => {
     clearErr();
-    if (!pushSupported()) return loadPush();
-    const r = await api("/api/admin/push", { token });
-    if (!r.ok) return fail("鍵を読めませんでした（" + (r.error || r.status) + "）");
-    const perm = await Notification.requestPermission();
-    if (perm !== "granted") { $("push-status").textContent = "許可されなかったので受け取れません"; return; }
-    const ps = await pushSub().catch(() => null);
-    if (!ps) return loadPush();
-    const { reg, sub: old } = ps;
-    let sub = old;
-    if (sub && sub.options && sub.options.applicationServerKey) {
-      const k = new Uint8Array(sub.options.applicationServerKey);
-      if (k.join() !== keyBytes(r.public_key).join()) { await sub.unsubscribe(); sub = null; }
-    }
-    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(r.public_key) });
-    const j = sub.toJSON();
-    const res = await api("/api/admin/push", { method: "POST", token, body: { endpoint: j.endpoint, keys: j.keys, device: pushDevice() } });
-    if (!res.ok) return fail("登録できませんでした（" + (res.error || res.status) + "）");
-    await loadPush();
+    const st = $("push-status");
+    if (!pushSupported()) { loadPush(); return; }
+    if (!pushReady) { st.textContent = "準備中です。数秒おいて、もう一度押してください"; loadPush(); return; }
+    // 押した直後にここを呼ぶ（この前に await を置かない）
+    let p;
+    try { p = pushReady.reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: pushReady.key }); }
+    catch (e) { p = Promise.reject(e); }
+    st.textContent = "許可の確認を待っています…";
+    p.then(async (sub) => {
+      const j = sub.toJSON();
+      const res = await api("/api/admin/push", { method: "POST", token, body: { endpoint: j.endpoint, keys: j.keys, device: pushDevice() } });
+      if (!res.ok) { st.textContent = "登録できませんでした（" + (res.error || res.status) + "）"; return; }
+      await loadPush();
+    }).catch((e) => {
+      st.textContent = Notification.permission === "denied"
+        ? "許可されなかったので受け取れません（端末の設定 → 通知 → Lab OS で許可にすると押せます）"
+        : "受け取りの登録ができませんでした（" + String(e && (e.name || e.message) || e) + "）";
+    });
   });
   $("push-test").addEventListener("click", async () => {
     const r = await api("/api/admin/push/test", { method: "POST", token });
