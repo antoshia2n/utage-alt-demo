@@ -397,6 +397,20 @@ async function loadApprovalBadge() {
   $("ai-badge").classList.toggle("hidden", !(n > 0));
 }
 
+// 便 8g-4：承認の中身。まとめて動かす（publish_block）は、動かす部品の一覧（種類・名前・宛先の人数）を表で並べる
+function approvalBody(x) {
+  const args = x.args || {};
+  if (Array.isArray(args._preview)) {
+    const rest = Object.fromEntries(Object.entries(args).filter(([k]) => !["_preview", "step_ids"].includes(k)));
+    return `<div class="note" style="margin:0 0 4px">${esc(args.campaign_name || "")}・ブロック「${esc(args.block_name || "")}」の下書き ${args._preview.length} 個を動かします（承認した時点でこの番号のものだけが動く）</div>
+      <div class="bp-table-wrap"><table class="bp-table" style="min-width:0"><thead><tr><th>種類</th><th>名前</th><th>きっかけ → する</th><th class="r">宛先の人数</th></tr></thead>
+      <tbody>${args._preview.map((p) => `<tr><td>${esc(p.type)}</td><td>${esc(p.name)}</td><td>${esc(p.trigger)} → ${esc(p.action)}</td><td class="r num">${p.audience == null ? "—" : p.audience}</td></tr>`).join("")}</tbody></table></div>
+      <p class="note" style="margin:4px 0 0">宛先の人数は、いまセレクタに当たる人の数。動かした時刻より後のきっかけだけが対象。</p>
+      <details style="margin-top:4px"><summary class="note">中身（そのまま）</summary><pre class="note" style="white-space:pre-wrap;margin:0">${esc(JSON.stringify(rest, null, 2))}</pre></details>`;
+  }
+  return `<pre class="note" style="white-space:pre-wrap;margin:0">${esc(JSON.stringify(args, null, 2))}</pre>`;
+}
+
 async function loadAi() {
   const focus = location.hash.startsWith("#approval/") ? location.hash.slice(10) : "";
   const r = await api("/api/admin/approvals?status=all", { token });
@@ -408,7 +422,7 @@ async function loadAi() {
       <div class="deal-box" ${x.id === focus ? 'style="outline:2px solid var(--accent)"' : ""}>
         <div class="note">${fmtTime(x.created_at)}・AI が頼んだ・<span class="pill ${x.status === "pending" ? "warn" : "gray"}">${esc(AP_LABEL[x.status] || x.status)}</span></div>
         <h4 style="margin:4px 0">${esc(x.tool)}</h4>
-        <pre class="note" style="white-space:pre-wrap;margin:0">${esc(JSON.stringify(x.args, null, 2))}</pre>
+        ${approvalBody(x)}
         ${x.status === "pending" ? `<div class="stage-btns" style="margin-top:8px">
           <button class="btn small" data-ap="${x.id}" data-d="approve" type="button">承認して実行</button>
           <button class="btn ghost small" data-ap="${x.id}" data-d="reject" type="button">却下</button></div>`
