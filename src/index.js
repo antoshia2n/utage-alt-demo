@@ -18,6 +18,7 @@
 //   変えるのはシアニン用の画面か、承認が要る AI の道具 set_mail_settings。中身は src/mailcfg.js。生徒に見える文と法定の頁を本物にした。
 // B の便 8e：コネクタ（トリガー → セレクタ → アクション）・自動で付くラベル・Naoki への知らせ。表は増やさず b_steps を広げた。中身は src/connect.js と src/deliver.js。
 // B の便 8f-1：シアニン用のホーム「今日の 1 枚」（Google カレンダーの予定・やること・段階ごとの人数）と段階のボード。表は増やさない。中身は src/today.js。
+// B の便 8f-2：ホームの仕上げ。UTAGE のカレンダーを 2 つ目の読み元に・繰り返しの予定の形を広げた・タスクマスターの今日の分（shia2n-mcp の TaskmasterReader をサービスの結びで読む）。表は増やさない。
 
 import { makeBin3 } from "./bin3.js";
 import { makeBin4 } from "./bin4.js";
@@ -32,7 +33,7 @@ import { makeChanges } from "./changes.js";
 import { makeConnect } from "./connect.js";
 import { makeToday } from "./today.js";
 
-const VERSION = "0.16.0-b8f1";
+const VERSION = "0.17.0-b8f2";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_read"];
@@ -888,10 +889,10 @@ async function handleApi(request, env, url) {
     // B の便 8f-1：ホームの今日の 1 枚・段階のボード・カレンダーの非公開 URL（画面からは承認なしで変えられる。AI からは承認が要る）
     if (path === "/api/admin/today" && method === "GET") { const r = await today.today(env); return json(r, r.ok === false ? 400 : 200); }
     if (path === "/api/admin/board" && method === "GET") return json(await today.board(env));
-    if (path === "/api/admin/calendar" && method === "GET") { const c = await today.calendarUrl(env); return json({ ok: true, set: !!c.url, shown: today.maskUrl(c.url), updated_at: c.updated_at, updated_by: c.updated_by }); }
+    if (path === "/api/admin/calendar" && method === "GET") return json({ ok: true, calendars: await today.calendarStatus(env) });
     if (path === "/api/admin/calendar" && method === "PUT") {
       const body = await request.json().catch(() => ({}));
-      const r = await today.setCalendarUrl(env, { url: body.url }, a.email);
+      const r = await today.setCalendarUrl(env, { url: body.url, which: body.which }, a.email);
       return json(r, r.ok === false ? 400 : 200);
     }
     // B の便 8e：ラベル（自動の一覧と人数・手で付ける／外す）
@@ -1161,7 +1162,7 @@ const TOOLS = [
   },
   {
     name: "get_today",
-    description: "シアニン用のホーム「今日の 1 枚」。今日（日本時間）の Google カレンダーの予定（calendar.state が unset ならカレンダーの非公開 URL が未設定）・やること（承認待ち・未返信の添削・今日の個別相談・今日の知らせ）・段階ごとの人数を返す。",
+    description: "シアニン用のホーム「今日の 1 枚」。今日（日本時間）の Google カレンダーの予定（既定のカレンダーと UTAGE のカレンダーをまとめたもの。calendar.sources に読み元ごとの状態。calendar.state が unset ならどちらも未設定）・タスクマスターの今日の分（tasks：期限が今日の due と過ぎている overdue）・やること（承認待ち・未返信の添削・今日の個別相談・今日の知らせ）・段階ごとの人数を返す。",
     inputSchema: { type: "object", properties: {} },
   },
   {
@@ -1171,12 +1172,12 @@ const TOOLS = [
   },
   {
     name: "set_calendar_url",
-    description: "ホームに出す Google カレンダーの「iCal 形式の非公開 URL」を入れる・外す。承認が要る道具。url は https://calendar.google.com/calendar/ical/ で始まり .ics で終わる。空にすると外す。URL そのものは記録にも返事にも出さない。",
-    inputSchema: { type: "object", properties: { url: { type: "string" } }, required: ["url"] },
+    description: "ホームに出す Google カレンダーの「iCal 形式の非公開 URL」を入れる・外す。承認が要る道具。which は main（既定のカレンダー・省略時）か utage（UTAGE のカレンダー）。url は https://calendar.google.com/calendar/ical/ で始まり .ics で終わる。空にすると外す。URL そのものは記録にも返事にも出さない。",
+    inputSchema: { type: "object", properties: { url: { type: "string" }, which: { type: "string", enum: ["main", "utage"] } }, required: ["url"] },
   },
   {
     name: "get_labels",
-    description: "ラベル。person_id を渡すとその人のラベル（auto が true は出来事から自動で付いたもの・false は手かコネクタで付けたもの）、省くと全員のラベルの名前と人数。自動のラベル：流入元:X など・会員／会員でない・購入者・買った:商品の id・リンクを押した・教材を見た・添削を出した・セミナーに申し込んだ・個別相談を予約した・企画:企画名・最後に動いた:7日以内／30日以内／30日より前。",
+    description: "ラベル。person_id を渡すとその人のラベル（auto が true は出来事から自動で付いたもの・false は手かコネクタで付けたもの）、省くと全員のラベルの名前と人数。自動のラベル：流入元:X など・会員／会員でない・購入者・買った:商品の外の名前（生徒に見える名前）・リンクを押した・教材を見た・添削を出した・セミナーに申し込んだ・個別相談を予約した・企画:企画名・最後に動いた:7日以内／30日以内／30日より前。",
     inputSchema: { type: "object", properties: { person_id: { type: "string" } } },
   },
   {
@@ -1285,7 +1286,7 @@ async function runTool(env, name, args) {
   if (name === "get_labels") return await connect.getLabels(env, args);
   if (name === "get_today") return await today.today(env);
   if (name === "get_stage_board") return await today.board(env);
-  if (name === "set_calendar_url") return await today.setCalendarUrl(env, { url: args.url }, "mcp");
+  if (name === "set_calendar_url") return await today.setCalendarUrl(env, { url: args.url, which: args.which }, "mcp");
   if (name === "add_label") return await connect.addLabel(env, args, "mcp");
   if (name === "remove_label") return await connect.removeLabel(env, args, "mcp");
   if (name === "get_blueprint") return await plan.blueprint(env, args);

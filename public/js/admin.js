@@ -668,8 +668,10 @@ async function loadHome() {
     $("hm-cal").innerHTML = c.state === "unset"
       ? `カレンダーがまだつながっていません。<a href="#" id="hm-cal-set">決済・メール・オプチャ</a> の「Google カレンダー」に非公開 URL を貼ると、ここに今日の予定が出ます`
       : c.state === "error" ? `カレンダーを読めませんでした（${esc(c.error)}）`
-      : (c.events.length ? `<ul class="home-list">${c.events.map((e) => `<li><span class="tm">${e.all_day ? "終日" : esc(fmtHm(e.start)) + "–" + esc(fmtHm(e.end))}</span><span>${esc(e.title)}${e.location ? `<span class="sub">${esc(e.location)}</span>` : ""}</span></li>`).join("")}</ul>` : "今日の予定はありません")
-        + (c.not_expanded ? `<p class="note">広げられない繰り返しの予定が ${c.not_expanded} 件あります（「第 2 火曜」などの形）</p>` : "");
+      : (c.events.length ? `<ul class="home-list">${c.events.map((e) => `<li><span class="tm">${e.all_day ? "終日" : esc(fmtHm(e.start)) + "–" + esc(fmtHm(e.end))}</span><span>${e.source === "utage" ? `<span class="src-tag">UTAGE</span>` : ""}${esc(e.title)}${e.location ? `<span class="sub">${esc(e.location)}</span>` : ""}</span></li>`).join("")}</ul>` : "今日の予定はありません")
+        + (c.sources || []).filter((x) => x.state === "error").map((x) => `<p class="note">${esc(x.label)}を読めませんでした（${esc(x.error)}）</p>`).join("")
+        + (c.sources || []).filter((x) => x.state === "unset").map((x) => `<p class="note">${esc(x.label)}はまだつながっていません</p>`).join("")
+        + (c.not_expanded ? `<p class="note">広げられない繰り返しの予定が ${c.not_expanded} 件あります（${esc((c.not_expanded_shapes || []).join("・"))}）</p>` : "");
     const a = $("hm-cal-set"); if (a) a.addEventListener("click", (ev) => { ev.preventDefault(); openView("settings"); $("calendar-box").open = true; });
     const t = r.todo;
     const row = (n, label, view, items) => `<li class="todo"><button type="button" class="todo-h" data-open="${view}"><b>${n}</b> ${label}</button>${items}</li>`;
@@ -680,6 +682,16 @@ async function loadHome() {
       + row(t.notices.count, "今日の知らせ", "deliver", t.notices.items.length ? `<span class="sub">${t.notices.items.map((x) => esc(x.connector) + "：" + esc(x.name)).join("・")}</span>` : "")
       + `</ul>`;
     document.querySelectorAll("#hm-todo [data-open]").forEach((x) => x.addEventListener("click", () => openView(x.dataset.open)));
+    // 便 8f-2：タスクマスターの今日の分（期限が今日・過ぎている未完了）。中身は shia2n-mcp から読む
+    const k = r.tasks || { state: "unset" };
+    const PRI = { high: "高", medium: "中", low: "低" };
+    const taskLi = (x, late) => `<li><span class="tm">${late ? esc(x.deadline || "") : PRI[x.priority] || ""}</span><span>${esc(x.title)}${x.project ? `<span class="sub">${esc(x.project)}</span>` : ""}</span></li>`;
+    $("hm-task-n").textContent = k.state === "ok" ? `今日 ${k.due_count} 件・過ぎている ${k.overdue_count} 件` : "";
+    $("hm-tasks").innerHTML = k.state === "unset" ? "タスクマスターとまだつながっていません"
+      : k.state === "error" ? `タスクマスターを読めませんでした（${esc(k.error)}）`
+      : (k.due.length ? `<ul class="home-list">${k.due.map((x) => taskLi(x, false)).join("")}</ul>` : "期限が今日のタスクはありません")
+        + (k.overdue.length ? `<details class="tasks-late"><summary>期限が過ぎている ${k.overdue_count} 件</summary><ul class="home-list">${k.overdue.map((x) => taskLi(x, true)).join("")}</ul></details>` : "")
+        + (k.due_count > k.due.length ? `<p class="note">ほか ${k.due_count - k.due.length} 件はタスクマスターで</p>` : "");
   }
   if (!b.ok) { $("hm-board").innerHTML = `<p class="note">読めませんでした（${esc(b.error || b.status)}）</p>`; return; }
   $("hm-total").textContent = `${b.total} 人`;
@@ -688,19 +700,25 @@ async function loadHome() {
 }
 async function loadCalendar() {
   const r = await api("/api/admin/calendar", { token });
-  if (!r.ok) { $("cal-status").textContent = "読めませんでした（" + (r.error || r.status) + "）"; return; }
-  $("cal-url").value = "";
-  $("cal-status").textContent = r.set ? `つながっています（${r.shown}）` + (r.updated_at ? "。最後に変えたのは " + new Date(r.updated_at).toLocaleString("ja-JP") : "") : "まだつながっていません";
+  for (const w of ["main", "utage"]) {
+    const st = $("cal-status-" + w);
+    if (!r.ok) { st.textContent = "読めませんでした（" + (r.error || r.status) + "）"; continue; }
+    const c = (r.calendars || []).find((x) => x.which === w) || {};
+    $("cal-url-" + w).value = "";
+    st.textContent = c.set ? `つながっています（${c.shown}）` + (c.updated_at ? "。最後に変えたのは " + new Date(c.updated_at).toLocaleString("ja-JP") : "") : "まだつながっていません";
+  }
 }
 function setupCalendar() {
-  const save = async (url) => {
-    $("cal-status").textContent = "変えています…";
-    const r = await api("/api/admin/calendar", { method: "PUT", token, body: { url } });
-    if (!r.ok) { $("cal-status").textContent = r.error === "bad_url" ? "「iCal 形式の非公開 URL」（https://calendar.google.com/calendar/ical/ で始まり .ics で終わる）を貼ってください" : "変えられませんでした（" + (r.error || r.status) + "）"; return; }
+  const ERR = { bad_url: "「iCal 形式の非公開アドレス」（https://calendar.google.com/calendar/ical/ で始まり .ics で終わる）を貼ってください" };
+  const save = async (which, url) => {
+    const st = $("cal-status-" + which);
+    st.textContent = "変えています…";
+    const r = await api("/api/admin/calendar", { method: "PUT", token, body: { url, which } });
+    if (!r.ok) { st.textContent = ERR[r.error] || r.note || "変えられませんでした（" + (r.error || r.status) + "）"; return; }
     await loadCalendar();
   };
-  $("cal-save").addEventListener("click", () => save($("cal-url").value.trim()));
-  $("cal-clear").addEventListener("click", () => { if (confirm("カレンダーを外します。ホームに今日の予定が出なくなります。")) save(""); });
+  document.querySelectorAll("[data-cal-save]").forEach((b) => b.addEventListener("click", () => save(b.dataset.calSave, $("cal-url-" + b.dataset.calSave).value.trim())));
+  document.querySelectorAll("[data-cal-clear]").forEach((b) => b.addEventListener("click", () => { if (confirm("このカレンダーを外します。ホームにこのカレンダーの予定が出なくなります。")) save(b.dataset.calClear, ""); }));
   loadCalendar();
 }
 

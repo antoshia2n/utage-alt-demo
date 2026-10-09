@@ -29,6 +29,9 @@
     "B_SUPABASE_URL": "https://htzadzpckcpdrmpjvaut.supabase.co",
     "B_SUPABASE_PUBLISHABLE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh0emFkenBja2NwZHJtcGp2YXV0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4MjA2MTAsImV4cCI6MjA4NzM5NjYxMH0.8TJ-X-UojNvL-H-OiF5aaYOEksiveJ3zl7Lt6TZ6pCU"
   },
+  // B の便 8f-2：タスクマスターの今日の分を shia2n-mcp から読む。サービスの結び（同じ Cloudflare のアカウントの Worker 同士）なので外からは呼べず、合言葉も要らない。
+  // shia2n-mcp の版 1.3.0 以上（TaskmasterReader を出している）が先に出ている必要がある
+  "services": [{ "binding": "TASKMASTER", "service": "shia2n-mcp", "entrypoint": "TaskmasterReader" }],
   // 便 3：1 時間ごとに、添削が返って読まれていない人へメールを 1 通
   "triggers": { "crons": ["7 * * * *"] },
   // ブランチとプルリクの試しの組み立て（npx wrangler preview）に要る。中身は空でよい
