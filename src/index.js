@@ -28,7 +28,7 @@ import { makePlan } from "./plan.js";
 import { makeMailCfg } from "./mailcfg.js";
 import { makeChanges } from "./changes.js";
 
-const VERSION = "0.14.0-b8d";
+const VERSION = "0.14.1-b8d";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_read"];
