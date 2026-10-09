@@ -110,32 +110,59 @@ export function makePush(h) {
     return v;
   }
 
-  // 購読の一覧（端末ごとに最後の出来事で決める）。adminsOnly なら、いま b_admins にいる人の分だけ
-  async function subscriptions(env) {
+  // 購読の一覧（端末ごとに最後の出来事で決める）。
+  // 便 8g-1：購読に「誰向けか」（aud）を持たせた。admin＝シアニン用の画面（Lab OS）、student＝生徒の画面（シアラボ）。
+  //   aud の無い古い購読は 8f-3 のシアニン用の分なので admin と読む。admin はいま b_admins にいる人の分だけ。
+  //   student は customerId を渡すと、その人の分だけ
+  async function subscriptions(env, { aud = "admin", customerId } = {}) {
     const evs = await db(env, "GET", "events?select=id,customer_id,type,payload,occurred_at&type=in.(push_subscribed,push_unsubscribed)&order=id.asc&limit=2000");
     const last = new Map();
     for (const e of evs) if (e.payload && e.payload.endpoint) last.set(e.payload.endpoint, e);
-    const subs = [...last.values()].filter((e) => e.type === "push_subscribed");
+    const audOf = (e) => (e.payload && e.payload.aud === "student" ? "student" : "admin");
+    const subs = [...last.values()].filter((e) => e.type === "push_subscribed" && audOf(e) === aud && (!customerId || e.customer_id === customerId));
     if (!subs.length) return [];
     const ids = [...new Set(subs.map((e) => e.customer_id))];
     const people = await db(env, "GET", `customers?select=id,email&id=in.(${ids.join(",")})`);
-    const admins = new Set((await db(env, "GET", "admins?select=email")).map((a) => a.email));
     const emailOf = Object.fromEntries(people.map((p) => [p.id, String(p.email || "").toLowerCase()]));
-    return subs.filter((e) => admins.has(emailOf[e.customer_id])).map((e) => ({
+    let keep = subs.filter((e) => emailOf[e.customer_id]);
+    if (aud === "admin") {
+      const admins = new Set((await db(env, "GET", "admins?select=email")).map((a) => String(a.email || "").toLowerCase()));
+      keep = keep.filter((e) => admins.has(emailOf[e.customer_id]));
+    }
+    return keep.map((e) => ({
       customer_id: e.customer_id, email: emailOf[e.customer_id], endpoint: e.payload.endpoint, p256dh: e.payload.p256dh, auth: e.payload.auth,
-      device: e.payload.device || "", at: e.occurred_at,
+      device: e.payload.device || "", at: e.occurred_at, aud,
     }));
   }
 
   const hostOf = (endpoint) => { try { return new URL(endpoint).hostname; } catch (_) { return ""; } };
 
+  async function publicKey(env) {
+    try { return { ok: true, key: (await vapid(env)).publicKey }; }
+    catch (e) { return { ok: false, error: String(e && e.message || e).split("：")[0], note: "通知の鍵を読めないので止めている。作り直しはしない（登録済みの端末に届かなくなるため）" }; }
+  }
+
   async function status(env) {
     if (!env.B_STORE) return { ok: false, error: "demo_store" };
-    let v;
-    try { v = await vapid(env); }
-    catch (e) { return { ok: false, error: String(e && e.message || e).split("：")[0], note: "通知の鍵を読めないので止めている。作り直しはしない（登録済みの端末に届かなくなるため）" }; }
+    const k = await publicKey(env);
+    if (!k.ok) return { ok: false, error: k.error, note: k.note };
     const subs = await subscriptions(env);
-    return { ok: true, public_key: v.publicKey, count: subs.length, devices: subs.map((s) => ({ email: s.email, device: s.device, service: hostOf(s.endpoint), since: s.at, endpoint_tail: s.endpoint.slice(-12) })) };
+    const students = await subscriptions(env, { aud: "student" });
+    return {
+      ok: true, public_key: k.key, count: subs.length,
+      devices: subs.map((s) => ({ email: s.email, device: s.device, service: hostOf(s.endpoint), since: s.at, endpoint_tail: s.endpoint.slice(-12) })),
+      // 便 8g-1：生徒の端末は数と人数だけ（誰の端末かの一覧は人の 1 枚で見る）
+      students: { devices: students.length, people: new Set(students.map((s) => s.customer_id)).size },
+    };
+  }
+
+  // 便 8g-1：生徒が自分の画面で見る分。宛先の住所は返さない
+  async function studentStatus(env, customerId) {
+    if (!env.B_STORE) return { ok: false, error: "demo_store" };
+    const k = await publicKey(env);
+    if (!k.ok) return { ok: false, error: k.error };
+    const subs = await subscriptions(env, { aud: "student", customerId });
+    return { ok: true, public_key: k.key, count: subs.length, devices: subs.map((s) => ({ device: s.device, since: s.at, endpoint_tail: s.endpoint.slice(-12) })) };
   }
 
   async function personByEmail(env, email) {
@@ -143,56 +170,71 @@ export function makePush(h) {
     return c || null;
   }
 
-  async function subscribe(env, email, { endpoint, keys, device } = {}) {
+  async function subscribe(env, email, { endpoint, keys, device } = {}, aud = "admin") {
     if (!env.B_STORE) return { ok: false, error: "demo_store" };
     if (!endpointAllowed(endpoint)) return { ok: false, error: "bad_endpoint" };
     const p256dh = keys && keys.p256dh, auth = keys && keys.auth;
     try { if (fromB64u(p256dh).length !== 65 || fromB64u(auth).length !== 16) throw 0; } catch (_) { return { ok: false, error: "bad_keys" }; }
     const me = await personByEmail(env, email);
     if (!me) return { ok: false, error: "no_person_row", note: "このメールの人が台帳にいないので、購読を置けません" };
-    const now = (await subscriptions(env)).find((s) => s.endpoint === endpoint);
+    const now = (await subscriptions(env, { aud })).find((s) => s.endpoint === endpoint);
     if (now && now.p256dh === p256dh && now.auth === auth && now.customer_id === me.id) return { ok: true, already: true };
-    await addEvent(env, me.id, "push_subscribed", { endpoint, p256dh, auth, device: String(device || "").slice(0, 80) }, "admin");
+    const payload = { endpoint, p256dh, auth, device: String(device || "").slice(0, 80) };
+    if (aud === "student") payload.aud = "student";
+    await addEvent(env, me.id, "push_subscribed", payload, aud === "student" ? "site" : "admin");
     return { ok: true, already: false };
   }
 
-  async function unsubscribe(env, email, { endpoint } = {}) {
+  async function unsubscribe(env, email, { endpoint } = {}, aud = "admin") {
     if (!env.B_STORE) return { ok: false, error: "demo_store" };
-    const s = (await subscriptions(env)).find((x) => x.endpoint === endpoint);
+    let s = (await subscriptions(env, { aud })).find((x) => x.endpoint === endpoint);
+    // 生徒は自分の端末しか外せない
+    if (s && aud === "student" && s.email !== String(email || "").toLowerCase()) s = null;
     if (!s) return { ok: true, found: false };
-    await addEvent(env, s.customer_id, "push_unsubscribed", { endpoint, reason: "by_admin", by: email }, "admin");
+    await addEvent(env, s.customer_id, "push_unsubscribed", { endpoint, reason: aud === "student" ? "by_student" : "by_admin", by: email, ...(aud === "student" ? { aud } : {}) }, aud === "student" ? "site" : "admin");
     return { ok: true, found: true };
   }
 
-  // 全部の端末へ 1 通。失敗しても投げない（知らせで本体を止めない）
+  // 決まった端末の束へ 1 通。失敗しても投げない（知らせで本体を止めない）
+  async function deliver(env, subs, msg, out) {
+    const v = await vapid(env);
+    const subject = env.PUBLIC_ORIGIN || "https://lab.shia2n.jp";
+    const payload = JSON.stringify(msg);
+    for (const s of subs) {
+      try {
+        const res = await fetch(s.endpoint, {
+          method: "POST",
+          headers: {
+            authorization: await vapidHeader(v, s.endpoint, subject),
+            "content-encoding": "aes128gcm", "content-type": "application/octet-stream",
+            ttl: "86400", urgency: "high",
+          },
+          body: await encryptPayload(payload, s.p256dh, s.auth),
+        });
+        if (res.ok) out.sent++;
+        else if (res.status === 404 || res.status === 410) {
+          out.gone++;
+          await addEvent(env, s.customer_id, "push_unsubscribed", { endpoint: s.endpoint, reason: "gone", status: res.status, ...(s.aud === "student" ? { aud: "student" } : {}) }, "site");
+        } else { out.failed++; out.last_error = `status_${res.status}`; }
+      } catch (e) { out.failed++; out.last_error = String(e && e.message || e).slice(0, 120); }
+    }
+  }
+
+  const clip = (msg, home) => ({
+    title: String(msg.title || (home === "/app" ? "シアラボ" : "Lab OS")).slice(0, 120),
+    body: String(msg.body || "").slice(0, 300),
+    url: String(msg.url || "").startsWith(home) ? String(msg.url) : home,
+    tag: String(msg.tag || "").slice(0, 60),
+  });
+
+  // シアニン用の画面の全部の端末へ 1 通
   async function send(env, { title, body = "", url = "/admin", tag = "" } = {}) {
     if (!env.B_STORE) return { ok: true, sent: 0, skipped: "demo_store" };
     const out = { ok: true, devices: 0, sent: 0, failed: 0, gone: 0 };
     try {
       const subs = await subscriptions(env);
       out.devices = subs.length;
-      if (!subs.length) return out;
-      const v = await vapid(env);
-      const subject = env.PUBLIC_ORIGIN || "https://lab.shia2n.jp";
-      const payload = JSON.stringify({ title: String(title || "Lab OS").slice(0, 120), body: String(body).slice(0, 300), url: String(url).startsWith("/") ? String(url) : "/admin", tag: String(tag).slice(0, 60) });
-      for (const s of subs) {
-        try {
-          const res = await fetch(s.endpoint, {
-            method: "POST",
-            headers: {
-              authorization: await vapidHeader(v, s.endpoint, subject),
-              "content-encoding": "aes128gcm", "content-type": "application/octet-stream",
-              ttl: "86400", urgency: "high",
-            },
-            body: await encryptPayload(payload, s.p256dh, s.auth),
-          });
-          if (res.ok) out.sent++;
-          else if (res.status === 404 || res.status === 410) {
-            out.gone++;
-            await addEvent(env, s.customer_id, "push_unsubscribed", { endpoint: s.endpoint, reason: "gone", status: res.status }, "site");
-          } else { out.failed++; out.last_error = `status_${res.status}`; }
-        } catch (e) { out.failed++; out.last_error = String(e && e.message || e).slice(0, 120); }
-      }
+      if (subs.length) await deliver(env, subs, clip({ title, body, url, tag }, "/admin"), out);
     } catch (e) {
       out.ok = false; out.error = String(e && e.message || e).slice(0, 160);
     }
@@ -200,5 +242,21 @@ export function makePush(h) {
     return out;
   }
 
-  return { vapid, status, subscribe, unsubscribe, send, subscriptions };
+  // 便 8g-1：生徒 1 人の端末へ 1 通。押すと生徒の画面（/app で始まる場所）が開く
+  async function sendTo(env, customerId, { title, body = "", url = "/app", tag = "" } = {}) {
+    if (!env.B_STORE) return { ok: true, sent: 0, skipped: "demo_store" };
+    const out = { ok: true, devices: 0, sent: 0, failed: 0, gone: 0 };
+    try {
+      const subs = await subscriptions(env, { aud: "student", customerId });
+      out.devices = subs.length;
+      if (subs.length) await deliver(env, subs, clip({ title, body, url, tag }, "/app"), out);
+    } catch (e) {
+      out.ok = false; out.error = String(e && e.message || e).slice(0, 160);
+    }
+    // 端末の無い生徒には何も残さない（毎回の空振りで記録を埋めないため）
+    if (out.devices || !out.ok) await logInbound(env, "push", { aud: "student", customer_id: customerId, title: String(title || "").slice(0, 80), tag }, out, out.ok && !out.failed ? 200 : 500);
+    return out;
+  }
+
+  return { vapid, status, studentStatus, subscribe, unsubscribe, send, sendTo, subscriptions };
 }

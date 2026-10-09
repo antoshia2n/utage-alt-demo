@@ -1,8 +1,10 @@
 import { getClient, api, esc, fmtTime, authImage, shrinkImage } from "/js/common.js";
 import { correctionHtml, wireNotes } from "/js/correction.js";
+import { setupStudentPush } from "/js/pushclient.js";
 
 const $ = (id) => document.getElementById(id);
-const fresh = /access_token=/.test(location.hash);
+// 便 8g-1：確認コードで入ったときは /app?fresh=1 で来る（リンクのときは住所の # に access_token）
+const fresh = /access_token=/.test(location.hash) || new URLSearchParams(location.search).get("fresh") === "1";
 const hashErr = new URLSearchParams(location.hash.slice(1)).get("error_description");
 let deferredPrompt = null;
 window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); deferredPrompt = e; });
@@ -115,6 +117,9 @@ async function main() {
   if (location.hash === "#room") showTab("room");
   if (location.hash === "#review") showTab("review");
   if (location.hash === "#booking") showTab("booking");
+  // 便 8g-1：通知を押して開いた画面がもう出ているとき、住所の # だけが変わるので、ここで部屋へ移る
+  window.addEventListener("hashchange", () => { const h = location.hash.slice(1); if (["room", "review", "booking"].includes(h)) showTab(h); });
+  setupStudentPush({ box: $("push-box"), status: $("push-status"), on: $("push-on"), off: $("push-off") }, token);
 
   $("logout").addEventListener("click", async (e) => { e.preventDefault(); await sb.auth.signOut(); location.replace("/"); });
 
