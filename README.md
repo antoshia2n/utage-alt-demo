@@ -93,3 +93,22 @@ UTAGE の代わりになるサイト兼アプリ（PWA）のデモ。架空の�
 - `events`：いつ・誰に・何が起きたかが 1 件ずつ残る
 - `inbound_log`：外からの呼び出し（登録・MCP）の中身と返事
 - 0 件は `ok: true, count: 0`、失敗は `ok: false`（MCP では `isError: true`）
+
+## B の便 12a で足したもの（ページ作成）
+
+- ページの中身（HTML）は Claude が書く。Lab OS は「依頼文を出す・見る・公開する・数を見る」場所（`src/pages.js`）
+  - Lab OS「ページ」→「新しく作る」：目的・ページの名前・企画・参考・材料・コメントを入れて「依頼文を出す」。出た依頼文を Claude（Chrome のサイドパネル）に貼る
+  - Claude は AI の道具 `get_page_request`（依頼と書き方の決まり）を読み、`save_page_draft` で下書きを置く（版が 1 つ増える）。直すときは詳細の「依頼とコメント」から直しの依頼文を出す
+  - 公開は Lab OS の詳細の「版 n を公開する」か、AI の `publish_page`（承認が要る）
+- 公開の住所は会員の画面と別の `https://lp.shia2n.jp/<住所の名前>`（wrangler.jsonc の `PAGES_ORIGIN`。Cloudflare の画面で Worker にこの住所を足す）
+  - この住所では、ページ・`/_lab/embed.js`・`/api/p/` の下だけを返す。シアニン用の画面・生徒の画面・ほかの API は返さない（`run_worker_first: true` で静的ファイルより先に Worker を通す）
+  - Claude が書いた HTML の中の仕掛けが、lab.shia2n.jp にログインしている人の鍵に届かないようにするため
+- ページの中の印（B が公開のときに中身を差し込む）
+  - 申込の枠 `<div data-lab-part="form:フォームの住所の名前"></div>`（便 11a のフォーム。答えた人は台帳に入る）
+  - 決済の枠 `<div data-lab-part="checkout:商品の id"></div>`（名前・価格・申し込むボタン。押すと lab の `/register?product=`）
+  - ボタン `data-lab-button="名前"`。押した数を数え、コネクタのきっかけ「ページのボタンを押した」になる
+- 見た・押したは表 `b_page_hits`（まだ登録していない人も端末ごとに数える）。台帳にいる人（メールのリンクから来た・その端末でフォームに答えた）は出来事 `page_viewed`（1 人 1 ページ 1 日 1 回）・`page_clicked` にも積む
+- 経路：ページの住所の後ろの `?r=名前`。初めて登録したときの経路が `registered` の payload.route に残り、自動ラベル「経路:名前」になる。Lab OS「ページ」の「経路」タブで住所を作り、経路ごとの見た人・登録・買った人を見る
+- 設計図：ページは「出会う」のレーンに出る。申込の枠 → フォーム、決済の枠 → 商品の線。先週の数は見た人
+- 表：`supabase/b12a_pages.sql` を SQL Editor で 1 回流す（何回流しても同じ）。表 4 本（b_pages・b_page_versions・b_page_requests・b_page_hits）と、コネクタのきっかけ 2 つ
+- 試験：`node --test tests/pages.test.mjs tests/pages-host.test.mjs`
