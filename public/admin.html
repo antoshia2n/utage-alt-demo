@@ -53,30 +53,55 @@
 <section id="console" class="shell hidden">
   <nav class="side" aria-label="メニュー">
     <a class="side-logo" href="/admin">Lab OS</a>
-    <div class="grp">全体</div>
-    <button class="it" type="button" data-view="home" aria-selected="true">ホーム</button>
-    <button class="it" type="button" data-view="blueprint" aria-selected="false">設計図</button>
-    <button class="it" type="button" data-view="people" aria-selected="false">人</button>
-    <button class="it" type="button" data-view="guide" aria-selected="false">使い方</button>
-    <div class="grp">集める</div>
-    <button class="it" type="button" disabled title="8d で作ります">LP<span class="soon">準備中</span></button>
-    <button class="it" type="button" data-view="forms" aria-selected="false">フォーム</button>
-    <button class="it" type="button" data-view="deals" aria-selected="false">セミナーと予約</button>
-    <button class="it" type="button" data-view="refer" aria-selected="false">紹介</button>
-    <div class="grp">育てる</div>
-    <button class="it" type="button" data-view="deliver" aria-selected="false">配信</button>
-    <div class="grp">売る・届ける</div>
-    <button class="it" type="button" data-view="products" aria-selected="false">商品</button>
-    <button class="it" type="button" data-view="rooms" aria-selected="false">添削ルーム<span class="badge hidden" id="rooms-badge"></span></button>
-    <div class="grp">設定</div>
-    <button class="it" type="button" data-view="ai" aria-selected="false">AI と承認<span class="badge hidden" id="ai-badge"></span></button>
-    <button class="it" type="button" data-view="settings" aria-selected="false">決済・メール・オプチャ</button>
+    <!-- 便 17：まとまりごとに開閉できる（開いた・閉じたはこのブラウザに覚える）。いま開いている画面のまとまりは閉じない -->
+    <div class="grp-box" data-grp="all">
+      <button class="grp" type="button" aria-expanded="true">全体</button>
+      <div class="grp-items">
+        <button class="it" type="button" data-view="home" aria-selected="true">ホーム</button>
+        <button class="it" type="button" data-view="people" aria-selected="false">顧客管理</button>
+        <button class="it" type="button" data-view="blueprint" aria-selected="false">設計図</button>
+        <button class="it" type="button" data-view="guide" aria-selected="false">使い方</button>
+      </div>
+    </div>
+    <div class="grp-box" data-grp="collect">
+      <button class="grp" type="button" aria-expanded="true">集める</button>
+      <div class="grp-items">
+        <button class="it" type="button" disabled title="8d で作ります">LP<span class="soon">準備中</span></button>
+        <button class="it" type="button" data-view="forms" aria-selected="false">フォーム</button>
+        <button class="it" type="button" data-view="deals" aria-selected="false">セミナーと予約</button>
+        <button class="it" type="button" data-view="refer" aria-selected="false">紹介</button>
+      </div>
+    </div>
+    <div class="grp-box" data-grp="grow">
+      <button class="grp" type="button" aria-expanded="true">育てる</button>
+      <div class="grp-items">
+        <button class="it" type="button" data-view="deliver" aria-selected="false">配信</button>
+      </div>
+    </div>
+    <div class="grp-box" data-grp="sell">
+      <button class="grp" type="button" aria-expanded="true">売る・届ける</button>
+      <div class="grp-items">
+        <button class="it" type="button" data-view="products" aria-selected="false">商品</button>
+        <button class="it" type="button" data-view="rooms" aria-selected="false">添削ルーム<span class="badge hidden" id="rooms-badge"></span></button>
+      </div>
+    </div>
+    <div class="grp-box" data-grp="settings">
+      <button class="grp" type="button" aria-expanded="true">設定</button>
+      <div class="grp-items">
+        <button class="it" type="button" data-view="ai" aria-selected="false">AI と承認<span class="badge hidden" id="ai-badge"></span></button>
+        <button class="it" type="button" data-view="settings" aria-selected="false">決済・メール・オプチャ</button>
+      </div>
+    </div>
   </nav>
   <div class="main">
+    <!-- 便 17：上の帯。いまの場所・顧客の検索・待っているもの（承認・未返信）に 1 回で届く -->
     <div class="topnav">
-      <span class="crumb" id="crumb">ホーム</span>
+      <span class="crumb"><span id="crumb">ホーム</span><span id="crumb-sub" class="crumb-sub"></span></span>
       <span class="grow"></span>
-      <span class="note" id="who-admin"></span>
+      <form id="gsearch" class="gsearch" role="search"><input id="gq" type="search" placeholder="顧客を探す（名前・メール）" aria-label="顧客を探す"></form>
+      <button type="button" class="chip hidden" id="chip-ai">承認待ち <b id="chip-ai-n"></b></button>
+      <button type="button" class="chip hidden" id="chip-rooms">未返信 <b id="chip-rooms-n"></b></button>
+      <span class="note who" id="who-admin"></span>
       <a href="#" id="logout" class="note">ログアウト</a>
     </div>
     <div class="content">
@@ -100,7 +125,7 @@
         </div>
         <div class="card" style="margin-top:16px">
           <h3 class="home-h">段階のボード <span class="note" id="hm-total"></span></h3>
-          <p class="note" style="margin-top:0">上から 受講（会員か教材を見た）→ 購入 → 相談 → 温める（リンクを押した・セミナー・ログイン）→ 登録 の順に当てる。人を押すとその人の 1 枚が開く</p>
+          <p class="note" style="margin-top:0">上から 受講（会員か教材を見た）→ 購入 → 相談 → 温める（リンクを押した・セミナー・ログイン）→ 登録 の順に当てる。人を押すと顧客管理でその人の詳細が開く</p>
           <div class="stage-board" id="hm-board"><p class="note">読み込んでいます…</p></div>
         </div>
       </div>
@@ -398,18 +423,36 @@
       </div>
       <div class="card" id="room-detail"><p class="note">左から部屋を選ぶと、やりとりと返す欄が出ます。未返信のある部屋が上に来ます。</p></div>
     </div>
-    <div class="admin-layout" id="view-people" style="display:none">
-      <div class="card">
-        <div style="display:flex;gap:8px">
-          <input id="q" type="search" placeholder="名前かメールで探す">
-          <select id="src" style="min-height:48px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:0 8px">
+    <!-- 便 17：顧客管理。一覧（表）で選ぶ → 1 人の詳細（上に要点・下にタブ）→ そこから操作。一覧と詳細は同じ場所で入れ替わる -->
+    <div id="view-people" style="display:none">
+      <div class="card" id="cust-list">
+        <div class="cust-tools">
+          <input id="q" type="search" placeholder="名前かメールで探す" aria-label="名前かメールで探す">
+          <select id="src" class="inline" aria-label="流入元">
             <option value="">流入元：全部</option><option value="x">X</option><option value="note">note</option><option value="youtube">YouTube</option><option value="direct">直接</option><option value="other">その他</option>
           </select>
+          <select id="mem" class="inline" aria-label="会員">
+            <option value="">会員：全部</option><option value="1">会員だけ</option><option value="0">会員でない人</option>
+          </select>
         </div>
-        <p class="note" id="count" style="margin:8px 0 0"></p>
-        <ul class="people" id="people"></ul>
+        <p class="note" id="count" style="margin:10px 0 6px"></p>
+        <div class="table-wrap">
+          <table class="cust-table">
+            <thead><tr>
+              <th><button type="button" data-sort="name">名前</button></th>
+              <th><button type="button" data-sort="stage">段階</button></th>
+              <th class="c-src"><button type="button" data-sort="source">流入元</button></th>
+              <th><button type="button" data-sort="last_event_at">最後に動いた</button></th>
+              <th class="c-reg"><button type="button" data-sort="created_at">登録した日</button></th>
+            </tr></thead>
+            <tbody id="people"></tbody>
+          </table>
+        </div>
       </div>
-      <div class="card" id="detail"><p class="note">左から人を選ぶと、出来事が時系列で並びます。</p></div>
+      <div id="cust-detail" class="hidden">
+        <button type="button" class="back-link" id="cust-back">← 顧客の一覧へ</button>
+        <div id="detail"></div>
+      </div>
     </div>
     </div>
   </div>

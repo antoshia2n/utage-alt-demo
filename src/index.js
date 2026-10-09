@@ -45,7 +45,7 @@ import { makeRefer } from "./refer.js";
 import { makeBlocks } from "./blocks.js";
 import { LANES } from "./plan.js";
 
-const VERSION = "0.23.0-b11a";
+const VERSION = "0.24.0-b17";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -912,7 +912,7 @@ async function handleApi(request, env, url) {
     const pv = path.match(/^[/]api[/]admin[/]people[/]([0-9a-f-]{36})[/]values$/i);
     if (pv && method === "GET") return json(await forms.personValues(env, pv[1]));
     if (path === "/api/admin/people" && method === "GET") {
-      return json(await core.findPeople(env, { query: url.searchParams.get("q") || "", source: url.searchParams.get("source") || "" }));
+      return json(await core.findPeople(env, { query: url.searchParams.get("q") || "", source: url.searchParams.get("source") || "", limit: url.searchParams.get("limit") || 50 }));
     }
     const m = path.match(/^\/api\/admin\/people\/([0-9a-f-]{36})$/i);
     if (m && method === "GET") return json(await core.getTimeline(env, { person_id: m[1] }));
