@@ -57,6 +57,7 @@
     <button class="it" type="button" data-view="home" aria-selected="true">ホーム</button>
     <button class="it" type="button" data-view="blueprint" aria-selected="false">設計図</button>
     <button class="it" type="button" data-view="people" aria-selected="false">人</button>
+    <button class="it" type="button" data-view="guide" aria-selected="false">使い方</button>
     <div class="grp">集める</div>
     <button class="it" type="button" disabled title="8d で作ります">LP<span class="soon">準備中</span></button>
     <button class="it" type="button" data-view="deals" aria-selected="false">セミナーと予約</button>
@@ -80,6 +81,8 @@
     <div class="content">
       <div id="err2" class="msg err hidden" style="margin-bottom:12px"></div>
       <div id="view-home">
+        <!-- 便 9：ホームから 1 回で「使い方」を開く -->
+        <div class="guide-entry card"><span>操作に迷ったら、できること・送る前に見ること・毎日の手順をまとめた画面があります</span><button class="btn small" type="button" id="hm-guide">使い方を開く</button></div>
         <div class="home-grid">
           <div class="card">
             <h3 class="home-h">今日の予定 <span class="note" id="hm-day"></span></h3>
@@ -99,6 +102,85 @@
           <p class="note" style="margin-top:0">上から 受講（会員か教材を見た）→ 購入 → 相談 → 温める（リンクを押した・セミナー・ログイン）→ 登録 の順に当てる。人を押すとその人の 1 枚が開く</p>
           <div class="stage-board" id="hm-board"><p class="note">読み込んでいます…</p></div>
         </div>
+      </div>
+      <!-- 便 9：使い方。できることリストは道具の一覧と権限の表から毎回組み立てる（手で書いた一覧は持たない）。チェックリストと手順はここに書く -->
+      <div id="view-guide" style="display:none">
+        <nav class="guide-toc" aria-label="使い方の中身"><a href="#gd-can">できること</a><a href="#gd-check">送る前・承認する前に見ること</a><a href="#gd-howto">毎日の手順</a></nav>
+
+        <section class="card guide-sec" id="gd-can">
+          <h2 class="home-h">できること</h2>
+          <p class="note" style="margin-top:0">メニューはパソコンでは左、スマホでは上に並んでいます。画面ごとに、できることと、AI に頼んだときに承認が要るかを並べています。Naoki が画面で自分で操作するときは、承認は要りません。画面の名前を押すと中が開きます。この一覧は Lab OS が増えるたびに自動で更新されます。</p>
+          <div id="gd-list"><p class="note">読み込んでいます…</p></div>
+        </section>
+
+        <section class="card guide-sec" id="gd-check">
+          <h2 class="home-h">送る前・承認する前に見ること</h2>
+          <div class="guide-cols">
+            <div>
+              <h3 class="guide-h3">一斉配信を「送る」前</h3>
+              <ol class="guide-check">
+                <li>件名を読み、送るつもりの配信か確かめる。会員向けの案内「新しい会員サイトができました」は、案内の日まで送らない</li>
+                <li>灰色の行の宛先（「会員だけ」「メール指定 1 件」など）を読み、届く相手が合っているか確かめる</li>
+                <li>迷ったら、「配信」の画面の「一斉配信」の欄で同じ条件にして「人数を数える」を押し、人数が思ったとおりか見る</li>
+                <li>「一斉配信」の見出しのすぐ下の一行に「いまはテスト宛てにだけ届く」と出ているか見る。出ていなければ、本当に誰にでも届く</li>
+                <li>送った分は取り消せない。送る列に入ったあとでも、まだ送っていない分は「止める」で止まる</li>
+              </ol>
+            </div>
+            <div>
+              <h3 class="guide-h3">「承認して実行」を押す前</h3>
+              <ol class="guide-check">
+                <li>見出しを読み、AI が何をしようとしているかを確かめる</li>
+                <li>「誰に」「件名」「宛先」の行を読み、相手と人数が合っているか確かめる</li>
+                <li>ブロックをまとめて動かすときは、表の行（動く部品）を上から全部読む</li>
+                <li>送る・払った記録のように、あとで戻せないものかどうかを考える</li>
+                <li>迷ったら「却下」。AI はもう一度頼み直せる。承認待ちは頼まれてから 24 時間で期限切れになる</li>
+              </ol>
+            </div>
+          </div>
+        </section>
+
+        <section class="card guide-sec" id="gd-howto">
+          <h2 class="home-h">毎日の手順</h2>
+
+          <article class="guide-step">
+            <h3 class="guide-h3">添削を返す</h3>
+            <p class="guide-where">画面：<b>添削ルーム</b>　住所：<code class="guide-code">https://lab.shia2n.jp/admin</code> → メニューの「添削ルーム」</p>
+            <p class="guide-hands">手の回数：クリック 4 回と書く作業・3 分</p>
+            <ol>
+              <li>メニューの「添削ルーム」を押す（ホームの「やること」の「未返信の添削」からでも開く）</li>
+              <li>「未返信のある部屋だけ」にチェックを入れる</li>
+              <li>いちばん上の部屋を押す。右に、生徒の投稿と「3 欄で返す」が出る</li>
+              <li>「添削後」を直し、「コメント」にどこをなぜ直したかを書く（「原文」はそのままでよい）</li>
+              <li>「返す」を押す</li>
+            </ol>
+            <p class="guide-done">できたか：右のその投稿の下に「返信済み」が出る（部屋の一覧からは、その部屋が消えるか「未返信」の数が 1 つ減る）</p>
+          </article>
+
+          <article class="guide-step">
+            <h3 class="guide-h3">一斉配信を下書きから送る</h3>
+            <p class="guide-where">画面：<b>配信</b>　住所：<code class="guide-code">https://lab.shia2n.jp/admin</code> → メニューの「配信」</p>
+            <p class="guide-hands">手の回数：クリック 4 回・2 分</p>
+            <ol>
+              <li>メニューの「配信」を押す</li>
+              <li>「これまでの一斉配信」で、送る下書きの件名と宛先を読む（上の「一斉配信を送る前」の 5 つ）</li>
+              <li>その下書きの「送る」を押し、出てきた確認の文で件名と宛先をもう一度見て「OK」を押す</li>
+              <li>すぐ送るときは「いま送る（毎時を待たずに 1 回）」を押す。押さなければ毎時の処理で送られる</li>
+            </ol>
+            <p class="guide-done">できたか：その配信の印が「下書き」から「送る列」に変わり、送り終えると「送り終えた」と「送った 1」のように数が出る</p>
+          </article>
+
+          <article class="guide-step">
+            <h3 class="guide-h3">承認待ちを見て、承認か却下をする</h3>
+            <p class="guide-where">画面：<b>AI と承認</b>　住所：<code class="guide-code">https://lab.shia2n.jp/admin</code> → メニューの「AI と承認」（スマホの知らせを押しても開く）</p>
+            <p class="guide-hands">手の回数：クリック 2 回・1 分</p>
+            <ol>
+              <li>メニューの「AI と承認」を押す（ホームの「やること」の「承認待ち」からでも開く）</li>
+              <li>「承認待ち」の印が付いたいちばん上のカードを読む（上の「承認して実行を押す前」の 5 つ）</li>
+              <li>よければ「承認して実行」、やめるなら「却下」を押す</li>
+            </ol>
+            <p class="guide-done">できたか：カードの印が「承認して実行した」か「却下した」に変わり、メニューの「AI と承認」の数字が 1 つ減る（0 になると数字が消える）</p>
+          </article>
+        </section>
       </div>
       <div id="view-blueprint" style="display:none">
         <div class="bp-bar">
