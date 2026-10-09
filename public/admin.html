@@ -86,6 +86,10 @@
           </div>
         </div>
         <div class="card" style="margin-top:16px">
+          <h3 class="home-h">タスクマスター <span class="note" id="hm-task-n"></span></h3>
+          <div id="hm-tasks" class="note">読み込んでいます…</div>
+        </div>
+        <div class="card" style="margin-top:16px">
           <h3 class="home-h">段階のボード <span class="note" id="hm-total"></span></h3>
           <p class="note" style="margin-top:0">上から 受講（会員か教材を見た）→ 購入 → 相談 → 温める（リンクを押した・セミナー・ログイン）→ 登録 の順に当てる。人を押すとその人の 1 枚が開く</p>
           <div class="stage-board" id="hm-board"><p class="note">読み込んでいます…</p></div>
@@ -135,10 +139,17 @@
     </details>
     <details class="setup card" id="calendar-box"><summary>Google カレンダー（ホームに今日の予定を出す）</summary>
       <div class="stack" style="margin-top:8px">
-        <p class="note" style="margin:0">Google カレンダーの「設定と共有」→「カレンダーの統合」にある「iCal 形式の非公開 URL」を貼る。URL は画面にも記録にも出さない</p>
-        <div><label for="cal-url">iCal 形式の非公開 URL</label><input id="cal-url" type="url" inputmode="url" maxlength="500" placeholder="https://calendar.google.com/calendar/ical/.../basic.ics" autocomplete="off"></div>
-        <div><button class="btn" id="cal-save">入れる</button> <button class="btn ghost" id="cal-clear">外す</button></div>
-        <div id="cal-status" class="note">読み込んでいます…</div>
+        <p class="note" style="margin:0">Google カレンダーの設定で、カレンダーを選び「カレンダーの統合」にある「iCal 形式の非公開アドレス」を貼る。URL は画面にも記録にも出さない</p>
+        <div class="cal-row" data-which="main">
+          <label for="cal-url-main">Google カレンダー（自分の予定）</label><input id="cal-url-main" type="url" inputmode="url" maxlength="500" placeholder="https://calendar.google.com/calendar/ical/.../basic.ics" autocomplete="off">
+          <div><button class="btn" data-cal-save="main">入れる</button> <button class="btn ghost" data-cal-clear="main">外す</button></div>
+          <div id="cal-status-main" class="note">読み込んでいます…</div>
+        </div>
+        <div class="cal-row" data-which="utage">
+          <label for="cal-url-utage">UTAGE のカレンダー（個別相談やセミナーの予約）</label><input id="cal-url-utage" type="url" inputmode="url" maxlength="500" placeholder="https://calendar.google.com/calendar/ical/.../basic.ics" autocomplete="off">
+          <div><button class="btn" data-cal-save="utage">入れる</button> <button class="btn ghost" data-cal-clear="utage">外す</button></div>
+          <div id="cal-status-utage" class="note">読み込んでいます…</div>
+        </div>
       </div>
     </details>
     <details class="setup card" id="community-box"><summary>オプチャの招待リンク（会員にだけ見える）</summary>

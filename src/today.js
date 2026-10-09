@@ -1,12 +1,20 @@
 // B の便 8f-1：シアニン用のホーム「今日の 1 枚」と、段階のボード。表は増やさない。
-//   今日の予定 … Google カレンダーの「iCal 形式の非公開 URL」を表 b_settings の 1 行（key=calendar_ics）に置き、毎回読む（写しは置かない）
+//   今日の予定 … Google カレンダーの「iCal 形式の非公開 URL」を表 b_settings の行に置き、毎回読む（写しは置かない）
+//                 便 8f-2 で 2 つにした：既定のカレンダー（key=calendar_ics）と UTAGE のカレンダー（key=calendar_utage_ics・個別相談やセミナーの予約が入る）
 //   やること   … 承認待ち・未返信の添削・今日の個別相談・今日の知らせ（どれも既にある記録から数える）
+//                 便 8f-2 でタスクマスターの今日の分（期限が今日か過ぎている未完了）を足した。shia2n-mcp の TaskmasterReader をサービスの結びで読む（合言葉は要らない）
 //   段階のボード … 人をお客さんの段階（設計図のレーン 7 つ）に振り分ける。出来事と権利と商談の段階から毎回計算する
-// iCal の繰り返し（RRULE）は DAILY・WEEKLY・MONTHLY（同じ日付）・YEARLY だけを広げる。「第 2 火曜」のような形は広げず、数を返す
+// iCal の繰り返し（RRULE）は DAILY・WEEKLY・MONTHLY・YEARLY を広げる（便 8f-2 で「第 2 火曜」「月末の金曜」「毎月 15 日」などの形も広げた）。
+// 時間ごと・分ごとの繰り返しは広げず、数と形（題名は入れない）を返す
 
 import { LANES } from "./plan.js";
 
 export const CALENDAR_KEY = "calendar_ics";
+// 読み元のカレンダー。key は表 b_settings の行の名前
+export const CALENDARS = [
+  { which: "main", key: CALENDAR_KEY, label: "Google カレンダー" },
+  { which: "utage", key: "calendar_utage_ics", label: "UTAGE のカレンダー" },
+];
 const ICS_URL_RE = /^https:[/][/]calendar[.]google[.]com[/]calendar[/]ical[/][^\s<>"']{10,480}[.]ics$/;
 const JST = 9 * 3600e3;
 const DAY = 864e5;
@@ -61,6 +69,29 @@ export function parseIcs(text) {
   return events;
 }
 
+// その月の中で当たる日（1〜31 の集まり）。BYMONTHDAY（-1 は月末）・BYDAY（2TU＝第 2 火曜・-1FR＝最後の金曜・TU＝毎週火曜）・BYSETPOS（候補の何番目か）を読む。
+// どれも無ければ始めの日と同じ日付
+export function monthDays(y, m, r, startDate) {
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  let days = [];
+  if (r.BYMONTHDAY) {
+    for (const x of r.BYMONTHDAY.split(",").map(Number)) { const v = x < 0 ? last + 1 + x : x; if (v >= 1 && v <= last) days.push(v); }
+  } else if (r.BYDAY) {
+    for (const code of r.BYDAY.split(",")) {
+      const wd = WD[code.slice(-2)];
+      if (wd === undefined) continue;
+      const all = [];
+      for (let v = 1; v <= last; v++) if (new Date(Date.UTC(y, m - 1, v)).getUTCDay() === wd) all.push(v);
+      const n = code.length > 2 ? parseInt(code.slice(0, -2), 10) : 0;
+      if (!n) days.push(...all);
+      else { const v = n > 0 ? all[n - 1] : all[all.length + n]; if (v) days.push(v); }
+    }
+  } else if (startDate <= last) days.push(startDate);
+  days = [...new Set(days)].sort((a, b) => a - b);
+  if (r.BYSETPOS) days = r.BYSETPOS.split(",").map(Number).map((p) => (p > 0 ? days[p - 1] : days[days.length + p])).filter(Boolean);
+  return new Set(days);
+}
+
 // 繰り返しの決まりで、その日（日本時間の日付）に当たるか。広げられない形は null
 export function occursOn(ev, day) {
   const startDay = jstDay(ev.start.ms);
@@ -74,7 +105,10 @@ export function occursOn(ev, day) {
   const match = (d) => {
     const diff = Math.round((Date.parse(d + "T00:00:00Z") - Date.parse(startDay + "T00:00:00Z")) / DAY);
     const dow = new Date(d + "T00:00:00Z").getUTCDay();
-    if (r.FREQ === "DAILY") return diff % interval === 0;
+    const y = Number(d.slice(0, 4)), m = Number(d.slice(5, 7)), dd = Number(d.slice(8));
+    const sy = Number(startDay.slice(0, 4)), sm = Number(startDay.slice(5, 7)), sd = Number(startDay.slice(8));
+    if (r.BYMONTH && !r.BYMONTH.split(",").map(Number).includes(m)) return false;
+    if (r.FREQ === "DAILY") return diff % interval === 0 && (!r.BYDAY || r.BYDAY.split(",").map((x) => WD[x.slice(-2)]).includes(dow));
     if (r.FREQ === "WEEKLY") {
       const days = r.BYDAY ? r.BYDAY.split(",").map((x) => WD[x.slice(-2)]) : [new Date(startDay + "T00:00:00Z").getUTCDay()];
       const monday = (x) => { const t = Date.parse(x + "T00:00:00Z"); const w = (new Date(t).getUTCDay() + 6) % 7; return t - w * DAY; };
@@ -82,11 +116,14 @@ export function occursOn(ev, day) {
       return weeks % interval === 0 && days.includes(dow);
     }
     if (r.FREQ === "MONTHLY") {
-      if (r.BYDAY) return null;
-      const months = (Number(d.slice(0, 4)) - Number(startDay.slice(0, 4))) * 12 + Number(d.slice(5, 7)) - Number(startDay.slice(5, 7));
-      return months % interval === 0 && d.slice(8) === startDay.slice(8);
+      const months = (y - sy) * 12 + m - sm;
+      return months % interval === 0 && monthDays(y, m, r, sd).has(dd);
     }
-    if (r.FREQ === "YEARLY") return d.slice(5) === startDay.slice(5) && (Number(d.slice(0, 4)) - Number(startDay.slice(0, 4))) % interval === 0;
+    if (r.FREQ === "YEARLY") {
+      if ((y - sy) % interval !== 0) return false;
+      if (!r.BYMONTH && m !== sm) return false;
+      return monthDays(y, m, r, sd).has(dd);
+    }
     return null;
   };
   const hit = match(day);
@@ -109,18 +146,19 @@ export function eventsOn(events, day) {
   const moved = new Set(events.filter((e) => e.recurrenceId && e.uid).map((e) => `${e.uid}|${jstDay(e.recurrenceId.ms)}`));
   const out = [];
   let skipped = 0;
+  const shapes = new Set();
   for (const e of events) {
     if (!e.start || e.status === "CANCELLED") continue;
     if (!e.recurrenceId && e.uid && moved.has(`${e.uid}|${day}`)) continue;
     const hit = e.recurrenceId ? jstDay(e.start.ms) === day : occursOn(e, day);
-    if (hit === null) { skipped++; continue; }
+    if (hit === null) { skipped++; shapes.add(Object.keys(e.rrule || {}).filter((k) => /^(FREQ|BY)/.test(k)).map((k) => k === "FREQ" ? e.rrule.FREQ : k).join(";")); continue; }
     if (!hit) continue;
     const dur = e.end ? e.end.ms - e.start.ms : (e.start.allDay ? DAY : 0);
     const startMs = e.start.allDay ? jstMidnightUtc(day) : jstMidnightUtc(day) + ((e.start.ms + JST) % DAY);
     out.push({ title: e.title || "（題名なし）", all_day: !!e.start.allDay, start: new Date(startMs).toISOString(), end: new Date(startMs + dur).toISOString(), location: e.location || "" });
   }
   out.sort((a, b) => Number(b.all_day) - Number(a.all_day) || a.start.localeCompare(b.start));
-  return { events: out, skipped };
+  return { events: out, skipped, shapes: [...shapes] };
 }
 
 // 段階（レーン）の振り分け。上から順に見て、最初に当たったもの
@@ -136,35 +174,82 @@ export function stageOf({ labels = [], deal = "none", logins = 0 }) {
 export function makeToday(h) {
   const { db, logInbound, connect, bin4, guard, listRooms } = h;
 
-  async function calendarUrl(env) {
-    const rows = await db(env, "GET", `settings?select=value,updated_at,updated_by&key=eq.${CALENDAR_KEY}`);
+  const calOf = (which) => CALENDARS.find((c) => c.which === (which || "main"));
+
+  async function calendarUrl(env, which = "main") {
+    const cal = calOf(which);
+    if (!cal) return { url: "", updated_at: null, updated_by: null };
+    const rows = await db(env, "GET", `settings?select=value,updated_at,updated_by&key=eq.${cal.key}`);
     return rows.length ? { url: rows[0].value || "", updated_at: rows[0].updated_at, updated_by: rows[0].updated_by } : { url: "", updated_at: null, updated_by: null };
+  }
+
+  // 読み元ごとの「入っているか」（画面と AI の返事用。URL そのものは返さない）
+  async function calendarStatus(env) {
+    const out = [];
+    for (const c of CALENDARS) {
+      const u = await calendarUrl(env, c.which);
+      out.push({ which: c.which, label: c.label, set: !!u.url, shown: maskUrl(u.url), updated_at: u.updated_at, updated_by: u.updated_by });
+    }
+    return out;
   }
 
   // 非公開の URL そのものは返さない（画面には「入っているか」と末尾 6 文字だけ）
   function maskUrl(u) { return u ? `…${u.slice(-10, -4)}.ics` : ""; }
 
-  async function setCalendarUrl(env, { url }, actor) {
+  async function setCalendarUrl(env, { url, which }, actor) {
     if (!env.B_STORE) return { ok: false, error: "demo_store" };
+    const cal = calOf(which);
+    if (!cal) return { ok: false, error: "bad_which", allowed: CALENDARS.map((c) => c.which) };
     const v = String(url == null ? "" : url).trim();
-    if (v && !ICS_URL_RE.test(v)) return { ok: false, error: "bad_url", note: "Google カレンダーの設定「iCal 形式の非公開 URL」（https://calendar.google.com/calendar/ical/ で始まり .ics で終わる）。外すときは空にする" };
-    const before = await calendarUrl(env);
-    await db(env, "POST", "settings?on_conflict=key", [{ key: CALENDAR_KEY, value: v, updated_at: new Date().toISOString(), updated_by: String(actor).slice(0, 200) }], "resolution=merge-duplicates,return=minimal");
+    if (v && !ICS_URL_RE.test(v)) return { ok: false, error: "bad_url", note: "Google カレンダーの設定「iCal 形式の非公開アドレス」（https://calendar.google.com/calendar/ical/ で始まり .ics で終わる）。外すときは空にする" };
+    const other = CALENDARS.filter((c) => c.which !== cal.which);
+    for (const o of other) { const u = await calendarUrl(env, o.which); if (v && u.url === v) return { ok: false, error: "same_as_other", note: `${o.label}と同じ URL です` }; }
+    const before = await calendarUrl(env, cal.which);
+    await db(env, "POST", "settings?on_conflict=key", [{ key: cal.key, value: v, updated_at: new Date().toISOString(), updated_by: String(actor).slice(0, 200) }], "resolution=merge-duplicates,return=minimal");
     // 非公開の URL は「変えた記録」（AI からも読める・元に戻すで書き戻す）に残さない。入れた・外したことだけを受け口の記録に残す
-    await logInbound(env, "calendar_set", { actor, cleared: !v, had_before: !!before.url }, { ok: true }, 200);
-    return { ok: true, set: !!v, shown: maskUrl(v) };
+    await logInbound(env, "calendar_set", { actor, which: cal.which, cleared: !v, had_before: !!before.url }, { ok: true }, 200);
+    return { ok: true, which: cal.which, set: !!v, shown: maskUrl(v) };
   }
 
-  async function calendarToday(env, day) {
-    const c = await calendarUrl(env);
-    if (!c.url) return { state: "unset", events: [] };
+  async function readCalendar(env, cal, day) {
+    const c = await calendarUrl(env, cal.which);
+    if (!c.url) return { which: cal.which, label: cal.label, state: "unset", events: [] };
     try {
       const res = await fetch(c.url, { headers: { accept: "text/calendar" } });
-      if (!res.ok) return { state: "error", error: `status_${res.status}`, events: [] };
+      if (!res.ok) return { which: cal.which, label: cal.label, state: "error", error: `status_${res.status}`, events: [] };
       const r = eventsOn(parseIcs(await res.text()), day);
-      return { state: "ok", events: r.events, not_expanded: r.skipped, shown: maskUrl(c.url) };
+      return { which: cal.which, label: cal.label, state: "ok", events: r.events.map((e) => ({ ...e, source: cal.which })), not_expanded: r.skipped, not_expanded_shapes: r.shapes, shown: maskUrl(c.url) };
     } catch (e) {
-      return { state: "error", error: String(e && e.message || e).slice(0, 120), events: [] };
+      return { which: cal.which, label: cal.label, state: "error", error: String(e && e.message || e).slice(0, 120), events: [] };
+    }
+  }
+
+  // 2 つの読み元を 1 つの並びにまとめる。state は「どれか 1 つでも入っていれば ok か error」、全部無ければ unset
+  async function calendarToday(env, day) {
+    const parts = await Promise.all(CALENDARS.map((c) => readCalendar(env, c, day)));
+    const events = parts.flatMap((p) => p.events);
+    events.sort((a, b) => Number(b.all_day) - Number(a.all_day) || a.start.localeCompare(b.start));
+    const anySet = parts.some((p) => p.state !== "unset");
+    const anyOk = parts.some((p) => p.state === "ok");
+    return {
+      state: !anySet ? "unset" : anyOk ? "ok" : "error",
+      error: anyOk ? undefined : parts.find((p) => p.state === "error")?.error,
+      events,
+      not_expanded: parts.reduce((n, p) => n + (p.not_expanded || 0), 0),
+      not_expanded_shapes: [...new Set(parts.flatMap((p) => p.not_expanded_shapes || []))],
+      sources: parts.map((p) => ({ which: p.which, label: p.label, state: p.state, count: p.events.length, error: p.error })),
+    };
+  }
+
+  // タスクマスターの今日の分。shia2n-mcp の TaskmasterReader をサービスの結び（env.TASKMASTER）で呼ぶ。結びが無い・読めないときは state で返す
+  async function tasksToday(env, day) {
+    if (!env.TASKMASTER || typeof env.TASKMASTER.today !== "function") return { state: "unset", due_count: 0, overdue_count: 0, due: [], overdue: [] };
+    try {
+      const r = await env.TASKMASTER.today(day);
+      if (!r || r.ok === false) return { state: "error", error: String(r && r.error || "no_result").slice(0, 120), due_count: 0, overdue_count: 0, due: [], overdue: [] };
+      return { state: "ok", due_count: r.due_count, overdue_count: r.overdue_count, due: r.due || [], overdue: r.overdue || [] };
+    } catch (e) {
+      return { state: "error", error: String(e && e.message || e).slice(0, 120), due_count: 0, overdue_count: 0, due: [], overdue: [] };
     }
   }
 
@@ -190,8 +275,9 @@ export function makeToday(h) {
     if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const day = jstDay(now);
     const from = new Date(jstMidnightUtc(day)).toISOString();
-    const [cal, approvals, rooms, consults, notices, b] = await Promise.all([
+    const [cal, tasks, approvals, rooms, consults, notices, b] = await Promise.all([
       calendarToday(env, day),
+      tasksToday(env, day),
       guard.listApprovals(env, { status: "pending" }),
       listRooms(env, { only_unreplied: true }),
       bin4.listConsults(env, {}),
@@ -205,6 +291,7 @@ export function makeToday(h) {
     return {
       ok: true, day,
       calendar: cal,
+      tasks,
       todo: {
         approvals: { count: (approvals.approvals || []).length, items: (approvals.approvals || []).slice(0, 10).map((a) => ({ id: a.id, tool: a.tool, created_at: a.created_at })) },
         rooms: { count: rooms.unreplied_total || 0, items: (rooms.rooms || []).slice(0, 10).map((r) => ({ person_id: r.person_id, name: r.name || r.email, unreplied: r.unreplied })) },
@@ -215,5 +302,5 @@ export function makeToday(h) {
     };
   }
 
-  return { today, board, calendarUrl, setCalendarUrl, maskUrl };
+  return { today, board, calendarUrl, calendarStatus, setCalendarUrl, maskUrl };
 }
