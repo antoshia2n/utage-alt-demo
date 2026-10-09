@@ -11,6 +11,8 @@ const EDIT_VIEW = { step: "deliver", broadcast: "deliver", seminar: "deals", boo
 
 export function makeBlueprint({ $, api, esc, getToken, fail, openView }) {
   let view = "all";
+  let mode = "flow"; // 便 8g-3：flow（レーンと線）／list（一覧の表）
+  let query = "";
   let data = null;
   let selected = null;
   let campaigns = [];
@@ -45,7 +47,38 @@ export function makeBlueprint({ $, api, esc, getToken, fail, openView }) {
     if (cur) arch.textContent = cur.archived_at ? "この企画を戻す" : "この企画をしまう";
   }
 
+  // 便 8g-3：一覧の見方。部品を段階の順に 1 行ずつ。入る線・出る線と、それぞれの先週の人数
+  function renderList() {
+    const order = Object.fromEntries(data.lanes.map((l, i) => [l.id, i]));
+    const laneName = Object.fromEntries(data.lanes.map((l) => [l.id, l.label]));
+    const nm = (k) => { const q = data.parts.find((x) => x.key === k); return q ? q.name : k; };
+    const q = query.trim().toLowerCase();
+    const rows = data.parts
+      .filter((p) => !q || [p.name, p.inner_name, p.campaign_name || "", TYPE_LABEL[p.type] || ""].some((s) => String(s).toLowerCase().includes(q)))
+      .sort((a, b) => (order[a.lane] ?? 99) - (order[b.lane] ?? 99) || String(a.type).localeCompare(String(b.type)) || String(a.name).localeCompare(String(b.name)));
+    const lineCell = (list, side) => list.length
+      ? list.map((e) => `<div>${esc(nm(side === "in" ? e.from : e.to))}${e.counted === "none" ? "" : ` <b class="num">${e.week}</b>`}</div>`).join("")
+      : '<span class="note">なし</span>';
+    $("bp-canvas").innerHTML = `
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px"><input id="bp-q" type="search" placeholder="名前・企画で絞る" value="${esc(query)}" style="max-width:280px"><span class="note">${rows.length} 個</span></div>
+      <div class="bp-table-wrap"><table class="bp-table">
+        <thead><tr><th>段階</th><th>種類</th><th>外の名前／中の名前</th><th>企画</th><th>状態</th><th class="r">先週</th><th>入る線（人数）</th><th>出る線（人数）</th></tr></thead>
+        <tbody>${rows.map((p) => `<tr data-key="${esc(p.key)}" class="${selected === p.key ? "sel" : ""}${p.isolated ? " iso" : ""}">
+          <td>${esc(laneName[p.lane] || p.lane)}</td><td>${esc(TYPE_LABEL[p.type] || p.type)}</td>
+          <td><div>${esc(p.name)}</div><div class="note">${esc(p.inner_name)}</div></td>
+          <td>${esc(p.campaign_name || "（企画に入っていない）")}${p.outside ? '<div class="note">別の企画</div>' : ""}</td>
+          <td><span class="pill ${p.state === "running" ? "" : "gray"}">${esc(STATE_LABEL[p.state] || p.state)}</span></td>
+          <td class="r num">${p.week}</td>
+          <td>${lineCell(data.edges.filter((e) => e.to === p.key), "in")}</td>
+          <td>${lineCell(data.edges.filter((e) => e.from === p.key), "out")}</td>
+        </tr>`).join("") || '<tr><td colspan="8" class="note">当たる部品がありません</td></tr>'}</tbody>
+      </table></div>`;
+    $("bp-q").addEventListener("input", (ev) => { query = ev.target.value; const pos = ev.target.selectionStart; renderList(); const i = $("bp-q"); i.focus(); try { i.setSelectionRange(pos, pos); } catch (_) {} });
+    document.querySelectorAll("#bp-canvas tr[data-key]").forEach((tr) => tr.addEventListener("click", () => { selected = tr.dataset.key; renderList(); renderPanel(); }));
+  }
+
   function renderCanvas() {
+    if (mode === "list") return renderList();
     const lanes = data.lanes;
     const byLane = Object.fromEntries(lanes.map((l) => [l.id, []]));
     for (const p of data.parts) (byLane[p.lane] || (byLane[p.lane] = [])).push(p);
@@ -148,8 +181,8 @@ export function makeBlueprint({ $, api, esc, getToken, fail, openView }) {
         <dt>中の名前（シアニンだけに見える・自動）</dt><dd>${esc(p.inner_name)}</dd>
         <dt>持ち主の企画</dt><dd>${esc(p.campaign_name || "企画に入っていない")}</dd>
         <dt>線でつながる別の企画</dt><dd>${p.used_by.length ? p.used_by.map((c) => esc(c.name)).join("・") : "なし"}</dd>
-        <dt>入口</dt><dd>${ins.length ? ins.map((e) => `${esc(name(e.from))}（${esc(e.label)}）`).join("<br>") : "なし"}</dd>
-        <dt>出口</dt><dd>${outs.length ? outs.map((e) => `${esc(name(e.to))}（${esc(e.label)}）`).join("<br>") : "なし"}</dd>
+        <dt>入口</dt><dd>${ins.length ? ins.map((e) => `${esc(name(e.from))}（${esc(e.label)}${e.counted === "none" ? "" : `・先週 ${e.week} 人`}）`).join("<br>") : "なし"}</dd>
+        <dt>出口</dt><dd>${outs.length ? outs.map((e) => `${esc(name(e.to))}（${esc(e.label)}${e.counted === "none" ? "" : `・先週 ${e.week} 人`}）`).join("<br>") : "なし"}</dd>
         <dt>先週 7 日</dt><dd>${p.week}</dd>
       </dl>
       <form id="bp-assign" class="stack" style="margin-top:12px">
@@ -224,6 +257,11 @@ export function makeBlueprint({ $, api, esc, getToken, fail, openView }) {
   }
 
   function wire() {
+    document.querySelectorAll("#bp-mode [data-mode]").forEach((b) => b.addEventListener("click", () => {
+      mode = b.dataset.mode;
+      document.querySelectorAll("#bp-mode [data-mode]").forEach((x) => { const on = x === b; x.classList.toggle("on", on); x.setAttribute("aria-pressed", String(on)); });
+      if (data) renderCanvas();
+    }));
     $("bp-tidy").addEventListener("click", showTidy);
     $("bp-changes").addEventListener("click", showChanges);
     $("bp-show-archived").addEventListener("change", () => data && renderChips());

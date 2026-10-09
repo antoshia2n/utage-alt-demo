@@ -356,3 +356,17 @@ details.review time { font-family: var(--mono); font-size: 12px; color: var(--mu
 .seg input:checked + span { background: var(--accent-soft); color: var(--ink); font-weight: 600; }
 .seg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: -2px; }
 .bubble.chat .reply-h { margin: 0 0 4px; }
+
+/* 便 8g-3：設計図の一覧の見方 */
+.bp-table-wrap { overflow-x: auto; }
+.bp-table { width: 100%; min-width: 900px; border-collapse: collapse; font-size: 13px; }
+.bp-table td:nth-child(1), .bp-table td:nth-child(2), .bp-table td:nth-child(4), .bp-table td:nth-child(5), .bp-table td:nth-child(6) { white-space: nowrap; }
+.bp-table th { text-align: left; font-size: 11px; color: var(--muted); font-weight: 700; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.bp-table td { padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.bp-table td .note { font-size: 11px; margin: 0; }
+.bp-table tr[data-key] { cursor: pointer; }
+.bp-table tr[data-key]:hover td { background: var(--bg); }
+.bp-table tr.sel td { background: var(--accent-soft); }
+.bp-table tr.iso td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
+.bp-table .r { text-align: right; }
+.bp-table .num { font-family: var(--mono); color: var(--accent); }
