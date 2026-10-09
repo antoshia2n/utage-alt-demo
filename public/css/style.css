@@ -467,3 +467,11 @@ details.review time { font-family: var(--mono); font-size: 12px; color: var(--mu
   .topnav .crumb { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
 @media (max-width: 860px) { .topnav .crumb { flex: 1 1 0; } .chip { padding: 0 10px; font-size: 12px; } }
+/* 便 18：一覧の上の帯（件数と「新しく作る」）・一覧の種類を切り替えるタブ */
+.list-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.list-bar > .note { margin: 0; flex: 1 1 260px; }
+.view-tabs { margin: 0 0 12px; }
+#bf .cust-tabs, #sf .cust-tabs { margin: 4px 0 0; }
+.topnav .crumb { min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topnav #logout, .topnav .who { white-space: nowrap; }
+@media (max-width: 860px) { .topnav .crumb { flex: 1 1 0; } }

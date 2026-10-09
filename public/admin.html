@@ -146,9 +146,9 @@
               <h3 class="guide-h3">一斉配信を「送る」前</h3>
               <ol class="guide-check">
                 <li>件名を読み、送るつもりの配信か確かめる。会員向けの案内「新しい会員サイトができました」は、案内の日まで送らない</li>
-                <li>灰色の行の宛先（「会員だけ」「メール指定 1 件」など）を読み、届く相手が合っているか確かめる</li>
-                <li>迷ったら、「配信」の画面の「一斉配信」の欄で同じ条件にして「人数を数える」を押し、人数が思ったとおりか見る</li>
-                <li>「一斉配信」の見出しのすぐ下の一行に「いまはテスト宛てにだけ届く」と出ているか見る。出ていなければ、本当に誰にでも届く</li>
+                <li>詳細の「宛先」のタブ（一覧では件名の下の灰色の行）で、届く相手（「会員だけ」「メール指定 1 件」など）が合っているか確かめる</li>
+                <li>迷ったら、「配信」の「新しく作る」→「宛先の条件」で同じ条件にして「人数を数える」を押し、人数が思ったとおりか見る</li>
+                <li>詳細の上の帯に「いまはテスト宛てにだけ届く」と出ているか見る。「誰にでも届く」と出ていれば、本当に届く</li>
                 <li>送った分は取り消せない。送る列に入ったあとでも、まだ送っていない分は「止める」で止まる</li>
               </ol>
             </div>
@@ -185,14 +185,14 @@
           <article class="guide-step">
             <h3 class="guide-h3">一斉配信を下書きから送る</h3>
             <p class="guide-where">画面：<b>配信</b>　住所：<code class="guide-code">https://lab.shia2n.jp/admin</code> → メニューの「配信」</p>
-            <p class="guide-hands">手の回数：クリック 4 回・2 分</p>
+            <p class="guide-hands">手の回数：クリック 5 回・2 分</p>
             <ol>
               <li>メニューの「配信」を押す</li>
-              <li>「これまでの一斉配信」で、送る下書きの件名と宛先を読む（上の「一斉配信を送る前」の 5 つ）</li>
-              <li>その下書きの「送る」を押し、出てきた確認の文で件名と宛先をもう一度見て「OK」を押す</li>
-              <li>すぐ送るときは「いま送る（毎時を待たずに 1 回）」を押す。押さなければ毎時の処理で送られる</li>
+              <li>「一斉配信」の表で、状態が「下書き」の行を押して詳細を開き、件名と宛先を読む（上の「一斉配信を送る前」の 5 つ）</li>
+              <li>詳細の上の「送る」を押し、出てきた確認の文で件名と宛先をもう一度見て「OK」を押す</li>
+              <li>すぐ送るときは「← 一斉配信の一覧へ」で戻り、「いま送る（毎時を待たずに 1 回）」を押す。押さなければ毎時の処理で送られる</li>
             </ol>
-            <p class="guide-done">できたか：その配信の印が「下書き」から「送る列」に変わり、送り終えると「送り終えた」と「送った 1」のように数が出る</p>
+            <p class="guide-done">できたか：その配信の状態が「下書き」から「送る列」に変わり、送り終えると「送り終えた」と「送った 1」のように数が出る</p>
           </article>
 
           <article class="guide-step">
@@ -285,109 +285,124 @@
       <div id="view-people-wrap" style="display:none">
         <div class="stats" id="stats" style="margin-bottom:12px"></div>
       </div>
-    <!-- 便 11a：フォームと人の項目。フォームは /form?f=住所の名前 で公開。答えは人の 1 枚に履歴で並び、一斉配信の宛先を項目で絞れる -->
-    <div class="admin-layout" id="view-forms" style="display:none">
-      <div class="card">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h3 style="margin:0">フォーム</h3><button class="btn small" type="button" id="fm-new">新しいフォーム</button></div>
-        <p class="note" id="fm-count" style="margin:4px 0 0"></p>
-        <ul class="people" id="forms-list"></ul>
-        <h3 style="margin-top:20px">人の項目</h3>
-        <p class="note" style="margin-top:0">フォームで聞く欄。答えは人ごとに残り、一斉配信の宛先をこの値で絞れます。型（文字・数・日付・選ぶ）はあとから変えられません。</p>
-        <ul class="people" id="fields-list"></ul>
-        <form id="fd" class="stack" style="margin-top:8px">
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <div style="flex:2 1 160px"><label for="fd-label">項目の名前</label><input id="fd-label" type="text" maxlength="40" placeholder="例 X アカウント名"></div>
-            <div style="flex:1 1 120px"><label for="fd-type">型</label><select id="fd-type" class="inline" style="width:100%"><option value="text">1 行の文字</option><option value="textarea">長い文</option><option value="number">数</option><option value="date">日付</option><option value="select">選ぶ</option></select></div>
-          </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <div style="flex:1 1 160px"><label for="fd-key">中の名前（英小文字・数字・下線）</label><input id="fd-key" type="text" maxlength="31" placeholder="例 x_account" autocapitalize="off" autocomplete="off"></div>
-            <div style="flex:2 1 200px" id="fd-opts-wrap" class="hidden"><label for="fd-opts">選択肢（カンマ区切り）</label><input id="fd-opts" type="text" placeholder="例 はい,いいえ"></div>
-          </div>
-          <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="submit">項目を足す</button><span class="note" id="fd-status"></span></div>
-        </form>
+    <!-- 便 18：フォーム。一覧（フォーム／人の項目を画面の中のタブで切り替え）→ 1 件の詳細 -->
+    <div id="view-forms" style="display:none">
+      <div id="forms-list">
+        <div class="tabs view-tabs" data-vtabs><button type="button" data-vtab="forms" aria-selected="true">フォーム</button><button type="button" data-vtab="fields" aria-selected="false">人の項目</button></div>
+        <div class="card" data-vpane="forms">
+          <div class="list-bar"><p class="note" id="fm-count"></p><button class="btn small" type="button" id="fm-new">新しく作る</button></div>
+          <div id="forms-table" class="table-wrap"></div>
+        </div>
+        <div class="card hidden" data-vpane="fields">
+          <div class="list-bar"><p class="note">フォームで聞く欄。答えは顧客ごとに残り、一斉配信の宛先をこの値で絞れます</p><button class="btn small" type="button" id="fd-new">新しく作る</button></div>
+          <div id="fields-table" class="table-wrap"></div>
+        </div>
       </div>
-      <div class="card" id="form-detail"><p class="note">左からフォームを選ぶか、「新しいフォーム」を押すと、題名と聞く項目を決める欄が出ます。公開すると住所が出て、答えはこの下に新しい順に並びます。</p></div>
+      <div id="forms-detail" class="hidden"><button type="button" class="back-link" data-back="forms">← 一覧へ</button><div id="form-detail"></div></div>
     </div>
-    <div class="admin-layout" id="view-deliver" style="display:none">
-      <div class="card">
-        <h3 style="margin-top:0">一斉配信</h3>
-        <p class="note" id="dv-warm" style="margin:0"></p>
-        <form id="bf" class="stack" style="margin-top:8px">
-          <div><label for="bf-subject">件名</label><input id="bf-subject" type="text" maxlength="200"></div>
-          <div><label for="bf-body">本文（{{name}} は名前に置き換わる。https のリンクは押したかを数える）</label><textarea id="bf-body" rows="6"></textarea></div>
-          <div class="note">宛先の条件（空なら全員）</div>
-          <div style="display:flex;gap:10px;flex-wrap:wrap" id="bf-src"></div>
-          <div><label for="bf-bought">買った商品（id をカンマ区切り）</label><input id="bf-bought" type="text" placeholder="例 next-premium"></div>
-          <div><label for="bf-member">会員か</label><select id="bf-member" class="inline"><option value="">問わない</option><option value="true">会員だけ</option><option value="false">会員でない人だけ</option></select></div>
-          <div><label for="bf-labels">このラベルを全部持つ人（カンマ区切り）</label><input id="bf-labels" type="text" list="label-names" placeholder="例 購入者,最後に動いた:30日以内"></div>
-          <div><label for="bf-nolabels">このラベルを持たない人（カンマ区切り）</label><input id="bf-nolabels" type="text" list="label-names"></div>
-          <div><label for="bf-emails">メールで指定（試しに送るとき。カンマ区切り）</label><input id="bf-emails" type="text"></div>
-          <div class="note">人の項目で絞る（フォームの答え。空なら絞らない）</div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
-            <div><label for="bf-fkey">項目</label><select id="bf-fkey" class="inline"><option value="">（使わない）</option></select></div>
-            <div><label for="bf-fop">条件</label><select id="bf-fop" class="inline"><option value="eq">等しい</option><option value="contains">含む</option><option value="gte">以上</option><option value="lte">以下</option><option value="not_empty">答えがある</option><option value="empty">答えがない</option></select></div>
-            <div style="flex:1 1 140px"><label for="bf-fval">値</label><input id="bf-fval" type="text"></div>
-          </div>
+    <!-- 便 18：配信。一覧（一斉配信／コネクタ）→ 1 件の詳細。作る欄は詳細の中でタブに分ける -->
+    <div id="view-deliver" style="display:none">
+      <div id="deliver-list">
+        <div class="tabs view-tabs" data-vtabs><button type="button" data-vtab="bc" aria-selected="true">一斉配信</button><button type="button" data-vtab="steps" aria-selected="false">コネクタ（自動の流れ）</button></div>
+        <div class="card" data-vpane="bc">
+          <div class="list-bar"><p class="note" id="dv-warm"></p><div class="cust-actions"><button class="btn ghost small" type="button" id="dv-run">いま送る（毎時を待たずに 1 回）</button><button class="btn small" type="button" id="bc-new">新しく作る</button></div></div>
+          <p class="note hidden" id="dv-run-status"></p>
+          <div id="broadcasts" class="table-wrap"></div>
+        </div>
+        <div class="card hidden" data-vpane="steps">
+          <div class="list-bar"><p class="note">〜したら → 誰に → 〜する。ステップ配信もここに入り、毎時動きます</p><button class="btn small" type="button" id="sf-new">新しく作る</button></div>
+          <div id="steps" class="table-wrap"></div>
+        </div>
+      </div>
+      <div id="deliver-detail" class="hidden">
+        <button type="button" class="back-link" data-back="deliver">← 一覧へ</button>
+        <div id="bc-detail"></div>
+        <div id="bf-wrap" class="hidden">
+          <div class="card cust-head"><h2 style="margin:0 0 2px">新しい一斉配信</h2><div class="note">中身と宛先を決めて下書きに保存します。送るのは、一覧から開いた詳細の「送る」です</div></div>
+        <form id="bf" class="stack">
+          <div class="tabs cust-tabs" role="tablist"><button type="button" role="tab" data-tab="body" aria-selected="true">中身</button><button type="button" role="tab" data-tab="who" aria-selected="false">宛先の条件</button></div>
+          <section class="card stack" data-pane="body">
+            <div><label for="bf-subject">件名</label><input id="bf-subject" type="text" maxlength="200"></div>
+            <div><label for="bf-body">本文（{{name}} は名前に置き換わる。https のリンクは押したかを数える）</label><textarea id="bf-body" rows="8"></textarea></div>
+          </section>
+          <section class="card stack hidden" data-pane="who">
+            <div class="note">空なら全員。いまはテスト宛てにだけ届く設定のときは、条件に当たってもテスト宛て以外には届きません</div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap" id="bf-src"></div>
+            <div><label for="bf-bought">買った商品（商品の番号をカンマ区切り）</label><input id="bf-bought" type="text" placeholder="例 next-premium"></div>
+            <div><label for="bf-member">会員か</label><select id="bf-member" class="inline"><option value="">問わない</option><option value="true">会員だけ</option><option value="false">会員でない人だけ</option></select></div>
+            <div><label for="bf-labels">このラベルを全部持つ人（カンマ区切り）</label><input id="bf-labels" type="text" list="label-names" placeholder="例 購入者,最後に動いた:30日以内"></div>
+            <div><label for="bf-nolabels">このラベルを持たない人（カンマ区切り）</label><input id="bf-nolabels" type="text" list="label-names"></div>
+            <div><label for="bf-emails">メールで指定（試しに送るとき。カンマ区切り）</label><input id="bf-emails" type="text"></div>
+            <div class="note">人の項目で絞る（フォームの答え。空なら絞らない）</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+              <div><label for="bf-fkey">項目</label><select id="bf-fkey" class="inline"><option value="">（使わない）</option></select></div>
+              <div><label for="bf-fop">条件</label><select id="bf-fop" class="inline"><option value="eq">等しい</option><option value="contains">含む</option><option value="gte">以上</option><option value="lte">以下</option><option value="not_empty">答えがある</option><option value="empty">答えがない</option></select></div>
+              <div style="flex:1 1 140px"><label for="bf-fval">値</label><input id="bf-fval" type="text"></div>
+            </div>
+          </section>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <button class="btn ghost small" type="button" id="bf-count">人数を数える</button>
             <button class="btn small" type="submit">下書きに保存</button>
             <span class="note" id="bf-status"></span>
           </div>
         </form>
-        <h4>これまでの一斉配信</h4>
-        <div id="broadcasts" class="stack"></div>
-        <button class="btn ghost small" type="button" id="dv-run" style="margin-top:8px">いま送る（毎時を待たずに 1 回）</button>
-        <p class="note" id="dv-run-status"></p>
-      </div>
-      <div class="card">
-        <h3 style="margin-top:0">コネクタ（〜したら → 誰に → 〜する）</h3>
-        <p class="note" style="margin-top:0">ステップ配信もここに入る。上から順に毎時動く</p>
-        <div id="steps" class="stack"></div>
-        <h4>足す・直す</h4>
+        </div>
+        <div id="sf-wrap" class="hidden">
+          <div id="sf-head"></div>
         <form id="sf" class="stack">
           <input type="hidden" id="sf-id">
-          <div><label for="sf-name">名前（自分用）</label><input id="sf-name" type="text" maxlength="120"></div>
-          <div class="note">トリガー（〜したら）</div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <section class="card stack">
+            <div><label for="sf-name">名前（自分用）</label><input id="sf-name" type="text" maxlength="120"></div>
+            <label class="check"><input type="checkbox" id="sf-active"> <span>動かす（動かした時刻より後のきっかけだけが対象）</span></label>
+          </section>
+          <div class="tabs cust-tabs" role="tablist"><button type="button" role="tab" data-tab="tr" aria-selected="true">① 〜したら</button><button type="button" role="tab" data-tab="sel" aria-selected="false">② 誰に</button><button type="button" role="tab" data-tab="ac" aria-selected="false">③ 〜する</button></div>
+          <section class="card stack" data-pane="tr">
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
             <div><label for="sf-trigger">きっかけ</label><select id="sf-trigger" class="inline"></select></div>
-            <div data-tr="purchase"><label for="sf-product">商品の id（空ならどれでも）</label><input id="sf-product" type="text"></div>
+            <div data-tr="purchase"><label for="sf-product">商品の番号（空ならどれでも）</label><input id="sf-product" type="text"></div>
             <div data-tr="label_added"><label for="sf-tlabel">付いたラベル</label><input id="sf-tlabel" type="text" list="label-names"></div>
             <div data-tr="clicked"><label for="sf-turl">押したリンク（空ならどれでも）</label><input id="sf-turl" type="text" placeholder="https://"></div>
             <div data-tr="form_submitted"><label for="sf-tform">答えたフォーム（空ならどれでも）</label><select id="sf-tform" class="inline"><option value="">どれでも</option></select></div>
             <div><label for="sf-delay">何時間後</label><input id="sf-delay" type="text" inputmode="numeric" value="0" style="max-width:120px"></div>
           </div>
-          <div class="note">セレクタ（誰に・空なら全員）</div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
+          </section>
+          <section class="card stack hidden" data-pane="sel">
+            <div class="note">空なら、きっかけに当たった人全員</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
             <div><label for="sf-labels">このラベルを全部持つ人</label><input id="sf-labels" type="text" list="label-names"></div>
             <div><label for="sf-nolabels">このラベルを持たない人</label><input id="sf-nolabels" type="text" list="label-names"></div>
           </div>
-          <div class="note">アクション（〜する）</div>
+          </section>
+          <section class="card stack hidden" data-pane="ac">
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <div><label for="sf-action">何をする</label><select id="sf-action" class="inline"></select></div>
             <div data-ac="add_label"><label for="sf-alabel">付けるラベル</label><input id="sf-alabel" type="text" list="label-names"></div>
           </div>
           <div data-ac="send_email notify_admin"><label for="sf-subject">件名（Naoki への知らせは空でもよい）</label><input id="sf-subject" type="text" maxlength="200"></div>
           <div data-ac="send_email notify_admin"><label for="sf-body">本文（{{name}}・{{email}}・{{product}}・{{label}} が置き換わる）</label><textarea id="sf-body" rows="5"></textarea></div>
-          <label class="check"><input type="checkbox" id="sf-active"> <span>動かす（動かした時刻より後のきっかけだけが対象）</span></label>
+          </section>
           <datalist id="label-names"></datalist>
-          <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="submit">保存</button><button class="btn ghost small" type="button" id="sf-new">新しく</button><span class="note" id="sf-status"></span></div>
+          <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="submit">保存</button><span class="note" id="sf-status"></span></div>
         </form>
+        </div>
       </div>
     </div>
-    <div class="admin-layout" id="view-products" style="display:none">
-      <div class="card">
-        <p class="note" id="pr-count" style="margin:0"></p>
-        <ul class="people" id="products"></ul>
+    <!-- 便 18：商品。一覧の表 → 1 件の詳細 -->
+    <div id="view-products" style="display:none">
+      <div id="products-list" class="card">
+        <div class="list-bar"><p class="note" id="pr-count"></p></div>
+        <div id="products" class="table-wrap"></div>
       </div>
-      <div class="card" id="product-detail"><p class="note">左から商品を選ぶと、値段や「売る・サイトに出す」を変えられます。UTAGE の商品の価格の行から写したものです。</p></div>
+      <div id="products-detail" class="hidden"><button type="button" class="back-link" data-back="products">← 一覧へ</button><div id="product-detail"></div></div>
     </div>
-    <!-- 便 8g-2：紹介。紹介者ごとの集計と、払ったことの記録（払う作業は B の外） -->
-    <div class="admin-layout" id="view-refer" style="display:none">
-      <div class="card">
-        <p class="note" id="rf-count" style="margin:0"></p>
-        <ul class="people" id="referrers"></ul>
+    <!-- 便 8g-2：紹介。紹介者ごとの集計と、払ったことの記録（払う作業は B の外）。便 18 で一覧の表 → 詳細にした -->
+    <div id="view-refer" style="display:none">
+      <div id="refer-list" class="card">
+        <div class="list-bar"><p class="note" id="rf-count"></p></div>
+        <div id="referrers" class="table-wrap"></div>
+        <p class="note" style="margin:12px 0 0">報酬の率は「商品」の各商品で決めます（空なら払わない）。紹介のリンクは /register?ref=番号 の形で、生徒は自分の画面の「お知らせ」から写せます</p>
       </div>
-      <div class="card" id="referrer-detail"><p class="note">左から紹介した人を選ぶと、紹介で来た人と報酬、払った記録が見られます。報酬の率は「商品」の各商品で決めます（空なら払わない）。紹介のリンクは /register?ref=番号 の形で、生徒は自分の画面の「お知らせ」から写せます。</p></div>
+      <div id="refer-detail" class="hidden"><button type="button" class="back-link" data-back="refer">← 一覧へ</button><div id="referrer-detail"></div></div>
     </div>
     <div class="admin-layout" id="view-ai" style="display:none">
       <div class="card">
@@ -403,17 +418,20 @@
         <ul class="people" id="ailog"></ul>
       </div>
     </div>
-    <div class="admin-layout" id="view-deals" style="display:none">
-      <div class="card">
-        <h3 style="margin-top:0">個別相談の予約</h3>
-        <p class="note" id="consults-count" style="margin:0"></p>
-        <ul class="people" id="consults"></ul>
+    <!-- 便 18：セミナーと予約。一覧（個別相談の予約／セミナー）→ セミナーの詳細。予約の行は顧客管理の詳細へ -->
+    <div id="view-deals" style="display:none">
+      <div id="deals-list">
+        <div class="tabs view-tabs" data-vtabs><button type="button" data-vtab="consults" aria-selected="true">個別相談の予約</button><button type="button" data-vtab="seminars" aria-selected="false">セミナー</button></div>
+        <div class="card" data-vpane="consults">
+          <div class="list-bar"><p class="note" id="consults-count"></p></div>
+          <div id="consults" class="table-wrap"></div>
+        </div>
+        <div class="card hidden" data-vpane="seminars">
+          <div class="list-bar"><p class="note" id="sem-count"></p></div>
+          <div id="seminars" class="table-wrap"></div>
+        </div>
       </div>
-      <div class="card">
-        <h3 style="margin-top:0">セミナー</h3>
-        <div id="seminars" class="stack"></div>
-        <p class="note" id="sem-status"></p>
-      </div>
+      <div id="deals-detail" class="hidden"><button type="button" class="back-link" data-back="deals">← 一覧へ</button><div id="seminar-detail"></div></div>
     </div>
     <div class="admin-layout" id="view-rooms" style="display:none">
       <div class="card">
