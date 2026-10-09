@@ -181,6 +181,10 @@ export function assemble({ parts, edges, campaigns, owners, week, edgeWeek = {} 
       campaign_id: c ? c.id : null,
       campaign_name: c ? c.name : null,
       role: o ? o.role : "",
+      // 便 8g-4：企画の中のブロック（空ならブロックに入っていない）と、作った元のテンプレ
+      block_name: o ? (o.block_name || "") : "",
+      template_id: o ? (o.template_id || null) : null,
+      template_version: o ? (o.template_version || null) : null,
       inner_name: innerName(c ? c.name : null, p.type, o ? o.role : "", p.name),
       week: week[p.key] || 0,
       isolated: linked.get(p.key).size === 0,
@@ -286,7 +290,7 @@ export function makePlan(h) {
   }
 
   // 部品の持ち主と役目を変える。campaign_id を空にすると「企画に入っていない」に戻す
-  async function setPartCampaign(env, { part_type, part_id, campaign_id = null, role = "" }, actor) {
+  async function setPartCampaign(env, { part_type, part_id, campaign_id = null, role = "", block_name }, actor) {
     if (!env.B_STORE) return { ok: false, error: "demo_store" };
     if (!PART_TYPES[part_type]) return { ok: false, error: "bad_part_type", types: Object.keys(PART_TYPES) };
     const r = String(role || "").trim();
@@ -307,13 +311,18 @@ export function makePlan(h) {
     const c = all.campaigns.find((x) => x.id === campaign_id);
     if (!c) return { ok: false, error: "campaign_not_found" };
     if (c.archived_at) return { ok: false, error: "campaign_archived" };
-    await db(env, "POST", "b_campaign_parts?on_conflict=part_type,part_id",
-      [{ part_type, part_id: String(part_id), campaign_id, role: r, updated_at: new Date().toISOString(), updated_by: String(actor).slice(0, 200) }],
-      "resolution=merge-duplicates,return=minimal");
+    // 便 8g-4：ブロック名。渡されたらその名前、企画が変わるときは空に戻す（前の企画のブロックを引きずらないため）
+    const row = { part_type, part_id: String(part_id), campaign_id, role: r, updated_at: new Date().toISOString(), updated_by: String(actor).slice(0, 200) };
+    if (block_name !== undefined) {
+      const bn = String(block_name || "").trim();
+      if (bn.length > 60) return { ok: false, error: "block_name_too_long", max: 60 };
+      row.block_name = bn;
+    } else if (prev && prev.campaign_id !== campaign_id) row.block_name = "";
+    await db(env, "POST", "b_campaign_parts?on_conflict=part_type,part_id", [row], "resolution=merge-duplicates,return=minimal");
     await logInbound(env, "campaign", { action: "assign", key, campaign_id, role: r, by: actor }, { ok: true }, 200);
     if (changes) await changes.record(env, { kind: "part", target: key, before, after: { campaign_id, role: r }, summary: `${outerName} を企画「${c.name}」へ`, actor });
     const outer = (all.parts.find((p) => p.key === key) || {}).name;
-    return { ok: true, key, campaign_id, campaign_name: c.name, role: r, inner_name: innerName(c.name, part_type, r, outer) };
+    return { ok: true, key, campaign_id, campaign_name: c.name, role: r, block_name: row.block_name ?? (prev ? prev.block_name || "" : ""), inner_name: innerName(c.name, part_type, r, outer) };
   }
 
   // しまう（restore が真なら戻す）。常設はしまえない。持ち主の部品が 1 つでも動いていたらしまわずに並べて返す

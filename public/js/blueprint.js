@@ -14,6 +14,20 @@ export function makeBlueprint({ $, api, esc, getToken, fail, openView }) {
   let mode = "flow"; // 便 8g-3：flow（レーンと線）／list（一覧の表）
   let query = "";
   let data = null;
+  // 便 8g-4：ブロック（企画の中の部品のまとまり）。既定はたたんで 1 箱。開いたものだけ中の部品を並べる
+  const openBlocks = new Set();
+  let selectedBlock = null;
+  const blockIdOf = (p) => (p.block_name && !p.outside && p.campaign_id ? `${p.campaign_id}|${p.block_name}` : null);
+  function blockGroups() {
+    const g = new Map();
+    for (const p of data.parts) { const id = blockIdOf(p); if (!id) continue; if (!g.has(id)) g.set(id, { id, campaign_id: p.campaign_id, campaign_name: p.campaign_name, block_name: p.block_name, members: [] }); g.get(id).members.push(p); }
+    for (const b of g.values()) {
+      const inside = new Set(b.members.map((m) => m.key));
+      b.ins = data.edges.filter((e) => inside.has(e.to) && !inside.has(e.from));
+      b.outs = data.edges.filter((e) => inside.has(e.from) && !inside.has(e.to));
+    }
+    return g;
+  }
   let selected = null;
   let campaigns = [];
   const openGroups = new Set();
@@ -81,8 +95,27 @@ export function makeBlueprint({ $, api, esc, getToken, fail, openView }) {
     if (mode === "list") return renderList();
     const lanes = data.lanes;
     const byLane = Object.fromEntries(lanes.map((l) => [l.id, []]));
-    for (const p of data.parts) (byLane[p.lane] || (byLane[p.lane] = [])).push(p);
+    const laneIdx = Object.fromEntries(lanes.map((l, i) => [l.id, i]));
+    const groups = blockGroups();
+    const blockBoxes = Object.fromEntries(lanes.map((l) => [l.id, []]));
+    for (const b of groups.values()) {
+      if (openBlocks.has(b.id)) continue;
+      const first = [...b.members].sort((x, y) => (laneIdx[x.lane] ?? 99) - (laneIdx[y.lane] ?? 99))[0];
+      (blockBoxes[first.lane] || (blockBoxes[first.lane] = [])).push(b);
+    }
+    for (const p of data.parts) {
+      const bid = blockIdOf(p);
+      if (bid && !openBlocks.has(bid)) continue; // たたんだブロックの中の部品は出さない
+      (byLane[p.lane] || (byLane[p.lane] = [])).push(p);
+    }
     for (const k in byLane) byLane[k].sort((a, b) => (!!a.outside - !!b.outside) || (a.type === b.type ? 0 : a.type < b.type ? -1 : 1));
+    const blockNode = (b) => {
+      const running = b.members.filter((m) => m.state === "running").length, drafts = b.members.filter((m) => m.state === "draft").length;
+      const wk = b.members.reduce((n, m) => n + (m.week || 0), 0);
+      return `<button type="button" class="bp-node bp-block ${running ? "running" : drafts ? "draft" : "stopped"}${selectedBlock === b.id ? " sel" : ""}${b.ins.length > 4 || b.outs.length > 4 ? " iso" : ""}" data-block="${esc(b.id)}">
+        <span class="t">ブロック・${esc(b.campaign_name || "")}</span><span class="nm">${esc(b.block_name)}</span>
+        <span class="n">部品 ${b.members.length}${drafts ? `（下書き ${drafts}）` : ""}・入口 ${b.ins.length}・出口 ${b.outs.length}</span>${wk ? `<span class="wk">先週 ${wk}</span>` : ""}</button>`;
+    };
     const node = (p) => `<button type="button" class="bp-node ${p.state}${p.isolated ? " iso" : ""}${p.outside ? " outside" : ""}${selected === p.key ? " sel" : ""}" data-key="${esc(p.key)}">
         <span class="t">${esc(TYPE_LABEL[p.type] || p.type)}${p.outside ? " ・別の企画" : ""}</span>
         <span class="nm">${esc(p.name)}</span>
@@ -110,11 +143,12 @@ export function makeBlueprint({ $, api, esc, getToken, fail, openView }) {
     };
     $("bp-canvas").innerHTML = `<div class="bp-lanes" id="bp-lanes">
         <svg class="bp-lines" id="bp-lines" aria-hidden="true"></svg>
-        ${lanes.map((l) => `<div class="bp-lane"><h4>${esc(l.label)}</h4>${laneHtml(byLane[l.id] || []) || `<p class="note bp-empty">${l.id === "refer" ? "紹介は左のメニュー「紹介」で見ます" : "まだ部品がありません"}</p>`}</div>`).join("")}
+        ${lanes.map((l) => `<div class="bp-lane"><h4>${esc(l.label)}</h4>${((blockBoxes[l.id] || []).map(blockNode).join("") + laneHtml(byLane[l.id] || [])) || `<p class="note bp-empty">${l.id === "refer" ? "紹介は左のメニュー「紹介」で見ます" : "まだ部品がありません"}</p>`}</div>`).join("")}
       </div>
       ${data.parts.length === 0 ? '<p class="note">この企画にはまだ部品がありません。「企画に入っていない」から部品を選び、右の欄で持ち主をこの企画にしてください。</p>' : ""}
       ${data.stopped_products_hidden ? `<p class="note" style="margin:8px 0 0">売っていない商品 ${data.stopped_products_hidden} 本は出していません（企画に入れたものは出ます）。</p>` : ""}`;
-    document.querySelectorAll("#bp-canvas button.bp-node").forEach((b) => b.addEventListener("click", () => { selected = b.dataset.key; renderCanvas(); renderPanel(); }));
+    document.querySelectorAll("#bp-canvas button.bp-node[data-key]").forEach((b) => b.addEventListener("click", () => { selected = b.dataset.key; selectedBlock = null; renderCanvas(); renderPanel(); }));
+    document.querySelectorAll("#bp-canvas button.bp-node[data-block]").forEach((b) => b.addEventListener("click", () => { selectedBlock = b.dataset.block; selected = null; renderCanvas(); renderPanel(); }));
     document.querySelectorAll("#bp-canvas details.bp-group").forEach((d) => d.addEventListener("toggle", () => {
       if (d.open) openGroups.add(d.dataset.group); else openGroups.delete(d.dataset.group);
       requestAnimationFrame(drawLines);
@@ -129,8 +163,11 @@ export function makeBlueprint({ $, api, esc, getToken, fail, openView }) {
     const base = wrap.getBoundingClientRect();
     svg.setAttribute("width", wrap.scrollWidth);
     svg.setAttribute("height", wrap.scrollHeight);
+    const shutBlock = {};
+    for (const p of data.parts) { const id = blockIdOf(p); if (id && !openBlocks.has(id)) shutBlock[p.key] = id; }
     const box = (key) => {
       let el = wrap.querySelector(`.bp-node[data-key="${CSS.escape(key)}"]`);
+      if (!el && shutBlock[key]) el = wrap.querySelector(`.bp-node[data-block="${CSS.escape(shutBlock[key])}"]`); // たたんだブロックの線は、ブロックの箱から引く
       if (!el) return null;
       const shut = el.closest("details.bp-group:not([open])");
       if (shut) el = shut.querySelector("summary"); // たたんだまとまりの線は、まとまりの箱から引く
@@ -139,6 +176,7 @@ export function makeBlueprint({ $, api, esc, getToken, fail, openView }) {
     };
     let out = '<defs><marker id="bp-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah"/></marker></defs>';
     for (const e of data.edges) {
+      if (shutBlock[e.from] && shutBlock[e.from] === shutBlock[e.to]) continue; // たたんだブロックの中の線は引かない
       const a = box(e.from), b = box(e.to);
       if (!a || !b) continue;
       let d, lx, ly;
@@ -153,21 +191,88 @@ export function makeBlueprint({ $, api, esc, getToken, fail, openView }) {
         d = `M${a.cx},${a.b} C${a.cx},${y} ${b.cx},${y} ${b.cx},${b.b + 2}`; lx = (a.cx + b.cx) / 2; ly = y - 4;
       }
       // 数は常に出す。「権利」などの言葉は、押した箱の線にだけ出す（重なって読めなくなるため）
-      const on = selected && (e.from === selected || e.to === selected);
+      const on = (selected && (e.from === selected || e.to === selected)) || (selectedBlock && (shutBlock[e.from] === selectedBlock || shutBlock[e.to] === selectedBlock));
       const label = e.week ? String(e.week) : on ? e.label : "";
-      out += `<path d="${d}" class="ln${on ? " on" : selected ? " dim" : ""}" marker-end="url(#bp-ah)"/>`;
+      out += `<path d="${d}" class="ln${on ? " on" : selected || selectedBlock ? " dim" : ""}" marker-end="url(#bp-ah)"/>`;
       if (label) out += `<text x="${lx}" y="${ly - 4}" class="lb${e.week ? " num" : ""}" text-anchor="middle">${esc(label)}</text>`;
     }
     svg.innerHTML = out;
   }
 
+  // 便 8g-4：ブロックの欄。中の部品・入口と出口（先週の人数）・開く／たたむ・テンプレとして保存・まとめて動かす
+  function renderBlockPanel(b) {
+    const nm = (k) => { const q = data.parts.find((x) => x.key === k); return q ? q.name : k; };
+    const line = (e, side) => `${esc(nm(side === "in" ? e.from : e.to))}（${esc(e.label)}${e.counted === "none" ? "" : `・先週 ${e.week} 人`}）`;
+    const drafts = b.members.filter((m) => m.type === "step" && m.state === "draft").length;
+    $("bp-panel").innerHTML = `
+      <div class="pill gray" style="margin-bottom:6px">ブロック・${esc(b.campaign_name || "")}</div>
+      <h3 style="margin:0 0 6px">${esc(b.block_name)}</h3>
+      <dl class="bp-dl">
+        <dt>中の部品（${b.members.length}）</dt><dd>${b.members.map((m) => `<a href="#" data-goto="${esc(m.key)}">${esc(m.name)}</a>（${esc(STATE_LABEL[m.state] || m.state)}）`).join("<br>")}</dd>
+        <dt>入口（${b.ins.length}）</dt><dd>${b.ins.map((e) => line(e, "in")).join("<br>") || "なし"}</dd>
+        <dt>出口（${b.outs.length}）</dt><dd>${b.outs.map((e) => line(e, "out")).join("<br>") || "なし"}</dd>
+      </dl>
+      ${b.ins.length > 4 || b.outs.length > 4 ? '<p class="note" style="color:var(--warn)">入口か出口が 4 本を超えています。ブロックを分けると読みやすくなります。</p>' : ""}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <button class="btn ghost small" type="button" id="bk-toggle">${openBlocks.has(b.id) ? "たたむ" : "開いて中を並べる"}</button>
+        ${drafts ? `<button class="btn small" type="button" id="bk-publish">下書き ${drafts} 個をまとめて動かす</button>` : ""}
+      </div>
+      <div id="bk-preview" class="stack" style="margin-top:8px"></div>
+      <form id="bk-save" class="stack" style="margin-top:12px">
+        <div><label for="bk-tname">テンプレとして保存（同じ名前なら版が 1 つ上がる）</label><input id="bk-tname" type="text" maxlength="80" value="${esc(b.block_name)}"></div>
+        <div style="display:flex;gap:8px;align-items:center"><button class="btn ghost small" type="submit">保存</button><span class="note" id="bk-status"></span></div>
+      </form>`;
+    document.querySelectorAll("#bp-panel [data-goto]").forEach((a) => a.addEventListener("click", (ev) => { ev.preventDefault(); openBlocks.add(b.id); selected = a.dataset.goto; selectedBlock = null; renderCanvas(); renderPanel(); }));
+    $("bk-toggle").addEventListener("click", () => { if (openBlocks.has(b.id)) openBlocks.delete(b.id); else openBlocks.add(b.id); renderCanvas(); renderPanel(); });
+    $("bk-save").addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      $("bk-status").textContent = "保存しています…";
+      const r = await api("/api/admin/templates", { method: "POST", token: getToken(), body: { name: $("bk-tname").value, kind: "block", campaign_id: b.campaign_id, block_name: b.block_name } });
+      $("bk-status").textContent = r.ok ? `保存しました（版 ${r.version}）` : "保存できませんでした（" + (r.error || r.status) + "）";
+    });
+    const pub = $("bk-publish");
+    if (pub) pub.addEventListener("click", async () => {
+      // 先に一覧（種類・名前・宛先の人数）を見せ、確かめてから動かす
+      const pre = await api("/api/admin/blocks/preview", { method: "POST", token: getToken(), body: { campaign_id: b.campaign_id, block_name: b.block_name } });
+      if (!pre.ok) { $("bk-preview").innerHTML = `<p class="note">動かせません（${esc(pre.error || pre.status)}${pre.note ? "・" + esc(pre.note) : ""}）</p>`; return; }
+      const a = pre.args;
+      $("bk-preview").innerHTML = `<div class="bp-table-wrap"><table class="bp-table" style="min-width:0"><thead><tr><th>種類</th><th>名前</th><th class="r">宛先の人数</th></tr></thead>
+        <tbody>${a._preview.map((x) => `<tr><td>${esc(x.type)}</td><td>${esc(x.name)}</td><td class="r num">${x.audience == null ? "—" : x.audience}</td></tr>`).join("")}</tbody></table></div>
+        <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="button" id="bk-go">この ${a._preview.length} 個を動かす</button><span class="note" id="bk-go-status"></span></div>`;
+      $("bk-go").addEventListener("click", async () => {
+        $("bk-go").disabled = true;
+        const r = await api("/api/admin/blocks/publish", { method: "POST", token: getToken(), body: { campaign_id: a.campaign_id, block_name: a.block_name, step_ids: a.step_ids } });
+        $("bk-go-status").textContent = r.ok ? `動かしました ${r.started} 個${r.skipped.length ? `・動かさなかった ${r.skipped.length} 個` : ""}` : "動かせませんでした（" + (r.error || r.status) + "）";
+        if (r.ok) await load();
+      });
+    });
+  }
+
   function renderPanel() {
+    if (selectedBlock) {
+      const b = blockGroups().get(selectedBlock);
+      if (b) return renderBlockPanel(b);
+      selectedBlock = null;
+    }
     const p = selected && data.parts.find((x) => x.key === selected);
     if (!p) {
       const cur = campaigns.find((c) => c.id === view);
       $("bp-panel").innerHTML = cur
-        ? `<h3>${esc(cur.name)}</h3><p class="note">部品 ${cur.parts} 個${cur.starts_on ? `・開催日 ${esc(cur.starts_on)}` : ""}${cur.kind === "standing" ? "・長く使うものの置き場（しまえない）" : ""}</p><p class="note">点線の外の箱は、線でつながる別の企画の部品です。</p>`
+        ? `<h3>${esc(cur.name)}</h3><p class="note">部品 ${cur.parts} 個${cur.starts_on ? `・開催日 ${esc(cur.starts_on)}` : ""}${cur.kind === "standing" ? "・長く使うものの置き場（しまえない）" : ""}</p><p class="note">点線の外の箱は、線でつながる別の企画の部品です。</p>
+          ${cur.kind === "standing" ? "" : `<form id="bp-copy" class="stack" style="margin-top:12px">
+            <div><label for="bp-copy-title">この企画を下書きで複製（新しい名前・年月は頭に自動）</label><input id="bp-copy-title" type="text" maxlength="60" placeholder="例 図解セミナー"></div>
+            <div><label for="bp-copy-date">開催日${cur.starts_on ? "（元に開催日があるので要る）" : "（任意）"}</label><input id="bp-copy-date" type="text" inputmode="numeric" placeholder="2026-12-12"></div>
+            <div style="display:flex;gap:8px;align-items:center"><button class="btn ghost small" type="submit">複製する</button><span class="note" id="bp-copy-status"></span></div>
+          </form>`}`
         : '<p class="note">箱を押すと、中の名前・外の名前・入口と出口・先週の数が出ます。持ち主の企画と役目もここで変えます。</p>';
+      const cf = $("bp-copy");
+      if (cf) cf.addEventListener("submit", async (ev) => {
+        ev.preventDefault();
+        $("bp-copy-status").textContent = "複製しています…";
+        const r = await api("/api/admin/campaigns/copy", { method: "POST", token: getToken(), body: { campaign_id: cur.id, title: $("bp-copy-title").value, starts_on: $("bp-copy-date").value.trim() || null } });
+        if (!r.ok) { $("bp-copy-status").textContent = "複製できませんでした（" + (r.error || r.status) + "）"; return; }
+        view = r.campaign_id; selected = null; await load();
+      });
       return;
     }
     const name = (k) => { const q = data.parts.find((x) => x.key === k); return q ? q.name : k; };
@@ -191,6 +296,7 @@ export function makeBlueprint({ $, api, esc, getToken, fail, openView }) {
           ${live.map((c) => `<option value="${esc(c.id)}"${c.id === p.campaign_id ? " selected" : ""}>${esc(c.name)}</option>`).join("")}
         </select></div>
         <div><label for="bp-role">役目（中の名前の最後に入る・空なら外の名前）</label><input id="bp-role" type="text" maxlength="60" value="${esc(p.role || "")}" placeholder="例 申込者フォロー"></div>
+        <div><label for="bp-block">ブロック（同じ名前の部品が 1 箱にまとまる・空ならブロックに入れない）</label><input id="bp-block" type="text" maxlength="60" value="${esc(p.block_name || "")}" placeholder="例 申込から当日まで"></div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <button class="btn small" type="submit">保存</button>
           ${EDIT_VIEW[p.type] ? '<button class="btn ghost small" type="button" id="bp-open">開いて直す</button>' : ""}
@@ -202,7 +308,7 @@ export function makeBlueprint({ $, api, esc, getToken, fail, openView }) {
     $("bp-assign").addEventListener("submit", async (ev) => {
       ev.preventDefault();
       $("bp-assign-status").textContent = "保存しています…";
-      const r = await api("/api/admin/campaigns/assign", { method: "POST", token: getToken(), body: { part_type: p.type, part_id: p.id, campaign_id: $("bp-camp").value || null, role: $("bp-role").value } });
+      const r = await api("/api/admin/campaigns/assign", { method: "POST", token: getToken(), body: { part_type: p.type, part_id: p.id, campaign_id: $("bp-camp").value || null, role: $("bp-role").value, block_name: $("bp-block").value } });
       if (!r.ok) { $("bp-assign-status").textContent = "保存できませんでした（" + (r.error || r.status) + "）"; return; }
       await load();
       const s = $("bp-assign-status"); if (s) s.textContent = "保存しました";

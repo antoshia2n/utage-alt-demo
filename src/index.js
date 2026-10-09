@@ -40,9 +40,10 @@ import { makeConnect } from "./connect.js";
 import { makeToday, stageOf } from "./today.js";
 import { makePush } from "./push.js";
 import { makeRefer } from "./refer.js";
+import { makeBlocks } from "./blocks.js";
 import { LANES } from "./plan.js";
 
-const VERSION = "0.19.0-b8g1";
+const VERSION = "0.21.0-b8g4";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -52,8 +53,6 @@ const IMAGE_TYPES = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "we
 const IMAGE_MAX_BYTES = 5 * 1024 * 1024;
 const TEXT_MAX = 8000;
 const UUID_RE = /^[0-9a-f-]{36}$/i;
-// 便 8g-2：返す版はこちら（VERSION の行は便 8g-1 のプルリクと同じ行を直さないよう、触らずに残した。次の便で 1 本にまとめる）
-const VERSION_NOW = "0.20.0-b8g2";
 
 export default {
   async fetch(request, env) {
@@ -104,6 +103,8 @@ const connect = makeConnect({ db, addEvent, logInbound, sell, mailcfg, push });
 const deliver = makeDeliver({ db, addEvent, logInbound, bin3, sell, mailcfg, connect });
 const learn = makeLearn({ db });
 const plan = makePlan({ db, logInbound, communityLink, changes });
+// B の便 8g-4：ブロックとテンプレ。中身は src/blocks.js（draftFlow は下の関数）
+const blocks = makeBlocks({ db, logInbound, plan, deliver, draftFlow: (env, a, actor) => draftFlow(env, a, actor) });
 const today = makeToday({ db, logInbound, connect, bin4, guard, listRooms: (env, a) => core.listRooms(env, a) });
 
 // ---------- 共通 ----------
@@ -470,13 +471,15 @@ async function draftFlow(env, { campaign_id = null, campaign_title = "", starts_
   for (let i = 0; i < list.length; i++) {
     const c = { ...(list[i] || {}) };
     const role = String(c.role || "").slice(0, 60);
-    delete c.id; delete c.role; delete c.sort;
+    // 便 8g-4：コネクタごとにブロック名を付けられる（企画に入れるときだけ効く）
+    const blockName = c.block_name;
+    delete c.id; delete c.role; delete c.sort; delete c.block_name;
     c.active = false;
     const r = await deliver.setStep(env, c, actor);
     if (!r.ok) return { ok: false, error: r.error, index: i, created, campaign_id: cid, note: "ここまでの下書きは作ってある（動いていない）" };
     created.push(r.step.id);
     if (cid) {
-      const a = await plan.setPartCampaign(env, { part_type: "step", part_id: r.step.id, campaign_id: cid, role }, actor);
+      const a = await plan.setPartCampaign(env, { part_type: "step", part_id: r.step.id, campaign_id: cid, role, ...(blockName !== undefined ? { block_name: blockName } : {}) }, actor);
       if (!a.ok) return { ok: false, error: a.error, index: i, created, campaign_id: cid };
       cname = a.campaign_name;
     }
@@ -607,7 +610,7 @@ async function handleApi(request, env, url) {
     let mail;
     try { mail = await bin3.mailState(env); } catch (e) { mail = { binding: !!env.EMAIL, from: null, scope: null, error: String(e.message).slice(0, 200) }; }
     return json({
-      ok: missing.length === 0 && dbOk === true, version: VERSION_NOW, missing_settings: missing, db: dbOk, images: !!env.IMAGES,
+      ok: missing.length === 0 && dbOk === true, version: VERSION, missing_settings: missing, db: dbOk, images: !!env.IMAGES,
       store: env.B_STORE ? "production" : "demo", manabu, public_origin: env.PUBLIC_ORIGIN || null,
       univapay: { configured: pay.configured, mode: pay.mode, store: !!pay.store_id },
       mail: { binding: mail.binding, from: mail.from, from_name: mail.from_name || null, reply_to: mail.reply_to || null, scope: mail.scope, open_to_all: mail.scope === "all", auth_hook: !!env.B_AUTH_HOOK_SECRET, ...(mail.error ? { error: mail.error } : {}) },
@@ -621,7 +624,7 @@ async function handleApi(request, env, url) {
       univapayAppId: bin3.univapayState(env).app_id,
       univapayMode: bin3.univapayState(env).mode || null,
       plan: env.B_STORE ? null : bin3.PLAN,
-      version: VERSION_NOW,
+      version: VERSION,
     });
   }
 
@@ -989,6 +992,19 @@ async function handleApi(request, env, url) {
     if (path === "/api/admin/campaigns/assign" && method === "POST") {
       const body = await request.json().catch(() => ({}));
       const r = await plan.setPartCampaign(env, body, a.email);
+      return json(r, r.ok === false ? 400 : 200);
+    }
+    // 便 8g-4：ブロックとテンプレ（画面から。まとめて動かすのは、一覧を見せて確かめてから）
+    if (path === "/api/admin/blocks" && method === "GET") { const r = await blocks.listBlocks(env, { campaign_id: url.searchParams.get("campaign") || undefined }); return json(r, r.ok === false ? 400 : 200); }
+    if (path === "/api/admin/templates" && method === "GET") return json(await blocks.listTemplates(env, { kind: url.searchParams.get("kind") || "" }));
+    if (path === "/api/admin/templates" && method === "POST") { const body = await request.json().catch(() => ({})); const r = await blocks.saveTemplate(env, body, a.email); return json(r, r.ok === false ? 400 : 200); }
+    if (path === "/api/admin/templates/use" && method === "POST") { const body = await request.json().catch(() => ({})); const r = await blocks.useTemplate(env, body, a.email); return json(r, r.ok === false ? 400 : 200); }
+    if (path === "/api/admin/campaigns/copy" && method === "POST") { const body = await request.json().catch(() => ({})); const r = await blocks.copyCampaign(env, body, a.email); return json(r, r.ok === false ? 400 : 200); }
+    if (path === "/api/admin/blocks/preview" && method === "POST") { const body = await request.json().catch(() => ({})); const r = await blocks.preparePublish(env, body); return json(r, r.ok === false ? 400 : 200); }
+    if (path === "/api/admin/blocks/publish" && method === "POST") {
+      // 画面で一覧を見て押したもの：見せた番号だけを動かす
+      const body = await request.json().catch(() => ({}));
+      const r = await blocks.publishBlock(env, body, a.email);
       return json(r, r.ok === false ? 400 : 200);
     }
     if (path === "/api/admin/campaigns/archive" && method === "POST") {
@@ -1364,6 +1380,36 @@ const TOOLS = [
     inputSchema: { type: "object", properties: { campaign_id: { type: "string" } } },
   },
   {
+    name: "list_blocks",
+    description: "ブロックの一覧。企画の中の部品のひとまとまり（ブロック名で束ねたもの）ごとに、部品・入口の線・出口の線（それぞれ先週の人数つき）を返す。入口か出口が 4 本を超えるものは too_many。campaign_id で 1 企画に絞れる（省くと全部）。",
+    inputSchema: { type: "object", properties: { campaign_id: { type: "string" } } },
+  },
+  {
+    name: "list_templates",
+    description: "テンプレの一覧。kind（block＝ブロック 1 つ／campaign＝企画まるごと）・版 version・中のブロックとコネクタの数・元の企画に開催日があったか has_date。kind で絞れる。",
+    inputSchema: { type: "object", properties: { kind: { type: "string", enum: ["block", "campaign"] }, include_archived: { type: "boolean" } } },
+  },
+  {
+    name: "save_template",
+    description: "企画のブロック 1 つ（kind block・block_name が要る）か、企画まるごと（kind campaign）をテンプレとして保存する。中身はコネクタの設定の写し。同じ名前で保存し直すと版が 1 つ上がる。保存しても何も動かない。テンプレを直しても、前に作った部品は変わらない。",
+    inputSchema: { type: "object", properties: { name: { type: "string" }, kind: { type: "string", enum: ["block", "campaign"] }, campaign_id: { type: "string" }, block_name: { type: "string" }, note: { type: "string" } }, required: ["name", "kind", "campaign_id"] },
+  },
+  {
+    name: "use_template",
+    description: "テンプレから下書きを作る（動かない）。入れる先は campaign_id（いまある企画）か campaign_title（新しく作る・年月は頭に自動）と starts_on。企画まるごとのテンプレで元に開催日があったときは、新しく作るなら starts_on が要る。ブロックのテンプレは block_name で名前を変えて入れられる。作った部品に、どのテンプレのどの版から作ったかが残る。動かすのは publish_block（承認）。",
+    inputSchema: { type: "object", properties: { template_id: { type: "string" }, campaign_id: { type: "string" }, campaign_title: { type: "string" }, starts_on: { type: "string" }, block_name: { type: "string" } }, required: ["template_id"] },
+  },
+  {
+    name: "copy_campaign",
+    description: "企画を下書きで複製する。新しい企画名 title と開催日 starts_on だけを入れる（元に開催日があれば starts_on が要る）。コネクタはブロックと役目ごと写り、すべて動かない下書きになる。常設は複製できない。動かすのは publish_block（承認）。",
+    inputSchema: { type: "object", properties: { campaign_id: { type: "string" }, title: { type: "string" }, starts_on: { type: "string" } }, required: ["campaign_id", "title"] },
+  },
+  {
+    name: "publish_block",
+    description: "ブロックの中の下書きを、1 回の承認でまとめて動かす。承認が要る道具：呼ぶと、動かす下書きの番号と部品の一覧（種類・名前・宛先の人数）を中身に書き込んで承認待ちになり approval_url が返る。承認されたら、頼んだ時点の下書きだけが動く（あとから足したものは動かない）。複製やテンプレから作った企画で、元に開催日があるのに開催日が空なら need_starts_on で止まる。",
+    inputSchema: { type: "object", properties: { campaign_id: { type: "string" }, block_name: { type: "string" } }, required: ["campaign_id", "block_name"] },
+  },
+  {
     name: "draft_flow",
     description: "一言の下書き。コネクタ（トリガー → セレクタ → アクション）を 1〜10 本、動かさない下書きのまま 1 回で作り、企画に入れる。connectors の 1 本の欄は set_step と同じ（name・trigger・trigger_args・product_id・delay_hours・selector・action・action_args・subject・body）に、企画の中の役目 role を足したもの。active は渡しても下書きになる。企画は campaign_id（いまある企画）か campaign_title（新しく作る・年月は頭に自動）と starts_on。返事に、作ったコネクタの番号と、その企画の設計図（部品と線）が付く。動かすのは set_step で active true（承認）。途中で形が合わなければ止め、それまでに作った番号 created と止まった位置 index を返す。",
     inputSchema: {
@@ -1419,7 +1465,7 @@ const TOOLS = [
 ];
 
 // 承認待ちの知らせに出す道具の名前（画面の TOOL_LABEL と同じ言い方）
-const TOOL_NAMES = { apply_tidy: "片付け案を当てる", add_label: "ラベルを付ける", remove_label: "ラベルを外す", set_step: "コネクタを変える", queue_broadcast: "一斉配信を送る", set_mail_settings: "メールの送り方を変える", set_community_link: "オプチャのリンクを変える", set_calendar_url: "カレンダーを変える", return_correction: "添削を返す", send_email: "メールを送る", send_chat: "メッセージを送る", set_product: "商品を変える", set_deal_stage: "商談を進める", set_note_member: "note の印を変える", send_seminar_archive: "アーカイブを配る", archive_campaign: "企画をしまう", undo_change: "元に戻す", mark_referral_paid: "紹介の報酬を払った記録" };
+const TOOL_NAMES = { apply_tidy: "片付け案を当てる", add_label: "ラベルを付ける", remove_label: "ラベルを外す", set_step: "コネクタを変える", queue_broadcast: "一斉配信を送る", set_mail_settings: "メールの送り方を変える", set_community_link: "オプチャのリンクを変える", set_calendar_url: "カレンダーを変える", return_correction: "添削を返す", send_email: "メールを送る", send_chat: "メッセージを送る", set_product: "商品を変える", set_deal_stage: "商談を進める", set_note_member: "note の印を変える", send_seminar_archive: "アーカイブを配る", archive_campaign: "企画をしまう", undo_change: "元に戻す", mark_referral_paid: "紹介の報酬を払った記録", publish_block: "ブロックをまとめて動かす" };
 
 // 道具を 1 回実行する（権限の確かめは呼ぶ側で済ませる）。承認されたあとの実行もここを通る
 async function runTool(env, name, args) {
@@ -1483,6 +1529,12 @@ async function runTool(env, name, args) {
   if (name === "remove_label") return await connect.removeLabel(env, args, "mcp");
   if (name === "get_blueprint") return await plan.blueprint(env, args);
   if (name === "draft_flow") return await draftFlow(env, args, "mcp");
+  if (name === "list_blocks") return await blocks.listBlocks(env, args);
+  if (name === "list_templates") return await blocks.listTemplates(env, args);
+  if (name === "save_template") return await blocks.saveTemplate(env, args, "mcp");
+  if (name === "use_template") return await blocks.useTemplate(env, args, "mcp");
+  if (name === "copy_campaign") return await blocks.copyCampaign(env, args, "mcp");
+  if (name === "publish_block") return await blocks.publishBlock(env, args, "mcp");
   if (name === "list_campaigns") return await plan.listCampaigns(env, args);
   if (name === "create_campaign") return await plan.createCampaign(env, args, "mcp");
   if (name === "set_part_campaign") return await plan.setPartCampaign(env, args, "mcp");
@@ -1511,7 +1563,7 @@ async function handleMcp(request, env, url) {
       const r = await rpc({ jsonrpc: "2.0", id: "get", method: "tools/call", params: { name: tool, arguments: args } }, env, url.origin);
       return json(r.result || r);
     }
-    return json({ ok: true, name: "utage-alt-demo", version: VERSION_NOW, tools: TOOLS.map((t) => t.name) });
+    return json({ ok: true, name: "utage-alt-demo", version: VERSION, tools: TOOLS.map((t) => t.name) });
   }
   if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
@@ -1534,7 +1586,7 @@ async function rpc(msg, env, origin = "") {
     return ok({
       protocolVersion: params.protocolVersion || "2025-06-18",
       capabilities: { tools: {} },
-      serverInfo: { name: "utage-alt-demo", version: VERSION_NOW },
+      serverInfo: { name: "utage-alt-demo", version: VERSION },
     });
   }
   if (method === "ping") return ok({});
@@ -1549,9 +1601,12 @@ async function rpc(msg, env, origin = "") {
       const mode = known ? await guard.modeOf(env, name) : "auto";
       if (mode === "deny") result = { ok: false, error: "denied_by_permission", tool: name, note: "この道具は権限の表で禁止になっている。変えられるのは Naoki だけ" };
       else if (mode === "approve") {
-        result = await guard.requestApproval(env, name, args, origin);
+        // 便 8g-4：まとめて動かすときは、頼む時点で動かす下書きの番号と部品の一覧（種類・名前・宛先の人数）を中身に書き込む
+        let toApprove = args;
+        if (name === "publish_block") { const pre = await blocks.preparePublish(env, args); toApprove = pre.ok ? pre.args : null; if (!pre.ok) result = pre; }
+        if (toApprove) result = await guard.requestApproval(env, name, toApprove, origin);
         // 便 8f-3：承認待ちができたら Naoki のスマホへ（押すとその承認の画面が開く）
-        if (result.pending_approval) await push.send(env, { title: "承認待ち：" + (TOOL_NAMES[name] || name), body: "AI が承認を頼んでいます。開いて中身を見て決めてください", url: `/admin#approval/${result.approval_id}`, tag: "approval" });
+        if (result && result.pending_approval) await push.send(env, { title: "承認待ち：" + (TOOL_NAMES[name] || name), body: "AI が承認を頼んでいます。開いて中身を見て決めてください", url: `/admin#approval/${result.approval_id}`, tag: "approval" });
       }
       else result = await runTool(env, name, args);
       isError = result.ok === false;
