@@ -78,9 +78,13 @@
     </section>
 
     <section id="tab-room" class="hidden">
-      <p class="note" style="margin-top:0">シアニンと 1 対 1 の部屋です。文章（と画像）を出すと、原文・添削後・コメントの 3 欄で返ってきます。</p>
+      <p class="note" style="margin-top:0">シアニンと 1 対 1 の部屋です。「添削を頼む」で文章（と画像）を出すと、原文・添削後・コメントの 3 欄で返ってきます。添削以外の質問や連絡は「メッセージ」で送れます。</p>
       <div id="room-list" class="room" aria-live="polite"></div>
       <form id="composer" class="composer card">
+        <div class="seg" role="radiogroup" aria-label="出し方">
+          <label><input type="radio" name="c-kind" value="correction" checked> <span>添削を頼む</span></label>
+          <label><input type="radio" name="c-kind" value="chat"> <span>メッセージ</span></label>
+        </div>
         <label for="c-text" class="sr">出す文章</label>
         <textarea id="c-text" rows="5" placeholder="添削してほしい文章を貼ってください" maxlength="8000"></textarea>
         <div id="c-thumbs" class="thumbs"></div>

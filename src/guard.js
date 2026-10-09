@@ -31,6 +31,8 @@ export const DEFAULT_MODES = {
   get_labels: "auto", add_label: "approve", remove_label: "approve",
   // 便 8f-1：読むのは自動、カレンダーの非公開 URL を変えるのは承認
   get_today: "auto", get_stage_board: "auto", set_calendar_url: "approve",
+  // 便 8f-3：生徒へのメッセージは承認（添削の返信と同じ）、Naoki への通知と端末の一覧は自動
+  send_chat: "approve", notify_naoki: "auto", get_push_status: "auto",
 };
 
 // 権限を問わず通す道具（承認待ちを見るための道具が承認待ちになると回らないため）
