@@ -417,6 +417,8 @@ details.review time { font-family: var(--mono); font-size: 12px; color: var(--mu
 .side .grp:hover { color: var(--ink); }
 .side .grp-items { display: flex; flex-direction: column; gap: 2px; }
 .side .grp-box.closed .grp-items { display: none; }
+/* 便 20：まとまりを持たない 1 項目（ファネル構築） */
+.side .grp-solo { display: flex; flex-direction: column; padding-top: 10px; }
 .topnav .crumb-sub { color: var(--muted); font-weight: 400; }
 .gsearch { margin: 0; }
 .gsearch input { min-height: 36px; width: 240px; padding: 6px 12px; font-size: 14px; border-radius: 999px; }
@@ -448,7 +450,7 @@ details.review time { font-family: var(--mono); font-size: 12px; color: var(--mu
 .kv dt { color: var(--muted); font-size: 13px; }
 .kv dd { margin: 0; }
 @media (max-width: 860px) {
-  .side .grp-box, .side .grp-items { display: contents; }
+  .side .grp-box, .side .grp-items, .side .grp-solo { display: contents; }
   .side .grp { display: none; }
   .side .grp-box.closed .grp-items { display: contents; }
   .topnav { flex-wrap: wrap; }
