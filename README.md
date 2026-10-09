@@ -112,3 +112,14 @@ UTAGE の代わりになるサイト兼アプリ（PWA）のデモ。架空の�
 - 設計図：ページは「出会う」のレーンに出る。申込の枠 → フォーム、決済の枠 → 商品の線。先週の数は見た人
 - 表：`supabase/b12a_pages.sql` を SQL Editor で 1 回流す（何回流しても同じ）。表 4 本（b_pages・b_page_versions・b_page_requests・b_page_hits）と、コネクタのきっかけ 2 つ
 - 試験：`node --test tests/pages.test.mjs tests/pages-host.test.mjs`
+
+## B の便 13 で足したもの（セミナーの回と知らせ）
+
+- 表 `b_seminars`（回）と `b_seminar_notices`（回ごとの知らせ）。`supabase/b13_seminars.sql` を SQL Editor で 1 回流す。中身は `src/seminars.js`
+- 回に申込のフォーム（`form_slug`）を結ぶと、そのフォームに答えた人がその回の申込者になる（出来事 `seminar_registered`）。定員を超えたら申込にしない
+- 知らせは名前（`key`）で見分け、あとから足せる。いつ送るかは「開催の何分前」（空なら申込の直後・マイナスは開催のあと）。定時の処理（毎時 7 分）で、送る時刻から 3 時間のうちに、送る時刻より前に申し込んだ人へ 1 回だけ送る（`seminar_notice_sent`）
+- 知らせは手続きのメール（`kind=seminar_notice`）なので、送る範囲が login のままで申込者に届く
+- 申込者には自動のラベル「セミナー:題名」が付く。あとから一斉配信やステップ配信の宛先にできる
+- サンクスページ（ページの目的 `thanks`）を回に結ぶと、答えたあとそこへ移る（公開中のときだけ）
+- AI の道具：`list_seminars`・`get_seminar`（自動）、`set_seminar`・`set_seminar_notice`・`send_seminar_notice`（承認）
+- 試験：`node --test tests/seminars.test.mjs`

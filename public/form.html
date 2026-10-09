@@ -80,6 +80,8 @@
     show("送っています…", true);
     const r = await fetch("/api/forms/" + encodeURIComponent(slug), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, name: $("name").value.trim(), consent: true, answers, source: currentSource(), ref: refCode, route: routeName }) }).then((x) => x.json()).catch(() => ({ ok: false, error: "network" }));
     $("go").disabled = false;
+    // 便 13：セミナーの回にサンクスページがあれば、そこへ移る
+    if (r.ok && r.thanks_url && /^https:[/][/]/.test(r.thanks_url)) { location.href = r.thanks_url; return; }
     if (r.ok) {
       $("f").classList.add("hidden");
       $("thanks").textContent = r.thanks || "受け取りました。ありがとうございます。";

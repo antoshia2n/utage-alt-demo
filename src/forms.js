@@ -63,6 +63,8 @@ export function matchField(value, cond) {
 
 export function makeForms(h) {
   const { db, addEvent, logInbound, registerPerson } = h;
+  // 便 13：答えたあとに呼ぶもの（セミナーの申込）。index.js があとから入れる
+  const hooks = { onSubmitted: null };
   const now = () => new Date().toISOString();
 
   async function listFields(env, { include_archived } = {}) {
@@ -218,8 +220,20 @@ export function makeForms(h) {
     const upserts = Object.entries(values).filter(([, v]) => v !== "").map(([key, value]) => ({ customer_id: reg.id, key, value, updated_at: now() }));
     if (upserts.length) await db(env, "POST", "b_person_values?on_conflict=customer_id,key", upserts, "resolution=merge-duplicates,return=minimal");
     await addEvent(env, reg.id, "form_submitted", { form_id: frow.id, slug: form.slug, title: form.title, answer_id: ans.id, ...(fromPage ? { page_id: fromPage } : {}), ...(route ? { route } : {}) }, "site");
-    await logInbound(env, "form", { slug: form.slug, keys: Object.keys(values) }, { ok: true, is_new: reg.is_new, answer_id: ans.id }, 200);
-    return { ok: true, thanks: form.thanks || "", is_new: reg.is_new, id: reg.id };
+    // 便 13：このフォームがセミナーの回に結ばれていれば、申込者にして受付のメールを送る。サンクスページがあれば住所を返す
+    let seminar = null;
+    if (hooks.onSubmitted) {
+      try { seminar = await hooks.onSubmitted(env, reg.id, form.slug); }
+      catch (e) { await logInbound(env, "form", { slug: form.slug, step: "seminar" }, { ok: false, error: String(e.message).slice(0, 200) }, 500); }
+    }
+    await logInbound(env, "form", { slug: form.slug, keys: Object.keys(values) }, { ok: true, is_new: reg.is_new, answer_id: ans.id, seminar: seminar ? { registered: seminar.registered, reason: seminar.reason || null } : null }, 200);
+    const out = { ok: true, thanks: form.thanks || "", is_new: reg.is_new, id: reg.id };
+    if (seminar) {
+      if (seminar.reason === "full") out.thanks = "定員に達したため、お申し込みを受け付けられませんでした。ご案内できる回があればお知らせします。";
+      else if (seminar.reason === "over") out.thanks = "このセミナーは終了しました。";
+      else if (seminar.thanks_url) out.thanks_url = seminar.thanks_url;
+    }
+    return out;
   }
 
   // 回答の一覧（フォームごと、または人ごと）。答えは項目の名前つきで返す
@@ -265,5 +279,5 @@ export function makeForms(h) {
     return people.filter((p) => conds.every((c) => matchField((map.get(p.id) || {})[c.key], c)));
   }
 
-  return { listFields, setField, listForms, setForm, publicForm, submit, listAnswers, personValues, filterByFields };
+  return { listFields, setField, listForms, setForm, publicForm, submit, listAnswers, personValues, filterByFields, hooks };
 }

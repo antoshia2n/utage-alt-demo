@@ -628,18 +628,22 @@ async function loadDeals(focusId, msg) {
   const s = await api("/api/admin/seminars", { token });
   if (!s.ok) { $("sem-count").textContent = "読めませんでした"; return; }
   seminarsCache = s.seminars;
+  semStore = s.store === "production";
+  $("sem-new").classList.toggle("hidden", !semStore);
+  if (semStore && !semNewWired) { semNewWired = true; $("sem-new").addEventListener("click", () => seminarEditor(null)); }
   $("sem-count").textContent = `${s.seminars.length} 件・これから ${s.seminars.filter((x) => !x.past).length}`;
   await loadCampaigns();
   const smRows = campRows("seminars", "seminar", s.seminars, (x) => x.id, () => loadDeals());
   table("seminars", [
     { key: "starts_at", label: "日時", html: (x) => esc(x.label) },
     { key: "title", label: "題名", html: (x) => `<div class="c-name">${esc(x.title)}</div>` },
-    { key: "registrants", label: "申込", html: (x) => `${x.registrants} 人` },
+    { key: "registrants", label: "申込", html: (x) => `${x.registrants} 人` + (x.capacity ? `<div class="sub">定員 ${x.capacity}</div>` : "") },
     campCol("seminar", (x) => x.id),
     { key: "past", label: "状態", sortVal: (x) => (x.past ? 1 : 0), html: (x) => x.past ? pill("終了", "gray") : pill("これから") },
-  ], smRows, (x) => seminarDetail(x.id), s.seminars.length ? "この企画のセミナーはありません" : "セミナーはまだありません");
-  if (focusId) seminarDetail(focusId, msg);
+  ], smRows, (x) => (semStore ? openSeminar(x.id) : seminarDetail(x.id)), s.seminars.length ? "この企画のセミナーはありません" : (semStore ? "まだありません。「新しく作る」から回を作ります" : "セミナーはまだありません"));
+  if (focusId) (semStore ? openSeminar(focusId, { msg }) : seminarDetail(focusId, msg));
 }
+// デモの置き場（架空の 2 回）
 function seminarDetail(id, msg) {
   const x = seminarsCache.find((y) => y.id === id);
   if (!x) return;
@@ -662,6 +666,167 @@ function seminarDetail(id, msg) {
     const r = await api(`/api/admin/seminars/${x.id}/${$("sem-run").dataset.kind}`, { method: "POST", token });
     if (!r.ok) { $("sem-status").textContent = "送れませんでした（" + (r.error || r.status) + "）"; return; }
     await loadDeals(x.id, `送った ${r.sent}・テスト宛てでないので送らなかった ${r.blocked}・失敗 ${r.failed}${r.skipped ? "・送り済み " + r.skipped : ""}`);
+  });
+}
+
+// ---------- 便 13：セミナーの回（本番の置き場）。一覧 → 詳細（中身・知らせ・申込者）。作るは一覧の「新しく作る」 ----------
+let semStore = false, semNewWired = false, currentSeminar = null;
+const SEM_WHY = {
+  bad_title: "題名を入れてください（80 字まで）", bad_starts_at: "日時は「2026-11-01 21:00」の形で入れてください", bad_minutes: "長さは 10〜600 分",
+  bad_capacity: "定員は 1 以上の数（空なら無制限）", bad_zoom_url: "Zoom の住所は https:// から", bad_archive_url: "アーカイブの住所は https:// から",
+  form_not_found: "そのフォームが見つかりません", form_used_by_another_seminar: "そのフォームは別の回に結んであります", thanks_page_not_found: "そのページが見つかりません",
+  bad_key: "知らせの名前は英小文字・数字・ハイフン（例 three-days-before）", bad_offset_minutes: "いつ送るかの数を確かめてください", bad_subject: "件名を入れてください", bad_body: "本文を入れてください",
+};
+// 日本時間の「2026-11-01T21:00」（日時の欄に入れる形）
+const jstInput = (iso) => { const d = new Date(new Date(iso).getTime() + 9 * 3600e3); return d.toISOString().slice(0, 16); };
+// 開催の何分前を「1 日前」「2 時間あと」などに。欄は「数・単位・前／あと」の 3 つ
+function offsetParts(m) {
+  if (m == null) return { n: "", unit: "now", dir: "before" };
+  const a = Math.abs(m), dir = m < 0 ? "after" : "before";
+  if (a % 1440 === 0 && a) return { n: a / 1440, unit: "day", dir };
+  if (a % 60 === 0 && a) return { n: a / 60, unit: "hour", dir };
+  return { n: a, unit: "min", dir };
+}
+function offsetFrom(n, unit, dir) {
+  if (unit === "now") return null;
+  const k = { day: 1440, hour: 60, min: 1 }[unit] || 1;
+  const v = Math.round(Number(n) * k);
+  return dir === "after" ? -v : v;
+}
+async function openSeminar(id, opts = {}) {
+  currentSeminar = id;
+  showPane("deals", "detail", "読んでいます…", "セミナーの一覧へ");
+  $("seminar-detail").innerHTML = '<p class="note">読んでいます…</p>';
+  await Promise.all([loadCampaigns(true), loadFieldOptions(), loadPagesCache()]);
+  const r = await api("/api/admin/seminars/" + id, { token });
+  if (currentSeminar !== id) return;
+  if (!r.ok || !r.found) { $("seminar-detail").innerHTML = `<p class="note">読めませんでした（${esc(r.error || "見つかりません")}）</p>`; return; }
+  renderSeminar(r, opts);
+}
+function renderSeminar(r, { tab = "notices", msg } = {}) {
+  const x = r.seminar;
+  showPane("deals", "detail", x.title, "セミナーの一覧へ");
+  $("seminar-detail").innerHTML = headHtml({
+    title: x.title,
+    sub: esc(`${x.label}（${x.minutes} 分）`),
+    pills: [x.past ? pill("終了", "gray") : pill("これから"), pill(`申込 ${x.registrants} 人` + (x.capacity ? ` / 定員 ${x.capacity}` : ""), "gray"), x.form_slug ? pill("申込のフォームあり", "gray") : pill("申込のフォームが無い", "warn")],
+    foot: campPicker("seminar", x.id),
+  }) + `${msg ? `<p class="msg ok" style="margin:12px 0 0">${esc(msg)}</p>` : ""}`
+    + tabsHtml([["notices", `知らせ ${r.notices.length}`], ["people", `申込者 ${r.registrants.length}`], ["edit", "中身"]], tab)
+    + `<section class="card" data-pane="notices">
+      <p class="note" style="margin-top:0">申込者に届く順に並びます。名前を押すと直せます。定時の処理（毎時 7 分）で送るので、送る時刻から最大 1 時間遅れます。送る時刻より後に申し込んだ人には、その知らせは送りません。</p>
+      <div id="sn-table" class="table-wrap"></div>
+      <div style="margin-top:12px"><button class="btn small" type="button" id="sn-new">知らせを足す</button></div>
+      <div id="sn-edit"></div>
+      <p class="note" style="margin:12px 0 0">この回の申込者には自動のラベル「${esc(x.label_name)}」が付きます。一斉配信やステップ配信の宛先でこのラベルを選ぶと、あとからこの回の申込者だけに送れます。</p>
+    </section>
+    <section class="card" data-pane="people"><div id="sp-table" class="table-wrap"></div></section>
+    <section class="card" data-pane="edit">${seminarForm(x)}</section>`;
+  wireTabs($("seminar-detail"), tab);
+  wireCampPicker($("seminar-detail"), () => loadDeals());
+  wireSeminarForm(x);
+  const sorted = r.notices.slice().sort((a, b) => (a.send_at || "0") < (b.send_at || "0") ? -1 : 1);
+  table("sn-table", [
+    { key: "when", label: "いつ", sortVal: (n) => n.send_at || "0", html: (n) => esc(n.when) + (n.send_at ? `<div class="sub">${esc(fmtTime(n.send_at))}</div>` : "") },
+    { key: "subject", label: "件名", html: (n) => `<div class="c-name">${esc(n.subject)}</div>` },
+    { key: "active", label: "状態", cls: "c-src", sortVal: (n) => (n.active ? 1 : 0), html: (n) => n.active ? pill("使う") : pill("止めている", "gray") },
+    { key: "sent", label: "送った", html: (n) => `${n.sent} 人` },
+  ], sorted, (n) => noticeEditor(x, n, r.placeholders), "まだありません。「知らせを足す」から足します");
+  $("sn-new").addEventListener("click", () => noticeEditor(x, null, r.placeholders));
+  table("sp-table", [
+    { key: "name", label: "名前", sortVal: (p) => p.name || p.email, html: (p) => `<div class="c-name">${esc(p.name || p.email)}</div><div class="sub">${esc(p.email)}</div>` },
+    { key: "registered_at", label: "申込", html: (p) => esc(fmtTime(p.registered_at)) },
+  ], r.registrants, (p) => { openView("people"); detail(p.person_id); }, "まだ申込はありません。申込のフォームに答えた人がここに並びます");
+}
+function seminarForm(x) {
+  const formOpts = formsCache.map((f) => `<option value="${esc(f.slug)}" ${x && x.form_slug === f.slug ? "selected" : ""}>${esc(f.title)}${f.active ? "" : "（公開していない）"}</option>`).join("");
+  const thanksOpts = pagesCache.map((p) => `<option value="${esc(p.slug)}" ${x && x.thanks_page_slug === p.slug ? "selected" : ""}>${esc(p.title)}${p.status === "published" ? "" : "（公開していない）"}</option>`).join("");
+  return `<form id="se" class="stack">
+      <div><label for="se-title">題名（申込者に届くメールに出る名前）</label><input id="se-title" type="text" maxlength="80" placeholder="例 2026年11月 図解セミナー" value="${esc(x ? x.title : "")}"></div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div style="flex:2 1 200px"><label for="se-start">日時（日本時間）</label><input id="se-start" type="datetime-local" value="${x ? esc(jstInput(x.starts_at)) : ""}"></div>
+        <div style="flex:1 1 100px"><label for="se-min">長さ（分）</label><input id="se-min" type="number" min="10" max="600" value="${x ? x.minutes : 60}"></div>
+        <div style="flex:1 1 100px"><label for="se-cap">定員（空なら無制限）</label><input id="se-cap" type="number" min="1" value="${x && x.capacity ? x.capacity : ""}"></div>
+      </div>
+      <div><label for="se-zoom">参加の URL（Zoom）</label><input id="se-zoom" type="url" inputmode="url" maxlength="500" placeholder="https://zoom.us/j/..." value="${esc(x ? x.zoom_url : "")}"></div>
+      <div><label for="se-form">申込のフォーム（答えた人がこの回の申込者になる）</label><select id="se-form" class="inline"><option value="">（まだ結ばない）</option>${formOpts}</select></div>
+      <div><label for="se-thanks">サンクスページ（答えたあとに移るページ。公開中のときだけ移る）</label><select id="se-thanks" class="inline"><option value="">（移さない・フォームの「送ったあとに出す文」を出す）</option>${thanksOpts}</select></div>
+      <div><label for="se-arc">アーカイブの URL（開催のあとの知らせで使う）</label><input id="se-arc" type="url" inputmode="url" maxlength="500" placeholder="https://www.youtube.com/watch?v=..." value="${esc(x ? x.archive_url : "")}"></div>
+      ${x ? "" : `<div><label for="se-camp">企画</label><select id="se-camp" class="inline"><option value="">（あとで決める）</option>${liveCamps().map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select></div>`}
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn small" type="submit">${x ? "保存" : "作る"}</button>${x ? `<button class="btn ghost small" type="button" id="se-arch">${x.archived ? "戻す" : "しまう"}</button>` : ""}<span class="note" id="se-status"></span></div>
+      ${x ? "" : '<p class="note" style="margin:0">作ると、知らせ 3 本（申込の直後・前日・1 時間前）が入ります。あとで直す・足すことができます。</p>'}
+    </form>`;
+}
+function wireSeminarForm(x) {
+  $("se").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const start = $("se-start").value;
+    const body = {
+      title: $("se-title").value.trim(), starts_at: start ? start.replace("T", " ") : "", minutes: Number($("se-min").value || 60),
+      capacity: $("se-cap").value ? Number($("se-cap").value) : null, zoom_url: $("se-zoom").value.trim(), archive_url: $("se-arc").value.trim(),
+      form_slug: $("se-form").value, thanks_page_slug: $("se-thanks").value,
+    };
+    if (x) body.id = x.id; else if ($("se-camp") && $("se-camp").value) body.campaign_id = $("se-camp").value;
+    const r = await api("/api/admin/seminars", { method: "POST", token, body });
+    if (!r.ok) { $("se-status").textContent = SEM_WHY[r.error] || "保存できませんでした（" + (r.error || r.status) + "）"; return; }
+    await loadDeals();
+    openSeminar(r.seminar.id, { tab: x ? "edit" : "notices", msg: x ? "保存しました" : "作りました。知らせ 3 本が入っています" });
+  });
+  if ($("se-arch")) $("se-arch").addEventListener("click", async () => {
+    const r = await api("/api/admin/seminars", { method: "POST", token, body: { id: x.id, archived: !x.archived } });
+    if (!r.ok) { $("se-status").textContent = "変えられませんでした（" + (r.error || r.status) + "）"; return; }
+    await loadDeals();
+    openSeminar(x.id, { tab: "edit", msg: r.seminar.archived ? "しまいました。知らせは送りません" : "戻しました" });
+  });
+}
+// 新しく作る（一覧の上のボタン）
+async function seminarEditor() {
+  currentSeminar = null;
+  await Promise.all([loadCampaigns(true), loadFieldOptions(), loadPagesCache()]);
+  showPane("deals", "detail", "新しいセミナー", "セミナーの一覧へ");
+  $("seminar-detail").innerHTML = headHtml({ title: "新しいセミナー", sub: "題名と日時を入れて「作る」を押します。申込のフォームを結ぶと、そのフォームに答えた人がこの回の申込者になります" })
+    + `<section class="card" style="margin-top:16px">${seminarForm(null)}</section>`;
+  wireSeminarForm(null);
+}
+async function loadPagesCache() {
+  if (pagesCache.length) return;
+  const l = await api("/api/admin/pages", { token });
+  if (l.ok) { pagesCache = l.pages; pagesOrigin = l.pages_origin || ""; }
+}
+// 知らせを足す・直す（名前は自動で付ける。画面に英字を出さないため）
+function noticeEditor(x, n, placeholders) {
+  const o = offsetParts(n ? n.offset_minutes : 1440);
+  $("sn-edit").innerHTML = `<div class="card" style="margin-top:12px"><form id="sn" class="stack">
+      <b>${n ? "知らせを直す" : "知らせを足す"}</b>
+      <div class="note" style="margin:0">いつ送るか</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><label for="sn-unit" class="sr">いつ</label>
+        <input id="sn-n" type="number" min="1" style="width:90px" value="${esc(o.n)}" aria-label="数">
+        <select id="sn-unit" class="inline"><option value="day" ${o.unit === "day" ? "selected" : ""}>日</option><option value="hour" ${o.unit === "hour" ? "selected" : ""}>時間</option><option value="min" ${o.unit === "min" ? "selected" : ""}>分</option><option value="now" ${o.unit === "now" ? "selected" : ""}>（申込の直後に送る）</option></select>
+        <select id="sn-dir" class="inline" aria-label="前かあとか"><option value="before" ${o.dir === "before" ? "selected" : ""}>開催の前</option><option value="after" ${o.dir === "after" ? "selected" : ""}>開催のあと</option></select></div>
+      <div><label for="sn-sub">件名</label><input id="sn-sub" type="text" maxlength="200" value="${esc(n ? n.subject : "")}"></div>
+      <div><label for="sn-body">本文</label><textarea id="sn-body" rows="8" maxlength="8000">${esc(n ? n.body : "")}</textarea></div>
+      <p class="note" style="margin:0">差し込み：${esc((placeholders || []).join("　"))}（名前・題名・日時・長さ・参加の URL・アーカイブの URL）</p>
+      <label class="check"><input type="checkbox" id="sn-active" ${!n || n.active ? "checked" : ""}> <span>使う（外すと送らない）</span></label>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn small" type="submit">${n ? "保存" : "足す"}</button>${n ? `<button class="btn ghost small" type="button" id="sn-send">まだ受け取っていない申込者へいま送る</button>` : ""}<span class="note" id="sn-status"></span></div>
+    </form></div>`;
+  const sync = () => { const now = $("sn-unit").value === "now"; $("sn-n").classList.toggle("hidden", now); $("sn-dir").classList.toggle("hidden", now); };
+  $("sn-unit").addEventListener("change", sync); sync();
+  $("sn-edit").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  $("sn").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const unit = $("sn-unit").value;
+    if (unit !== "now" && !(Number($("sn-n").value) > 0)) { $("sn-status").textContent = "いつ送るかの数を入れてください"; return; }
+    const body = { key: n ? n.key : "n-" + Date.now().toString(36), offset_minutes: offsetFrom($("sn-n").value, unit, $("sn-dir").value), subject: $("sn-sub").value.trim(), body: $("sn-body").value, active: $("sn-active").checked };
+    const r = await api(`/api/admin/seminars/${x.id}/notices`, { method: "POST", token, body });
+    if (!r.ok) { $("sn-status").textContent = SEM_WHY[r.error] || "保存できませんでした（" + (r.error || r.status) + "）"; return; }
+    openSeminar(x.id, { tab: "notices", msg: (r.created ? "足しました" : "保存しました") + (r.warnings && r.warnings.length ? "。" + r.warnings.join("。") : "") });
+  });
+  if ($("sn-send")) $("sn-send").addEventListener("click", async () => {
+    if (!confirm(`「${n.subject}」を、まだ受け取っていない申込者へいま送ります。よいですか`)) return;
+    $("sn-status").textContent = "送っています…";
+    const r = await api(`/api/admin/seminars/${x.id}/send`, { method: "POST", token, body: { key: n.key } });
+    if (!r.ok) { $("sn-status").textContent = "送れませんでした（" + (r.error || r.status) + "）"; return; }
+    openSeminar(x.id, { tab: "notices", msg: `送った ${r.sent}・送らなかった ${r.blocked}・失敗 ${r.failed}・受け取り済み ${r.skipped}` });
   });
 }
 
@@ -711,6 +876,13 @@ function approvalRef(x) {
   if (a.url !== undefined) rows.push(["住所", a.url === "" ? "（外す）" : "入れる（住所は画面に出しません）"]);
   if (a.amount !== undefined) rows.push(["金額", Number(a.amount).toLocaleString("ja-JP") + " 円"]);
   if (a.decision) rows.push(["決めること", a.decision]);
+  // 便 13：セミナーの回と知らせ
+  if (a.title) rows.push(["題名", a.title]);
+  if (a.starts_at) rows.push(["日時", a.starts_at]);
+  if (a.zoom_url !== undefined) rows.push(["参加の URL", a.zoom_url || "（空）"]);
+  if (a.form_slug !== undefined) rows.push(["申込のフォーム", a.form_slug || "（結ばない）"]);
+  if (a.thanks_page_slug !== undefined) rows.push(["サンクスページ", a.thanks_page_slug || "（移さない）"]);
+  if (a.key && a.seminar_id) rows.push(["知らせ", a.key + (a.offset_minutes === undefined ? "" : a.offset_minutes === null ? "・申込の直後" : a.offset_minutes >= 0 ? `・開催の ${a.offset_minutes} 分前` : `・開催の ${-a.offset_minutes} 分あと`)]);
   if (!rows.length) return "";
   return `<dl class="ap-ref">${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd class="pre">${esc(v)}</dd>`).join("")}</dl>`;
 }
@@ -1163,7 +1335,7 @@ async function loadFormAnswers(id) {
 }
 
 // ---------- 便 12a：ページ。中身は Claude が書く。ここでは依頼文を出す・見る・公開する・数を見る ----------
-const PAGE_PURPOSE = { signup: "無料登録", seminar: "セミナーの申込", sale: "販売", news: "お知らせ" };
+const PAGE_PURPOSE = { signup: "無料登録", seminar: "セミナーの申込", sale: "販売", news: "お知らせ", thanks: "サンクス（申込のあとに出す）" };
 const PAGE_STATE = { draft: ["下書き", "gray"], published: ["公開中", ""], stopped: ["止めている", "gray"] };
 const ROUTE_NAME_RE = /^[\p{L}\p{N}][\p{L}\p{N}_\-ー・]{0,39}$/u;
 const pageState = (p) => { const [t, k] = PAGE_STATE[p.status] || [p.status, "gray"]; return pill(t, k); };
@@ -1174,7 +1346,7 @@ function promptBox(prompt, id) {
   return `<section class="card stack" style="margin-top:16px">
     <div style="display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap"><b>依頼文</b><button class="btn small" type="button" id="${id}-copy">写す</button></div>
     <textarea id="${id}" rows="12" readonly style="font-size:13px">${esc(prompt)}</textarea>
-    <p class="note" style="margin:0">Claude（Chrome のサイドパネル）に貼ります。下書きが届くと、このページの「版」に出ます</p></section>`;
+    <p class="note" style="margin:0">Claude のチャット（claude.ai）に貼ります。下書きが届くと、このページの「版」に出ます</p></section>`;
 }
 function wirePromptBox(id) {
   const b = $(id + "-copy");
@@ -1757,7 +1929,7 @@ function detailText(e) {
   const p = e.payload || {};
   if (e.type === "consult_booked" || e.type === "consult_canceled") return `<span class="note">（${p.slot ? esc(fmtTime(p.slot)) : ""}${p.topic ? "・" + esc(String(p.topic).slice(0, 30)) : ""}）</span>`;
   if (e.type === "consult_done" || e.type === "deal_won" || e.type === "deal_lost") return `<span class="note">（${p.amount != null ? Number(p.amount).toLocaleString() + " 円・" : ""}${esc(String(p.memo || "").slice(0, 30))}）</span>`;
-  if (e.type.startsWith("seminar_")) return `<span class="note">（${esc(p.seminar_id || "")}${p.mail ? "・メール " + esc(p.mail) : ""}）</span>`;
+  if (e.type.startsWith("seminar_")) return `<span class="note">（${esc(p.title || p.seminar_id || "")}${p.key ? "・" + esc(p.key) : ""}${p.mail ? "・メール " + esc(p.mail) : ""}）</span>`;
   if (e.type === "purchase_completed") return `<span class="note">（${esc(p.product_name || p.product_id || "")}・${Number(p.amount || 0).toLocaleString()} 円${p.grant_until ? "・" + esc(fmtTime(p.grant_until).slice(0, 10)) + " まで" : ""}${p.over_limit ? "・上限を超えた：" + esc(p.over_limit) : ""}）</span>`;
   if (e.type.startsWith("subscription_")) return `<span class="note">（${esc(p.status || "")}${p.amount ? "・" + Number(p.amount).toLocaleString() + " 円" : ""}）</span>`;
   if (e.type === "email_clicked") return `<span class="note">（${esc(String(p.url || "").slice(0, 60))}）</span>`;

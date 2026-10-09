@@ -65,7 +65,7 @@ h3 { font-size: 16px; margin: 0 0 4px; }
 .btn.ghost { background: transparent; color: var(--ink); border-color: var(--line); }
 .btn:disabled { opacity: .5; cursor: default; }
 label { display: block; font-size: 14px; font-weight: 700; margin-bottom: 6px; }
-input[type=email], input[type=text], input[type=search], input[inputmode=numeric] {
+input[type=email], input[type=text], input[type=search], input[inputmode=numeric], input[type=url], input[type=number], input[type=datetime-local] {
   width: 100%; min-height: 48px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--line);
   background: var(--surface); color: var(--ink); font: inherit;
 }
@@ -203,7 +203,7 @@ button.link { background: none; border: 0; color: var(--accent); font: inherit; 
 .deal-box dt { color: var(--muted); }
 .deal-box dd { margin: 0; }
 .stage-btns { display: flex; gap: 6px; flex-wrap: wrap; }
-select.inline { min-height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 0 8px; font: inherit; }
+select.inline { max-width: 100%; text-overflow: ellipsis; min-height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 0 8px; font: inherit; }
 
 /* 便 6a：教材の棚・添削の左右表示・振り返り・公開の面 */
 .lib-head { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }

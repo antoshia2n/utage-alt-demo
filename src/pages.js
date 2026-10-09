@@ -14,7 +14,7 @@
 
 import { SLUG_RE } from "./forms.js";
 
-export const PURPOSES = { signup: "無料登録", seminar: "セミナーの申込", sale: "販売", news: "お知らせ" };
+export const PURPOSES = { signup: "無料登録", seminar: "セミナーの申込", sale: "販売", news: "お知らせ", thanks: "サンクス" };
 export const PAGE_SLUG_RE = SLUG_RE;
 const RESERVED = new Set(["api", "lab", "admin", "app", "login", "register", "form", "legal", "auth", "mcp", "r"]);
 export const BUTTON_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
@@ -29,7 +29,8 @@ const now = () => new Date().toISOString();
 
 // HTML の中の印を拾う（フォーム・決済の枠・ボタン）
 export function parseParts(html) {
-  const s = String(html || "");
+  // 便 13：HTML の注意書き（<!-- -->）の中の印は読まない（便 12a の版 1 で、説明の文の印を印として拾った件）
+  const s = String(html || "").replace(/<!--[\s\S]*?-->/g, "");
   const forms = new Set(), checkouts = new Set(), buttons = new Set(), bad = [];
   for (const m of s.matchAll(/data-lab-part\s*=\s*["']([^"']*)["']/g)) {
     const v = m[1].trim();
@@ -184,6 +185,7 @@ export function makePages(h) {
       style: "差し込む枠は class lab-form・lab-checkout・lab-btn・lab-input・lab-note を持つ。ページの CSS で上書きして見た目をそろえる",
       legal: `特商法 ${labOrigin(env)}/legal/tokushoho・プライバシーポリシー ${labOrigin(env)}/legal/privacy。ページの下に置く`,
       dont: "鍵・会員の個人情報・実在しない実績や数字を書かない。公開はしない（publish_page は Naoki が承認する）",
+      thanks: "サンクスページ（目的 thanks）：申込の枠もボタンも要らない。申込を受け付けたこと・日時・参加の URL はメールで届くこと・迷惑メールの確かめ方を書く。セミナーの回に結ぶのは set_seminar の thanks_page_slug",
       forms: fl.filter((f) => f.active).map((f) => ({ slug: f.slug, title: f.title })),
       forms_not_open: fl.filter((f) => !f.active).map((f) => ({ slug: f.slug, title: f.title })),
       products: (pl.products || []).filter((p) => p.active && p.kind !== "installment").map((p) => ({ id: p.id, name: p.name, amount: p.amount, kind: p.kind, period: p.period || null })),
@@ -423,6 +425,8 @@ export function makePages(h) {
     const r = await forms.submit(env, slug, { ...body, route, page_id: page && page.status === "published" ? page.id : undefined });
     if (!r.ok) return r;
     const out = { ok: true, thanks: r.thanks, is_new: r.is_new };
+    // 便 13：セミナーの回にサンクスページがあれば、答えたあとそこへ移る（公開中のときだけ）
+    if (r.thanks_url) out.thanks_url = r.thanks_url + (route ? `?r=${encodeURIComponent(route)}` : "");
     if (r.is_new && r.id) out.u = await personToken(env, r.id);
     return out;
   }
@@ -524,6 +528,7 @@ export const EMBED_JS = `(() => {
         body: JSON.stringify({ email, name: q('[data-k="name"]') ? q('[data-k="name"]').value.trim() : "", consent: true, answers, page: PAGE, r: route, vid, source: store.get("lab_src") || "direct" }) })
         .then((x) => x.json()).catch(() => ({ ok: false, error: "network" }));
       go.disabled = false;
+      if (res.ok && res.thanks_url && /^https:[/][/]/.test(res.thanks_url)) { if (res.u) store.set("lab_u", res.u); location.href = res.thanks_url; return; }
       if (res.ok) { if (res.u) store.set("lab_u", res.u); el.innerHTML = '<p class="lab-note" style="white-space:pre-wrap">' + esc(res.thanks || "受け取りました。ありがとうございます。") + "</p>"; return; }
       if (res.error === "bad_answers") { for (const b of res.fields || []) { const e = q('[data-e="' + b.key + '"]'); if (e) e.textContent = WHY[b.error] || "確かめてください"; } msg.textContent = "赤い字の欄を直してください"; return; }
       msg.textContent = res.error === "bad_email" ? "メールアドレスを確かめてください" : "送れませんでした。時間をおいてもう一度お試しください";
