@@ -10,6 +10,7 @@
 //   宛先の条件（一斉配信とコネクタのセレクタ）に labels（全部持つ）・not_labels（どれも持たない）を足した。ラベルは出来事から計算する。
 
 import { TRIGGERS, ACTIONS, DONE_TYPES, FAIL_TYPES, LABEL_RE } from "./connect.js";
+import { normFieldConds, SLUG_RE } from "./forms.js";
 
 const NL = String.fromCharCode(10);
 const QUOTE = String.fromCharCode(34);
@@ -104,6 +105,9 @@ export function makeDeliver(h) {
     const emails = arr(f.emails).map((e) => e.toLowerCase()).filter((e) => e.includes("@"));
     if (emails.length) out.emails = emails.slice(0, 200);
     for (const k of ["labels", "not_labels"]) { const v = arr(f[k]).map((x) => x.trim()).filter((x) => LABEL_RE.test(x)); if (v.length) out[k] = [...new Set(v)].slice(0, 20); }
+    // 便 11a：人の項目の値で絞る [{ key, op, value }]
+    const fc = normFieldConds(f.fields);
+    if (fc.length) out.fields = fc;
     return out;
   }
 
@@ -133,6 +137,7 @@ export function makeDeliver(h) {
       if (f.labels) list = list.filter((p) => { const s = has(p); return f.labels.every((l) => s.has(l)); });
       if (f.not_labels) list = list.filter((p) => { const s = has(p); return !f.not_labels.some((l) => s.has(l)); });
     }
+    if (f.fields && h.forms) list = await h.forms.filterByFields(env, list, f.fields);
     const unsub = await db(env, "GET", "events?select=customer_id&type=eq.email_unsubscribed&limit=10000");
     const off = new Set(unsub.map((e) => e.customer_id));
     return { filter: f, people: list, unsubscribed: list.filter((p) => off.has(p.id)).length };
@@ -180,6 +185,7 @@ export function makeDeliver(h) {
       const t = args.trigger_args || {}, out = {};
       if (t.label) { if (!LABEL_RE.test(String(t.label))) return { ok: false, error: "bad_trigger_label" }; out.label = String(t.label); }
       if (t.url) { if (!/^https?:[/][/]\S{1,480}$/.test(String(t.url))) return { ok: false, error: "bad_trigger_url" }; out.url = String(t.url); }
+      if (t.form) { if (!SLUG_RE.test(String(t.form))) return { ok: false, error: "bad_trigger_form" }; out.form = String(t.form); }
       patch.trigger_args = out;
     }
     if ("selector" in args) patch.selector = normFilter(args.selector || {});
@@ -228,6 +234,7 @@ export function makeDeliver(h) {
     if (s.trigger === "purchase" && s.product_id) q += `&payload->>product_id=eq.${s.product_id}`;
     if (s.trigger === "label_added" && ta.label) q += `&payload->>label=eq.${encodeURIComponent(ta.label)}`;
     if (s.trigger === "clicked" && ta.url) q += `&payload->>url=eq.${encodeURIComponent(ta.url)}`;
+    if (s.trigger === "form_submitted" && ta.form) q += `&payload->>slug=eq.${encodeURIComponent(ta.form)}`;
     return q;
   }
 

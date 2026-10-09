@@ -4,7 +4,7 @@
 // あわせて、承認待ちの中身を読める言葉に直すための引き当て（人の名前・一斉配信の件名と宛先）もここで行う。
 
 // Lab OS の左のメニューにある画面（data-view）。"ai_only" は画面に無く、AI に頼むときだけ使うもの
-export const SCREENS = ["home", "blueprint", "people", "deals", "refer", "deliver", "products", "rooms", "ai", "settings", "ai_only"];
+export const SCREENS = ["home", "blueprint", "people", "forms", "deals", "refer", "deliver", "products", "rooms", "ai", "settings", "ai_only"];
 
 // 画面に出す言い方として認めない字（英字の並び・下線）。道具の名前や英語の設定名が混ざるのを試験と画面の両方で弾く
 const INNER_NAME = /[A-Za-z]+_[A-Za-z_]+|[a-z]{4,}/;

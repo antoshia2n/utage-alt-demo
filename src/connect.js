@@ -14,6 +14,8 @@ export const TRIGGERS = {
   correction_submitted: { type: "correction_submitted", label: "添削を出した" },
   login:                { type: "login",                label: "ログインした" },
   label_added:          { type: "label_added",          label: "ラベルが付いた" },
+  // 便 11a：フォームに答えた（trigger_args.form にフォームの住所の名前 slug を入れると、そのフォームだけ）
+  form_submitted:       { type: "form_submitted",       label: "フォームに答えた" },
 };
 
 export const ACTIONS = { send_email: "メールを送る", notify_admin: "Naoki に知らせる", add_label: "ラベルを付ける" };
@@ -27,7 +29,7 @@ export const LABEL_RE = /^[^\s,<>"'`]{1,40}$/u;
 
 const SOURCE_NAME = { x: "X", note: "note", youtube: "YouTube", direct: "直接", other: "その他" };
 // 「最後に動いた日」に数える、本人が動いた出来事
-const ACTIVE_TYPES = new Set(["registered", "login", "lesson_viewed", "correction_submitted", "email_clicked", "purchase_completed", "seminar_registered", "consult_booked", "announcement_opened"]);
+const ACTIVE_TYPES = new Set(["registered", "login", "lesson_viewed", "correction_submitted", "email_clicked", "purchase_completed", "seminar_registered", "consult_booked", "announcement_opened", "form_submitted"]);
 export const LABEL_EVENT_TYPES = ["registered", "login", "lesson_viewed", "correction_submitted", "email_clicked", "email_sent",
   "purchase_completed", "seminar_registered", "consult_booked", "announcement_opened", "label_added", "label_removed",
   "referred", "referral_reward"];
