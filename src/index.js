@@ -32,6 +32,8 @@
 // B の便 13：セミナーの回と知らせ（b_seminars・b_seminar_notices）。中身は src/seminars.js。本番の置き場ではこちらを使い、
 //   架空の 2 回（src/bin4.js の SEMINARS）はデモの置き場だけで使う。回のフォームに答えた人が申込者になり、受付のメール・
 //   開催の何分前の知らせ（定時の処理）・サンクスページへの移動が付く。申込者には自動のラベル「セミナー:題名」
+// B の便 13b：個別相談の予約。予約の種類は b_booking_types、予約は今までどおり出来事 consult_booked。中身は src/booking.js。
+//   空き時間は Naoki の Google カレンダーの予定を避けて出す。窓口はページの中の印 data-lab-part="booking:slug"（lp の住所・ログイン不要）
 
 import { makeBin3 } from "./bin3.js";
 import { makeBin4 } from "./bin4.js";
@@ -52,9 +54,10 @@ import { makeRefer } from "./refer.js";
 import { makeBlocks } from "./blocks.js";
 import { LANES } from "./plan.js";
 import { makeSeminars } from "./seminars.js";
+import { makeBooking } from "./booking.js";
 import { makePages, EMBED_JS, personToken, PURPOSES, ROUTE_RE as ROUTE_OK } from "./pages.js";
 
-const VERSION = "0.29.0-b13";
+const VERSION = "0.30.0-b13b";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -93,8 +96,9 @@ export default {
         const r = await bin3.remindUnread(env, roomEvents, roomState);
         // 便 13：本番の置き場は表のセミナーの知らせ、デモの置き場は架空の 2 回の前日の知らせ
         const s = env.B_STORE ? await seminars.run(env) : await bin4.remindSeminars(env);
+        const bk = await booking.run(env); // 便 13b：個別相談の前日の知らせ
         const d = await deliver.run(env);
-        await logInbound(env, "cron", { cron: event.cron }, { room: r, seminars: s, deliver: d }, 200);
+        await logInbound(env, "cron", { cron: event.cron }, { room: r, seminars: s, booking: bk, deliver: d }, 200);
       } catch (e) {
         await logInbound(env, "cron", { cron: event.cron }, { ok: false, error: String(e.message).slice(0, 200) }, 500);
       }
@@ -122,7 +126,8 @@ const learn = makeLearn({ db });
 const pages = makePages({ db, addEvent, logInbound, forms, sell });
 const seminars = makeSeminars({ db, addEvent, logInbound, bin3, pagesOrigin: (env) => pages.pagesOrigin(env) });
 forms.hooks.onSubmitted = (env, cid, slug) => seminars.onForm(env, cid, slug);
-const plan = makePlan({ db, logInbound, communityLink, changes, pages, seminars });
+const booking = makeBooking({ db, addEvent, logInbound, bin3, registerPerson: (env, a) => registerPerson(env, a), busyBetween: (env, a, b) => today.busyBetween(env, a, b), pagesOrigin: (env) => pages.pagesOrigin(env) });
+const plan = makePlan({ db, logInbound, communityLink, changes, pages, seminars, booking });
 // B の便 8g-4：ブロックとテンプレ。中身は src/blocks.js（draftFlow は下の関数）
 const blocks = makeBlocks({ db, logInbound, plan, deliver, draftFlow: (env, a, actor) => draftFlow(env, a, actor) });
 const today = makeToday({ db, logInbound, connect, bin4, guard, listRooms: (env, a) => core.listRooms(env, a) });
@@ -297,6 +302,14 @@ async function handlePagesHost(request, env, url) {
   if (pf && method === "POST") {
     const body = await request.json().catch(() => ({}));
     const r = await pages.submitForm(env, pf[1], body);
+    return json(r, r.ok ? 200 : r.error === "not_found" ? 404 : 400);
+  }
+  // 便 13b：予約の枠（空き時間を読む・予約する）
+  const pb = path.match(/^[/]api[/]p[/]booking[/]([a-z0-9-]{2,41})$/);
+  if (pb && method === "GET") { const r = await booking.publicSlots(env, pb[1]); return json(r, r.ok ? 200 : 404); }
+  if (pb && method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    const r = await pages.submitBooking(env, booking, pb[1], body);
     return json(r, r.ok ? 200 : r.error === "not_found" ? 404 : 400);
   }
   const pp = path.match(/^[/]api[/]p[/]product[/]([a-z0-9-]{2,40})$/);
@@ -1026,6 +1039,14 @@ async function handleApi(request, env, url) {
       const r = await bin4.setDealStage(env, { ...body, person_id: dl[1] }, "admin");
       return json(r, r.ok === false ? 400 : 200);
     }
+    // 便 13b：予約の種類（一覧・作る・直す・1 つ）
+    if (path === "/api/admin/booking-types" && method === "GET") return json(await booking.list(env, { include_archived: url.searchParams.get("all") === "1" }));
+    if (path === "/api/admin/booking-types" && method === "POST") {
+      const r = await booking.set(env, await request.json().catch(() => ({})), a.email);
+      return json(r, r.ok ? 200 : 400);
+    }
+    const bt = path.match(/^[/]api[/]admin[/]booking-types[/]([0-9a-f-]{36})(?:[/](slots))?$/i);
+    if (bt && method === "GET") return json(bt[2] ? await booking.getSlots(env, { type_id: bt[1] }) : await booking.get(env, { type_id: bt[1] }));
     // 便 13：本番の置き場は表のセミナー（作る・直す・知らせを足す・いま送る）
     if (env.B_STORE && path.startsWith("/api/admin/seminars")) {
       const actor = a.email;
@@ -1257,7 +1278,7 @@ const TOOLS = [
     name: "get_timeline",
     screen: "people",
     say: "1 人の出来事・段階・買ったもの・部屋の様子を見る",
-    description: "人の 1 枚。1 人の出来事を新しい順に返す（登録・ログイン・視聴など）に加えて、いまの段階 stage（出会う・登録・温める・相談・購入・受講・紹介のどれか）・ラベル labels（auto が false は手かコネクタで付けたもの）・買ったもの purchases・部屋の状態 room（シアニンが読んでいない数・添削の未返信・生徒が読んでいない数）を返す。person_id は find_person の id。",
+    description: "人の 1 枚。1 人の出来事を新しい順に返す（登録・ログイン・視聴など）に加えて、いまの段階 stage（集客・リストイン・アプローチ・個別相談・オファー・受講・紹介のどれか）・ラベル labels（auto が false は手かコネクタで付けたもの）・買ったもの purchases・部屋の状態 room（シアニンが読んでいない数・添削の未返信・生徒が読んでいない数）を返す。person_id は find_person の id。",
     inputSchema: { type: "object", properties: { person_id: { type: "string" } }, required: ["person_id"] },
   },
   {
@@ -1449,6 +1470,34 @@ const TOOLS = [
     inputSchema: { type: "object", properties: { include_archived: { type: "boolean" } } },
   },
   {
+    name: "list_booking_types",
+    screen: "deals",
+    say: "個別相談の予約の種類を見る",
+    description: "個別相談の予約の種類の一覧（名前・住所の名前 slug・長さ・受け付ける曜日 weekdays（0＝日〜6＝土）と時間帯 times・何日先まで・何時間前まで・Zoom・前日の知らせを何分前に送るか remind_minutes・これからの予約の数 upcoming・ページに埋め込む印 embed）。0 件は count: 0。",
+    inputSchema: { type: "object", properties: { include_archived: { type: "boolean" } } },
+  },
+  {
+    name: "get_booking_type",
+    screen: "deals",
+    say: "個別相談の予約と知らせの文を見る",
+    description: "予約の種類 1 つ（type_id）の中身・受付と前日の知らせの文・予約の一覧（名前・メール・日時・相談したいこと）・本文で使える差し込みを返す。",
+    inputSchema: { type: "object", properties: { type_id: { type: "string" } }, required: ["type_id"] },
+  },
+  {
+    name: "get_booking_slots",
+    screen: "deals",
+    say: "個別相談の空き時間を見る",
+    description: "予約の種類（type_id か slug）の、いま予約できる空き時間（日本時間の label つき・最大 200）。ほかの予約と、Naoki の Google カレンダーの予定（終日は除く）と重なる時間は出ない。calendar は ok／unset／error／off（避けない設定）。",
+    inputSchema: { type: "object", properties: { type_id: { type: "string" }, slug: { type: "string" } } },
+  },
+  {
+    name: "set_booking_type",
+    screen: "deals",
+    say: "個別相談の予約の種類を作る・直す",
+    description: "予約の種類を作る・直す。承認が要る道具。作るときは title と slug が要る。ほかに minutes（長さ・既定 30）・weekdays（0＝日〜6＝土の配列・既定 月〜金）・times（例 10:00-12:00,20:00-22:00・日本時間）・days_ahead（何日先まで・既定 14）・min_notice_hours（何時間前まで・既定 12）・zoom_url・thanks_page_slug（予約のあとに移るページ）・avoid_calendar（Google カレンダーの予定を避けるか・既定 true）・remind_minutes（前日の知らせを何分前に・既定 1440・空で送らない）・confirm_subject・confirm_body・remind_subject・remind_body（{{name}}・{{title}}・{{date}}・{{minutes}}・{{zoom}}・{{topic}}）・active・archived・campaign_id（作るときの企画）。id を渡すと直す。ページに埋め込む印は <div data-lab-part=\"booking:slug\"></div>。",
+    inputSchema: { type: "object", properties: { id: { type: "string" }, title: { type: "string" }, slug: { type: "string" }, minutes: { type: "integer" }, weekdays: { type: "array", items: { type: "integer" } }, times: { type: "string" }, days_ahead: { type: "integer" }, min_notice_hours: { type: "integer" }, zoom_url: { type: "string" }, thanks_page_slug: { type: "string" }, avoid_calendar: { type: "boolean" }, remind_minutes: { type: ["integer", "null"] }, confirm_subject: { type: "string" }, confirm_body: { type: "string" }, remind_subject: { type: "string" }, remind_body: { type: "string" }, active: { type: "boolean" }, archived: { type: "boolean" }, campaign_id: { type: "string" } } },
+  },
+  {
     name: "get_seminar",
     screen: "deals",
     say: "セミナーの回の知らせと申込者を見る",
@@ -1613,7 +1662,7 @@ const TOOLS = [
     name: "get_stage_board",
     screen: "home",
     say: "段階のボードを見る",
-    description: "段階のボード。人をお客さんの段階（出会う・登録・温める・相談・購入・受講・紹介）に振り分けて、段階ごとの人数と人（新しく動いた順に 50 人まで）を返す。段階は上から 受講（会員か教材を見た）→ 購入 → 相談 → 温める → 登録 の順に当てる。",
+    description: "段階のボード。人をお客さんの段階（集客・リストイン・アプローチ・個別相談・オファー・受講・紹介）に振り分けて、段階ごとの人数と人（新しく動いた順に 50 人まで）を返す。段階は上から 受講（会員か教材を見た）→ オファー（買った）→ 個別相談 → アプローチ → リストイン の順に当てる。",
     inputSchema: { type: "object", properties: {} },
   },
   {
@@ -1886,6 +1935,11 @@ async function runTool(env, name, args) {
   if (name === "list_consults") return await bin4.listConsults(env, args);
   if (name === "set_deal_stage") return await bin4.setDealStage(env, args, "mcp");
   if (name === "list_seminars") return env.B_STORE ? await seminars.list(env, args) : await bin4.seminarsAdmin(env);
+  // 便 13b
+  if (name === "list_booking_types") return await booking.list(env, args);
+  if (name === "get_booking_type") return await booking.get(env, args);
+  if (name === "get_booking_slots") return await booking.getSlots(env, args);
+  if (name === "set_booking_type") return await booking.set(env, args, "mcp");
   // 便 13
   if (name === "get_seminar") return await seminars.get(env, args);
   if (name === "set_seminar") return await seminars.set(env, args, "mcp");

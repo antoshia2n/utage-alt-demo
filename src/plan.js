@@ -9,12 +9,13 @@ import { SEMINARS } from "./bin4.js";
 import { MEMBER_KEYS } from "./bridge.js";
 
 // 便 8d：レーンはお客さんの段階で 7 つ（版 6・Naoki 確定）
+// 便 13b（2026-10-10 Naoki 確定）：段の名前をマーケをやっている人にも初心者にも分かる言葉に。id は変えない（記録と線が id で結ばれているため）
 export const LANES = [
-  { id: "meet", label: "出会う" },
-  { id: "signup", label: "登録" },
-  { id: "warm", label: "温める" },
-  { id: "consult", label: "相談" },
-  { id: "buy", label: "購入" },
+  { id: "meet", label: "集客" },
+  { id: "signup", label: "リストイン" },
+  { id: "warm", label: "アプローチ" },
+  { id: "consult", label: "個別相談" },
+  { id: "buy", label: "オファー" },
   { id: "learn", label: "受講" },
   { id: "refer", label: "紹介" },
 ];
@@ -60,12 +61,12 @@ export function campaignName(title, startsOn, now = new Date()) {
 }
 
 // 部品の一覧（外の名前・レーン・状態）を、いまの表から作る
-export function buildParts({ products = [], steps = [], broadcasts = [], seminars = [], courseCount = 0, community = "", forms = [], pages = [], pageParts = {} }, now = new Date()) {
+export function buildParts({ products = [], steps = [], broadcasts = [], seminars = [], courseCount = 0, community = "", forms = [], pages = [], pageParts = {}, bookingTypes = null }, now = new Date()) {
   const parts = [];
   const add = (type, id, lane, name, state, extra = {}) => parts.push({ key: `${type}:${id}`, type, id: String(id), lane, name, state, ...extra });
   add("page", "front", "meet", "トップの LP（/）", "running", { url: "/" });
   add("page", "register", "signup", "無料登録（/register）", "running", { url: "/register" });
-  // 便 12a：Claude が作ったページ（出会うのレーン）。lp_parts は公開中（無ければ最新）の版の印
+  // 便 12a：Claude が作ったページ（集客のレーン。サンクスはリストイン）。lp_parts は公開中（無ければ最新）の版の印
   for (const pg of pages) add("page", pg.id, pg.purpose === "thanks" ? "signup" : "meet", pg.title, pg.status === "published" ? "running" : pg.status === "stopped" ? "stopped" : "draft", { slug: pg.slug, url: pg.url, lp: true, lp_parts: pageParts[pg.id] || {} });
   // 便 19：フォーム（答えた人は台帳に入るので、登録のレーンに置く）
   for (const f of forms) add("form", f.id, "signup", f.title, f.active ? "running" : "draft", { slug: f.slug, url: "/form?f=" + f.slug });
@@ -80,7 +81,9 @@ export function buildParts({ products = [], steps = [], broadcasts = [], seminar
     add("broadcast", b.id, "warm", b.subject || "（件名なし）", st, { filter: b.filter || {} });
   }
   for (const s of seminars) add("seminar", s.id, "warm", s.title, new Date(s.starts_at) < now ? "stopped" : "running", { starts_at: s.starts_at, form_slug: s.form_slug || null, thanks_page_slug: s.thanks_page_slug || null });
-  add("booking", "consult", "consult", "個別相談（30 分）", "running");
+  // 便 13b：本番の置き場は予約の種類ごとに 1 箱（bookingTypes が null のデモの置き場だけ架空の 1 箱）
+  if (bookingTypes === null) add("booking", "consult", "consult", "個別相談（30 分）", "running");
+  else for (const t of bookingTypes) add("booking", t.id, "consult", t.title, t.active ? "running" : "stopped", { slug: t.slug, thanks_page_slug: t.thanks_page_slug || null });
   const groups = {};
   for (const p of products) { const g = p.utage_product_id || p.id; (groups[g] = groups[g] || []).push(p.name); }
   for (const p of products) {
@@ -104,7 +107,10 @@ export function buildEdges(parts) {
   for (const pg of parts.filter((p) => p.type === "page" && p.lp)) {
     for (const slug of (pg.lp_parts && pg.lp_parts.forms) || []) for (const f of parts.filter((x) => x.type === "form" && x.slug === slug)) add(pg.key, f.key, "申込");
     for (const id of (pg.lp_parts && pg.lp_parts.checkouts) || []) add(pg.key, `product:${id}`, "申し込む");
+    // 便 13b：ページの中の予約の枠 → その予約の種類
+    for (const slug of (pg.lp_parts && pg.lp_parts.bookings) || []) for (const b of parts.filter((x) => x.type === "booking" && x.slug === slug)) add(pg.key, b.key, "予約");
   }
+  for (const b of parts.filter((p) => p.type === "booking" && p.thanks_page_slug)) for (const pg of parts.filter((x) => x.type === "page" && x.slug === b.thanks_page_slug)) add(b.key, pg.key, "サンクス");
   // 便 13：セミナーの回の申込のフォーム → 回、回 → サンクスページ
   for (const sm of parts.filter((p) => p.type === "seminar")) {
     if (sm.form_slug) for (const f of parts.filter((x) => x.type === "form" && x.slug === sm.form_slug)) add(f.key, sm.key, "申込");
@@ -142,7 +148,7 @@ export function partKeyOf(e) {
   if (e.type === "purchase_completed" && p.product_id) return `product:${p.product_id}`;
   if (e.type === "email_sent" && p.kind === "step" && p.step_id != null) return `step:${p.step_id}`;
   if (e.type === "email_sent" && p.kind === "broadcast" && p.broadcast_id) return `broadcast:${p.broadcast_id}`;
-  if (e.type === "consult_booked") return "booking:consult";
+  if (e.type === "consult_booked") return p.type_id ? `booking:${p.type_id}` : "booking:consult";
   if (e.type === "lesson_viewed") return "course:mn";
   if (e.type === "correction_submitted") return "room:correction";
   if (e.type === "seminar_registered" && p.seminar_id) return `seminar:${p.seminar_id}`;
@@ -269,7 +275,7 @@ export function assemble({ parts, edges, campaigns, owners, week, edgeWeek = {} 
 }
 
 export function makePlan(h) {
-  const { db, logInbound, communityLink, changes, pages: pagesMod, seminars: seminarsMod } = h;
+  const { db, logInbound, communityLink, changes, pages: pagesMod, seminars: seminarsMod, booking: bookingMod } = h;
 
   async function loadAll(env) {
     const since = new Date(Date.now() - 7 * 864e5).toISOString();
@@ -295,6 +301,7 @@ export function makePlan(h) {
       // 便 13：本番の置き場は表のセミナー（架空の 2 回は出さない）
       products: shownProducts, steps, broadcasts, seminars: seminarsMod ? await seminarsMod.forPlan(env).catch(() => []) : SEMINARS,
       courseCount: new Set(lessons.map((l) => l.lesson_id)).size, community: community.url, forms, pages: lp.pages, pageParts: lp.partsOf,
+      bookingTypes: bookingMod ? await bookingMod.forPlan(env) : null,
     });
     const edges = buildEdges(parts);
     const t0 = new Date(since).getTime();
