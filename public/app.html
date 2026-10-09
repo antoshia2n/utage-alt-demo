@@ -79,6 +79,11 @@
 
     <section id="tab-room" class="hidden">
       <p class="note" style="margin-top:0">シアニンと 1 対 1 の部屋です。「添削を頼む」で文章（と画像）を出すと、原文・添削後・コメントの 3 欄で返ってきます。添削以外の質問や連絡は「メッセージ」で送れます。</p>
+      <!-- 便 8g-1：スマホの通知（シアニンからのメッセージ・添削が返ってきたとき） -->
+      <div id="push-box" class="card stack hidden" style="margin-bottom:12px">
+        <div class="note" id="push-status">読み込んでいます…</div>
+        <div><button class="btn small" id="push-on" type="button">この端末で受け取る</button> <button class="btn ghost small hidden" id="push-off" type="button">この端末で受け取らない</button></div>
+      </div>
       <div id="room-list" class="room" aria-live="polite"></div>
       <form id="composer" class="composer card">
         <div class="seg" role="radiogroup" aria-label="出し方">

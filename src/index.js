@@ -22,6 +22,9 @@
 // B の便 8f-3：人の 1 枚（段階・ラベル・買ったもの・部屋の状態・時系列）とチャット、Naoki のスマホへの通知。表も Cloudflare の値も増やさない。
 //   チャット … 添削ルームと同じ部屋に、出来事 room_chat（payload.from：student／cyanin）として積む。添削の未返信には数えない
 //   通知     … Web Push。中身は src/push.js。知らせるのは、コネクタの「Naoki に知らせる」・生徒からのメッセージ・AI の承認待ち
+// B の便 8g-1：生徒のスマホへの通知と、生徒のログインの確認コード。表も Cloudflare の値も増やさない。
+//   購読 … 8f-3 と同じ出来事 push_subscribed／push_unsubscribed に aud=student を付けて積む（aud の無い古いものはシアニン用）
+//   知らせるもの … シアニンからのメッセージ・添削が返ってきたこと（押すと生徒の画面の添削ルーム）
 
 import { makeBin3 } from "./bin3.js";
 import { makeBin4 } from "./bin4.js";
@@ -38,7 +41,7 @@ import { makeToday, stageOf } from "./today.js";
 import { makePush } from "./push.js";
 import { LANES } from "./plan.js";
 
-const VERSION = "0.18.1-b8f3";
+const VERSION = "0.19.0-b8g1";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -317,7 +320,9 @@ const core = {
     const [person] = await db(env, "GET", `customers?select=id&id=eq.${person_id}`);
     if (!person) return { ok: true, found: false };
     const ev = await addEvent(env, person_id, "room_chat", { from: "cyanin", text: t }, actor === "mcp" ? "mcp" : "admin");
-    return { ok: true, found: true, id: ev.id };
+    // 便 8g-1：生徒のスマホへ（端末が無ければ何もしない・失敗しても送ったことは取り消さない）
+    const pushed = await push.sendTo(env, person_id, { title: "シアニンからメッセージ", body: t.replace(/\s+/g, " ").slice(0, 120), url: "/app#room", tag: "room" });
+    return { ok: true, found: true, id: ev.id, pushed: pushed.sent || 0 };
   },
 
   async setNoteMember(env, { person_id, value }, actor) {
@@ -436,7 +441,8 @@ const core = {
       comment: String(comment || "").trim(),
       ...(nn.notes.length ? { notes: nn.notes } : {}),
     }, actor);
-    return { ok: true, found: true, id: ev.id, reply_to: target.id, remaining_unreplied: s.unreplied.filter((e) => e.id !== target.id).length };
+    const pushed = await push.sendTo(env, person_id, { title: "添削が返ってきました", body: "添削ルームで、原文・添削後・コメントを見られます", url: "/app#room", tag: "room" });
+    return { ok: true, found: true, id: ev.id, reply_to: target.id, remaining_unreplied: s.unreplied.filter((e) => e.id !== target.id).length, pushed: pushed.sent || 0 };
   },
 };
 
@@ -672,6 +678,19 @@ async function handleApi(request, env, url) {
       community: community.state,
       community_url: community.url,
     });
+  }
+
+  // 便 8g-1：生徒のスマホの通知（自分の端末だけ）。GET＝公開の鍵と自分の端末の数／POST＝購読／DELETE＝やめる
+  if (path === "/api/me/push") {
+    const v = await verifyUser(request, env);
+    if (v.error) return json({ ok: false, error: v.error }, 401);
+    const customer = await customerByEmail(env, v.email);
+    if (!customer) return json({ ok: false, error: "not_registered" }, 404);
+    if (method === "GET") { const r = await push.studentStatus(env, customer.id); return json(r, r.ok === false ? 400 : 200); }
+    const body = await request.json().catch(() => ({}));
+    if (method === "POST") { const r = await push.subscribe(env, v.email, body, "student"); return json(r, r.ok === false ? 400 : 200); }
+    if (method === "DELETE") return json(await push.unsubscribe(env, v.email, body, "student"));
+    return json({ ok: false, error: "method_not_allowed" }, 405);
   }
 
   // 生徒：個別相談の予約とセミナー（便 4）

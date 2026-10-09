@@ -26,6 +26,13 @@
       <button class="btn block" id="go" type="submit">ログイン用のリンクを送る</button>
       <div id="msg" class="msg hidden" role="status"></div>
     </form>
+    <!-- 便 8g-1：ホーム画面に足したシアラボでは、メールのリンクがこの画面ではなく Safari で開き、ログインがホーム画面のシアラボに残らない。
+         そのときはメールの確認コードでここから入る -->
+    <form id="cf" class="card stack hidden" novalidate style="margin-top:12px">
+      <div><label for="code">メールの確認コード（ホーム画面のシアラボから入るとき）</label><input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="6 桁の数字"></div>
+      <button class="btn block ghost" id="code-go" type="submit">確認コードで入る</button>
+      <div id="cmsg" class="msg hidden" role="status"></div>
+    </form>
     <p class="note">まだ登録していない方は <a href="/register">無料登録</a> へ。</p>
   </main>
 </div>
@@ -49,8 +56,23 @@
       await fetch("/api/login/prepare", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email }) }).catch(() => {});
       const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.origin + "/app", shouldCreateUser: false } });
       if (error) throw new Error(/not found|signups not allowed/i.test(error.message) ? "このメールアドレスはまだ登録されていません。" : "送れませんでした：" + error.message);
-      show(email + " にログイン用のリンクを送りました。", true);
+      show(email + " にログイン用のリンクを送りました。ホーム画面のシアラボから入るときは、メールにある確認コードを下に入れてください。", true);
+      $("cf").classList.remove("hidden");
     } catch (err) { show(err.message, false); $("go").disabled = false; }
+  });
+  $("cf").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const m = $("cmsg");
+    const say = (text, ok) => { m.textContent = text; m.className = "msg " + (ok ? "ok" : "err"); };
+    const email = $("email").value.trim(), token = $("code").value.replace(/\s/g, "");
+    if (!email || !/^[0-9]{6,10}$/.test(token)) return say("メールアドレスと、メールにある数字の確認コードを入れてください。", false);
+    $("code-go").disabled = true;
+    try {
+      const sb = await getClient();
+      const { error } = await sb.auth.verifyOtp({ email, token, type: "email" });
+      if (error) throw new Error("確認コードが合いませんでした。メールをもう一度確かめるか、リンクを送り直してください。");
+      location.replace("/app?fresh=1");
+    } catch (err) { say(err.message, false); $("code-go").disabled = false; }
   });
 </script>
 </body>
