@@ -25,6 +25,10 @@
 // B の便 8g-1：生徒のスマホへの通知と、生徒のログインの確認コード。表も Cloudflare の値も増やさない。
 //   購読 … 8f-3 と同じ出来事 push_subscribed／push_unsubscribed に aud=student を付けて積む（aud の無い古いものはシアニン用）
 //   知らせるもの … シアニンからのメッセージ・添削が返ってきたこと（押すと生徒の画面の添削ルーム）
+// B の便 12a：ページ作成。中身（HTML）は Claude が道具 save_page_draft で置き、Naoki が Lab OS で見て公開する。中身は src/pages.js。
+//   公開のページは会員の画面と別の住所（PAGES_ORIGIN・lp.shia2n.jp）で出す。その住所ではページと /api/p/ の下だけを返し、ほかは何も返さない
+//   ページの中の印（申込の枠・決済の枠・ボタン）に、B が /_lab/embed.js で中身を差し込む。見た・押したは b_page_hits と出来事に積む
+//   経路（?r=名前）：初めて登録したときの経路を registered の payload.route に残し、自動ラベル「経路:名前」になる
 
 import { makeBin3 } from "./bin3.js";
 import { makeBin4 } from "./bin4.js";
@@ -44,8 +48,9 @@ import { makePush } from "./push.js";
 import { makeRefer } from "./refer.js";
 import { makeBlocks } from "./blocks.js";
 import { LANES } from "./plan.js";
+import { makePages, EMBED_JS, personToken, PURPOSES, ROUTE_RE as ROUTE_OK } from "./pages.js";
 
-const VERSION = "0.27.0-b20";
+const VERSION = "0.28.0-b12a";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -62,6 +67,8 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
     try {
+      // 便 12a：公開のページの住所（lp.shia2n.jp）では、ページと /api/p/ の下だけを返す（シアニン用の画面や API はこの住所では開かない）
+      if (isPagesHost(env, url)) return await handlePagesHost(request, env, url);
       if (path === "/mcp" || path.startsWith("/mcp/")) return await handleMcp(request, env, url);
       if (path.startsWith("/api/")) return await handleApi(request, env, url);
       // B の便 5：メールの中のリンク（押したら記録して元の住所へ）
@@ -105,9 +112,10 @@ const push = makePush({ db, addEvent, logInbound });
 const connect = makeConnect({ db, addEvent, logInbound, sell, mailcfg, push });
 // 便 11a：人の項目とフォーム。答えた人は無料登録と同じ道（registerPerson）で台帳に入る
 const forms = makeForms({ db, addEvent, logInbound, registerPerson: (env, a) => registerPerson(env, a) });
-const deliver = makeDeliver({ db, addEvent, logInbound, bin3, sell, mailcfg, connect, forms });
+const deliver = makeDeliver({ db, addEvent, logInbound, bin3, sell, mailcfg, connect, forms, decorateClick: (env, u, cid) => pagesLinkFor(env, u, cid) });
 const learn = makeLearn({ db });
-const plan = makePlan({ db, logInbound, communityLink, changes });
+const pages = makePages({ db, addEvent, logInbound, forms, sell });
+const plan = makePlan({ db, logInbound, communityLink, changes, pages });
 // B の便 8g-4：ブロックとテンプレ。中身は src/blocks.js（draftFlow は下の関数）
 const blocks = makeBlocks({ db, logInbound, plan, deliver, draftFlow: (env, a, actor) => draftFlow(env, a, actor) });
 const today = makeToday({ db, logInbound, connect, bin4, guard, listRooms: (env, a) => core.listRooms(env, a) });
@@ -215,20 +223,23 @@ async function registerPerson(env, body = {}) {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { ok: false, error: "bad_email" };
   if (body.consent !== true) return { ok: false, error: "need_consent" };
   const via = body.via ? String(body.via).slice(0, 60) : undefined;
+  // 便 12a：経路（ページの住所の ?r=名前）と、来たページ。初めて登録したときの経路がその人の経路になる
+  const route = ROUTE_OK.test(String(body.route || "")) ? String(body.route) : undefined;
+  const page_id = UUID_RE.test(String(body.page_id || "")) ? String(body.page_id) : undefined;
   const existing = await db(env, "GET", `customers?select=id&email=eq.${encodeURIComponent(email)}`);
   let id, isNew = false;
   if (existing.length) {
     id = existing[0].id;
-    await addEvent(env, id, "register_again", { source, via }, "site");
+    await addEvent(env, id, "register_again", { source, via, route, page_id }, "site");
   } else {
     const rows = await db(env, "POST", "customers", [{ email, name, source, consent_at: new Date().toISOString() }], "return=representation");
     id = rows[0].id; isNew = true;
-    await addEvent(env, id, "registered", { source, via }, "site");
+    await addEvent(env, id, "registered", { source, via, route, page_id }, "site");
   }
   // 便 8g-2：紹介のリンク（/register?ref=番号）から来たら、紹介された印を積む（1 人 1 回・自分の番号は積まない）
   let referred = false;
   if (env.B_STORE && body.ref) referred = (await refer.onRegister(env, id, String(body.ref), isNew)).referred === true;
-  await logInbound(env, "register", { email, source, via, ref: body.ref ? String(body.ref).slice(0, 20) : undefined }, { ok: true, isNew, referred }, 200);
+  await logInbound(env, "register", { email, source, via, route, ref: body.ref ? String(body.ref).slice(0, 20) : undefined }, { ok: true, isNew, referred }, 200);
   return { ok: true, id, is_new: isNew };
 }
 
@@ -241,6 +252,55 @@ async function logInbound(env, channel, request, response, status) {
   try {
     await db(env, "POST", "inbound_log", [{ channel, request, response, status }], "return=minimal");
   } catch (_) { /* 控えの失敗で本体を止めない */ }
+}
+
+// ---------- 便 12a：公開のページの住所（lp.shia2n.jp） ----------
+function pagesHostname(env) {
+  try { return new URL(String(env.PAGES_ORIGIN || "https://lp.shia2n.jp")).hostname; } catch (_) { return ""; }
+}
+function isPagesHost(env, url) {
+  const h = pagesHostname(env);
+  return !!h && url.hostname === h;
+}
+// メールのリンクの行き先が公開のページなら、押した人の印（u）を付ける。ページの中で押したボタンがその人の出来事になる
+async function pagesLinkFor(env, target, cid) {
+  try {
+    const u = new URL(target);
+    if (u.hostname !== pagesHostname(env) || !UUID_RE.test(String(cid || ""))) return target;
+    u.searchParams.set("u", await personToken(env, cid));
+    return u.toString();
+  } catch (_) { return target; }
+}
+const PAGE_404 = `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>ページが見つかりません</title></head><body style="font-family:system-ui,sans-serif;max-width:560px;margin:15vh auto;padding:0 16px;color:#333"><h1 style="font-size:20px">ページが見つかりません</h1><p>住所が違うか、公開を止めています。</p></body></html>`;
+async function handlePagesHost(request, env, url) {
+  const path = url.pathname, method = request.method;
+  const html = (body, status = 200, extra = {}) => new Response(body, { status, headers: { "content-type": "text/html; charset=utf-8", "x-content-type-options": "nosniff", "referrer-policy": "strict-origin-when-cross-origin", ...extra } });
+  if (path === "/_lab/embed.js" && method === "GET") {
+    return new Response(EMBED_JS, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "public, max-age=300" } });
+  }
+  if (path === "/robots.txt") return new Response("User-agent: *\nAllow: /\n", { headers: { "content-type": "text/plain; charset=utf-8" } });
+  if (missingConfig(env).length || !env.B_STORE) return html(PAGE_404, 503, { "cache-control": "no-store" });
+  if (path === "/api/p/hit" && method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    const r = await pages.hit(env, body);
+    return json(r, r.ok ? 200 : 400);
+  }
+  const pf = path.match(/^[/]api[/]p[/]form[/]([a-z0-9-]{2,41})$/);
+  if (pf && method === "GET") { const r = await forms.publicForm(env, pf[1]); return json(r, r.ok ? 200 : 404); }
+  if (pf && method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    const r = await pages.submitForm(env, pf[1], body);
+    return json(r, r.ok ? 200 : r.error === "not_found" ? 404 : 400);
+  }
+  const pp = path.match(/^[/]api[/]p[/]product[/]([a-z0-9-]{2,40})$/);
+  if (pp && method === "GET") { const r = await pages.publicProduct(env, pp[1]); return json(r, r.ok ? 200 : 404); }
+  if (path.startsWith("/api/")) return json({ ok: false, error: "not_found" }, 404);
+  const sm = path.match(/^[/]([a-z0-9][a-z0-9-]{1,40})[/]?$/);
+  if (sm && (method === "GET" || method === "HEAD")) {
+    const r = await pages.serve(env, sm[1], url.searchParams.get("preview"));
+    if (r) return html(r.html, 200, r.preview ? { "cache-control": "no-store", "x-robots-tag": "noindex" } : { "cache-control": "public, max-age=60" });
+  }
+  return html(PAGE_404, 404, { "cache-control": "no-store" });
 }
 
 function decodeJwtPayload(token) {
@@ -691,6 +751,7 @@ async function handleApi(request, env, url) {
   if (pf && method === "POST") {
     const body = await request.json().catch(() => ({}));
     const r = await forms.submit(env, pf[1], body);
+    if (r.ok) delete r.id; // 台帳の番号は外へ出さない
     return json(r, r.ok ? 200 : r.error === "not_found" ? 404 : 400);
   }
 
@@ -905,6 +966,22 @@ async function handleApi(request, env, url) {
     if (path === "/api/admin/forms" && method === "POST") {
       const body = await request.json().catch(() => ({}));
       const r = await forms.setForm(env, body, a.email);
+      return json(r, r.ok ? 200 : 400);
+    }
+    // 便 12a：ページ（一覧・1 枚・依頼文・公開と止める・経路）
+    if (path === "/api/admin/pages" && method === "GET") return json(await pages.listPages(env));
+    if (path === "/api/admin/pages/routes" && method === "GET") { const r = await pages.routeStats(env, { days: url.searchParams.get("days") || 30 }); return json(r, r.ok === false ? 400 : 200); }
+    if (path === "/api/admin/pages/requests" && method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      const r = await pages.createRequest(env, body, a.email);
+      return json(r, r.ok ? 200 : 400);
+    }
+    const pg = path.match(/^[/]api[/]admin[/]pages[/]([0-9a-f-]{36})$/i);
+    if (pg && method === "GET") { const r = await pages.getPage(env, { page_id: pg[1], version: url.searchParams.get("v") || undefined, include_html: false }, { forAdmin: true }); return json(r, r.ok === false ? 400 : 200); }
+    const pgp = path.match(/^[/]api[/]admin[/]pages[/]([0-9a-f-]{36})[/]publish$/i);
+    if (pgp && method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      const r = await pages.publish(env, { page_id: pgp[1], version: body.version, stop: body.stop === true }, a.email);
       return json(r, r.ok ? 200 : 400);
     }
     const fa = path.match(/^[/]api[/]admin[/]forms[/]([0-9a-f-]{36})[/]answers$/i);
@@ -1664,6 +1741,56 @@ const TOOLS = [
     description: "フォームを作る・直す。承認が要る道具。新しく作るときは title・slug・items（[{ key, required }]。項目は先に set_field で作る）が要る。intro（上の説明）・thanks（答えたあとの文）・ask_name（名前も聞くか）・active（公開する）。id を渡すと直す。メールアドレスと同意は必ず聞き、答えた人は台帳に入る（いなければ無料登録と同じ扱い）。",
     inputSchema: { type: "object", properties: { id: { type: "string" }, title: { type: "string" }, slug: { type: "string" }, intro: { type: "string" }, thanks: { type: "string" }, items: { type: "array", items: { type: "object" } }, ask_name: { type: "boolean" }, active: { type: "boolean" } } },
   },
+  // 便 12a：ページ作成。中身（HTML）は Claude が書き、B は置き場・公開の承認・計測を持つ
+  {
+    name: "list_page_requests",
+    screen: "pages",
+    say: "ページの依頼を見る",
+    description: "Lab OS の「ページ」で書かれた依頼（新しく作る／直す）を新しい順に返す。open: true でまだ下書きが届いていないものだけ。page_id でそのページの依頼だけ。中身と書き方の決まりは get_page_request で読む。",
+    inputSchema: { type: "object", properties: { open: { type: "boolean" }, page_id: { type: "string" } } },
+  },
+  {
+    name: "get_page_request",
+    screen: "pages",
+    say: "ページの依頼と書き方の決まりを読む",
+    description: "依頼 1 件（request_id）の中身（目的・ページの名前・参考・材料・コメント・直すもとの版）と、HTML の書き方の決まり（使える申込の枠＝公開中のフォーム、決済の枠＝売っている商品、ボタンの印、差し込む枠の class、法定の頁の住所）を返す。ページを作る・直す前に必ず読む。",
+    inputSchema: { type: "object", properties: { request_id: { type: "integer" } }, required: ["request_id"] },
+  },
+  {
+    name: "save_page_draft",
+    screen: "pages",
+    say: "ページの下書きを置く",
+    description: "ページの HTML を下書きとして置く（新しい版が 1 つ増える。公開はしない）。request_id（依頼番号）を必ず渡す。新しいページは slug（英小文字・数字・ハイフン。公開の住所 lp.shia2n.jp/slug）と title（外の名前）が要る。直すときは page_id。html は <!doctype html> からの 1 枚（400,000 字まで）。note に何を作った・直したかを 1 行。申込の枠は <div data-lab-part=\"form:フォームの住所の名前\"></div>、決済の枠は <div data-lab-part=\"checkout:商品の id\"></div>、ボタンは data-lab-button=\"名前\"。返事の warnings に使えない印が出たら直して置き直す。",
+    inputSchema: { type: "object", properties: { request_id: { type: "integer" }, page_id: { type: "string" }, slug: { type: "string" }, title: { type: "string" }, purpose: { type: "string", enum: ["signup", "seminar", "sale", "news"] }, html: { type: "string" }, note: { type: "string" } }, required: ["html"] },
+  },
+  {
+    name: "list_pages",
+    screen: "pages",
+    say: "ページの一覧を見る",
+    description: "ページの一覧（外の名前・公開の住所・状態 draft／published／stopped・最新の版と公開中の版・先週見た人・先週ボタンが押された数・まだ下書きが届いていない依頼の数）。0 件は count: 0。",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "get_page",
+    screen: "pages",
+    say: "ページの中身と数を見る",
+    description: "ページ 1 枚（page_id か slug）の版の一覧・依頼の一覧・先週の数（見た人・ボタンごとの押した数・そのページからフォームに答えた人・経路ごとの見た人）と、version の HTML（省けば最新の版。include_html: false で HTML を省く）。",
+    inputSchema: { type: "object", properties: { page_id: { type: "string" }, slug: { type: "string" }, version: { type: "integer" }, include_html: { type: "boolean" } } },
+  },
+  {
+    name: "publish_page",
+    screen: "pages",
+    say: "ページを公開する・止める",
+    description: "ページを公開する（version を省くと最新の版）。stop: true で公開を止める。承認が要る道具。公開の住所は lp.shia2n.jp/slug。",
+    inputSchema: { type: "object", properties: { page_id: { type: "string" }, version: { type: "integer" }, stop: { type: "boolean" } }, required: ["page_id"] },
+  },
+  {
+    name: "list_routes",
+    screen: "pages",
+    say: "経路ごとの人数を見る",
+    description: "経路（ページの住所の ?r=名前）ごとに、days 日（既定 30）の見た人・その経路で初めて登録した人・そのうち買った人を返す。経路はその人が初めて登録したときのもので固定。",
+    inputSchema: { type: "object", properties: { days: { type: "integer" } } },
+  },
   {
     name: "list_answers",
     screen: "forms",
@@ -1756,6 +1883,14 @@ async function runTool(env, name, args) {
   if (name === "list_forms") return await forms.listForms(env, { origin: env.PUBLIC_ORIGIN || "" });
   if (name === "set_form") return await forms.setForm(env, args, "mcp");
   if (name === "list_answers") return await forms.listAnswers(env, args);
+  // 便 12a
+  if (name === "list_page_requests") return await pages.listRequests(env, args);
+  if (name === "get_page_request") return await pages.getRequest(env, args);
+  if (name === "save_page_draft") return await pages.saveDraft(env, args, "mcp");
+  if (name === "list_pages") return await pages.listPages(env);
+  if (name === "get_page") return await pages.getPage(env, args);
+  if (name === "publish_page") return await pages.publish(env, { page_id: args.page_id, version: args.version, stop: args.stop === true }, "mcp");
+  if (name === "list_routes") return await pages.routeStats(env, args);
   return { ok: false, error: "unknown_tool" };
 }
 
@@ -1828,7 +1963,9 @@ async function rpc(msg, env, origin = "") {
       result = { ok: false, error: "failed", detail: String(e.message).slice(0, 300) };
       isError = true;
     }
-    await logInbound(env, "mcp", { tool: name, arguments: args }, summarize(result), isError ? 500 : 200);
+    // 便 12a：ページの HTML（最大 40 万字）は控えに写さず、字数だけ残す
+    const logArgs = typeof args.html === "string" ? { ...args, html: `（HTML ${args.html.length} 字）` } : args;
+    await logInbound(env, "mcp", { tool: name, arguments: logArgs }, summarize(result), isError ? 500 : 200);
     return ok({ content: [{ type: "text", text: JSON.stringify(result, null, 2) }], isError });
   }
   return { jsonrpc: "2.0", id, error: { code: -32601, message: `unknown method: ${method}` } };

@@ -85,6 +85,9 @@ function routeHash() {
   if (h.startsWith("#approval/")) { document.querySelector('[data-view="ai"]').click(); return true; }
   const rm = h.match(/^#room[/]([0-9a-f-]{36})$/i);
   if (rm) { openView("rooms"); openRoom(rm[1]); return true; }
+  // 便 12a：Claude が下書きを置いたときに返す住所（/admin#page/番号）
+  const pm = h.match(/^#page[/]([0-9a-f-]{36})$/i);
+  if (pm) { openView("pages"); openPage(pm[1]); return true; }
   return false;
 }
 
@@ -439,13 +442,13 @@ function selectVtab(view, key) {
   const b = document.querySelector(`#view-${view} [data-vtab="${key}"]`);
   if (b && b.getAttribute("aria-selected") !== "true") b.click();
 }
-const PANE_VIEWS = ["forms", "deliver", "blueprint", "products", "refer", "deals"];
+const PANE_VIEWS = ["forms", "deliver", "blueprint", "products", "refer", "deals", "pages"];
 const pill = (t, kind = "") => `<span class="pill ${kind}">${esc(t)}</span>`;
 
 // ---------- 添削ルーム ----------
 let currentRoom = null;
 // 便 8c：左のメニュー。押した項目の画面だけを出し、上のナビにその名前を出す
-const VIEWS = ["home", "blueprint", "people", "rooms", "deals", "ai", "products", "deliver", "settings", "refer", "guide", "forms"];
+const VIEWS = ["home", "blueprint", "people", "rooms", "deals", "ai", "products", "deliver", "settings", "refer", "guide", "forms", "pages"];
 // 便 20：コネクタだけの画面は無くした。"connect" は行き先の名前としてだけ残す。
 // メールを送るコネクタ（ステップ配信）は メール、送らないもの（自動の動き）は ファネル構築 のタブで開く。part を渡すとその 1 件を開く
 function openView(name, part) {
@@ -459,6 +462,8 @@ function openView(name, part) {
   }
   const b = document.querySelector(`.side [data-view="${name}"]`);
   if (b) b.click();
+  // 便 12a：設計図のページの箱から開いたときは、その 1 枚を開く
+  if (name === "pages" && part && part.lp && part.id) openPage(part.id);
 }
 function setupViews() {
   document.querySelectorAll(".side [data-view]").forEach((b) => b.addEventListener("click", () => {
@@ -483,6 +488,7 @@ function setupViews() {
     if (b.dataset.view === "refer") loadReferrals();
     if (b.dataset.view === "guide") loadGuide();
     if (b.dataset.view === "forms") loadForms();
+    if (b.dataset.view === "pages") loadPages();
   }));
   $("hm-guide").addEventListener("click", () => openView("guide"));
   $("cust-back").addEventListener("click", custList);
@@ -786,12 +792,12 @@ const splitList = (v) => String(v || "").split(/[,、]/).map((x) => x.trim()).fi
 let triggerNames = {}, actionNames = {};
 function showConnectorFields() {
   const tr = $("sf-trigger").value, ac = $("sf-action").value;
-  document.querySelectorAll("[data-tr]").forEach((x) => x.classList.toggle("hidden", x.dataset.tr !== tr));
+  document.querySelectorAll("[data-tr]").forEach((x) => x.classList.toggle("hidden", !x.dataset.tr.split(" ").includes(tr)));
   document.querySelectorAll("[data-ac]").forEach((x) => x.classList.toggle("hidden", !x.dataset.ac.split(" ").includes(ac)));
 }
 function connectorText(s) {
   const ta = s.trigger_args || {};
-  const when = (triggerNames[s.trigger] || s.trigger) + (s.product_id ? "（" + s.product_id + "）" : "") + (ta.label ? "「" + ta.label + "」" : "") + (ta.url ? "（" + String(ta.url).slice(0, 30) + "）" : "") + (ta.form ? "「" + (formNames[ta.form] || ta.form) + "」" : "") + (s.delay_hours ? `・${s.delay_hours} 時間後` : "");
+  const when = (triggerNames[s.trigger] || s.trigger) + (s.product_id ? "（" + s.product_id + "）" : "") + (ta.label ? "「" + ta.label + "」" : "") + (ta.url ? "（" + String(ta.url).slice(0, 30) + "）" : "") + (ta.form ? "「" + (formNames[ta.form] || ta.form) + "」" : "") + (ta.page ? "「" + (pageNames[ta.page] || ta.page) + "」" : "") + (ta.button ? "のボタン " + ta.button : "") + (s.delay_hours ? `・${s.delay_hours} 時間後` : "");
   const who = filterText(s.selector || {});
   const what = (actionNames[s.action] || s.action) + (s.action === "add_label" && s.action_args && s.action_args.label ? "「" + s.action_args.label + "」" : "");
   return { when, who, what };
@@ -849,7 +855,8 @@ async function loadDeliver() {
       if (sn.length) selector.not_labels = sn;
       const body = {
         name: $("sf-name").value, trigger: tr, product_id: tr === "purchase" ? ($("sf-product").value.trim() || null) : null,
-        trigger_args: tr === "label_added" ? { label: $("sf-tlabel").value.trim() } : tr === "clicked" && $("sf-turl").value.trim() ? { url: $("sf-turl").value.trim() } : tr === "form_submitted" && $("sf-tform").value ? { form: $("sf-tform").value } : {},
+        trigger_args: tr === "label_added" ? { label: $("sf-tlabel").value.trim() } : tr === "clicked" && $("sf-turl").value.trim() ? { url: $("sf-turl").value.trim() } : tr === "form_submitted" && $("sf-tform").value ? { form: $("sf-tform").value }
+          : tr === "page_viewed" || tr === "page_clicked" ? { ...($("sf-tpage").value ? { page: $("sf-tpage").value } : {}), ...(tr === "page_clicked" && $("sf-tbutton").value.trim() ? { button: $("sf-tbutton").value.trim() } : {}) } : {},
         delay_hours: Number($("sf-delay").value.replace(/[^0-9]/g, "") || 0), selector,
         action: ac, action_args: ac === "add_label" ? { label: $("sf-alabel").value.trim() } : {},
         subject: $("sf-subject").value, body: $("sf-body").value,
@@ -973,7 +980,7 @@ function openConnector(s, keepStatus, kind) {
   } else {
     const ta = s.trigger_args || {}, sel = s.selector || {}, c = connectorText(s);
     $("sf-id").value = s.id; $("sf-name").value = s.name; $("sf-trigger").value = s.trigger; $("sf-product").value = s.product_id || "";
-    $("sf-tlabel").value = ta.label || ""; $("sf-turl").value = ta.url || ""; $("sf-tform").value = ta.form || "";
+    $("sf-tlabel").value = ta.label || ""; $("sf-turl").value = ta.url || ""; $("sf-tform").value = ta.form || ""; $("sf-tpage").value = ta.page || ""; $("sf-tbutton").value = ta.button || "";
     $("sf-labels").value = (sel.labels || []).join(","); $("sf-nolabels").value = (sel.not_labels || []).join(",");
     $("sf-action").value = s.action || "send_email"; $("sf-alabel").value = (s.action_args || {}).label || "";
     $("sf-delay").value = s.delay_hours; $("sf-subject").value = s.subject; $("sf-body").value = s.body; $("sf-active").checked = s.active;
@@ -988,11 +995,18 @@ function openConnector(s, keepStatus, kind) {
 // ---------- フォームと人の項目（便 11a） ----------
 const OP_LABEL = { eq: "＝", contains: "を含む", gte: "以上", lte: "以下", empty: "答えがない", not_empty: "答えがある" };
 const TYPE_LABEL = { text: "1 行の文字", textarea: "長い文", number: "数", date: "日付", select: "選ぶ" };
-let fieldNames = {}, formNames = {}, fieldsCache = [], formsCache = [], fieldsAt = 0;
+let fieldNames = {}, formNames = {}, fieldsCache = [], formsCache = [], fieldsAt = 0, pageNames = {};
 async function loadFieldOptions(force) {
   if (!force && Date.now() - fieldsAt < 30e3) return;
   fieldsAt = Date.now();
-  const [fr, fo] = await Promise.all([api("/api/admin/fields", { token }), api("/api/admin/forms", { token })]);
+  const [fr, fo, pg] = await Promise.all([api("/api/admin/fields", { token }), api("/api/admin/forms", { token }), api("/api/admin/pages", { token })]);
+  // 便 12a：コネクタのきっかけ「ページを見た／ボタンを押した」で選ぶページ
+  if (pg.ok) {
+    pageNames = Object.fromEntries(pg.pages.map((x) => [x.slug, x.title]));
+    const keep = $("sf-tpage").value;
+    $("sf-tpage").innerHTML = '<option value="">どれでも</option>' + pg.pages.map((x) => `<option value="${esc(x.slug)}">${esc(x.title)}</option>`).join("");
+    $("sf-tpage").value = keep;
+  }
   if (fr.ok) {
     fieldsCache = fr.fields; fieldNames = Object.fromEntries(fr.fields.map((f) => [f.key, f.label]));
     const keep = $("bf-fkey").value;
@@ -1146,6 +1160,223 @@ async function loadFormAnswers(id) {
     <div class="reply-h"><a href="#" data-pp="${esc(a.person.id)}">${esc(a.person.name || a.person.email || "（名前なし）")}</a>・${fmtTime(a.submitted_at)}</div>
     <dl>${a.items.map((i) => `<dt>${esc(i.label)}</dt><dd class="pre">${esc(i.value) || '<span class="note">（空）</span>'}</dd>`).join("")}</dl></div>`).join("") || "まだありません";
   document.querySelectorAll("[data-pp]").forEach((x) => x.addEventListener("click", (ev) => { ev.preventDefault(); openView("people"); detail(x.dataset.pp); }));
+}
+
+// ---------- 便 12a：ページ。中身は Claude が書く。ここでは依頼文を出す・見る・公開する・数を見る ----------
+const PAGE_PURPOSE = { signup: "無料登録", seminar: "セミナーの申込", sale: "販売", news: "お知らせ" };
+const PAGE_STATE = { draft: ["下書き", "gray"], published: ["公開中", ""], stopped: ["止めている", "gray"] };
+const ROUTE_NAME_RE = /^[\p{L}\p{N}][\p{L}\p{N}_\-ー・]{0,39}$/u;
+const pageState = (p) => { const [t, k] = PAGE_STATE[p.status] || [p.status, "gray"]; return pill(t, k); };
+const madeBy = (by) => (by === "mcp" ? "Claude" : String(by || "").includes("@") ? "Naoki" : by || "—");
+let pagesReady = false, pagesCache = [], pagesOrigin = "", currentPage = null;
+// 依頼文の箱（コピーのボタンつき）
+function promptBox(prompt, id) {
+  return `<section class="card stack" style="margin-top:16px">
+    <div style="display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap"><b>依頼文</b><button class="btn small" type="button" id="${id}-copy">写す</button></div>
+    <textarea id="${id}" rows="12" readonly style="font-size:13px">${esc(prompt)}</textarea>
+    <p class="note" style="margin:0">Claude（Chrome のサイドパネル）に貼ります。下書きが届くと、このページの「版」に出ます</p></section>`;
+}
+function wirePromptBox(id) {
+  const b = $(id + "-copy");
+  if (!b) return;
+  b.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText($(id).value); b.textContent = "写しました"; }
+    catch { $(id).select(); b.textContent = "選びました（⌘C で写す）"; }
+  });
+}
+async function loadPages() {
+  if (!pagesReady) {
+    pagesReady = true;
+    $("pg-new").addEventListener("click", () => newPageRequest());
+    $("rt-make").addEventListener("submit", (ev) => { ev.preventDefault(); makeRouteUrl("rt"); });
+    $("rt-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText($("rt-url").textContent); $("rt-copy").textContent = "写しました"; } catch { $("rt-copy").textContent = "写せませんでした"; } });
+  }
+  const r = await api("/api/admin/pages", { token });
+  if (!r.ok) { $("pg-count").textContent = "読めませんでした（" + (r.error || r.status) + "）"; return; }
+  pagesCache = r.pages; pagesOrigin = r.pages_origin || "";
+  $("pg-count").textContent = r.store === "demo" ? "デモの置き場ではページは作れません"
+    : `${r.count} 枚・公開中 ${r.pages.filter((p) => p.status === "published").length}` + (r.open_new_requests ? `・下書き待ちの新しい依頼 ${r.open_new_requests}` : "");
+  await loadCampaigns();
+  const rows = campRows("pages", "page", r.pages, (p) => p.id, () => loadPages());
+  table("pages-table", [
+    { key: "title", label: "ページ", html: (p) => `<div class="c-name">${esc(p.title)}</div><div class="sub">${esc(p.purpose_label)}・/${esc(p.slug)}</div>` },
+    { key: "status", label: "状態", html: (p) => pageState(p) + (p.open_requests ? " " + pill(`依頼 ${p.open_requests}`, "gray") : "") },
+    { key: "week_viewers", label: "先週見た人", html: (p) => String(p.week_viewers) },
+    { key: "latest_version", label: "版", html: (p) => `最新 ${p.latest_version}${p.published_version ? `<div class="sub">公開 ${p.published_version}</div>` : ""}` },
+    campCol("page", (p) => p.id),
+  ], rows, (p) => openPage(p.id), r.pages.length ? "この企画のページはありません" : "まだありません。「新しく作る」から依頼文を出します");
+  $("rt-page").innerHTML = r.pages.map((p) => `<option value="${esc(p.slug)}">${esc(p.title)}</option>`).join("") || '<option value="">（ページがまだありません）</option>';
+  loadRoutes();
+}
+// 経路の住所を作る（prefix は一覧の rt か詳細の pd）
+function makeRouteUrl(prefix, slugFixed) {
+  const slug = slugFixed || $(prefix + "-page").value, name = $(prefix + "-name").value.trim();
+  $(prefix + "-msg").textContent = "";
+  if (!slug) { $(prefix + "-msg").textContent = "先にページを作ります"; return; }
+  if (!ROUTE_NAME_RE.test(name)) { $(prefix + "-msg").textContent = "経路の名前は 1〜40 字（空白・記号は使えません。例 x-固定ポスト）"; return; }
+  $(prefix + "-url").textContent = `${pagesOrigin}/${slug}?r=${encodeURIComponent(name)}`;
+  $(prefix + "-out").classList.remove("hidden");
+  $(prefix + "-copy").textContent = "写す";
+}
+async function loadRoutes() {
+  const r = await api("/api/admin/pages/routes?days=30", { token });
+  if (!r.ok) { $("rt-count").textContent = "読めませんでした（" + (r.error || r.status) + "）"; return; }
+  $("rt-count").textContent = `直近 30 日・経路 ${r.count} 本`;
+  table("routes-table", [
+    { key: "route", label: "経路", html: (x) => `<div class="c-name">${esc(x.route)}</div>` },
+    { key: "viewers", label: "見た人", html: (x) => String(x.viewers) },
+    { key: "registered", label: "登録", html: (x) => String(x.registered) },
+    { key: "bought", label: "買った", html: (x) => String(x.bought) },
+  ], r.routes, null, "まだありません。上でページと経路の名前を選んで住所を作り、X などに貼ります");
+}
+// 新しく作る：依頼の欄を埋めて依頼文を出す
+function newPageRequest() {
+  showPane("pages", "detail", "新しいページ", "ページの一覧へ");
+  $("page-detail").innerHTML = headHtml({ title: "新しいページ", sub: "目的と材料を書いて「依頼文を出す」を押します。出た依頼文を Claude に貼ると、下書きがこの一覧に届きます" })
+    + `<section class="card" style="margin-top:16px"><form id="pr" class="stack">
+      <div><label for="pr-purpose">目的</label><select id="pr-purpose" class="inline">${Object.entries(PAGE_PURPOSE).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select></div>
+      <div><label for="pr-title">ページの名前（お客さんに見える名前）</label><input id="pr-title" type="text" maxlength="80" placeholder="例 図解セミナー 11 月の申込"></div>
+      <div><label for="pr-camp">企画</label><select id="pr-camp" class="inline"><option value="">（あとで決める）</option>${liveCamps().map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select></div>
+      <div><label for="pr-ref">参考にする構成（ページの住所や、どのページの作りを真似るか）</label><textarea id="pr-ref" rows="2" placeholder="例 UTAGE の「シアラボ4~2ヶ月LPファネル」のページ"></textarea></div>
+      <div><label for="pr-mat">材料（Google ドライブのファイル名・フォルダ名・中身のメモ）</label><textarea id="pr-mat" rows="3" placeholder="例 ドライブの「図解セミナー 構成メモ」と「受講者の声 2026」"></textarea></div>
+      <div><label for="pr-com">ほかに伝えたいこと</label><textarea id="pr-com" rows="3" placeholder="例 申込の枠は図解セミナーのフォームを使う。ボタンを押したら知らせてほしい"></textarea></div>
+      <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="submit">依頼文を出す</button><span class="note" id="pr-status"></span></div>
+    </form></section><div id="pr-out"></div>`;
+  $("pr").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const body = { purpose: $("pr-purpose").value, title: $("pr-title").value.trim(), campaign_id: $("pr-camp").value || null, reference: $("pr-ref").value, materials: $("pr-mat").value, comment: $("pr-com").value };
+    const r = await api("/api/admin/pages/requests", { method: "POST", token, body });
+    const why = { bad_title: "ページの名前を入れてください（80 字まで）", too_long: "長すぎる欄があります（2,000 字まで）" };
+    if (!r.ok) { $("pr-status").textContent = why[r.error] || "出せませんでした（" + (r.error || r.status) + "）"; return; }
+    $("pr-status").textContent = `依頼番号 ${r.request.id} で残しました`;
+    $("pr-out").innerHTML = promptBox(r.prompt, "pr-prompt");
+    wirePromptBox("pr-prompt");
+    loadPages();
+  });
+}
+async function openPage(id, opts = {}) {
+  currentPage = id;
+  showPane("pages", "detail", "読んでいます…", "ページの一覧へ");
+  $("page-detail").innerHTML = '<p class="note">読んでいます…</p>';
+  if (!pagesOrigin) { const l = await api("/api/admin/pages", { token }); if (l.ok) { pagesOrigin = l.pages_origin || ""; pagesCache = l.pages; } }
+  // Claude が下書きを置いたときに依頼の企画へ入れるので、企画の持ち主は毎回読み直す
+  await loadCampaigns(true);
+  const r = await api("/api/admin/pages/" + id, { token });
+  if (currentPage !== id) return;
+  if (!r.ok || !r.found) { $("page-detail").innerHTML = `<p class="note">読めませんでした（${esc(r.error || "見つかりません")}）</p>`; return; }
+  renderPage(r, opts);
+}
+function renderPage(r, { tab = "view", version: wantV, msg } = {}) {
+  const p = r.page, vers = r.versions || [];
+  let curV = wantV || p.latest_version || null;
+  showPane("pages", "detail", p.title, "ページの一覧へ");
+  const live = p.status === "published";
+  $("page-detail").innerHTML = headHtml({
+    title: p.title,
+    sub: `${esc(p.purpose_label)}・<a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.url.replace(/^https:[/][/]/, ""))}</a>`,
+    pills: [pageState(p), p.latest_version ? pill(`最新 版 ${p.latest_version}`, "gray") : pill("下書きはまだ", "gray"), live ? pill(`公開中 版 ${p.published_version}`) : ""],
+    actions: (curV ? `<button class="btn small" type="button" id="pd-pub">版 ${curV} を公開する</button>` : "")
+      + (live ? `<a class="btn ghost small" href="${esc(p.url)}" target="_blank" rel="noopener">公開のページを開く</a><button class="btn ghost small" type="button" id="pd-stop">公開を止める</button>` : ""),
+    foot: campPicker("page", p.id),
+  }) + (msg ? `<p class="msg ok" style="margin:12px 0 0">${esc(msg)}</p>` : "")
+    + tabsHtml([["view", "見た目"], ["versions", `版 ${vers.length}`], ["requests", "依頼とコメント"], ["numbers", "数と経路"]], tab)
+    + `<section class="card stack" data-pane="view">${curV ? `
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <select id="pd-ver" class="inline">${vers.map((v) => `<option value="${v.version}" ${v.version === curV ? "selected" : ""}>版 ${v.version}${v.version === p.published_version && live ? "（公開中）" : ""}・${esc(fmtTime(v.created_at))}</option>`).join("")}</select>
+          <div class="tabs" role="tablist" style="margin:0"><button type="button" data-w="100%" aria-selected="true">パソコン</button><button type="button" data-w="390px" aria-selected="false">スマホ</button></div>
+          <a class="btn ghost small" id="pd-open" href="#" target="_blank" rel="noopener">別の窓で見る</a>
+        </div>
+        <p class="note" id="pd-vnote" style="margin:0"></p>
+        <div style="border:1px solid var(--line, #ddd);border-radius:8px;overflow:hidden;background:#fff"><iframe id="pd-frame" title="ページの見た目" style="display:block;width:100%;height:70vh;border:0;margin:0 auto" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe></div>
+        <p class="note" style="margin:0">見本では申込の枠から送れず、見た数にも入りません</p>`
+      : `<p class="note">まだ下書きが届いていません。「依頼とコメント」の依頼文を Claude に貼ると、ここに出ます</p>`}</section>
+      <section class="card" data-pane="versions"><div id="pd-versions" class="table-wrap"></div></section>
+      <section class="card stack" data-pane="requests">
+        <div><label for="pd-com">直してほしいところ</label><textarea id="pd-com" rows="4" placeholder="例 1 つ目のボタンの文を「無料で申し込む」に。実績の段を上へ"></textarea></div>
+        <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="button" id="pd-fix" ${curV ? "" : "disabled"}>直しの依頼文を出す</button><span class="note" id="pd-fix-status"></span></div>
+        <div id="pd-prompt-out"></div>
+        <div id="pd-requests" class="table-wrap"></div>
+      </section>
+      <section class="card stack" data-pane="numbers">
+        <div class="stats" style="display:flex;gap:12px;flex-wrap:wrap">
+          <div class="stat"><b>${r.stats.viewers}</b>先週見た人</div><div class="stat"><b>${r.stats.views}</b>見た回数</div><div class="stat"><b>${r.stats.form_people}</b>このページから答えた人</div>
+        </div>
+        <div><b>ボタン</b><div id="pd-clicks" class="table-wrap"></div></div>
+        <div><b>経路（先週の見た人）</b><div id="pd-routes" class="table-wrap"></div></div>
+        <form id="pd-rt" class="stack" style="margin:0">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end"><div style="flex:1 1 200px"><label for="pd-name">経路の名前</label><input id="pd-name" type="text" maxlength="40" placeholder="例 x-固定ポスト"></div><button class="btn small" type="submit">このページの住所を作る</button></div>
+          <div id="pd-out" class="hidden" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><code id="pd-url" style="word-break:break-all"></code><button class="btn ghost small" type="button" id="pd-copy">写す</button></div>
+          <p class="note" id="pd-msg" style="margin:0"></p>
+        </form>
+      </section>`;
+  const root = $("page-detail");
+  const showTab = wireTabs(root, tab);
+  wireCampPicker(root, () => loadPages());
+  // 見た目：版を選ぶと見本の住所を差し替える
+  const setV = (v) => {
+    curV = Number(v);
+    const src = (r.previews || {})[curV];
+    if ($("pd-frame")) { $("pd-frame").src = src || "about:blank"; $("pd-open").href = src || "#"; }
+    const meta = vers.find((x) => x.version === curV) || {};
+    if ($("pd-vnote")) $("pd-vnote").textContent = [meta.note, meta.made_by ? `作った：${madeBy(meta.made_by)}` : "", meta.request_id ? `依頼 ${meta.request_id}` : "",
+      meta.parts && (meta.parts.forms || []).length ? `申込の枠 ${(meta.parts.forms || []).join("・")}` : "", meta.parts && (meta.parts.buttons || []).length ? `ボタン ${(meta.parts.buttons || []).join("・")}` : ""].filter(Boolean).join("　");
+    if ($("pd-pub")) $("pd-pub").textContent = live && curV === p.published_version ? `版 ${curV} を公開中` : `版 ${curV} を公開する`;
+    if ($("pd-pub")) $("pd-pub").disabled = live && curV === p.published_version;
+    if ($("pd-fix")) $("pd-fix").textContent = `版 ${curV} の直しの依頼文を出す`;
+  };
+  if (curV && $("pd-ver")) {
+    $("pd-ver").addEventListener("change", (ev) => setV(ev.target.value));
+    root.querySelectorAll("[data-w]").forEach((b) => b.addEventListener("click", () => {
+      root.querySelectorAll("[data-w]").forEach((x) => x.setAttribute("aria-selected", String(x === b)));
+      $("pd-frame").style.width = b.dataset.w;
+    }));
+    setV(curV);
+  }
+  table("pd-versions", [
+    { key: "version", label: "版", html: (v) => `版 ${v.version}${live && v.version === p.published_version ? " " + pill("公開中") : ""}` },
+    { key: "created_at", label: "いつ", cls: "c-reg", html: (v) => esc(fmtTime(v.created_at)) },
+    { key: "made_by", label: "作った", html: (v) => esc(madeBy(v.made_by)) },
+    { key: "note", label: "メモ", html: (v) => `<span class="sub">${esc(v.note || "—")}</span>` },
+  ], vers, (v) => { showTab("view"); if ($("pd-ver")) { $("pd-ver").value = String(v.version); setV(v.version); } }, "まだありません");
+  table("pd-requests", [
+    { key: "id", label: "依頼", html: (q) => `${q.kind === "fix" ? "直す" : "新しく作る"}<div class="sub">番号 ${q.id}${q.base_version ? `・版 ${q.base_version} から` : ""}</div>` },
+    { key: "created_at", label: "いつ", cls: "c-reg", html: (q) => esc(fmtTime(q.created_at)) },
+    { key: "comment", label: "中身", html: (q) => `<span class="sub">${esc(String(q.comment || "—").slice(0, 80))}</span>` },
+    { key: "done_version", label: "状態", sortVal: (q) => q.done_version || 0, html: (q) => q.done_version ? pill(`版 ${q.done_version} ができた`) : pill("下書き待ち", "gray") },
+  ], r.requests || [], null, "まだありません");
+  table("pd-clicks", [
+    { key: "button", label: "ボタン", html: (x) => esc(x.button.startsWith("checkout:") ? "申し込む（" + x.button.slice(9) + "）" : x.button) },
+    { key: "n", label: "先週押した数", html: (x) => String(x.n) },
+  ], r.stats.clicks || [], null, "先週はまだ押されていません");
+  table("pd-routes", [
+    { key: "route", label: "経路", html: (x) => esc(x.route) },
+    { key: "viewers", label: "見た人", html: (x) => String(x.viewers) },
+  ], r.stats.routes || [], null, "先週はまだ見られていません");
+  $("pd-rt").addEventListener("submit", (ev) => { ev.preventDefault(); makeRouteUrl("pd", p.slug); });
+  $("pd-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText($("pd-url").textContent); $("pd-copy").textContent = "写しました"; } catch { $("pd-copy").textContent = "写せませんでした"; } });
+  $("pd-fix").addEventListener("click", async () => {
+    const comment = $("pd-com").value.trim();
+    if (!comment) { $("pd-fix-status").textContent = "直してほしいところを書いてください"; return; }
+    const q = await api("/api/admin/pages/requests", { method: "POST", token, body: { page_id: p.id, comment, base_version: curV } });
+    if (!q.ok) { $("pd-fix-status").textContent = "出せませんでした（" + (q.error || q.status) + "）"; return; }
+    $("pd-fix-status").textContent = `依頼番号 ${q.request.id} で残しました`;
+    $("pd-prompt-out").innerHTML = promptBox(q.prompt, "pd-prompt");
+    wirePromptBox("pd-prompt");
+  });
+  if ($("pd-pub")) $("pd-pub").addEventListener("click", async () => {
+    $("pd-pub").disabled = true;
+    const q = await api(`/api/admin/pages/${p.id}/publish`, { method: "POST", token, body: { version: curV } });
+    if (!q.ok) { $("pd-pub").disabled = false; return fail("公開できませんでした（" + (q.error || q.status) + "）"); }
+    await loadPages();
+    openPage(p.id, { version: curV, msg: `版 ${curV} を公開しました。住所 ${p.url}` });
+  });
+  if ($("pd-stop")) $("pd-stop").addEventListener("click", async () => {
+    if (!confirm("公開を止めますか？　住所を開くと「ページが見つかりません」と出ます")) return;
+    const q = await api(`/api/admin/pages/${p.id}/publish`, { method: "POST", token, body: { stop: true } });
+    if (!q.ok) return fail("止められませんでした（" + (q.error || q.status) + "）");
+    await loadPages();
+    openPage(p.id, { msg: "公開を止めました" });
+  });
 }
 
 // 便 8e：ラベルの名前の候補（入力欄の下に出す）
