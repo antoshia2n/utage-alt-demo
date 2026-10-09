@@ -67,6 +67,8 @@ UTAGE の代わりになるサイト兼アプリ（PWA）のデモ。架空の�
 - 登録の画面の試しのカードの案内は、決済が試し（`univapayMode` が test）のときだけ出す
 - 表：`supabase/b7c1_mail.sql` を SQL Editor で 1 回流す（何回流しても同じ・画面で変えた値は上書きしない）。流す前に Email Sending に `mail.shia2n.jp` を登録しておく
 - 続き（0.13.1）：B の住所を `https://lab.shia2n.jp` にした（wrangler.jsonc の `PUBLIC_ORIGIN`。Cloudflare の画面で Worker にこの住所を足す）。ログインのメールのリンクは Supabase の住所ではなく `/auth`（`public/auth.html`）を通し、ページの中で `verifyOtp`（token_hash）で確かめる。送り元とリンク先の住所をそろえて迷惑メールに入りにくくするため。メールには見た目を整えた本文も付ける
+- 続き（0.13.2）：台帳の数（`stats`）の段階は、会員かどうかを先に見る（`find_person` と同じ判定：B で買った権利と門番の表 `member_entitlement`）。会員でない人だけを出来事の段階に分ける。`members` に会員の人数、`by_activity` に出来事だけの段階を返す。表は変えていない
+- 続き（0.13.2）：「メールの送り方」の欄は、開き直したとき・画面に戻ったときに読み直し、保存では変えた欄だけを送る（承認や AI で変えた値を、開いたままの古い欄で上書きしないため）
 
 ## 置き場
 
