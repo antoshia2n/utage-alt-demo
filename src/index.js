@@ -38,7 +38,7 @@ import { makeToday, stageOf } from "./today.js";
 import { makePush } from "./push.js";
 import { LANES } from "./plan.js";
 
-const VERSION = "0.18.0-b8f3";
+const VERSION = "0.18.1-b8f3";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
