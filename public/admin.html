@@ -49,7 +49,8 @@
   <nav class="side" aria-label="メニュー">
     <a class="side-logo" href="/admin">Lab OS</a>
     <div class="grp">全体</div>
-    <button class="it" type="button" data-view="blueprint" aria-selected="true">設計図</button>
+    <button class="it" type="button" data-view="home" aria-selected="true">ホーム</button>
+    <button class="it" type="button" data-view="blueprint" aria-selected="false">設計図</button>
     <button class="it" type="button" data-view="people" aria-selected="false">人</button>
     <div class="grp">集める</div>
     <button class="it" type="button" disabled title="8d で作ります">LP<span class="soon">準備中</span></button>
@@ -66,14 +67,31 @@
   </nav>
   <div class="main">
     <div class="topnav">
-      <span class="crumb" id="crumb">設計図</span>
+      <span class="crumb" id="crumb">ホーム</span>
       <span class="grow"></span>
       <span class="note" id="who-admin"></span>
       <a href="#" id="logout" class="note">ログアウト</a>
     </div>
     <div class="content">
       <div id="err2" class="msg err hidden" style="margin-bottom:12px"></div>
-      <div id="view-blueprint">
+      <div id="view-home">
+        <div class="home-grid">
+          <div class="card">
+            <h3 class="home-h">今日の予定 <span class="note" id="hm-day"></span></h3>
+            <div id="hm-cal" class="note">読み込んでいます…</div>
+          </div>
+          <div class="card">
+            <h3 class="home-h">やること</h3>
+            <div id="hm-todo" class="note">読み込んでいます…</div>
+          </div>
+        </div>
+        <div class="card" style="margin-top:16px">
+          <h3 class="home-h">段階のボード <span class="note" id="hm-total"></span></h3>
+          <p class="note" style="margin-top:0">上から 受講（会員か教材を見た）→ 購入 → 相談 → 温める（リンクを押した・セミナー・ログイン）→ 登録 の順に当てる。人を押すとその人の 1 枚が開く</p>
+          <div class="stage-board" id="hm-board"><p class="note">読み込んでいます…</p></div>
+        </div>
+      </div>
+      <div id="view-blueprint" style="display:none">
         <div class="bp-bar">
           <div class="chips" id="bp-chips"></div>
           <div class="bp-actions">
@@ -113,6 +131,14 @@
         </select></div>
         <div><button class="btn" id="ml-save">保存する</button></div>
         <div id="ml-status" class="note">読み込んでいます…</div>
+      </div>
+    </details>
+    <details class="setup card" id="calendar-box"><summary>Google カレンダー（ホームに今日の予定を出す）</summary>
+      <div class="stack" style="margin-top:8px">
+        <p class="note" style="margin:0">Google カレンダーの「設定と共有」→「カレンダーの統合」にある「iCal 形式の非公開 URL」を貼る。URL は画面にも記録にも出さない</p>
+        <div><label for="cal-url">iCal 形式の非公開 URL</label><input id="cal-url" type="url" inputmode="url" maxlength="500" placeholder="https://calendar.google.com/calendar/ical/.../basic.ics" autocomplete="off"></div>
+        <div><button class="btn" id="cal-save">入れる</button> <button class="btn ghost" id="cal-clear">外す</button></div>
+        <div id="cal-status" class="note">読み込んでいます…</div>
       </div>
     </details>
     <details class="setup card" id="community-box"><summary>オプチャの招待リンク（会員にだけ見える）</summary>
