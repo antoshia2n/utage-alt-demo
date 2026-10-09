@@ -27,7 +27,7 @@ import { makeBridge } from "./bridge.js";
 import { makePlan } from "./plan.js";
 import { makeMailCfg } from "./mailcfg.js";
 
-const VERSION = "0.13.1-b7c1";
+const VERSION = "0.13.2-b7c1";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_read"];
@@ -285,14 +285,21 @@ const core = {
     return { ok: true, found: true, note_member: rows[0].note_member };
   },
 
+  // 便 7c-1 の続き：段階は会員かどうかを先に見る。会員は find_person と同じ entitlementMap（B で買った権利＋門番の表）で決める。
+  // 会員でない人だけ、出来事から計算した段階（受講中・ログイン済・登録のみ）に分ける。出来事だけの段階は by_activity に残す
   async stats(env) {
-    const people = await db(env, "GET", "customer_summary?select=stage,source");
+    const people = await db(env, "GET", "customer_summary?select=id,stage,source");
+    const ent = await sell.entitlementMap(env);
+    const isMember = (p) => !!(ent[p.id] && ent[p.id].member);
+    for (const p of people) p.member_stage = isMember(p) ? "会員" : p.stage;
     const by = (k) => people.reduce((m, p) => ((m[p[k]] = (m[p[k]] || 0) + 1), m), {});
     const recent = await db(env, "GET", "events?select=type&occurred_at=gte." + encodeURIComponent(new Date(Date.now() - 7 * 864e5).toISOString()));
     return {
       ok: true,
       customers: people.length,
-      by_stage: by("stage"),
+      members: people.filter(isMember).length,
+      by_stage: by("member_stage"),
+      by_activity: by("stage"),
       by_source: by("source"),
       events_last_7_days: recent.reduce((m, e) => ((m[e.type] = (m[e.type] || 0) + 1), m), {}),
     };
@@ -883,7 +890,7 @@ const TOOLS = [
   },
   {
     name: "stats",
-    description: "台帳の件数を 1 回で数える（段階別・流入元別・直近 7 日の出来事の種類別）。",
+    description: "台帳の件数を 1 回で数える。members は会員の人数（find_person の member と同じ判定：B で買った権利と門番の表 member_entitlement の shiarabo_basic）。by_stage は会員を先に数え、残りを出来事の段階（受講中・ログイン済・登録のみ）に分ける。by_activity は出来事だけの段階。ほかに流入元別・直近 7 日の出来事の種類別。",
     inputSchema: { type: "object", properties: {} },
   },
   {

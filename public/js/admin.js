@@ -588,21 +588,31 @@ function mailStatus(m) {
     + (m.reply_to ? "・返信先 <code>" + esc(m.reply_to) + "</code>" : "・返信先なし")
     + (when ? "。最後に変えたのは " + esc(when) + (m.updated_by ? "（" + esc(m.updated_by) + "）" : "") : "");
 }
+let mailShown = null; // 画面に出した値。保存のときは、ここから変えた欄だけを送る
 function fillMail(m) {
-  $("ml-from").value = m.from || ""; $("ml-name").value = m.from_name || ""; $("ml-reply").value = m.reply_to || ""; $("ml-scope").value = m.scope || "test";
+  mailShown = { from: m.from || "", from_name: m.from_name || "", reply_to: m.reply_to || "", scope: m.scope || "test" };
+  $("ml-from").value = mailShown.from; $("ml-name").value = mailShown.from_name; $("ml-reply").value = mailShown.reply_to; $("ml-scope").value = mailShown.scope;
   $("ml-status").innerHTML = mailStatus(m);
 }
+// 便 7c-1 の続き：承認や AI で値が変わっても、開いたままの欄は古いまま。開き直したとき・画面に戻ったときに読み直す
+async function reloadMail() {
+  const r = await api("/api/admin/mail", { token });
+  if (!r.ok) { $("ml-status").textContent = "読めませんでした（" + (r.error || r.status) + "）"; return; }
+  fillMail(r.settings);
+}
 function setupMail() {
-  (async () => {
-    const r = await api("/api/admin/mail", { token });
-    if (!r.ok) { $("ml-status").textContent = "読めませんでした（" + (r.error || r.status) + "）"; return; }
-    fillMail(r.settings);
-  })();
+  reloadMail();
+  $("mail-box").addEventListener("toggle", () => { if ($("mail-box").open) reloadMail(); });
+  window.addEventListener("focus", () => { if ($("mail-box").open) reloadMail(); });
   $("ml-save").addEventListener("click", async () => {
     const scope = $("ml-scope").value;
-    if (scope === "all" && !confirm("お知らせ（一斉配信・ステップ）を誰にでも送る形にします。")) return;
+    const now = { from: $("ml-from").value.trim(), from_name: $("ml-name").value.trim(), reply_to: $("ml-reply").value.trim(), scope };
+    const body = {};
+    for (const k of Object.keys(now)) if (!mailShown || now[k] !== mailShown[k]) body[k] = now[k];
+    if (!Object.keys(body).length) { $("ml-status").innerHTML = "前と同じです。" + mailStatus({ ...mailShown }); return; }
+    if (body.scope === "all" && !confirm("お知らせ（一斉配信・ステップ）を誰にでも送る形にします。")) return;
     $("ml-status").textContent = "保存しています…";
-    const r = await api("/api/admin/mail", { method: "PUT", token, body: { from: $("ml-from").value, from_name: $("ml-name").value, reply_to: $("ml-reply").value, scope } });
+    const r = await api("/api/admin/mail", { method: "PUT", token, body });
     const why = { sender_domain_not_allowed: "送り元は mail.shia2n.jp か demo.shia2n.jp の住所にしてください", bad_from: "送り元のメールの形が違います", bad_reply_to: "返信先のメールの形が違います", bad_from_name: "表示名は 40 文字まで、< > \" は使えません" };
     if (!r.ok) { $("ml-status").textContent = why[r.error] || "保存できませんでした（" + (r.error || r.status) + "）"; return; }
     fillMail(r.settings);
