@@ -137,6 +137,8 @@
           <div style="display:flex;gap:10px;flex-wrap:wrap" id="bf-src"></div>
           <div><label for="bf-bought">買った商品（id をカンマ区切り）</label><input id="bf-bought" type="text" placeholder="例 next-premium"></div>
           <div><label for="bf-member">会員か</label><select id="bf-member" class="inline"><option value="">問わない</option><option value="true">会員だけ</option><option value="false">会員でない人だけ</option></select></div>
+          <div><label for="bf-labels">このラベルを全部持つ人（カンマ区切り）</label><input id="bf-labels" type="text" list="label-names" placeholder="例 購入者,最後に動いた:30日以内"></div>
+          <div><label for="bf-nolabels">このラベルを持たない人（カンマ区切り）</label><input id="bf-nolabels" type="text" list="label-names"></div>
           <div><label for="bf-emails">メールで指定（試しに送るとき。カンマ区切り）</label><input id="bf-emails" type="text"></div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <button class="btn ghost small" type="button" id="bf-count">人数を数える</button>
@@ -150,20 +152,35 @@
         <p class="note" id="dv-run-status"></p>
       </div>
       <div class="card">
-        <h3 style="margin-top:0">ステップ配信</h3>
+        <h3 style="margin-top:0">コネクタ（〜したら → 誰に → 〜する）</h3>
+        <p class="note" style="margin-top:0">ステップ配信もここに入る。上から順に毎時動く</p>
         <div id="steps" class="stack"></div>
         <h4>足す・直す</h4>
         <form id="sf" class="stack">
           <input type="hidden" id="sf-id">
           <div><label for="sf-name">名前（自分用）</label><input id="sf-name" type="text" maxlength="120"></div>
+          <div class="note">トリガー（〜したら）</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <div><label for="sf-trigger">きっかけ</label><select id="sf-trigger" class="inline"><option value="registered">無料登録</option><option value="purchase">購入</option></select></div>
-            <div><label for="sf-product">商品の id（購入のとき・空ならどれでも）</label><input id="sf-product" type="text"></div>
+            <div><label for="sf-trigger">きっかけ</label><select id="sf-trigger" class="inline"></select></div>
+            <div data-tr="purchase"><label for="sf-product">商品の id（空ならどれでも）</label><input id="sf-product" type="text"></div>
+            <div data-tr="label_added"><label for="sf-tlabel">付いたラベル</label><input id="sf-tlabel" type="text" list="label-names"></div>
+            <div data-tr="clicked"><label for="sf-turl">押したリンク（空ならどれでも）</label><input id="sf-turl" type="text" placeholder="https://"></div>
             <div><label for="sf-delay">何時間後</label><input id="sf-delay" type="text" inputmode="numeric" value="0" style="max-width:120px"></div>
           </div>
-          <div><label for="sf-subject">件名</label><input id="sf-subject" type="text" maxlength="200"></div>
-          <div><label for="sf-body">本文</label><textarea id="sf-body" rows="5"></textarea></div>
-          <label class="check"><input type="checkbox" id="sf-active"> <span>動かす（動かした時刻より後の登録・購入だけが対象）</span></label>
+          <div class="note">セレクタ（誰に・空なら全員）</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <div><label for="sf-labels">このラベルを全部持つ人</label><input id="sf-labels" type="text" list="label-names"></div>
+            <div><label for="sf-nolabels">このラベルを持たない人</label><input id="sf-nolabels" type="text" list="label-names"></div>
+          </div>
+          <div class="note">アクション（〜する）</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <div><label for="sf-action">何をする</label><select id="sf-action" class="inline"></select></div>
+            <div data-ac="add_label"><label for="sf-alabel">付けるラベル</label><input id="sf-alabel" type="text" list="label-names"></div>
+          </div>
+          <div data-ac="send_email notify_admin"><label for="sf-subject">件名（Naoki への知らせは空でもよい）</label><input id="sf-subject" type="text" maxlength="200"></div>
+          <div data-ac="send_email notify_admin"><label for="sf-body">本文（{{name}}・{{email}}・{{product}}・{{label}} が置き換わる）</label><textarea id="sf-body" rows="5"></textarea></div>
+          <label class="check"><input type="checkbox" id="sf-active"> <span>動かす（動かした時刻より後のきっかけだけが対象）</span></label>
+          <datalist id="label-names"></datalist>
           <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="submit">保存</button><button class="btn ghost small" type="button" id="sf-new">新しく</button><span class="note" id="sf-status"></span></div>
         </form>
       </div>

@@ -116,6 +116,9 @@ async function detail(id) {
       ${p.entitlement && p.entitlement.member ? `<span class="pill">会員（${esc(p.entitlement.plan || "定期課金")}）</span>` : `<span class="pill gray">権利 ${esc(p.entitlement ? p.entitlement.status : "none")}</span>`}
     </div>
     ${p.entitlement && (p.entitlement.gate_keys || []).length ? `<div class="note" style="margin:-8px 0 12px">門番の権利：${p.entitlement.gate_keys.map(esc).join("・")}</div>` : ""}
+    <div class="note" style="margin:-4px 0 4px">ラベル（自動で付く。手で付けたものは「手」）</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin:0 0 6px" id="labels">${(r.labels || []).map((x) => `<span class="pill ${x.auto ? "gray" : "warn"}">${esc(x.label)}${x.auto ? "" : ` ・手 <a href="#" data-unlabel="${esc(x.label)}" aria-label="外す">×</a>`}</span>`).join("") || '<span class="note">（無し）</span>'}</div>
+    <form id="lb" style="display:flex;gap:6px;align-items:center;margin:0 0 16px"><input id="lb-name" type="text" maxlength="40" placeholder="ラベルを手で付ける" style="max-width:220px;min-height:36px"><button class="btn ghost small" type="submit">付ける</button><span class="note" id="lb-status"></span></form>
     <div class="deal-box">
       <h4>商談 ${p.deal && p.deal.stage !== "none" ? `<span class="pill warn">${esc(STAGE[p.deal.stage])}</span>` : '<span class="note">（まだ無し）</span>'}</h4>
       <dl>
@@ -147,6 +150,21 @@ async function detail(id) {
     <ol class="timeline">${r.events.map((e) => `
       <li><time>${fmtTime(e.occurred_at)}</time>${esc(EVENT_LABEL[e.type] || e.type)}${detailText(e)}<span class="note"> · ${esc(e.actor)}</span></li>`).join("")}
     </ol>`;
+  // 便 8e：ラベルを手で付ける・外す（画面からは承認なし。AI からは承認が要る）
+  $("lb").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const label = $("lb-name").value.trim();
+    if (!label) return;
+    const lr = await api("/api/admin/labels", { method: "POST", token, body: { person_id: id, label } });
+    if (!lr.ok) { $("lb-status").textContent = "付けられませんでした（" + (lr.error || lr.status) + "）"; return; }
+    detail(id);
+  });
+  document.querySelectorAll("[data-unlabel]").forEach((x) => x.addEventListener("click", async (ev) => {
+    ev.preventDefault();
+    const lr = await api("/api/admin/labels", { method: "POST", token, body: { person_id: id, label: x.dataset.unlabel, remove: true } });
+    if (!lr.ok) { fail("外せませんでした（" + (lr.error || lr.status) + "）"); return; }
+    detail(id);
+  }));
   // 便 6b：面談の記録は開いたときだけ読む（表をまたいで探すので重い）
   $("meet-box").addEventListener("toggle", async () => {
     if (!$("meet-box").open || $("meet").dataset.loaded) return;
@@ -403,7 +421,24 @@ function bfFilter() {
   if ($("bf-member").value) f.member = $("bf-member").value === "true";
   const emails = $("bf-emails").value.split(",").map((x) => x.trim()).filter(Boolean);
   if (emails.length) f.emails = emails;
+  const labels = splitList($("bf-labels").value), notLabels = splitList($("bf-nolabels").value);
+  if (labels.length) f.labels = labels;
+  if (notLabels.length) f.not_labels = notLabels;
   return f;
+}
+const splitList = (v) => String(v || "").split(/[,、]/).map((x) => x.trim()).filter(Boolean);
+let triggerNames = {}, actionNames = {};
+function showConnectorFields() {
+  const tr = $("sf-trigger").value, ac = $("sf-action").value;
+  document.querySelectorAll("[data-tr]").forEach((x) => x.classList.toggle("hidden", x.dataset.tr !== tr));
+  document.querySelectorAll("[data-ac]").forEach((x) => x.classList.toggle("hidden", !x.dataset.ac.split(" ").includes(ac)));
+}
+function connectorText(s) {
+  const ta = s.trigger_args || {};
+  const when = (triggerNames[s.trigger] || s.trigger) + (s.product_id ? "（" + s.product_id + "）" : "") + (ta.label ? "「" + ta.label + "」" : "") + (ta.url ? "（" + String(ta.url).slice(0, 30) + "）" : "") + (s.delay_hours ? `・${s.delay_hours} 時間後` : "");
+  const who = filterText(s.selector || {});
+  const what = (actionNames[s.action] || s.action) + (s.action === "add_label" && s.action_args && s.action_args.label ? "「" + s.action_args.label + "」" : "");
+  return { when, who, what };
 }
 function filterText(f) {
   const parts = [];
@@ -411,6 +446,8 @@ function filterText(f) {
   if (f.purchased) parts.push("買った " + f.purchased.join("・"));
   if ("member" in f) parts.push(f.member ? "会員だけ" : "会員でない人");
   if (f.emails) parts.push("メール指定 " + f.emails.length + " 件");
+  if (f.labels) parts.push("ラベル " + f.labels.join("・"));
+  if (f.not_labels) parts.push("ラベルなし " + f.not_labels.join("・"));
   return parts.join("／") || "全員";
 }
 let deliverReady = false;
@@ -432,14 +469,22 @@ async function loadDeliver() {
       $("dv-run").disabled = true;
       const r = await api("/api/admin/deliver/run", { method: "POST", token });
       $("dv-run").disabled = false;
-      $("dv-run-status").textContent = r.ok ? `ステップ：送った ${r.steps.sent}・送らなかった ${r.steps.blocked}・失敗 ${r.steps.failed}／一斉：送った ${r.broadcasts.sent}・送らなかった ${r.broadcasts.blocked}・失敗 ${r.broadcasts.failed}` : "動かせませんでした（" + (r.error || r.status) + "）";
+      $("dv-run-status").textContent = r.ok ? `コネクタ：送った ${r.steps.sent}・知らせた ${r.steps.notified || 0}・ラベル ${r.steps.labeled || 0}・条件外 ${r.steps.skipped || 0}・送らなかった ${r.steps.blocked}・失敗 ${r.steps.failed}／一斉：送った ${r.broadcasts.sent}・送らなかった ${r.broadcasts.blocked}・失敗 ${r.broadcasts.failed}` : "動かせませんでした（" + (r.error || r.status) + "）";
       loadDeliver();
     });
     $("sf").addEventListener("submit", async (ev) => {
       ev.preventDefault();
+      const tr = $("sf-trigger").value, ac = $("sf-action").value;
+      const selector = {};
+      const sl = splitList($("sf-labels").value), sn = splitList($("sf-nolabels").value);
+      if (sl.length) selector.labels = sl;
+      if (sn.length) selector.not_labels = sn;
       const body = {
-        name: $("sf-name").value, trigger: $("sf-trigger").value, product_id: $("sf-product").value.trim() || null,
-        delay_hours: Number($("sf-delay").value.replace(/[^0-9]/g, "") || 0), subject: $("sf-subject").value, body: $("sf-body").value,
+        name: $("sf-name").value, trigger: tr, product_id: tr === "purchase" ? ($("sf-product").value.trim() || null) : null,
+        trigger_args: tr === "label_added" ? { label: $("sf-tlabel").value.trim() } : tr === "clicked" && $("sf-turl").value.trim() ? { url: $("sf-turl").value.trim() } : {},
+        delay_hours: Number($("sf-delay").value.replace(/[^0-9]/g, "") || 0), selector,
+        action: ac, action_args: ac === "add_label" ? { label: $("sf-alabel").value.trim() } : {},
+        subject: $("sf-subject").value, body: $("sf-body").value,
         active: $("sf-active").checked,
       };
       if ($("sf-id").value) body.id = Number($("sf-id").value);
@@ -447,7 +492,9 @@ async function loadDeliver() {
       $("sf-status").textContent = r.ok ? "保存しました" : "保存できませんでした（" + (r.error || r.status) + "）";
       if (r.ok) { $("sf-id").value = r.step.id; loadDeliver(); }
     });
-    $("sf-new").addEventListener("click", () => { $("sf").reset(); $("sf-id").value = ""; $("sf-status").textContent = ""; });
+    $("sf-new").addEventListener("click", () => { $("sf").reset(); $("sf-id").value = ""; $("sf-status").textContent = ""; showConnectorFields(); });
+    $("sf-trigger").addEventListener("change", showConnectorFields);
+    $("sf-action").addEventListener("change", showConnectorFields);
   }
   const r = await api("/api/admin/deliver", { token });
   if (!r.ok) { $("dv-warm").textContent = "読めませんでした（" + (r.error || r.status) + "）"; return; }
@@ -474,18 +521,45 @@ async function loadDeliver() {
     loadDeliver();
   }));
   stepsCache = r.steps;
-  $("steps").innerHTML = r.steps.map((s) => `
+  if (r.triggers && !$("sf-trigger").options.length) {
+    triggerNames = r.triggers; actionNames = r.actions || {};
+    $("sf-trigger").innerHTML = Object.entries(triggerNames).map(([k, v]) => `<option value="${esc(k)}">${esc(v)}</option>`).join("");
+    $("sf-action").innerHTML = Object.entries(actionNames).map(([k, v]) => `<option value="${esc(k)}">${esc(v)}</option>`).join("");
+    showConnectorFields();
+  }
+  loadLabelNames();
+  $("steps").innerHTML = r.steps.map((s) => {
+    const c = connectorText(s);
+    const result = s.action === "notify_admin" ? `知らせた ${s.notified || 0}` : s.action === "add_label" ? `付けた ${s.labeled || 0}` : `送った ${s.sent}・リンクを押した ${s.clicks} 回`;
+    return `
     <div class="deal-box" data-step="${s.id}" style="cursor:pointer">
-      <div class="note">${s.trigger === "registered" ? "無料登録" : "購入" + (s.product_id ? "（" + esc(s.product_id) + "）" : "")}から ${s.delay_hours} 時間後・${s.active ? '<span class="pill">動いている</span>' : '<span class="pill gray">止めている</span>'}</div>
+      <div class="note">${s.active ? '<span class="pill">動いている</span>' : '<span class="pill gray">止めている</span>'}</div>
       <h4 style="margin:4px 0">${esc(s.name)}</h4>
-      <div class="note">${esc(s.subject)}・送った ${s.sent}・リンクを押した ${s.clicks} 回</div>
-    </div>`).join("") || '<p class="note">まだありません</p>';
+      <div class="note"><b>${esc(c.when)}</b> → ${esc(c.who)} → <b>${esc(c.what)}</b></div>
+      <div class="note">${result}${s.skipped ? `・条件に当たらなかった ${s.skipped}` : ""}</div>
+    </div>`;
+  }).join("") || '<p class="note">まだありません</p>';
   document.querySelectorAll("[data-step]").forEach((x) => x.addEventListener("click", () => {
     const s = stepsCache.find((y) => String(y.id) === x.dataset.step);
+    const ta = s.trigger_args || {}, sel = s.selector || {};
     $("sf-id").value = s.id; $("sf-name").value = s.name; $("sf-trigger").value = s.trigger; $("sf-product").value = s.product_id || "";
+    $("sf-tlabel").value = ta.label || ""; $("sf-turl").value = ta.url || "";
+    $("sf-labels").value = (sel.labels || []).join(","); $("sf-nolabels").value = (sel.not_labels || []).join(",");
+    $("sf-action").value = s.action || "send_email"; $("sf-alabel").value = (s.action_args || {}).label || "";
     $("sf-delay").value = s.delay_hours; $("sf-subject").value = s.subject; $("sf-body").value = s.body; $("sf-active").checked = s.active;
     $("sf-status").textContent = "直しています：" + s.name;
+    showConnectorFields();
   }));
+}
+
+// 便 8e：ラベルの名前の候補（入力欄の下に出す）
+let labelNamesAt = 0;
+async function loadLabelNames() {
+  if (Date.now() - labelNamesAt < 60e3) return;
+  labelNamesAt = Date.now();
+  const r = await api("/api/admin/labels", { token });
+  if (!r.ok) return;
+  $("label-names").innerHTML = r.labels.map((x) => `<option value="${esc(x.label)}">${x.people} 人${x.auto ? "" : "・手"}</option>`).join("");
 }
 
 // ---------- 商品（B の便 4） ----------
@@ -645,6 +719,8 @@ function detailText(e) {
   if (e.type === "correction_submitted") return `<span class="note">（${esc(String(p.text || "").slice(0, 30))}${(p.images || []).length ? " 画像" + p.images.length : ""}）</span>`;
   if (e.type === "correction_returned") return `<span class="note">（${esc(String(p.comment || p.corrected || "").slice(0, 30))}）</span>`;
   if (e.type === "room_read") return `<span class="note">（${p.by === "admin" ? "シアニン" : "生徒"}）</span>`;
+  if (e.type === "label_added" || e.type === "label_removed") return `<span class="note">（${esc(p.label || "")}${p.step_id != null ? "・コネクタ " + esc(p.step_id) : ""}）</span>`;
+  if (e.type === "admin_notified" || e.type === "admin_notify_failed" || e.type === "connector_skipped") return `<span class="note">（コネクタ ${esc(p.step_id)}${p.reason ? "・" + esc(p.reason) : ""}${p.error ? "・" + esc(p.error) : ""}）</span>`;
   if (p.lesson_id) return `<span class="note">（${esc(p.lesson_id)}）</span>`;
   if (p.source) return `<span class="note">（${esc(SOURCE_LABEL[p.source] || p.source)}）</span>`;
   if ("value" in p) return `<span class="note">（${p.value ? "付けた" : "外した"}）</span>`;

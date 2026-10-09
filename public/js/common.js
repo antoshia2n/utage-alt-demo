@@ -61,6 +61,11 @@ export const EVENT_LABEL = {
   seminar_archive_sent: "セミナーのアーカイブを配った",
   purchase_completed: "購入（決済が通った）",
   email_clicked: "メールのリンクを押した",
+  label_added: "ラベルを付けた",
+  label_removed: "ラベルを外した",
+  admin_notified: "シアニンに知らせた",
+  admin_notify_failed: "シアニンに知らせられなかった",
+  connector_skipped: "コネクタの条件に当たらなかった",
 };
 
 // ログインが要る画像を読み、画面に出せる住所に変える（img の src に鍵を付けられないため）
