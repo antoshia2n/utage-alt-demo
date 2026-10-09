@@ -325,6 +325,68 @@ function setChip(id, n) {
   $(id).classList.toggle("hidden", !(n > 0));
 }
 
+// ---------- 便 18：一覧 → 詳細の共通部品（顧客管理と同じ形をほかの画面でも使う） ----------
+// 表：cols = [{ key, label, html(row), cls?, sortVal?(row), nosort? }]。見出しを押すと並べ替え、行を押すと onRow
+const tableSort = {};
+function table(hostId, cols, rows, onRow, empty) {
+  const s = tableSort[hostId] || (tableSort[hostId] = { key: null, dir: 1 });
+  let list = rows.slice();
+  if (s.key) {
+    const c = cols.find((x) => x.key === s.key) || {};
+    const v = c.sortVal || ((r) => r[s.key] ?? "");
+    list.sort((a, b) => (v(a) > v(b) ? 1 : v(a) < v(b) ? -1 : 0) * s.dir);
+  }
+  if (!rows.length) { $(hostId).innerHTML = `<p class="note" style="margin:8px 0 0">${esc(empty)}</p>`; return; }
+  $(hostId).innerHTML = `<table class="cust-table"><thead><tr>${cols.map((c) => `<th class="${c.cls || ""}">${c.nosort ? esc(c.label) : `<button type="button" data-tsort="${c.key}" data-dir="${s.key === c.key ? (s.dir > 0 ? "asc" : "desc") : ""}">${esc(c.label)}</button>`}</th>`).join("")}</tr></thead>
+    <tbody>${list.map((r) => `<tr tabindex="0" data-ti="${rows.indexOf(r)}">${cols.map((c) => `<td class="${c.cls || ""}">${c.html(r)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+  $(hostId).querySelectorAll("[data-tsort]").forEach((b) => b.addEventListener("click", () => {
+    s.dir = s.key === b.dataset.tsort ? -s.dir : 1; s.key = b.dataset.tsort;
+    table(hostId, cols, rows, onRow, empty);
+  }));
+  if (onRow) $(hostId).querySelectorAll("tbody tr").forEach((tr) => {
+    const go = (ev) => { if (ev.target.closest("button, a, input, select")) return; onRow(rows[Number(tr.dataset.ti)]); };
+    tr.addEventListener("click", go);
+    tr.addEventListener("keydown", (ev) => { if (ev.key === "Enter") go(ev); });
+  });
+}
+// 一覧と詳細を入れ替える。詳細のときは上の帯に名前を足し、戻る道の文字を合わせる
+function showPane(view, mode, sub, backText) {
+  $(view + "-list").classList.toggle("hidden", mode !== "list");
+  $(view + "-detail").classList.toggle("hidden", mode !== "detail");
+  if (backText) $(view + "-detail").querySelector(".back-link").textContent = "← " + backText;
+  setCrumbSub(mode === "detail" ? sub : "");
+  if (mode === "detail") window.scrollTo(0, 0);
+}
+// 詳細の上の帯（名前・状態・よく使う操作）
+function headHtml({ title, sub = "", pills = [], actions = "" }) {
+  return `<div class="card cust-head"><div class="cust-head-top"><div style="min-width:0"><h2 style="margin:0 0 2px">${esc(title)}</h2>${sub ? `<div class="note">${sub}</div>` : ""}</div><div class="cust-actions">${actions}</div></div>${pills.filter(Boolean).length ? `<div class="pill-row">${pills.filter(Boolean).join("")}</div>` : ""}</div>`;
+}
+function tabsHtml(tabs, cur) {
+  return `<div class="tabs cust-tabs" role="tablist">${tabs.map(([k, v]) => `<button type="button" role="tab" data-tab="${k}" aria-selected="${k === cur}">${v}</button>`).join("")}</div>`;
+}
+// root の中のタブ（data-tab）と中身（data-pane）を結ぶ。戻り値は表示を切り替える関数
+function wireTabs(root, cur) {
+  const show = (k) => {
+    root.querySelectorAll(".cust-tabs [data-tab]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === k)));
+    root.querySelectorAll("[data-pane]").forEach((p) => p.classList.toggle("hidden", p.dataset.pane !== k));
+  };
+  root.querySelectorAll(".cust-tabs [data-tab]").forEach((b) => b.addEventListener("click", () => show(b.dataset.tab)));
+  show(cur);
+  return show;
+}
+// 一覧の中のタブ（フォーム／人の項目 など、一覧の種類を切り替える）
+function setupViewTabs() {
+  document.querySelectorAll("[data-vtabs]").forEach((bar) => {
+    const box = bar.parentElement;
+    bar.querySelectorAll("[data-vtab]").forEach((b) => b.addEventListener("click", () => {
+      bar.querySelectorAll("[data-vtab]").forEach((x) => x.setAttribute("aria-selected", String(x === b)));
+      box.querySelectorAll(":scope > [data-vpane]").forEach((p) => p.classList.toggle("hidden", p.dataset.vpane !== b.dataset.vtab));
+    }));
+  });
+}
+const PANE_VIEWS = ["forms", "deliver", "products", "refer", "deals"];
+const pill = (t, kind = "") => `<span class="pill ${kind}">${esc(t)}</span>`;
+
 // ---------- 添削ルーム ----------
 let currentRoom = null;
 // 便 8c：左のメニュー。押した項目の画面だけを出し、上のナビにその名前を出す
@@ -343,6 +405,8 @@ function setupViews() {
     setCrumbSub("");
     // 便 17：顧客管理はメニューから開くと一覧に戻る。開いた画面のまとまりは閉じない
     if (b.dataset.view === "people") custList();
+    // 便 18：一覧 → 詳細の画面は、メニューから開くと一覧に戻る
+    if (PANE_VIEWS.includes(b.dataset.view)) showPane(b.dataset.view, "list");
     const box = b.closest(".grp-box");
     if (box && box.classList.contains("closed")) box.querySelector(".grp").click();
     if (b.dataset.view === "home") loadHome();
@@ -357,6 +421,8 @@ function setupViews() {
   }));
   $("hm-guide").addEventListener("click", () => openView("guide"));
   $("cust-back").addEventListener("click", custList);
+  document.querySelectorAll("[data-back]").forEach((b) => b.addEventListener("click", () => showPane(b.dataset.back, "list")));
+  setupViewTabs();
   document.querySelectorAll(".cust-table [data-sort]").forEach((b) => b.addEventListener("click", () => {
     custSort = { key: b.dataset.sort, dir: custSort.key === b.dataset.sort ? -custSort.dir : (b.dataset.sort === "name" ? 1 : -1) };
     renderCustomers();
@@ -473,42 +539,54 @@ async function openRoom(id, focusId) {
   loadRooms();
 }
 
-// ---------- 予約と商談（便 4） ----------
+// ---------- 予約と商談（便 4・便 18 で一覧の表 → 詳細） ----------
 const STAGE = { booked: "相談予約", done: "面談済", won: "成約", lost: "失注", none: "" };
-async function loadDeals() {
+let seminarsCache = [];
+async function loadDeals(focusId, msg) {
   const c = await api("/api/admin/consults", { token });
   if (!c.ok) { $("consults-count").textContent = "読めませんでした（" + (c.error || c.status) + "）"; }
   else {
-    $("consults-count").textContent = c.count === 0 ? "これからの予約は 0 件です" : `これからの予約 ${c.count} 件`;
-    $("consults").innerHTML = c.consults.map((x) => `
-      <li data-id="${x.person_id}">
-        <div style="min-width:0"><div>${esc(x.label)}　${esc(x.name || x.email)}</div><div class="sub ellip">${esc(x.topic || "（相談したいことは未記入）")}</div></div>
-        <div style="text-align:right;flex-shrink:0"><span class="pill warn">${esc(STAGE[x.stage] || x.stage)}</span></div>
-      </li>`).join("");
-    document.querySelectorAll("#consults li").forEach((li) => li.addEventListener("click", () => {
-      openView("people");
-      detail(li.dataset.id);
-    }));
+    $("consults-count").textContent = c.count === 0 ? "これからの予約は 0 件です。予約が入ると、ここに日時の順で並びます" : `これからの予約 ${c.count} 件。行を押すと顧客管理でその人の詳細が開きます`;
+    table("consults", [
+      { key: "slot", label: "日時", html: (x) => esc(x.label) },
+      { key: "name", label: "名前", sortVal: (x) => x.name || x.email, html: (x) => `<div class="c-name">${esc(x.name || x.email)}</div>` },
+      { key: "topic", label: "相談したいこと", nosort: true, cls: "c-src", html: (x) => `<span class="sub">${esc(x.topic || "（未記入）")}</span>` },
+      { key: "stage", label: "段階", html: (x) => pill(STAGE[x.stage] || x.stage, "warn") },
+    ], c.consults, (x) => { openView("people"); detail(x.person_id); }, "これからの予約はありません");
   }
   const s = await api("/api/admin/seminars", { token });
-  if (!s.ok) { $("seminars").textContent = "読めませんでした"; return; }
-  $("seminars").innerHTML = s.seminars.map((x) => `
-    <div class="deal-box">
-      <div class="note">${esc(x.label)}${x.past ? "・終了" : ""}</div>
-      <h4>${esc(x.title)}</h4>
-      <div class="note">申込 ${x.registrants} 人・前日の知らせ ${x.reminded} 人・アーカイブ ${x.archive_sent} 人</div>
-      <div class="stage-btns" style="margin-top:8px">
-        ${x.past ? `<button class="btn small" data-arc="${esc(x.id)}" type="button">アーカイブを配る</button>` : `<button class="btn ghost small" data-rem="${esc(x.id)}" type="button">前日の知らせを今送る（試し）</button>`}
-      </div>
-    </div>`).join("");
-  const run = async (idv, kind) => {
+  if (!s.ok) { $("sem-count").textContent = "読めませんでした"; return; }
+  seminarsCache = s.seminars;
+  $("sem-count").textContent = `${s.seminars.length} 件・これから ${s.seminars.filter((x) => !x.past).length}`;
+  table("seminars", [
+    { key: "starts_at", label: "日時", html: (x) => esc(x.label) },
+    { key: "title", label: "題名", html: (x) => `<div class="c-name">${esc(x.title)}</div>` },
+    { key: "registrants", label: "申込", html: (x) => `${x.registrants} 人` },
+    { key: "past", label: "状態", sortVal: (x) => (x.past ? 1 : 0), html: (x) => x.past ? pill("終了", "gray") : pill("これから") },
+  ], s.seminars, (x) => seminarDetail(x.id), "セミナーはまだありません");
+  if (focusId) seminarDetail(focusId, msg);
+}
+function seminarDetail(id, msg) {
+  const x = seminarsCache.find((y) => y.id === id);
+  if (!x) return;
+  showPane("deals", "detail", x.title, "セミナーの一覧へ");
+  $("seminar-detail").innerHTML = headHtml({
+    title: x.title,
+    sub: esc(x.label),
+    pills: [x.past ? pill("終了", "gray") : pill("これから"), pill(`申込 ${x.registrants} 人`, "gray")],
+    actions: x.past ? `<button class="btn small" type="button" id="sem-run" data-kind="archive">アーカイブを配る</button>` : `<button class="btn ghost small" type="button" id="sem-run" data-kind="remind">前日の知らせを今送る（試し）</button>`,
+  }) + `${msg ? `<p class="msg ok" style="margin:12px 0 0">${esc(msg)}</p>` : ""}
+    <section class="card" style="margin-top:16px"><dl class="kv">
+      <dt>申込</dt><dd>${x.registrants} 人</dd>
+      <dt>前日の知らせ</dt><dd>${x.reminded} 人に送った</dd>
+      <dt>アーカイブ</dt><dd>${x.archive_sent} 人に配った</dd>
+    </dl><p class="note" id="sem-status" style="margin:12px 0 0"></p></section>`;
+  $("sem-run").addEventListener("click", async () => {
     $("sem-status").textContent = "送っています…";
-    const r = await api(`/api/admin/seminars/${idv}/${kind}`, { method: "POST", token });
-    $("sem-status").textContent = r.ok ? `送った ${r.sent}・テスト宛てでないので送らなかった ${r.blocked}・失敗 ${r.failed}${r.skipped ? "・送り済み " + r.skipped : ""}` : "送れませんでした（" + (r.error || r.status) + "）";
-    loadDeals();
-  };
-  document.querySelectorAll("[data-arc]").forEach((b) => b.addEventListener("click", () => run(b.dataset.arc, "archive")));
-  document.querySelectorAll("[data-rem]").forEach((b) => b.addEventListener("click", () => run(b.dataset.rem, "remind")));
+    const r = await api(`/api/admin/seminars/${x.id}/${$("sem-run").dataset.kind}`, { method: "POST", token });
+    if (!r.ok) { $("sem-status").textContent = "送れませんでした（" + (r.error || r.status) + "）"; return; }
+    await loadDeals(x.id, `送った ${r.sent}・テスト宛てでないので送らなかった ${r.blocked}・失敗 ${r.failed}${r.skipped ? "・送り済み " + r.skipped : ""}`);
+  });
 }
 
 // ---------- B の便 3：AI と承認 ----------
@@ -659,12 +737,14 @@ function filterText(f) {
   for (const c of f.fields || []) parts.push("項目 " + (fieldNames[c.key] || c.key) + " " + (OP_LABEL[c.op] || c.op) + (["empty", "not_empty"].includes(c.op) ? "" : " " + c.value));
   return parts.join("／") || "全員";
 }
-let deliverReady = false;
+let deliverReady = false, deliverData = null, bfTabs = null, sfTabs = null;
 async function loadDeliver() {
   loadFieldOptions();
   if (!deliverReady) {
     deliverReady = true;
     $("bf-src").innerHTML = ["x", "note", "youtube", "direct", "other"].map((s) => `<label class="check" style="margin:0"><input type="checkbox" value="${s}"> <span>${esc(SOURCE_LABEL[s] || s)}</span></label>`).join("");
+    bfTabs = wireTabs($("bf"), "body");
+    sfTabs = wireTabs($("sf"), "tr");
     $("bf-count").addEventListener("click", async () => {
       const r = await api("/api/admin/audience", { method: "POST", token, body: { filter: bfFilter() } });
       $("bf-status").textContent = r.ok ? `宛先 ${r.count} 人（配信を止めている人 ${r.unsubscribed}）${r.open_to_all ? "" : "・いまはテスト宛てにだけ届く"}` : "数えられませんでした（" + (r.error || r.status) + "）";
@@ -672,13 +752,21 @@ async function loadDeliver() {
     $("bf").addEventListener("submit", async (ev) => {
       ev.preventDefault();
       const r = await api("/api/admin/broadcasts", { method: "POST", token, body: { subject: $("bf-subject").value, body: $("bf-body").value, filter: bfFilter() } });
-      $("bf-status").textContent = r.ok ? `下書きにしました（宛先 ${r.audience.count} 人）。下の一覧の「送る」で送ります` : "保存できませんでした（" + (r.error || r.status) + "）";
-      if (r.ok) loadDeliver();
+      if (!r.ok) { $("bf-status").textContent = "保存できませんでした（" + (r.error || r.status) + "）"; return; }
+      await loadDeliver();
+      const b = (deliverData.broadcasts || []).find((x) => x.id === (r.broadcast && r.broadcast.id)) || deliverData.broadcasts[0];
+      if (b) openBroadcast(b, `下書きにしました（宛先 ${r.audience.count} 人）。送るときは上の「送る」を押します`);
+    });
+    $("bc-new").addEventListener("click", () => {
+      $("bf").reset(); $("bf-status").textContent = ""; bfTabs("body");
+      $("bc-detail").innerHTML = ""; $("bf-wrap").classList.remove("hidden"); $("sf-wrap").classList.add("hidden");
+      showPane("deliver", "detail", "新しい一斉配信", "一斉配信の一覧へ");
     });
     $("dv-run").addEventListener("click", async () => {
       $("dv-run").disabled = true;
       const r = await api("/api/admin/deliver/run", { method: "POST", token });
       $("dv-run").disabled = false;
+      $("dv-run-status").classList.remove("hidden");
       $("dv-run-status").textContent = r.ok ? `コネクタ：送った ${r.steps.sent}・知らせた ${r.steps.notified || 0}・ラベル ${r.steps.labeled || 0}・条件外 ${r.steps.skipped || 0}・送らなかった ${r.steps.blocked}・失敗 ${r.steps.failed}／一斉：送った ${r.broadcasts.sent}・送らなかった ${r.broadcasts.blocked}・失敗 ${r.broadcasts.failed}` : "動かせませんでした（" + (r.error || r.status) + "）";
       loadDeliver();
     });
@@ -699,40 +787,27 @@ async function loadDeliver() {
       };
       if ($("sf-id").value) body.id = Number($("sf-id").value);
       const r = await api("/api/admin/steps", { method: "POST", token, body });
-      $("sf-status").textContent = r.ok ? "保存しました" : "保存できませんでした（" + (r.error || r.status) + "）";
-      if (r.ok) { $("sf-id").value = r.step.id; loadDeliver(); }
+      if (!r.ok) { $("sf-status").textContent = "保存できませんでした（" + (r.error || r.status) + "）"; return; }
+      await loadDeliver();
+      const s = stepsCache.find((x) => x.id === r.step.id);
+      if (s) openConnector(s, true);
+      $("sf-status").textContent = "保存しました";
     });
-    $("sf-new").addEventListener("click", () => { $("sf").reset(); $("sf-id").value = ""; $("sf-status").textContent = ""; showConnectorFields(); });
+    $("sf-new").addEventListener("click", () => openConnector(null));
     $("sf-trigger").addEventListener("change", showConnectorFields);
     $("sf-action").addEventListener("change", showConnectorFields);
   }
   const r = await api("/api/admin/deliver", { token });
   if (!r.ok) { $("dv-warm").textContent = "読めませんでした（" + (r.error || r.status) + "）"; return; }
+  deliverData = r;
   $("dv-warm").textContent = (r.warm ? `今日の上限 ${r.warm.cap} 通（送り始めて ${r.warm.day + 1} 日目・今日 ${r.warm.sent_today} 通）` : "デモの置き場") + (r.open_to_all ? "" : "・いまはテスト宛てにだけ届く");
-  $("broadcasts").innerHTML = r.broadcasts.map((b) => `
-    <div class="deal-box">
-      <div class="note">${fmtTime(b.created_at)}・<span class="pill ${b.status === "draft" ? "gray" : "warn"}">${esc(BC_LABEL[b.status] || b.status)}</span>・${esc(filterText(b.filter || {}))}</div>
-      <h4 style="margin:4px 0">${esc(b.subject)}</h4>
-      <div class="note">宛先 ${b.target_count ?? "-"}・送った ${b.sent}・送らなかった ${b.blocked}・失敗 ${b.failed}・リンクを押した ${b.clicked_people} 人（${b.clicks} 回）</div>
-      <div class="stage-btns" style="margin-top:6px">
-        ${b.status === "draft" ? `<button class="btn small" data-bq="${b.id}" type="button">送る</button>` : ""}
-        ${["draft", "queued", "sending"].includes(b.status) ? `<button class="btn ghost small" data-bc="${b.id}" type="button">止める</button>` : ""}
-      </div>
-    </div>`).join("") || '<p class="note">まだありません</p>';
-  const bcById = Object.fromEntries(r.broadcasts.map((b) => [b.id, b]));
-  document.querySelectorAll("[data-bq]").forEach((x) => x.addEventListener("click", async () => {
-    // 便 9：確認の文に、件名・宛先・いま誰に届くかを出す（「使い方」の送る前に見ることと同じ中身）
-    const b = bcById[x.dataset.bq] || {};
-    if (!confirm(`この一斉配信を送る列に入れます。\n\n件名：${b.subject || ""}\n宛先：${filterText(b.filter || {})}\n${r.open_to_all ? "いまは誰にでも届きます" : "いまはテスト宛てにだけ届きます"}\n\n毎時の定時の処理で、今日の上限の中から送ります。`)) return;
-    const q = await api(`/api/admin/broadcasts/${x.dataset.bq}/queue`, { method: "POST", token });
-    if (!q.ok) fail("送る列に入れられませんでした（" + (q.error || q.status) + "）");
-    loadDeliver();
-  }));
-  document.querySelectorAll("[data-bc]").forEach((x) => x.addEventListener("click", async () => {
-    const q = await api(`/api/admin/broadcasts/${x.dataset.bc}/cancel`, { method: "POST", token });
-    if (!q.ok) fail("止められませんでした（" + (q.error || q.status) + "）");
-    loadDeliver();
-  }));
+  table("broadcasts", [
+    { key: "subject", label: "件名", html: (b) => `<div class="c-name">${esc(b.subject)}</div><div class="sub">${esc(filterText(b.filter || {}))}</div>` },
+    { key: "status", label: "状態", html: (b) => pill(BC_LABEL[b.status] || b.status, b.status === "draft" || b.status === "canceled" ? "gray" : b.status === "done" ? "" : "warn") },
+    { key: "sent", label: "送った", sortVal: (b) => b.sent || 0, html: (b) => `${b.sent}${b.target_count != null ? ` <span class="sub">／${b.target_count}</span>` : ""}` },
+    { key: "clicked_people", label: "押した人", cls: "c-src", sortVal: (b) => b.clicked_people || 0, html: (b) => String(b.clicked_people || 0) },
+    { key: "created_at", label: "作った日", cls: "c-reg", html: (b) => esc(dayOf(b.created_at)) },
+  ], r.broadcasts, (b) => openBroadcast(b), "まだありません。「新しく作る」から作ります");
   stepsCache = r.steps;
   if (r.triggers && !$("sf-trigger").options.length) {
     triggerNames = r.triggers; actionNames = r.actions || {};
@@ -741,28 +816,67 @@ async function loadDeliver() {
     showConnectorFields();
   }
   loadLabelNames();
-  $("steps").innerHTML = r.steps.map((s) => {
-    const c = connectorText(s);
-    const result = s.action === "notify_admin" ? `知らせた ${s.notified || 0}` : s.action === "add_label" ? `付けた ${s.labeled || 0}` : `送った ${s.sent}・リンクを押した ${s.clicks} 回`;
-    return `
-    <div class="deal-box" data-step="${s.id}" style="cursor:pointer">
-      <div class="note">${s.active ? '<span class="pill">動いている</span>' : '<span class="pill gray">止めている</span>'}</div>
-      <h4 style="margin:4px 0">${esc(s.name)}</h4>
-      <div class="note"><b>${esc(c.when)}</b> → ${esc(c.who)} → <b>${esc(c.what)}</b></div>
-      <div class="note">${result}${s.skipped ? `・条件に当たらなかった ${s.skipped}` : ""}</div>
-    </div>`;
-  }).join("") || '<p class="note">まだありません</p>';
-  document.querySelectorAll("[data-step]").forEach((x) => x.addEventListener("click", () => {
-    const s = stepsCache.find((y) => String(y.id) === x.dataset.step);
-    const ta = s.trigger_args || {}, sel = s.selector || {};
+  table("steps", [
+    { key: "name", label: "名前", html: (s) => { const c = connectorText(s); return `<div class="c-name">${esc(s.name)}</div><div class="sub">${esc(c.when)} → ${esc(c.who)} → ${esc(c.what)}</div>`; } },
+    { key: "active", label: "状態", sortVal: (s) => (s.active ? 1 : 0), html: (s) => s.active ? pill("動いている") : pill("止めている", "gray") },
+    { key: "result", label: "結果", nosort: true, cls: "c-src", html: (s) => esc(stepResult(s)) },
+  ], r.steps, (s) => openConnector(s), "まだありません。「新しく作る」から作ります");
+}
+const stepResult = (s) => (s.action === "notify_admin" ? `知らせた ${s.notified || 0}` : s.action === "add_label" ? `付けた ${s.labeled || 0}` : `送った ${s.sent}・押した ${s.clicks} 回`) + (s.skipped ? `・条件外 ${s.skipped}` : "");
+
+function openBroadcast(b, msg) {
+  const r = deliverData || {};
+  $("bf-wrap").classList.add("hidden"); $("sf-wrap").classList.add("hidden");
+  showPane("deliver", "detail", b.subject, "一斉配信の一覧へ");
+  $("bc-detail").innerHTML = headHtml({
+    title: b.subject,
+    sub: `作った日 ${esc(dayOf(b.created_at))}`,
+    pills: [pill(BC_LABEL[b.status] || b.status, b.status === "draft" || b.status === "canceled" ? "gray" : "warn"), r.open_to_all ? pill("誰にでも届く", "warn") : pill("いまはテスト宛てにだけ届く", "gray")],
+    actions: `${b.status === "draft" ? `<button class="btn small" type="button" id="bc-queue">送る</button>` : ""}${["draft", "queued", "sending"].includes(b.status) ? `<button class="btn ghost small" type="button" id="bc-cancel">止める</button>` : ""}`,
+  }) + `${msg ? `<p class="msg ok" style="margin:12px 0 0">${esc(msg)}</p>` : ""}`
+    + tabsHtml([["result", "結果"], ["body", "中身"], ["who", "宛先"]], "result")
+    + `<section class="card" data-pane="result"><dl class="kv">
+        <dt>宛先</dt><dd>${b.target_count ?? "送る列に入れたときに数える"}${b.target_count != null ? " 人" : ""}</dd>
+        <dt>送った</dt><dd>${b.sent}・送らなかった ${b.blocked}・失敗 ${b.failed}</dd>
+        <dt>リンクを押した</dt><dd>${b.clicked_people} 人（${b.clicks} 回）</dd>
+      </dl></section>
+      <section class="card" data-pane="body"><div class="note" style="margin-bottom:6px">件名：${esc(b.subject)}</div><div class="pre">${esc(b.body || "")}</div></section>
+      <section class="card" data-pane="who"><p style="margin:0">${esc(filterText(b.filter || {}))}</p><p class="note" style="margin:8px 0 0">${r.open_to_all ? "いまは条件に当たった人に本当に届きます" : "いまはテスト宛てにだけ届きます"}</p></section>`;
+  wireTabs($("bc-detail"), "result");
+  if ($("bc-queue")) $("bc-queue").addEventListener("click", async () => {
+    // 便 9：確認の文に、件名・宛先・いま誰に届くかを出す（「使い方」の送る前に見ることと同じ中身）
+    if (!confirm(`この一斉配信を送る列に入れます。\n\n件名：${b.subject || ""}\n宛先：${filterText(b.filter || {})}\n${r.open_to_all ? "いまは誰にでも届きます" : "いまはテスト宛てにだけ届きます"}\n\n毎時の定時の処理で、今日の上限の中から送ります。`)) return;
+    const q = await api(`/api/admin/broadcasts/${b.id}/queue`, { method: "POST", token });
+    if (!q.ok) return fail("送る列に入れられませんでした（" + (q.error || q.status) + "）");
+    await loadDeliver();
+    const nb = deliverData.broadcasts.find((x) => x.id === b.id); if (nb) openBroadcast(nb, "送る列に入れました。毎時の定時の処理で送ります");
+  });
+  if ($("bc-cancel")) $("bc-cancel").addEventListener("click", async () => {
+    const q = await api(`/api/admin/broadcasts/${b.id}/cancel`, { method: "POST", token });
+    if (!q.ok) return fail("止められませんでした（" + (q.error || q.status) + "）");
+    await loadDeliver();
+    const nb = deliverData.broadcasts.find((x) => x.id === b.id); if (nb) openBroadcast(nb, "止めました");
+  });
+}
+
+function openConnector(s, keepStatus) {
+  $("bc-detail").innerHTML = ""; $("bf-wrap").classList.add("hidden"); $("sf-wrap").classList.remove("hidden");
+  showPane("deliver", "detail", s ? s.name : "新しいコネクタ", "コネクタの一覧へ");
+  if (!s) {
+    $("sf").reset(); $("sf-id").value = "";
+    $("sf-head").innerHTML = headHtml({ title: "新しいコネクタ", sub: "① 〜したら → ② 誰に → ③ 〜する の順に決めて保存します。「動かす」に印を付けると、その時刻より後のきっかけから動きます" });
+  } else {
+    const ta = s.trigger_args || {}, sel = s.selector || {}, c = connectorText(s);
     $("sf-id").value = s.id; $("sf-name").value = s.name; $("sf-trigger").value = s.trigger; $("sf-product").value = s.product_id || "";
     $("sf-tlabel").value = ta.label || ""; $("sf-turl").value = ta.url || ""; $("sf-tform").value = ta.form || "";
     $("sf-labels").value = (sel.labels || []).join(","); $("sf-nolabels").value = (sel.not_labels || []).join(",");
     $("sf-action").value = s.action || "send_email"; $("sf-alabel").value = (s.action_args || {}).label || "";
     $("sf-delay").value = s.delay_hours; $("sf-subject").value = s.subject; $("sf-body").value = s.body; $("sf-active").checked = s.active;
-    $("sf-status").textContent = "直しています：" + s.name;
-    showConnectorFields();
-  }));
+    $("sf-head").innerHTML = headHtml({ title: s.name, sub: `${esc(c.when)} → ${esc(c.who)} → ${esc(c.what)}`, pills: [s.active ? pill("動いている") : pill("止めている", "gray"), pill(stepResult(s), "gray")] });
+  }
+  if (!keepStatus) $("sf-status").textContent = "";
+  sfTabs("tr");
+  showConnectorFields();
 }
 
 // ---------- フォームと人の項目（便 11a） ----------
@@ -801,69 +915,98 @@ async function loadPersonValues(id) {
     </details>`;
 }
 
-let formsReady = false, currentForm = null;
+let formsReady = false, currentForm = null, fieldsAll = [];
 async function loadForms() {
   if (!formsReady) {
     formsReady = true;
     $("fm-new").addEventListener("click", () => formEditor(null));
-    $("fd-type").addEventListener("change", () => $("fd-opts-wrap").classList.toggle("hidden", $("fd-type").value !== "select"));
-    $("fd").addEventListener("submit", async (ev) => {
-      ev.preventDefault();
-      const body = { key: $("fd-key").value.trim(), label: $("fd-label").value.trim(), type: $("fd-type").value };
-      if (body.type === "select") body.options = $("fd-opts").value;
-      const r = await api("/api/admin/fields", { method: "POST", token, body });
-      const why = { bad_key: "中の名前は英小文字で始め、英小文字・数字・下線の 2〜31 字", bad_label: "項目の名前を入れてください", need_options: "選択肢を入れてください", type_locked: "その中の名前は別の型で使っています" };
-      $("fd-status").textContent = r.ok ? (r.created ? "足しました" : "直しました") : (why[r.error] || "足せませんでした（" + (r.error || r.status) + "）");
-      if (r.ok) { $("fd").reset(); $("fd-opts-wrap").classList.add("hidden"); await loadForms(); }
-    });
+    $("fd-new").addEventListener("click", () => fieldEditor(null));
   }
   const [fr, fo] = await Promise.all([api("/api/admin/fields?all=1", { token }), api("/api/admin/forms", { token })]);
   if (!fr.ok || !fo.ok) { $("fm-count").textContent = "読めませんでした（" + ((fr.ok ? fo : fr).error || "") + "）"; return; }
   fieldsAt = 0;
+  fieldsAll = fr.fields;
   fieldsCache = fr.fields.filter((f) => !f.archived_at);
   fieldNames = Object.fromEntries(fr.fields.map((f) => [f.key, f.label]));
   formsCache = fo.forms;
-  $("fm-count").textContent = fo.store === "demo" ? "デモの置き場ではフォームは作れません" : `フォーム ${fo.count}・項目 ${fieldsCache.length}`;
-  $("forms-list").innerHTML = fo.forms.map((f) => `
-    <li data-form="${f.id}" ${f.id === currentForm ? 'aria-current="true"' : ""}>
-      <div><div>${esc(f.title)}</div><div class="sub">/form?f=${esc(f.slug)}</div></div>
-      <div style="text-align:right">${f.active ? '<span class="pill">公開中</span>' : '<span class="pill gray">止めている</span>'}<div class="sub">回答 ${f.answers}</div></div>
-    </li>`).join("") || '<li class="note">まだありません</li>';
-  document.querySelectorAll("[data-form]").forEach((li) => li.addEventListener("click", () => formEditor(formsCache.find((x) => x.id === li.dataset.form))));
-  $("fields-list").innerHTML = fr.fields.map((f) => `
-    <li><div><div>${esc(f.label)}${f.archived_at ? ' <span class="pill gray">しまった</span>' : ""}</div><div class="sub">${esc(TYPE_LABEL[f.type] || f.type)}${f.type === "select" ? "：" + esc((f.options || []).join("・")) : ""}</div></div>
-      <div><button class="btn ghost small" type="button" data-farch="${esc(f.key)}" data-to="${f.archived_at ? "0" : "1"}">${f.archived_at ? "戻す" : "しまう"}</button></div></li>`).join("") || '<li class="note">まだありません。下で足します</li>';
-  document.querySelectorAll("[data-farch]").forEach((b) => b.addEventListener("click", async () => {
-    const r = await api("/api/admin/fields", { method: "POST", token, body: { key: b.dataset.farch, archived: b.dataset.to === "1" } });
-    if (!r.ok) fail("変えられませんでした（" + (r.error || r.status) + "）");
-    loadForms();
-  }));
-  if (currentForm) { const f = formsCache.find((x) => x.id === currentForm); if (f) formEditor(f, true); }
+  $("fm-count").textContent = fo.store === "demo" ? "デモの置き場ではフォームは作れません" : `${fo.count} 件・公開中 ${fo.forms.filter((f) => f.active).length}`;
+  table("forms-table", [
+    { key: "title", label: "題名", html: (f) => `<div class="c-name">${esc(f.title)}</div><div class="sub">/form?f=${esc(f.slug)}</div>` },
+    { key: "active", label: "状態", sortVal: (f) => (f.active ? 1 : 0), html: (f) => f.active ? pill("公開中") : pill("止めている", "gray") },
+    { key: "answers", label: "回答", html: (f) => String(f.answers) },
+    { key: "last_answer_at", label: "最後の回答", cls: "c-src", html: (f) => esc(f.last_answer_at ? ago(f.last_answer_at) : "—") },
+    { key: "created_at", label: "作った日", cls: "c-reg", html: (f) => esc(dayOf(f.created_at)) },
+  ], fo.forms, (f) => formEditor(f), "まだありません。「新しく作る」から作ります");
+  table("fields-table", [
+    { key: "label", label: "項目の名前", html: (f) => `<div class="c-name">${esc(f.label)}</div>${f.type === "select" ? `<div class="sub">${esc((f.options || []).join("・"))}</div>` : ""}` },
+    { key: "type", label: "型", html: (f) => esc(TYPE_LABEL[f.type] || f.type) },
+    { key: "archived_at", label: "状態", sortVal: (f) => (f.archived_at ? 1 : 0), html: (f) => f.archived_at ? pill("しまった", "gray") : pill("使っている") },
+  ], fr.fields, (f) => fieldEditor(f), "まだありません。「新しく作る」から足します");
 }
 
-function formEditor(f, keepStatus) {
+// 人の項目の詳細（足す・名前や選択肢を直す・しまう）。中の名前は自動で付ける（画面に英字を出さないため）
+function fieldEditor(f, msg) {
+  showPane("forms", "detail", f ? f.label : "新しい項目", "人の項目の一覧へ");
+  $("form-detail").innerHTML = headHtml({
+    title: f ? f.label : "新しい項目",
+    sub: f ? esc(TYPE_LABEL[f.type] || f.type) : "フォームで聞く欄を足します。型（文字・数・日付・選ぶ）はあとから変えられません",
+    pills: f ? [f.archived_at ? pill("しまった", "gray") : pill("使っている")] : [],
+    actions: f ? `<button class="btn ghost small" type="button" id="fd-arch">${f.archived_at ? "戻す" : "しまう"}</button>` : "",
+  }) + `${msg ? `<p class="msg ok" style="margin:12px 0 0">${esc(msg)}</p>` : ""}
+    <section class="card" style="margin-top:16px"><form id="fd" class="stack">
+      <div><label for="fd-label">項目の名前</label><input id="fd-label" type="text" maxlength="40" placeholder="例 X アカウント名" value="${esc(f ? f.label : "")}"></div>
+      <div><label for="fd-type">型</label><select id="fd-type" class="inline" ${f ? "disabled" : ""}>${Object.entries(TYPE_LABEL).map(([k, v]) => `<option value="${k}" ${f && f.type === k ? "selected" : ""}>${v}</option>`).join("")}</select></div>
+      <div id="fd-opts-wrap" class="${f && f.type === "select" ? "" : "hidden"}"><label for="fd-opts">選択肢（カンマ区切り）</label><input id="fd-opts" type="text" placeholder="例 はい,いいえ" value="${esc(f ? (f.options || []).join(",") : "")}"></div>
+      <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="submit">${f ? "保存" : "足す"}</button><span class="note" id="fd-status"></span></div>
+    </form></section>`;
+  $("fd-type").addEventListener("change", () => $("fd-opts-wrap").classList.toggle("hidden", $("fd-type").value !== "select"));
+  $("fd").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const type = f ? f.type : $("fd-type").value;
+    const body = { key: f ? f.key : "f_" + Date.now().toString(36), label: $("fd-label").value.trim() };
+    if (!f) body.type = type;
+    if (type === "select") body.options = $("fd-opts").value;
+    const r = await api("/api/admin/fields", { method: "POST", token, body });
+    const why = { bad_label: "項目の名前を入れてください（40 字まで）", need_options: "選択肢を入れてください", bad_options: "選択肢は 30 個・各 60 字まで" };
+    if (!r.ok) { $("fd-status").textContent = why[r.error] || "保存できませんでした（" + (r.error || r.status) + "）"; return; }
+    await loadForms();
+    fieldEditor(r.field, r.created ? "足しました。フォームの詳細の「聞く項目」に出ます" : "保存しました");
+  });
+  if ($("fd-arch")) $("fd-arch").addEventListener("click", async () => {
+    const r = await api("/api/admin/fields", { method: "POST", token, body: { key: f.key, archived: !f.archived_at } });
+    if (!r.ok) return fail("変えられませんでした（" + (r.error || r.status) + "）");
+    await loadForms();
+    fieldEditor(r.field, r.field.archived_at ? "しまいました。フォームには出ません（これまでの答えは残ります）" : "戻しました");
+  });
+}
+
+function formEditor(f, msg) {
   currentForm = f ? f.id : null;
-  document.querySelectorAll("[data-form]").forEach((li) => li.toggleAttribute("aria-current", li.dataset.form === currentForm));
+  showPane("forms", "detail", f ? f.title : "新しいフォーム", "フォームの一覧へ");
   const items = new Map(((f && f.items) || []).map((it) => [it.key, it]));
   const url = f ? location.origin + "/form?f=" + f.slug : "";
-  const prevStatus = keepStatus && $("fe-status") ? $("fe-status").textContent : "";
-  $("form-detail").innerHTML = `
-    <h3 style="margin-top:0">${f ? "フォームを直す" : "新しいフォーム"}</h3>
-    ${f && f.active ? `<div class="note" style="margin:0 0 10px">公開の住所：<a href="${esc(url)}" target="_blank">${esc(url)}</a> <button class="btn ghost small" type="button" id="fe-copy">写す</button></div>` : ""}
-    <form id="fe" class="stack">
+  $("form-detail").innerHTML = headHtml({
+    title: f ? f.title : "新しいフォーム",
+    sub: f ? `/form?f=${esc(f.slug)}` : "題名と聞く項目を決めて保存します。「公開する」に印を付けると住所が開きます",
+    pills: f ? [f.active ? pill("公開中") : pill("止めている", "gray"), pill(`回答 ${f.answers}`, "gray")] : [],
+    actions: f && f.active ? `<a class="btn ghost small" href="${esc(url)}" target="_blank" rel="noopener">公開のページを開く</a><button class="btn ghost small" type="button" id="fe-copy">住所を写す</button>` : "",
+  }) + `${msg ? `<p class="msg ok" style="margin:12px 0 0">${esc(msg)}</p>` : ""}`
+    + (f ? tabsHtml([["edit", "中身"], ["answers", `回答 ${f.answers}`]], "edit") : `<div style="height:16px"></div>`)
+    + `<section class="card" data-pane="edit"><form id="fe" class="stack">
       <div><label for="fe-title">題名</label><input id="fe-title" type="text" maxlength="80" value="${esc(f ? f.title : "")}"></div>
       <div><label for="fe-slug">住所の名前（英小文字・数字・ハイフン。/form?f= のあと）</label><input id="fe-slug" type="text" maxlength="41" autocapitalize="off" autocomplete="off" placeholder="例 monthly" value="${esc(f ? f.slug : "")}"></div>
       <div><label for="fe-intro">最初の説明</label><textarea id="fe-intro" rows="3">${esc(f ? f.intro : "")}</textarea></div>
       <div><label for="fe-thanks">送ったあとに出す文</label><textarea id="fe-thanks" rows="2" placeholder="空なら「受け取りました。ありがとうございます。」">${esc(f ? f.thanks : "")}</textarea></div>
-      <div class="note">聞く項目（上から並ぶ。項目は「人の項目」の欄で足す）</div>
+      <div class="note">聞く項目（上から並ぶ）</div>
       <div class="fm-items">${fieldsCache.map((x) => `<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
         <label class="check"><input type="checkbox" data-item="${esc(x.key)}" ${items.has(x.key) ? "checked" : ""}> <span>${esc(x.label)} <span class="note">${esc(TYPE_LABEL[x.type] || x.type)}</span></span></label>
-        <label class="check"><input type="checkbox" data-req="${esc(x.key)}" ${items.get(x.key) && items.get(x.key).required ? "checked" : ""}> <span class="note">必須</span></label></div>`).join("") || '<p class="note">項目がまだありません</p>'}</div>
+        <label class="check"><input type="checkbox" data-req="${esc(x.key)}" ${items.get(x.key) && items.get(x.key).required ? "checked" : ""}> <span class="note">必須</span></label></div>`).join("") || '<p class="note">人の項目がまだありません。一覧の「人の項目」のタブで先に足します</p>'}</div>
       <label class="check"><input type="checkbox" id="fe-askname" ${!f || f.ask_name ? "checked" : ""}> <span>お名前も聞く</span></label>
       <label class="check"><input type="checkbox" id="fe-active" ${f && f.active ? "checked" : ""}> <span>公開する（外すと住所を開いても「開いていません」と出る）</span></label>
-      <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="submit">保存</button><span class="note" id="fe-status">${esc(prevStatus)}</span></div>
-    </form>
-    ${f ? `<h3 style="margin-top:20px">回答 <span class="note">${f.answers} 件</span></h3><div id="fe-answers" class="note">読んでいます…</div>` : ""}`;
+      <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="submit">保存</button><span class="note" id="fe-status"></span></div>
+    </form></section>`
+    + (f ? `<section class="card" data-pane="answers"><div id="fe-answers" class="note">読んでいます…</div></section>` : "");
+  if (f) wireTabs($("form-detail"), "edit");
   if ($("fe-copy")) $("fe-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText(url); $("fe-copy").textContent = "写しました"; } catch { $("fe-copy").textContent = "写せませんでした"; } });
   $("fe").addEventListener("submit", async (ev) => {
     ev.preventDefault();
@@ -877,8 +1020,10 @@ function formEditor(f, keepStatus) {
     if (f) body.id = f.id;
     const r = await api("/api/admin/forms", { method: "POST", token, body });
     const why = { bad_title: "題名を入れてください", bad_slug: "住所の名前は英小文字・数字・ハイフンの 2〜41 字", slug_taken: "その住所の名前はほかのフォームで使っています", need_items: "聞く項目を 1 つ以上選んでください" };
-    $("fe-status").textContent = r.ok ? (body.active ? "保存しました（公開中）" : "保存しました（まだ公開していません）") : (why[r.error] || "保存できませんでした（" + (r.error || r.status) + "）");
-    if (r.ok) { currentForm = r.form.id; loadForms(); }
+    if (!r.ok) { $("fe-status").textContent = why[r.error] || "保存できませんでした（" + (r.error || r.status) + "）"; return; }
+    await loadForms();
+    const nf = formsCache.find((x) => x.id === r.form.id);
+    if (nf) formEditor(nf, body.active ? "保存しました（公開中）" : "保存しました（まだ公開していません）");
   });
   if (f) loadFormAnswers(f.id);
 }
@@ -903,37 +1048,54 @@ async function loadLabelNames() {
   $("label-names").innerHTML = r.labels.map((x) => `<option value="${esc(x.label)}">${x.people} 人${x.auto ? "" : "・手"}</option>`).join("");
 }
 
-// ---------- 紹介（便 8g-2） ----------
+// ---------- 紹介（便 8g-2・便 18 で一覧の表 → 詳細） ----------
 let referCache = [];
 const yen = (n) => Number(n || 0).toLocaleString() + " 円";
-async function loadReferrals(focusId) {
+async function loadReferrals(focusId, msg) {
   const r = await api("/api/admin/referrals", { token });
   if (!r.ok) { $("rf-count").textContent = "読めませんでした（" + (r.error || r.status) + "）"; return; }
   referCache = r.referrers;
   $("rf-count").textContent = r.count ? `紹介した人 ${r.count} 人・まだ払っていない報酬 ${yen(r.unpaid_total)}（紹介から ${r.days} 日以内の購入だけ）` : "紹介のリンクから登録した人はまだいません";
-  $("referrers").innerHTML = r.referrers.map((x) => `
-    <li data-rid="${esc(x.referrer_id)}"><div style="min-width:0"><div>${esc(x.name || x.email)}</div><div class="sub">紹介で登録 ${x.referred} 人・購入 ${x.purchases} 件</div></div>
-      <div style="flex-shrink:0">${x.unpaid ? `<span class="pill warn">未払い ${esc(yen(x.unpaid))}</span>` : '<span class="pill gray">未払い 0</span>'}</div></li>`).join("");
-  document.querySelectorAll("#referrers li").forEach((li) => li.addEventListener("click", () => referrerDetail(li.dataset.rid)));
-  if (focusId) referrerDetail(focusId);
+  table("referrers", [
+    { key: "name", label: "紹介した人", sortVal: (x) => x.name || x.email, html: (x) => `<div class="c-name">${esc(x.name || x.email)}</div><div class="sub">${esc(x.email)}</div>` },
+    { key: "referred", label: "紹介で登録", html: (x) => `${x.referred} 人` },
+    { key: "purchases", label: "購入", cls: "c-src", html: (x) => `${x.purchases} 件` },
+    { key: "reward_total", label: "報酬", cls: "c-reg", html: (x) => esc(yen(x.reward_total)) },
+    { key: "unpaid", label: "未払い", html: (x) => x.unpaid ? pill(yen(x.unpaid), "warn") : pill("0 円", "gray") },
+  ], r.referrers, (x) => referrerDetail(x.referrer_id), "紹介のリンクから登録した人はまだいません");
+  if (focusId) referrerDetail(focusId, msg);
 }
-function referrerDetail(id) {
+function referrerDetail(id, msg) {
   const x = referCache.find((y) => y.referrer_id === id);
   if (!x) return;
-  document.querySelectorAll("#referrers li").forEach((li) => li.toggleAttribute("aria-current", li.dataset.rid === id));
-  $("referrer-detail").innerHTML = `
-    <h2 style="margin-bottom:2px">${esc(x.name || x.email)}</h2>
-    <div class="note">${esc(x.email)}・紹介の番号 ${esc(x.code)}</div>
-    <p class="note" style="word-break:break-all"><code>${esc(x.link)}</code></p>
-    <p>報酬 ${esc(yen(x.reward_total))}・払った ${esc(yen(x.paid_total))}・<b>まだ払っていない ${esc(yen(x.unpaid))}</b></p>
-    <h4>紹介で来た人</h4>
-    <ul class="people">${x.people.map((q) => `<li><div style="min-width:0"><div>${esc(q.name || q.email || q.id)}</div><div class="sub">${esc(fmtTime(q.at))}・購入 ${q.bought} 件${q.reward ? "・報酬 " + esc(yen(q.reward)) : ""}</div></div></li>`).join("") || '<li class="note">（まだいない）</li>'}</ul>
-    ${x.unpaid ? `<form id="rf-pay" class="stack" style="margin-top:12px">
-      <div><label for="rf-amount">払った金額（円）</label><input id="rf-amount" type="text" inputmode="numeric" value="${x.unpaid}"></div>
-      <div><label for="rf-note">メモ（任意・例 10/31 振込）</label><input id="rf-note" type="text" maxlength="200"></div>
-      <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="submit">払ったことを記録する</button><span class="note" id="rf-status"></span></div>
-      <p class="note" style="margin:0">払う作業（振込など）は B の外で行い、ここには記録だけを残します。</p>
-    </form>` : ""}`;
+  showPane("refer", "detail", x.name || x.email, "紹介の一覧へ");
+  $("referrer-detail").innerHTML = headHtml({
+    title: x.name || x.email,
+    sub: `${esc(x.email)}・紹介の番号 ${esc(x.code)}`,
+    pills: [pill(`報酬 ${yen(x.reward_total)}`, "gray"), pill(`払った ${yen(x.paid_total)}`, "gray"), x.unpaid ? pill(`まだ払っていない ${yen(x.unpaid)}`, "warn") : ""],
+    actions: `<button class="btn ghost small" type="button" id="rf-copy">紹介のリンクを写す</button>`,
+  }) + `${msg ? `<p class="msg ok" style="margin:12px 0 0">${esc(msg)}</p>` : ""}`
+    + tabsHtml([["people", `紹介で来た人 ${x.people.length}`], ["pay", "払った記録"]], "people")
+    + `<section class="card" data-pane="people">
+        <p class="note" style="word-break:break-all;margin:0 0 8px">紹介のリンク：<code>${esc(x.link)}</code></p>
+        <div id="rf-people" class="table-wrap"></div>
+      </section>
+      <section class="card" data-pane="pay">
+        ${x.unpaid ? `<form id="rf-pay" class="stack">
+          <div><label for="rf-amount">払った金額（円）</label><input id="rf-amount" type="text" inputmode="numeric" value="${x.unpaid}"></div>
+          <div><label for="rf-note">メモ（任意・例 10/31 振込）</label><input id="rf-note" type="text" maxlength="200"></div>
+          <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="submit">払ったことを記録する</button><span class="note" id="rf-status"></span></div>
+          <p class="note" style="margin:0">払う作業（振込など）は B の外で行い、ここには記録だけを残します</p>
+        </form>` : `<p class="note" style="margin:0">まだ払っていない報酬はありません。紹介で来た人が報酬の付く商品を買うと、ここで払った記録を付けられます</p>`}
+      </section>`;
+  wireTabs($("referrer-detail"), "people");
+  table("rf-people", [
+    { key: "name", label: "名前", sortVal: (q) => q.name || q.email || "", html: (q) => `<div class="c-name">${esc(q.name || q.email || "（名前なし）")}</div>` },
+    { key: "at", label: "登録した日", html: (q) => esc(dayOf(q.at)) },
+    { key: "bought", label: "購入", html: (q) => `${q.bought} 件` },
+    { key: "reward", label: "報酬", html: (q) => esc(q.reward ? yen(q.reward) : "—") },
+  ], x.people, (q) => { if (q.id) { openView("people"); detail(q.id); } }, "まだいません");
+  $("rf-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText(x.link); $("rf-copy").textContent = "写しました"; } catch { $("rf-copy").textContent = "写せませんでした"; } });
   if (!x.unpaid) return;
   $("rf-pay").addEventListener("submit", async (ev) => {
     ev.preventDefault();
@@ -941,7 +1103,7 @@ function referrerDetail(id) {
     $("rf-status").textContent = "記録しています…";
     const r = await api("/api/admin/referrals/paid", { method: "POST", token, body: { referrer_id: x.referrer_id, amount, note: $("rf-note").value } });
     if (!r.ok) { $("rf-status").textContent = r.error === "over_unpaid" ? "まだ払っていない分（" + yen(r.unpaid) + "）を超えています" : "記録できませんでした（" + (r.error || r.status) + "）"; return; }
-    await loadReferrals(x.referrer_id);
+    await loadReferrals(x.referrer_id, "払ったことを記録しました");
   });
 }
 
@@ -954,29 +1116,37 @@ function priceOf(p) {
   if (p.kind === "installment") return yen + " × " + p.installments + " 回";
   return yen + (p.grant_days ? "（" + p.grant_days + " 日）" : "");
 }
-async function loadProducts(focusId) {
+async function loadProducts(focusId, msg) {
   const r = await api("/api/admin/products", { token });
   if (!r.ok) { $("pr-count").textContent = "読めませんでした（" + (r.error || r.status) + "）"; return; }
   productsCache = r.products;
   const sellable = r.products.filter((p) => p.active).length, shown = r.products.filter((p) => p.public).length;
   $("pr-count").textContent = `${r.count} 件・売っている ${sellable}・サイトに出している ${shown}${r.store === "demo" ? "（デモの置き場：見本だけ）" : ""}`;
-  $("products").innerHTML = r.products.map((p) => `
-    <li data-pid="${esc(p.id)}"><div style="min-width:0"><div>${esc(p.name)}</div><div class="sub">${esc(KIND_LABEL[p.kind] || p.kind)}・${esc(priceOf(p))}・売れた ${p.sold}</div></div>
-      <div style="flex-shrink:0;display:flex;gap:4px">${p.active ? '<span class="pill">売る</span>' : '<span class="pill gray">売らない</span>'}${p.public ? '<span class="pill">サイト</span>' : ""}</div></li>`).join("");
-  document.querySelectorAll("#products li").forEach((li) => li.addEventListener("click", () => productDetail(li.dataset.pid)));
-  if (focusId) productDetail(focusId);
+  table("products", [
+    { key: "name", label: "名前", html: (p) => `<div class="c-name">${esc(p.name)}</div>${p.list_price_of ? `<div class="sub">紹介用の価格</div>` : ""}` },
+    { key: "kind", label: "種類", cls: "c-src", sortVal: (p) => KIND_LABEL[p.kind] || p.kind, html: (p) => esc(KIND_LABEL[p.kind] || p.kind) },
+    { key: "amount", label: "値段", sortVal: (p) => Number(p.amount) || 0, html: (p) => esc(priceOf(p)) },
+    { key: "sold", label: "売れた", sortVal: (p) => p.sold || 0, html: (p) => String(p.sold) },
+    { key: "active", label: "状態", sortVal: (p) => (p.active ? 2 : 0) + (p.public ? 1 : 0), html: (p) => (p.active ? pill("売る") : pill("売らない", "gray")) + (p.public ? " " + pill("サイト") : "") },
+  ], r.products, (p) => productDetail(p.id), "まだありません");
+  if (focusId) productDetail(focusId, msg);
 }
-function productDetail(id) {
+function productDetail(id, msg) {
   const p = productsCache.find((x) => x.id === id);
   if (!p) return;
-  document.querySelectorAll("#products li").forEach((li) => li.toggleAttribute("aria-current", li.dataset.pid === id));
+  showPane("products", "detail", p.name, "商品の一覧へ");
   const link = location.origin + "/register?product=" + encodeURIComponent(p.id);
   const ro = p.kind === "installment" ? "disabled" : "";
-  $("product-detail").innerHTML = `
-    <h2 style="margin-bottom:2px">${esc(p.name)}</h2>
-    <div class="note">${esc(p.id)}・${esc(KIND_LABEL[p.kind] || p.kind)}・売れた ${p.sold}${p.list_price_of ? "・紹介用（元：" + esc(p.list_price_of) + "）" : ""}</div>
-    ${p.note ? `<p class="note">${esc(p.note)}</p>` : ""}
-    <form id="pf" class="stack" style="margin-top:12px">
+  $("product-detail").innerHTML = headHtml({
+    title: p.name,
+    sub: `${esc(KIND_LABEL[p.kind] || p.kind)}・${esc(priceOf(p))}・売れた ${p.sold}${p.list_price_of ? "・紹介用（元：" + esc(p.list_price_of) + "）" : ""}`,
+    pills: [p.active ? pill("売る") : pill("売らない", "gray"), p.public ? pill("サイトに出す") : pill("サイトに出さない", "gray")],
+    actions: `<button class="btn ghost small" id="pf-copy" type="button">申し込みのリンクを写す</button>`,
+  }) + `${msg ? `<p class="msg ok" style="margin:12px 0 0">${esc(msg)}</p>` : ""}`
+    + tabsHtml([["edit", "設定"], ["link", "申し込みのリンク"]], "edit")
+    + `<section class="card" data-pane="edit">
+      ${p.note ? `<p class="note" style="margin-top:0">${esc(p.note)}</p>` : ""}
+      <form id="pf" class="stack">
       <div><label for="pf-name">名前</label><input id="pf-name" type="text" maxlength="120" value="${esc(p.name)}"></div>
       <div><label for="pf-amount">金額（円）</label><input id="pf-amount" type="text" inputmode="numeric" value="${p.amount}"></div>
       ${p.kind === "subscription" ? `<div><label for="pf-period">周期</label><select id="pf-period" class="inline"><option value="monthly" ${p.period === "monthly" ? "selected" : ""}>毎月</option><option value="annually" ${p.period === "annually" ? "selected" : ""}>毎年</option></select></div>` : ""}
@@ -987,12 +1157,14 @@ function productDetail(id) {
       <div><label for="pf-desc">説明（生徒に見える）</label><textarea id="pf-desc" rows="2">${esc(p.description || "")}</textarea></div>
       <label class="check"><input type="checkbox" id="pf-multi" ${p.deny_multiple ? "checked" : ""}> <span>重ねて買えない</span></label>
       <label class="check"><input type="checkbox" id="pf-active" ${p.active ? "checked" : ""} ${ro}> <span>売る</span></label>
-      <label class="check"><input type="checkbox" id="pf-public" ${p.public ? "checked" : ""} ${ro}> <span>サイトの一覧に出す（出さなくても、下のリンクを渡した人は買える）</span></label>
-      <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="submit" ${ro}>変える</button><span class="note" id="pf-status"></span></div>
-    </form>
-    <h4 style="margin-top:16px">申し込みのリンク</h4>
-    <p class="note" style="word-break:break-all;margin:0"><code>${esc(link)}</code></p>
-    <button class="btn ghost small" id="pf-copy" type="button" style="margin-top:8px">リンクを写す</button>`;
+      <label class="check"><input type="checkbox" id="pf-public" ${p.public ? "checked" : ""} ${ro}> <span>サイトの一覧に出す（出さなくても、申し込みのリンクを渡した人は買える）</span></label>
+      <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="submit" ${ro}>保存</button><span class="note" id="pf-status"></span></div>
+    </form></section>
+    <section class="card" data-pane="link">
+      <p class="note" style="margin-top:0">このリンクを開くと、登録のあとにこの商品の申し込みに進みます</p>
+      <p style="word-break:break-all;margin:0"><code>${esc(link)}</code></p>
+    </section>`;
+  wireTabs($("product-detail"), "edit");
   $("pf-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText(link); $("pf-copy").textContent = "写しました"; } catch (_) { $("pf-copy").textContent = "写せませんでした"; } });
   $("pf").addEventListener("submit", async (ev) => {
     ev.preventDefault();
@@ -1007,13 +1179,13 @@ function productDetail(id) {
     if (num($("pf-rate").value) !== (p.affiliate_rate ?? null)) body.affiliate_rate = num($("pf-rate").value);
     if ($("pf-period")) body.period = $("pf-period").value;
     if ($("pf-days")) body.grant_days = num($("pf-days").value);
-    $("pf-status").textContent = "変えています…";
+    $("pf-status").textContent = "保存しています…";
     const r = await api("/api/admin/products", { method: "POST", token, body });
-    if (!r.ok) { $("pf-status").textContent = "変えられませんでした（" + (r.error || r.status) + "）"; return; }
-    await loadProducts(p.id);
-    $("pf-status").textContent = r.changed && Object.keys(r.changed).length ? "変えました：" + Object.keys(r.changed).join("・") : "変わったところはありません";
+    if (!r.ok) { $("pf-status").textContent = "保存できませんでした（" + (r.error || r.status) + "）"; return; }
+    await loadProducts(p.id, r.changed && Object.keys(r.changed).length ? "保存しました（変えたところ：" + Object.keys(r.changed).map((k) => PF_LABEL[k] || k).join("・") + "）" : "変わったところはありません");
   });
 }
+const PF_LABEL = { name: "名前", amount: "金額", period: "周期", grant_days: "権利の日数", sales_limit: "販売数の上限", affiliate_rate: "紹介の報酬", grants: "権利の印", description: "説明", deny_multiple: "重ねて買えない", active: "売る", public: "サイトに出す" };
 
 // 便 7a：オプチャの招待リンク。表 b_settings の 1 行を読み、差し替える（AI の set_community_link と同じ処理）
 function communityStatus(r) {

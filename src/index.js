@@ -45,7 +45,7 @@ import { makeRefer } from "./refer.js";
 import { makeBlocks } from "./blocks.js";
 import { LANES } from "./plan.js";
 
-const VERSION = "0.24.0-b17";
+const VERSION = "0.25.0-b18";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
