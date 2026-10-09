@@ -39,6 +39,7 @@ import { makeChanges } from "./changes.js";
 import { makeConnect } from "./connect.js";
 import { makeToday, stageOf } from "./today.js";
 import { makePush } from "./push.js";
+import { makeRefer } from "./refer.js";
 import { LANES } from "./plan.js";
 
 const VERSION = "0.19.0-b8g1";
@@ -51,6 +52,8 @@ const IMAGE_TYPES = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "we
 const IMAGE_MAX_BYTES = 5 * 1024 * 1024;
 const TEXT_MAX = 8000;
 const UUID_RE = /^[0-9a-f-]{36}$/i;
+// 便 8g-2：返す版はこちら（VERSION の行は便 8g-1 のプルリクと同じ行を直さないよう、触らずに残した。次の便で 1 本にまとめる）
+const VERSION_NOW = "0.20.0-b8g2";
 
 export default {
   async fetch(request, env) {
@@ -92,7 +95,10 @@ const bin3 = makeBin3({ db, addEvent, logInbound, json, mailcfg, onCharge: (env,
 const bin4 = makeBin4({ db, addEvent, bin3 });
 const guard = makeGuard({ db, logInbound });
 const bridge = makeBridge({ db, rawDb, addEvent, secretHeaders });
-const sell = makeSell({ db, addEvent, bin3, bridge });
+const sell = makeSell({ db, addEvent, bin3, bridge, logInbound });
+// B の便 8g-2：紹介。紹介者の表は作らず、出来事 referred・referral_reward・referral_paid に積む。率は商品の台帳の affiliate_rate（%）。中身は src/refer.js
+const refer = makeRefer({ db, addEvent, logInbound });
+sell.onPurchased = (env, buyerId, ev, product, actor) => refer.onPurchase(env, buyerId, ev, product, actor);
 const push = makePush({ db, addEvent, logInbound });
 const connect = makeConnect({ db, addEvent, logInbound, sell, mailcfg, push });
 const deliver = makeDeliver({ db, addEvent, logInbound, bin3, sell, mailcfg, connect });
@@ -564,7 +570,7 @@ async function handleApi(request, env, url) {
     let mail;
     try { mail = await bin3.mailState(env); } catch (e) { mail = { binding: !!env.EMAIL, from: null, scope: null, error: String(e.message).slice(0, 200) }; }
     return json({
-      ok: missing.length === 0 && dbOk === true, version: VERSION, missing_settings: missing, db: dbOk, images: !!env.IMAGES,
+      ok: missing.length === 0 && dbOk === true, version: VERSION_NOW, missing_settings: missing, db: dbOk, images: !!env.IMAGES,
       store: env.B_STORE ? "production" : "demo", manabu, public_origin: env.PUBLIC_ORIGIN || null,
       univapay: { configured: pay.configured, mode: pay.mode, store: !!pay.store_id },
       mail: { binding: mail.binding, from: mail.from, from_name: mail.from_name || null, reply_to: mail.reply_to || null, scope: mail.scope, open_to_all: mail.scope === "all", auth_hook: !!env.B_AUTH_HOOK_SECRET, ...(mail.error ? { error: mail.error } : {}) },
@@ -578,7 +584,7 @@ async function handleApi(request, env, url) {
       univapayAppId: bin3.univapayState(env).app_id,
       univapayMode: bin3.univapayState(env).mode || null,
       plan: env.B_STORE ? null : bin3.PLAN,
-      version: VERSION,
+      version: VERSION_NOW,
     });
   }
 
@@ -620,7 +626,10 @@ async function handleApi(request, env, url) {
       id = rows[0].id; isNew = true;
       await addEvent(env, id, "registered", { source }, "site");
     }
-    await logInbound(env, "register", { email, source }, { ok: true, isNew }, 200);
+    // 便 8g-2：紹介のリンク（/register?ref=番号）から来たら、紹介された印を積む（1 人 1 回・自分の番号は積まない）
+    let referred = false;
+    if (env.B_STORE && body.ref) referred = (await refer.onRegister(env, id, String(body.ref), isNew)).referred === true;
+    await logInbound(env, "register", { email, source, ref: body.ref ? String(body.ref).slice(0, 20) : undefined }, { ok: true, isNew, referred }, 200);
     return json({ ok: true, is_new: isNew });
   }
 
@@ -677,6 +686,8 @@ async function handleApi(request, env, url) {
       entitlement: ent,
       community: community.state,
       community_url: community.url,
+      // 便 8g-2：自分の紹介のリンクと数（紹介した人の名前は出さない）
+      referral: await refer.mine(env, customer, url.origin),
     });
   }
 
@@ -875,6 +886,13 @@ async function handleApi(request, env, url) {
     if (rmsg && method === "POST") {
       const body = await request.json().catch(() => ({}));
       const r = await core.sendChat(env, { person_id: rmsg[1], text: body.text }, "admin");
+      return json(r, r.ok === false ? 400 : 200);
+    }
+    // 便 8g-2：紹介（紹介者ごとの集計・払ったことの記録）
+    if (path === "/api/admin/referrals" && method === "GET") { const r = await refer.list(env, { origin: url.origin }); return json(r, r.ok === false ? 400 : 200); }
+    if (path === "/api/admin/referrals/paid" && method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      const r = await refer.markPaid(env, body, "admin");
       return json(r, r.ok === false ? 400 : 200);
     }
     // 便 8f-3：スマホの通知（鍵の公開の半分・購読の一覧・購読する／やめる・試しに送る）
@@ -1080,6 +1098,16 @@ const TOOLS = [
     inputSchema: { type: "object", properties: { title: { type: "string" }, body: { type: "string" }, url: { type: "string" } }, required: ["title"] },
   },
   {
+    name: "list_referrals",
+    description: "紹介の集計。紹介者ごとに、紹介の番号とリンク（/register?ref=番号）・紹介で登録した人の数 referred・その人たちの購入の数 purchases・報酬の合計 reward_total・払った合計 paid_total・まだ払っていない unpaid と、紹介した人の一覧を返す。報酬は商品の台帳の affiliate_rate（%）を買った時点の値で掛けたもの（紹介から 90 日以内の購入だけ・定期は最初の 1 回だけ）。referrer_id で 1 人に絞れる。0 件は count: 0。",
+    inputSchema: { type: "object", properties: { referrer_id: { type: "string" } } },
+  },
+  {
+    name: "mark_referral_paid",
+    description: "紹介者に報酬を払ったことを記録する（払う作業そのものは B の外の振込など）。amount は円の整数で、まだ払っていない分 unpaid を超えると over_unpaid で止まる。referrer_id は list_referrals の referrer_id。",
+    inputSchema: { type: "object", properties: { referrer_id: { type: "string" }, amount: { type: "integer" }, note: { type: "string" } }, required: ["referrer_id", "amount"] },
+  },
+  {
     name: "get_push_status",
     description: "スマホへの通知を受け取る端末の一覧（メール・端末の名前・通知の仕組みの住所の名前・いつから）。端末の宛先そのものと鍵は返さない。",
     inputSchema: { type: "object", properties: {} },
@@ -1204,7 +1232,7 @@ const TOOLS = [
   },
   {
     name: "set_product",
-    description: "商品を 1 つ変える、または足す。承認が要る道具：呼ぶと承認待ちになり approval_url が返る。変えられる欄：name・amount（円）・period（monthly／annually・定期だけ）・grant_days（単発の権利の日数）・grants（権利の印の配列）・deny_multiple・sales_limit・list_price_of・description・active（売る）・public（サイトに出す）・sort・note。新しく足すときは id・kind・name・amount が要る（分割 installment は足せない）。",
+    description: "商品を 1 つ変える、または足す。承認が要る道具：呼ぶと承認待ちになり approval_url が返る。変えられる欄：name・amount（円）・period（monthly／annually・定期だけ）・grant_days（単発の権利の日数）・grants（権利の印の配列）・deny_multiple・sales_limit・list_price_of・description・active（売る）・public（サイトに出す）・sort・note・affiliate_rate（紹介の報酬の率 %・0〜100 の整数・null で払わない）。新しく足すときは id・kind・name・amount が要る（分割 installment は足せない）。",
     inputSchema: {
       type: "object",
       properties: {
@@ -1214,6 +1242,7 @@ const TOOLS = [
         grant_days: { type: ["integer", "null"] }, grants: { type: "array", items: { type: "string" } },
         deny_multiple: { type: "boolean" }, sales_limit: { type: ["integer", "null"] }, list_price_of: { type: ["string", "null"] },
         description: { type: "string" }, active: { type: "boolean" }, public: { type: "boolean" }, sort: { type: "integer" }, note: { type: "string" },
+        affiliate_rate: { type: ["integer", "null"], description: "紹介の報酬の率（%）。null で払わない" },
       },
       required: ["id"],
     },
@@ -1341,7 +1370,7 @@ const TOOLS = [
 ];
 
 // 承認待ちの知らせに出す道具の名前（画面の TOOL_LABEL と同じ言い方）
-const TOOL_NAMES = { apply_tidy: "片付け案を当てる", add_label: "ラベルを付ける", remove_label: "ラベルを外す", set_step: "コネクタを変える", queue_broadcast: "一斉配信を送る", set_mail_settings: "メールの送り方を変える", set_community_link: "オプチャのリンクを変える", set_calendar_url: "カレンダーを変える", return_correction: "添削を返す", send_email: "メールを送る", send_chat: "メッセージを送る", set_product: "商品を変える", set_deal_stage: "商談を進める", set_note_member: "note の印を変える", send_seminar_archive: "アーカイブを配る", archive_campaign: "企画をしまう", undo_change: "元に戻す" };
+const TOOL_NAMES = { apply_tidy: "片付け案を当てる", add_label: "ラベルを付ける", remove_label: "ラベルを外す", set_step: "コネクタを変える", queue_broadcast: "一斉配信を送る", set_mail_settings: "メールの送り方を変える", set_community_link: "オプチャのリンクを変える", set_calendar_url: "カレンダーを変える", return_correction: "添削を返す", send_email: "メールを送る", send_chat: "メッセージを送る", set_product: "商品を変える", set_deal_stage: "商談を進める", set_note_member: "note の印を変える", send_seminar_archive: "アーカイブを配る", archive_campaign: "企画をしまう", undo_change: "元に戻す", mark_referral_paid: "紹介の報酬を払った記録" };
 
 // 道具を 1 回実行する（権限の確かめは呼ぶ側で済ませる）。承認されたあとの実行もここを通る
 async function runTool(env, name, args) {
@@ -1358,6 +1387,8 @@ async function runTool(env, name, args) {
     if (!String(args.title || "").trim()) return { ok: false, error: "need_title" };
     return await push.send(env, { title: args.title, body: args.body || "", url: u.startsWith("/admin") ? u : "/admin", tag: "ai" });
   }
+  if (name === "list_referrals") return await refer.list(env, { referrer_id: args.referrer_id, origin: env.PUBLIC_ORIGIN || "https://lab.shia2n.jp" });
+  if (name === "mark_referral_paid") return await refer.markPaid(env, args, "mcp");
   if (name === "get_push_status") { const r = await push.status(env); if (r.ok) delete r.public_key; return r; }
   if (name === "list_lessons") return await learn.listLessons(env, args);
   if (name === "get_meetings") return await bridge.meetings(env, args);
@@ -1430,7 +1461,7 @@ async function handleMcp(request, env, url) {
       const r = await rpc({ jsonrpc: "2.0", id: "get", method: "tools/call", params: { name: tool, arguments: args } }, env, url.origin);
       return json(r.result || r);
     }
-    return json({ ok: true, name: "utage-alt-demo", version: VERSION, tools: TOOLS.map((t) => t.name) });
+    return json({ ok: true, name: "utage-alt-demo", version: VERSION_NOW, tools: TOOLS.map((t) => t.name) });
   }
   if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
@@ -1453,7 +1484,7 @@ async function rpc(msg, env, origin = "") {
     return ok({
       protocolVersion: params.protocolVersion || "2025-06-18",
       capabilities: { tools: {} },
-      serverInfo: { name: "utage-alt-demo", version: VERSION },
+      serverInfo: { name: "utage-alt-demo", version: VERSION_NOW },
     });
   }
   if (method === "ping") return ok({});

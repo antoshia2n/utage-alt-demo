@@ -29,7 +29,8 @@ const SOURCE_NAME = { x: "X", note: "note", youtube: "YouTube", direct: "直接"
 // 「最後に動いた日」に数える、本人が動いた出来事
 const ACTIVE_TYPES = new Set(["registered", "login", "lesson_viewed", "correction_submitted", "email_clicked", "purchase_completed", "seminar_registered", "consult_booked", "announcement_opened"]);
 export const LABEL_EVENT_TYPES = ["registered", "login", "lesson_viewed", "correction_submitted", "email_clicked", "email_sent",
-  "purchase_completed", "seminar_registered", "consult_booked", "announcement_opened", "label_added", "label_removed"];
+  "purchase_completed", "seminar_registered", "consult_booked", "announcement_opened", "label_added", "label_removed",
+  "referred", "referral_reward"];
 
 const byTime = (a, b) => String(a.occurred_at).localeCompare(String(b.occurred_at)) || (Number(a.id || 0) - Number(b.id || 0));
 
@@ -40,8 +41,9 @@ export function productLabelName(name) {
 }
 
 // 1 人分の自動ラベル。ownerOf は部品の鍵（step:12・broadcast:uuid）→ 企画名（常設は入れない）。productNames は商品の番号 → 外の名前
-export function autoLabels({ person, events = [], member = false, ownerOf = {}, productNames = {}, now = Date.now() }) {
+export function autoLabels({ person, events = [], member = false, ownerOf = {}, productNames = {}, referrer = false, now = Date.now() }) {
   const out = new Set();
+  if (referrer) out.add("紹介した");
   out.add("流入元:" + (SOURCE_NAME[person.source] || person.source || "不明"));
   out.add(member ? "会員" : "会員でない");
   let last = person.created_at ? new Date(person.created_at).getTime() : 0;
@@ -55,6 +57,9 @@ export function autoLabels({ person, events = [], member = false, ownerOf = {}, 
     else if (e.type === "correction_submitted") out.add("添削を出した");
     else if (e.type === "seminar_registered") out.add("セミナーに申し込んだ");
     else if (e.type === "consult_booked") out.add("個別相談を予約した");
+    // 便 8g-2：紹介で来た人と、紹介した人（紹介した人の印は、その人のリンクから誰かが登録したとき）
+    else if (e.type === "referred") out.add("紹介で来た");
+    else if (e.type === "referral_reward") out.add("紹介した");
     else if (e.type === "email_sent") {
       const key = p.kind === "step" && p.step_id != null ? `step:${p.step_id}` : p.kind === "broadcast" && p.broadcast_id ? `broadcast:${p.broadcast_id}` : null;
       if (key && ownerOf[key]) out.add("企画:" + ownerOf[key]);
@@ -113,13 +118,16 @@ export function makeConnect(h) {
     let pq = "customer_summary?select=id,source,created_at&limit=10000";
     let eq = `events?select=id,customer_id,type,payload,occurred_at&type=in.(${LABEL_EVENT_TYPES.join(",")})&order=id.asc&limit=50000`;
     if (onlyIds && onlyIds.length) { pq += `&id=in.(${onlyIds.join(",")})`; eq += `&customer_id=in.(${onlyIds.join(",")})`; }
-    const [people, events, ent, ownerOf, productNames] = await Promise.all([db(env, "GET", pq), db(env, "GET", eq), sell.entitlementMap(env), ownersMap(env), productNameMap(env)]);
+    const [people, events, ent, ownerOf, productNames, refs] = await Promise.all([db(env, "GET", pq), db(env, "GET", eq), sell.entitlementMap(env), ownersMap(env), productNameMap(env),
+      db(env, "GET", "events?select=payload&type=eq.referred&limit=50000")]);
+    // 便 8g-2：紹介した人（その人のリンクから誰かが登録した）。紹介された側の行に積まれているので、全員分から引く
+    const referrers = new Set(refs.map((e) => e.payload && e.payload.by).filter(Boolean));
     const byPerson = new Map();
     for (const e of events) { if (!byPerson.has(e.customer_id)) byPerson.set(e.customer_id, []); byPerson.get(e.customer_id).push(e); }
     const out = new Map();
     for (const p of people) {
       const evs = byPerson.get(p.id) || [];
-      out.set(p.id, mergeLabels(autoLabels({ person: p, events: evs, member: !!(ent[p.id] && ent[p.id].member), ownerOf, productNames }), manualLabels(evs)));
+      out.set(p.id, mergeLabels(autoLabels({ person: p, events: evs, member: !!(ent[p.id] && ent[p.id].member), ownerOf, productNames, referrer: referrers.has(p.id) }), manualLabels(evs)));
     }
     return out;
   }

@@ -33,6 +33,8 @@ export const DEFAULT_MODES = {
   get_today: "auto", get_stage_board: "auto", set_calendar_url: "approve",
   // 便 8f-3：生徒へのメッセージは承認（添削の返信と同じ）、Naoki への通知と端末の一覧は自動
   send_chat: "approve", notify_naoki: "auto", get_push_status: "auto",
+  // 便 8g-2：紹介の集計を読むのは自動、払った記録はお金の記録なので承認
+  list_referrals: "auto", mark_referral_paid: "approve",
 };
 
 // 権限を問わず通す道具（承認待ちを見るための道具が承認待ちになると回らないため）
