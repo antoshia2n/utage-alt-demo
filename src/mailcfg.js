@@ -26,7 +26,7 @@ const EMAIL_RE = /^[a-z0-9._%+-]{1,64}@[a-z0-9.-]{1,190}[.][a-z]{2,}$/;
 const cache = new WeakMap();
 
 export function makeMailCfg(h) {
-  const { db, logInbound } = h;
+  const { db, logInbound, changes } = h;
 
   // いまの設定。1 回の呼び出しの中では表を 1 回だけ読む
   async function get(env) {
@@ -106,6 +106,12 @@ export function makeMailCfg(h) {
     const after = await get(env);
     const changed = ["from", "from_name", "reply_to", "scope"].filter((k) => before[k] !== after[k]);
     await logInbound(env, "mail_settings_set", { actor: by, changed }, { ok: true }, 200);
+    // 便 8d：変えた記録（前と後）。元に戻すと前の値を表に書き戻す
+    if (changes) {
+      const KEY = { from: "mail_from", from_name: "mail_from_name", reply_to: "mail_reply_to", scope: "mail_scope" };
+      const LABEL = { from: "送り元", from_name: "表示名", reply_to: "返信先", scope: "誰に送るか" };
+      for (const k of changed) await changes.record(env, { kind: "setting", target: KEY[k], before: before[k] ?? "", after: after[k] ?? "", summary: `メールの${LABEL[k]}を変えた`, actor: by });
+    }
     return { ok: true, changed, settings: view(after) };
   }
 

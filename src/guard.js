@@ -6,7 +6,10 @@
 
 export const MODES = ["auto", "approve", "deny"];
 
-// 表に行が無い道具は「禁止」。新しい道具を足したら、ここと SQL（b3_permissions.sql・b4_products.sql・b5_delivery.sql・b6a_learn.sql・b6b_bridge.sql・b7a_settings.sql・b8c_plan.sql）の最初の値を両方足す
+// 便 8d から：表に行が無い道具のうち、下の一覧にあるものは、最初に使うとき（または権限の一覧を開いたとき）にこの値で表へ入れる。
+// 新しい道具の最初の値は、プルリクの中のこの一覧で決まり、Naoki の Merge で入る（SQL Editor に貼る手を減らすため）。入れたあとは画面で変えられる。
+// 一覧に無い道具は今までどおり「禁止」。表にある行は上書きしない。
+// （以前の決まり）表に行が無い道具は「禁止」。新しい道具を足したら、ここと SQL（b3_permissions.sql・b4_products.sql・b5_delivery.sql・b6a_learn.sql・b6b_bridge.sql・b7a_settings.sql・b8c_plan.sql）の最初の値を両方足す
 export const DEFAULT_MODES = {
   find_person: "auto", get_timeline: "auto", stats: "auto",
   list_rooms: "auto", get_room: "auto", list_consults: "auto", list_seminars: "auto",
@@ -22,6 +25,8 @@ export const DEFAULT_MODES = {
   get_community_link: "auto", set_community_link: "approve",
   list_campaigns: "auto", get_blueprint: "auto", create_campaign: "auto", set_part_campaign: "auto",
   archive_campaign: "approve",
+  get_mail_settings: "auto", set_mail_settings: "approve",
+  get_tidy_plan: "auto", apply_tidy: "approve", list_changes: "auto", undo_change: "approve",
 };
 
 // 権限を問わず通す道具（承認待ちを見るための道具が承認待ちになると回らないため）
@@ -32,15 +37,30 @@ const APPROVAL_STATUS = ["pending", "approved", "rejected", "expired", "failed"]
 export function makeGuard(h) {
   const { db, logInbound } = h;
 
+  // 一覧にあって表に無い道具を、一覧の値で表へ入れる（ある行は触らない）
+  async function seedDefaults(env, only) {
+    const have = new Set((await db(env, "GET", "b_permissions?select=tool")).map((r) => r.tool));
+    const missing = Object.keys(DEFAULT_MODES).filter((t) => !have.has(t) && (!only || t === only));
+    if (!missing.length) return [];
+    await db(env, "POST", "b_permissions?on_conflict=tool",
+      missing.map((tool) => ({ tool, mode: DEFAULT_MODES[tool], note: "最初の値（コードの一覧）", updated_at: new Date().toISOString(), updated_by: "default" })),
+      "resolution=ignore-duplicates,return=minimal");
+    await logInbound(env, "permission_default", { tools: missing.map((t) => ({ tool: t, mode: DEFAULT_MODES[t] })) }, { ok: true }, 200);
+    return missing;
+  }
+
   async function modeOf(env, tool) {
     if (!env.B_STORE) return "auto";
     if (ALWAYS.has(tool)) return "auto";
     const rows = await db(env, "GET", `b_permissions?select=mode&tool=eq.${encodeURIComponent(tool)}`);
-    return rows.length ? rows[0].mode : "deny";
+    if (rows.length) return rows[0].mode;
+    if (DEFAULT_MODES[tool]) { await seedDefaults(env, tool); return DEFAULT_MODES[tool]; }
+    return "deny";
   }
 
   async function listPermissions(env) {
     if (!env.B_STORE) return { ok: true, store: "demo", note: "デモの置き場では権限の表を使わない（全部自動）", permissions: [] };
+    await seedDefaults(env);
     const rows = await db(env, "GET", "b_permissions?select=tool,mode,note,updated_at,updated_by&order=tool.asc");
     return { ok: true, count: rows.length, permissions: rows, unknown_tool_mode: "deny" };
   }
