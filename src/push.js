@@ -78,11 +78,22 @@ export function makePush(h) {
   const { db, addEvent, logInbound } = h;
   let cached = null;
 
-  // 鍵を読む。無ければ作って置く（2 つ同時に作られても、先に入ったほうを使う）
+  // 鍵を読む。作るのは「読み取りが成功し、行が 0」のときだけ（2 つ同時に作られても、先に入ったほうを使う）。
+  // 読み取りが失敗したとき・行はあるのに中身が空のときは、作らずに止めて記録に残す。
+  // 作り直すと、登録済みの端末への通知が黙って止まるため（統括 2026-10-09 15:11 の条件）
   async function vapid(env) {
     if (cached && cached.url === env.SUPABASE_URL) return cached.v;
-    let rows = await db(env, "GET", `settings?select=value&key=eq.${KEY}`);
-    if (!rows.length || !rows[0].value) {
+    let rows;
+    try { rows = await db(env, "GET", `settings?select=value&key=eq.${KEY}`); }
+    catch (e) {
+      await logInbound(env, "push_key", { created: false }, { ok: false, error: "key_read_failed", detail: String(e && e.message || e).slice(0, 160) }, 500);
+      throw new Error("push_key_unreadable：通知の鍵を読めなかったので、作らずに止めた");
+    }
+    if (rows.length && !rows[0].value) {
+      await logInbound(env, "push_key", { created: false }, { ok: false, error: "key_row_empty" }, 500);
+      throw new Error("push_key_empty：通知の鍵の行が空だったので、作らずに止めた");
+    }
+    if (rows.length === 0) {
       const kp = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
       const jwk = await crypto.subtle.exportKey("jwk", kp.privateKey);
       await db(env, "POST", "settings?on_conflict=key",
@@ -90,6 +101,7 @@ export function makePush(h) {
         "resolution=ignore-duplicates,return=minimal");
       await logInbound(env, "push_key", { created: true }, { ok: true }, 200);
       rows = await db(env, "GET", `settings?select=value&key=eq.${KEY}`);
+      if (!rows.length || !rows[0].value) throw new Error("push_key_unreadable：作った鍵を読み直せなかった");
     }
     const k = JSON.parse(rows[0].value);
     const privateKey = await crypto.subtle.importKey("jwk", { kty: "EC", crv: "P-256", d: k.d, x: k.x, y: k.y, ext: true }, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
@@ -119,7 +131,9 @@ export function makePush(h) {
 
   async function status(env) {
     if (!env.B_STORE) return { ok: false, error: "demo_store" };
-    const v = await vapid(env);
+    let v;
+    try { v = await vapid(env); }
+    catch (e) { return { ok: false, error: String(e && e.message || e).split("：")[0], note: "通知の鍵を読めないので止めている。作り直しはしない（登録済みの端末に届かなくなるため）" }; }
     const subs = await subscriptions(env);
     return { ok: true, public_key: v.publicKey, count: subs.length, devices: subs.map((s) => ({ email: s.email, device: s.device, service: hostOf(s.endpoint), since: s.at, endpoint_tail: s.endpoint.slice(-12) })) };
   }
