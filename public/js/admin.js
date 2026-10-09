@@ -220,7 +220,7 @@ async function detail(id) {
 // ---------- 添削ルーム ----------
 let currentRoom = null;
 // 便 8c：左のメニュー。押した項目の画面だけを出し、上のナビにその名前を出す
-const VIEWS = ["home", "blueprint", "people", "rooms", "deals", "ai", "products", "deliver", "settings", "refer"];
+const VIEWS = ["home", "blueprint", "people", "rooms", "deals", "ai", "products", "deliver", "settings", "refer", "guide"];
 function openView(name) {
   const b = document.querySelector(`.side [data-view="${name}"]`);
   if (b) b.click();
@@ -239,7 +239,9 @@ function setupViews() {
     if (b.dataset.view === "deals") loadDeals();
     if (b.dataset.view === "ai") loadAi();
     if (b.dataset.view === "refer") loadReferrals();
+    if (b.dataset.view === "guide") loadGuide();
   }));
+  $("hm-guide").addEventListener("click", () => openView("guide"));
   $("only-unreplied").addEventListener("change", loadRooms);
 }
 
@@ -408,12 +410,36 @@ function approvalBody(x) {
       <p class="note" style="margin:4px 0 0">宛先の人数は、いまセレクタに当たる人の数。動かした時刻より後のきっかけだけが対象。</p>
       <details style="margin-top:4px"><summary class="note">中身（そのまま）</summary><pre class="note" style="white-space:pre-wrap;margin:0">${esc(JSON.stringify(rest, null, 2))}</pre></details>`;
   }
-  return `<pre class="note" style="white-space:pre-wrap;margin:0">${esc(JSON.stringify(args, null, 2))}</pre>`;
+  return `<details><summary class="note">中身（そのまま）</summary><pre class="note" style="white-space:pre-wrap;margin:0">${esc(JSON.stringify(args, null, 2))}</pre></details>`;
+}
+
+// 便 9：承認の中身を読める言葉で並べる（誰に・件名・宛先・本文など）。番号のままの中身は下の「中身（そのまま）」に残す
+function approvalRef(x) {
+  const a = x.args || {}, ref = x.ref || {};
+  const rows = [];
+  if (ref.person) rows.push(["誰に", `${ref.person.name || "（名前なし）"}・${ref.person.email}`]);
+  else if (a.person_id) rows.push(["誰に", "（この人は見つかりませんでした）"]);
+  if (ref.broadcast) {
+    rows.push(["件名", ref.broadcast.subject]);
+    rows.push(["宛先", filterText(ref.broadcast.filter || {}) + (ref.broadcast.target_count != null ? `・${ref.broadcast.target_count} 人` : "")]);
+  }
+  if (a.subject && !ref.broadcast) rows.push(["件名", a.subject]);
+  if (a.filter) rows.push(["宛先", filterText(a.filter)]);
+  if (a.label) rows.push(["ラベル", a.label]);
+  if (a.text) rows.push(["本文", a.text]);
+  if (a.body) rows.push(["本文", a.body]);
+  if (a.corrected) rows.push(["添削後", a.corrected]);
+  if (a.comment) rows.push(["コメント", a.comment]);
+  if (a.url !== undefined) rows.push(["住所", a.url === "" ? "（外す）" : "入れる（住所は画面に出しません）"]);
+  if (a.amount !== undefined) rows.push(["金額", Number(a.amount).toLocaleString("ja-JP") + " 円"]);
+  if (a.decision) rows.push(["決めること", a.decision]);
+  if (!rows.length) return "";
+  return `<dl class="ap-ref">${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd class="pre">${esc(v)}</dd>`).join("")}</dl>`;
 }
 
 async function loadAi() {
   const focus = location.hash.startsWith("#approval/") ? location.hash.slice(10) : "";
-  const r = await api("/api/admin/approvals?status=all", { token });
+  const [r] = await Promise.all([api("/api/admin/approvals?status=all", { token }), ensureSay()]);
   if (!r.ok) { $("ap-count").textContent = "読めませんでした（" + (r.error || r.status) + "）"; }
   else {
     const pending = r.approvals.filter((x) => x.status === "pending");
@@ -421,7 +447,8 @@ async function loadAi() {
     $("approvals").innerHTML = r.approvals.slice(0, 20).map((x) => `
       <div class="deal-box" ${x.id === focus ? 'style="outline:2px solid var(--accent)"' : ""}>
         <div class="note">${fmtTime(x.created_at)}・AI が頼んだ・<span class="pill ${x.status === "pending" ? "warn" : "gray"}">${esc(AP_LABEL[x.status] || x.status)}</span></div>
-        <h4 style="margin:4px 0">${esc(x.tool)}</h4>
+        <h4 style="margin:4px 0">${esc(sayOf(x.tool))}</h4>
+        ${approvalRef(x)}
         ${approvalBody(x)}
         ${x.status === "pending" ? `<div class="stage-btns" style="margin-top:8px">
           <button class="btn small" data-ap="${x.id}" data-d="approve" type="button">承認して実行</button>
@@ -439,7 +466,7 @@ async function loadAi() {
   if (p.ok) {
     $("perms").innerHTML = p.permissions.map((x) => `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
-        <div style="min-width:0"><div>${esc(x.tool)}</div><div class="sub">${esc(x.note || "")}</div></div>
+        <div style="min-width:0"><div>${esc(sayOf(x.tool))}</div><div class="sub">${esc(x.note || "")}</div></div>
         <select data-tool="${esc(x.tool)}" style="min-height:40px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink)">
           ${["auto", "approve", "deny"].map((m) => `<option value="${m}" ${m === x.mode ? "selected" : ""}>${MODE_LABEL[m]}</option>`).join("")}
         </select>
@@ -563,8 +590,11 @@ async function loadDeliver() {
         ${["draft", "queued", "sending"].includes(b.status) ? `<button class="btn ghost small" data-bc="${b.id}" type="button">止める</button>` : ""}
       </div>
     </div>`).join("") || '<p class="note">まだありません</p>';
+  const bcById = Object.fromEntries(r.broadcasts.map((b) => [b.id, b]));
   document.querySelectorAll("[data-bq]").forEach((x) => x.addEventListener("click", async () => {
-    if (!confirm("この一斉配信を送る列に入れます。毎時の定時の処理で、今日の上限の中から送ります。")) return;
+    // 便 9：確認の文に、件名・宛先・いま誰に届くかを出す（「使い方」の送る前に見ることと同じ中身）
+    const b = bcById[x.dataset.bq] || {};
+    if (!confirm(`この一斉配信を送る列に入れます。\n\n件名：${b.subject || ""}\n宛先：${filterText(b.filter || {})}\n${r.open_to_all ? "いまは誰にでも届きます" : "いまはテスト宛てにだけ届きます"}\n\n毎時の定時の処理で、今日の上限の中から送ります。`)) return;
     const q = await api(`/api/admin/broadcasts/${x.dataset.bq}/queue`, { method: "POST", token });
     if (!q.ok) fail("送る列に入れられませんでした（" + (q.error || q.status) + "）");
     loadDeliver();
@@ -755,9 +785,8 @@ function setupCommunity() {
 
 // ---------- 便 8f-1：ホームの今日の 1 枚と段階のボード ----------
 const fmtHm = (iso) => new Date(iso).toLocaleTimeString("ja-JP", { timeZone: "Asia/Tokyo", hour: "2-digit", minute: "2-digit" });
-const TOOL_LABEL = { apply_tidy: "片付け案を当てる", add_label: "ラベルを付ける", remove_label: "ラベルを外す", set_step: "コネクタを変える", queue_broadcast: "一斉配信を送る", set_mail_settings: "メールの送り方を変える", set_community_link: "オプチャのリンクを変える", set_calendar_url: "カレンダーを変える", return_correction: "添削を返す", send_email: "メールを送る", send_chat: "メッセージを送る" };
 async function loadHome() {
-  const [r, b] = await Promise.all([api("/api/admin/today", { token }), api("/api/admin/board", { token })]);
+  const [r, b] = await Promise.all([api("/api/admin/today", { token }), api("/api/admin/board", { token }), ensureSay()]);
   if (!r.ok) { $("hm-cal").textContent = "読めませんでした（" + (r.error || r.status) + "）"; $("hm-todo").textContent = ""; }
   else {
     $("hm-day").textContent = r.day;
@@ -773,7 +802,7 @@ async function loadHome() {
     const t = r.todo;
     const row = (n, label, view, items) => `<li class="todo"><button type="button" class="todo-h" data-open="${view}"><b>${n}</b> ${label}</button>${items}</li>`;
     $("hm-todo").innerHTML = `<ul class="home-list">`
-      + row(t.approvals.count, "承認待ち", "ai", t.approvals.items.length ? `<span class="sub">${t.approvals.items.map((x) => esc(TOOL_LABEL[x.tool] || x.tool)).join("・")}</span>` : "")
+      + row(t.approvals.count, "承認待ち", "ai", t.approvals.items.length ? `<span class="sub">${t.approvals.items.map((x) => esc(sayOf(x.tool))).join("・")}</span>` : "")
       + row(t.rooms.count, "未返信の添削", "rooms", t.rooms.items.length ? `<span class="sub">${t.rooms.items.map((x) => esc(x.name)).join("・")}</span>` : "")
       + row(t.consults.count, "今日の個別相談", "deals", t.consults.items.length ? `<span class="sub">${t.consults.items.map((x) => esc(fmtHm(x.slot)) + " " + esc(x.name)).join("・")}</span>` : "")
       + row(t.notices.count, "今日の知らせ", "deliver", t.notices.items.length ? `<span class="sub">${t.notices.items.map((x) => esc(x.connector) + "：" + esc(x.name)).join("・")}</span>` : "")
@@ -998,3 +1027,34 @@ $("logout").addEventListener("click", async (e) => { e.preventDefault(); await s
 const bp = makeBlueprint({ $, api, esc, getToken: () => token, fail, openView });
 
 start().catch((e) => fail(e.message));
+
+// ---------- 便 9：使い方 ----------
+// できることリストは /api/admin/guide（道具の一覧の 2 欄と権限の表）から毎回組み立てる。画面の名前は左のメニューの文字を使う
+let guideCache = null;
+async function ensureSay(force) {
+  if (guideCache && !force) return guideCache;
+  const g = await api("/api/admin/guide", { token });
+  if (g.ok) guideCache = g;
+  return guideCache;
+}
+function sayOf(name) {
+  const row = guideCache && guideCache.rows.find((x) => x.name === name);
+  return row ? row.say : "（説明がまだ無い操作）";
+}
+const AI_SAY = { auto: ["そのまま動く", "gray"], approve: ["承認が要る", "warn"], deny: ["頼めない", "gray"], none: ["頼めない", "gray"] };
+async function loadGuide() {
+  const g = await ensureSay(true);
+  if (!g) { $("gd-list").innerHTML = '<p class="note">読めませんでした。画面を開き直してください</p>'; return; }
+  const order = [...document.querySelectorAll(".side [data-view]")].map((b) => b.dataset.view).filter((v) => v !== "guide");
+  const title = (v) => v === "ai_only" ? "AI に頼むときだけ（画面には無い）" : (document.querySelector(`.side [data-view="${v}"]`)?.firstChild.textContent.trim() || "（どこにも無い画面）");
+  const groups = [...order, "ai_only"].map((v) => [v, g.rows.filter((x) => x.screen === v)]).filter(([, rows]) => rows.length);
+  $("gd-list").innerHTML = (g.missing ? `<p class="msg err">説明がまだ無い操作が ${g.missing} つあります。開発部に知らせてください</p>` : "")
+    + groups.map(([v, rows]) => `
+    <details class="gd-group">
+      <summary class="gd-head"><span class="guide-h3">${esc(title(v))}</span><span class="note">${rows.length} 件${rows.some((x) => x.ai === "approve") ? `・AI に頼むと承認が要るもの ${rows.filter((x) => x.ai === "approve").length}` : ""}</span></summary>
+      ${v === "ai_only" ? "" : `<div style="margin:6px 0"><button class="btn ghost small" type="button" data-gd-open="${esc(v)}">この画面を開く</button></div>`}
+      <table class="gd-table"><thead><tr><th>できること</th><th class="gd-ai">AI に頼むと</th></tr></thead>
+      <tbody>${rows.map((x) => `<tr><td>${esc(x.say)}</td><td class="gd-ai"><span class="pill ${AI_SAY[x.ai][1]}">${esc(AI_SAY[x.ai][0])}</span></td></tr>`).join("")}</tbody></table>
+    </details>`).join("");
+  document.querySelectorAll("[data-gd-open]").forEach((b) => b.addEventListener("click", () => openView(b.dataset.gdOpen)));
+}

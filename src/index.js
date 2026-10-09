@@ -38,12 +38,13 @@ import { makeMailCfg } from "./mailcfg.js";
 import { makeChanges } from "./changes.js";
 import { makeConnect } from "./connect.js";
 import { makeToday, stageOf } from "./today.js";
+import { buildGuide, sayOf, makeExplain } from "./guide.js";
 import { makePush } from "./push.js";
 import { makeRefer } from "./refer.js";
 import { makeBlocks } from "./blocks.js";
 import { LANES } from "./plan.js";
 
-const VERSION = "0.21.0-b8g4";
+const VERSION = "0.22.0-b9";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -93,6 +94,7 @@ const mailcfg = makeMailCfg({ db, logInbound, changes });
 const bin3 = makeBin3({ db, addEvent, logInbound, json, mailcfg, onCharge: (env, event, data) => sell.onCharge(env, event, data), onSubEvent: (env, id) => sell.syncGrants(env, id) });
 const bin4 = makeBin4({ db, addEvent, bin3 });
 const guard = makeGuard({ db, logInbound });
+const explainApprovals = makeExplain({ db });
 const bridge = makeBridge({ db, rawDb, addEvent, secretHeaders });
 const sell = makeSell({ db, addEvent, bin3, bridge, logInbound });
 // B の便 8g-2：紹介。紹介者の表は作らず、出来事 referred・referral_reward・referral_paid に積む。率は商品の台帳の affiliate_rate（%）。中身は src/refer.js
@@ -958,7 +960,10 @@ async function handleApi(request, env, url) {
     }
     // B の便 3：承認待ち・権限の表・AI の操作の記録（入れるのは b_admins のメールだけ）
     if (path === "/api/admin/approvals" && method === "GET") {
-      return json(await guard.listApprovals(env, { status: url.searchParams.get("status") || "pending" }));
+      const r = await guard.listApprovals(env, { status: url.searchParams.get("status") || "pending" });
+      // 便 9：中身の番号を、人の名前・一斉配信の件名と宛先に引き当てて返す（承認の画面で読める言葉にするため）
+      if (r.ok && r.approvals) r.approvals = await explainApprovals(env, r.approvals);
+      return json(r);
     }
     const ap = path.match(/^[/]api[/]admin[/]approvals[/]([0-9a-f-]{36})$/i);
     if (ap && method === "GET") return json(await guard.getApproval(env, { approval_id: ap[1] }));
@@ -1045,6 +1050,11 @@ async function handleApi(request, env, url) {
       return json(r, r.ok === false ? 400 : 200);
     }
     // B の便 8f-1：ホームの今日の 1 枚・段階のボード・カレンダーの非公開 URL（画面からは承認なしで変えられる。AI からは承認が要る）
+    // 便 9：「使い方」のできることリスト。道具の一覧（screen・say）と権限の表から毎回組み立てる
+    if (path === "/api/admin/guide" && method === "GET") {
+      const p = await guard.listPermissions(env);
+      return json(buildGuide(TOOLS, p.permissions || []));
+    }
     if (path === "/api/admin/today" && method === "GET") { const r = await today.today(env); return json(r, r.ok === false ? 400 : 200); }
     if (path === "/api/admin/board" && method === "GET") return json(await today.board(env));
     if (path === "/api/admin/calendar" && method === "GET") return json({ ok: true, calendars: await today.calendarStatus(env) });
@@ -1084,9 +1094,16 @@ async function handleApi(request, env, url) {
 
 // ---------- /mcp（AI の入口・JSON-RPC） ----------
 
+// 便 9：道具ごとに 2 つの欄を足した。Lab OS の「使い方」の「できることリスト」はこの 2 欄と権限の表から毎回組み立てる（src/guide.js）。
+//   screen … どの画面でできるか（Lab OS の左のメニューの data-view。画面に無く AI に頼むときだけのものは "ai_only"）
+//   say    … 画面に出す言い方（中の仕組みの名前・道具の名前・英語の設定名を入れない）
+// 道具を足すときは、この 2 欄も同じ直しの中で書く。空なら「使い方」に「説明がまだ無い」と出て、tests/guide.test.mjs も落ちる。
+// AI へ返すとき（tools/list）は name・description・inputSchema だけを渡す。
 const TOOLS = [
   {
     name: "find_person",
+    screen: "people",
+    say: "人を名前かメールで探す",
     description: "デモの顧客の台帳から人を探す。名前かメールの一部で探し、段階・流入元・最後の出来事の時刻を返す。query を空にすると最近動いた順に返す。0 件は count: 0 で返す（失敗とは別）。",
     inputSchema: {
       type: "object",
@@ -1099,16 +1116,22 @@ const TOOLS = [
   },
   {
     name: "get_timeline",
+    screen: "people",
+    say: "1 人の出来事・段階・買ったもの・部屋の様子を見る",
     description: "人の 1 枚。1 人の出来事を新しい順に返す（登録・ログイン・視聴など）に加えて、いまの段階 stage（出会う・登録・温める・相談・購入・受講・紹介のどれか）・ラベル labels（auto が false は手かコネクタで付けたもの）・買ったもの purchases・部屋の状態 room（シアニンが読んでいない数・添削の未返信・生徒が読んでいない数）を返す。person_id は find_person の id。",
     inputSchema: { type: "object", properties: { person_id: { type: "string" } }, required: ["person_id"] },
   },
   {
     name: "stats",
+    screen: "people",
+    say: "人数を段階や流入元ごとに数える",
     description: "台帳の件数を 1 回で数える。members は会員の人数（find_person の member と同じ判定：B で買った権利と門番の表 member_entitlement の shiarabo_basic）。by_stage は会員を先に数え、残りを出来事の段階（受講中・ログイン済・登録のみ）に分ける。by_activity は出来事だけの段階。ほかに流入元別・直近 7 日の出来事の種類別。",
     inputSchema: { type: "object", properties: {} },
   },
   {
     name: "list_rooms",
+    screen: "rooms",
+    say: "添削ルームの部屋の一覧を見る（未返信が上）",
     description: "添削ルームの部屋の一覧。未返信のある部屋が上（待たせている時間が長い順）。unreplied は返していない投稿の数。0 件は count: 0。",
     inputSchema: {
       type: "object",
@@ -1117,11 +1140,15 @@ const TOOLS = [
   },
   {
     name: "get_room",
+    screen: "rooms",
+    say: "1 人の添削ルームのやりとりを読む",
     description: "1 人の添削ルームのやりとりを古い順に返す。kind が correction は添削（生徒の投稿は text・images・replied、返したものは original・corrected・comment）、chat はふつうのメッセージ（from：student／cyanin・text）。unreplied は添削の未返信の投稿の id（メッセージは数えない）。読んだ印は付けない。",
     inputSchema: { type: "object", properties: { person_id: { type: "string" } }, required: ["person_id"] },
   },
   {
     name: "return_correction",
+    screen: "rooms",
+    say: "添削を 3 欄（原文・添削後・コメント）で返す",
     description: "添削を 3 欄（原文・添削後・コメント）で返す。台帳に出来事として積まれ、生徒の画面に新着として出る。reply_to を省くといちばん古い未返信に返す。original を省くと投稿の文章をそのまま原文にする。",
     inputSchema: {
       type: "object",
@@ -1142,61 +1169,85 @@ const TOOLS = [
   },
   {
     name: "send_chat",
+    screen: "rooms",
+    say: "生徒にメッセージを送る",
     description: "シアニンとして 1 人にメッセージを送る（添削の 3 欄ではない、ふつうのやりとり）。生徒の画面の添削ルームに新着として出る。文字だけ・8000 文字まで。承認が要る道具：呼ぶと承認待ちになり approval_url が返る。",
     inputSchema: { type: "object", properties: { person_id: { type: "string" }, text: { type: "string" } }, required: ["person_id", "text"] },
   },
   {
     name: "notify_naoki",
+    screen: "ai_only",
+    say: "Naoki のスマホへ知らせを 1 つ送る",
     description: "Naoki のスマホへ通知を 1 つ送る（Web Push）。title は 120 文字・body は 300 文字まで。url は押したときに開くシアニン用の画面の場所（/admin で始まる。省くとホーム）。届けた端末の数 sent を返す。端末が 0 なら devices: 0。",
     inputSchema: { type: "object", properties: { title: { type: "string" }, body: { type: "string" }, url: { type: "string" } }, required: ["title"] },
   },
   {
     name: "list_referrals",
+    screen: "refer",
+    say: "紹介した人ごとに、来た人数と報酬を見る",
     description: "紹介の集計。紹介者ごとに、紹介の番号とリンク（/register?ref=番号）・紹介で登録した人の数 referred・その人たちの購入の数 purchases・報酬の合計 reward_total・払った合計 paid_total・まだ払っていない unpaid と、紹介した人の一覧を返す。報酬は商品の台帳の affiliate_rate（%）を買った時点の値で掛けたもの（紹介から 90 日以内の購入だけ・定期は最初の 1 回だけ）。referrer_id で 1 人に絞れる。0 件は count: 0。",
     inputSchema: { type: "object", properties: { referrer_id: { type: "string" } } },
   },
   {
     name: "mark_referral_paid",
+    screen: "refer",
+    say: "紹介の報酬を払ったことを記録する",
     description: "紹介者に報酬を払ったことを記録する（払う作業そのものは B の外の振込など）。amount は円の整数で、まだ払っていない分 unpaid を超えると over_unpaid で止まる。referrer_id は list_referrals の referrer_id。",
     inputSchema: { type: "object", properties: { referrer_id: { type: "string" }, amount: { type: "integer" }, note: { type: "string" } }, required: ["referrer_id", "amount"] },
   },
   {
     name: "get_push_status",
+    screen: "settings",
+    say: "スマホの知らせを受け取る端末を見る",
     description: "スマホへの通知を受け取る端末の一覧（メール・端末の名前・通知の仕組みの住所の名前・いつから）。端末の宛先そのものと鍵は返さない。",
     inputSchema: { type: "object", properties: {} },
   },
   {
     name: "list_corrections",
+    screen: "ai_only",
+    say: "1 人に返した添削を振り返る",
     description: "1 人に返した添削を新しい順に返す（原文・添削後・コメント・指摘・返した日時・出した文章の id）。生徒の「振り返り」の画面と同じ中身。0 件は count: 0。",
     inputSchema: { type: "object", properties: { person_id: { type: "string" }, limit: { type: "integer", description: "最大件数（既定 20・最大 100）" } }, required: ["person_id"] },
   },
   {
     name: "get_meetings",
+    screen: "people",
+    say: "1 人の面談の記録を見る",
     description: "1 人分の面談の記録を返す（consult-manager の ic_ の表から、その人の番号・旧の番号・メールのどれかがそのまま入っている行）。表の欄は決め打ちせず、行をそのまま返す。looked は見た表と行数。0 件は count: 0。",
     inputSchema: { type: "object", properties: { person_id: { type: "string" } }, required: ["person_id"] },
   },
   {
     name: "list_tables",
+    screen: "ai_only",
+    say: "データの置き場の形を見る（開発用）",
     description: "本番の表の目録から、欄の名前と行数を返す（中身は返さない）。見られる頭の名前は ic_・mn_tensaku_・member・shr_billing_logs・b_ だけ。prefix で絞れる。",
     inputSchema: { type: "object", properties: { prefix: { type: "string" } } },
   },
   {
     name: "get_community_link",
+    screen: "settings",
+    say: "オプチャの招待リンクを見る",
     description: "オプチャの招待リンク（会員にだけ見えるもの）と、最後に変えた日時・人を返す。",
     inputSchema: { type: "object", properties: {} },
   },
   {
     name: "set_community_link",
+    screen: "settings",
+    say: "オプチャの招待リンクを差し替える・外す",
     description: "オプチャの招待リンクを差し替える。url を空にするとリンクを外す（入口を閉じる）。https:// で始まる 500 文字まで。承認が要る道具：呼ぶと承認待ちになり approval_url が返る。",
     inputSchema: { type: "object", properties: { url: { type: "string" } }, required: ["url"] },
   },
   {
     name: "get_mail_settings",
+    screen: "settings",
+    say: "メールの送り方を見る",
     description: "メールの送り方を返す：送り元（from）・表示名（from_name）・返信先（reply_to）・誰に送るか（scope：test＝テスト宛てだけ／login＝ログインと手続きのメールは誰にでも・お知らせはテスト宛てだけ／all＝お知らせも誰にでも）と、最後に変えた日時・人。",
     inputSchema: { type: "object", properties: {} },
   },
   {
     name: "set_mail_settings",
+    screen: "settings",
+    say: "メールの送り方（送り元・返信先・誰に送るか）を変える",
     description: "メールの送り方を変える。渡した欄だけ変わる。from は mail.shia2n.jp か demo.shia2n.jp の住所だけ。reply_to を空にすると返信先を外す。scope は test／login／all。承認が要る道具：呼ぶと承認待ちになり approval_url が返る。",
     inputSchema: {
       type: "object",
@@ -1208,11 +1259,15 @@ const TOOLS = [
   },
   {
     name: "list_lessons",
+    screen: "ai_only",
+    say: "教材の数をコースごとに見る",
     description: "学ぶくんの本物の教材の数を、プログラムとコースごとに返す（題名の一覧は返さない）。person_id を渡すと、その人に見える分だけ（受講の結びが無ければ member: false）。with_video は動画のある教材の数。",
     inputSchema: { type: "object", properties: { person_id: { type: "string" } } },
   },
   {
     name: "send_email",
+    screen: "people",
+    say: "1 人にメールを送る",
     description: "1 人にメールを送る。届く相手は get_mail_settings の scope で決まる（test のときはテスト宛て＝シアニン用の画面に入れるメールとその + 付きの別名だけ。届かない相手には送らずに email_blocked を台帳に積む）。全メールの末尾に事業者の表記と配信停止のリンクが付く。結果は result: sent / blocked / failed。",
     inputSchema: {
       type: "object",
@@ -1226,11 +1281,15 @@ const TOOLS = [
   },
   {
     name: "list_consults",
+    screen: "deals",
+    say: "個別相談の予約を見る",
     description: "個別相談の予約の一覧（近い順）。各予約に人と商談の段階（booked・done・won・lost）が付く。0 件は count: 0。include_past で終わった枠も含める。",
     inputSchema: { type: "object", properties: { include_past: { type: "boolean" } } },
   },
   {
     name: "set_deal_stage",
+    screen: "deals",
+    say: "商談を進める（面談した・成約・失注）",
     description: "商談の段階を進める。stage は done（面談した）・won（成約）・lost（失注）。memo に面談のメモ、won のときは amount（円）。台帳に出来事として積まれ、シアニン用の画面の時系列に出る。",
     inputSchema: {
       type: "object",
@@ -1245,46 +1304,64 @@ const TOOLS = [
   },
   {
     name: "list_seminars",
+    screen: "deals",
+    say: "セミナーと申込者の数を見る",
     description: "セミナーの一覧（架空の 2 回）。申込者の数・前日の知らせを送った数・アーカイブを配った数を返す。",
     inputSchema: { type: "object", properties: {} },
   },
   {
     name: "set_note_member",
+    screen: "people",
+    say: "note のメンバーの印を付ける・外す",
     description: "note のメンバーかどうかの印を付ける・外す（シアニン用の画面のチェックと同じ）。承認が要る道具：呼ぶと承認待ちになり approval_url が返る。",
     inputSchema: { type: "object", properties: { person_id: { type: "string" }, value: { type: "boolean" } }, required: ["person_id", "value"] },
   },
   {
     name: "send_seminar_reminder",
+    screen: "deals",
+    say: "セミナーの前日の知らせを送る",
     description: "セミナーの前日の知らせを、まだ受け取っていない申込者に 1 人 1 回だけ送る（決まった型のリマインド）。seminar_id を指定する。",
     inputSchema: { type: "object", properties: { seminar_id: { type: "string" } }, required: ["seminar_id"] },
   },
   {
     name: "send_seminar_archive",
+    screen: "deals",
+    say: "セミナーのアーカイブを配る",
     description: "終わったセミナーのアーカイブを、まだ受け取っていない申込者に送る。承認が要る道具：呼ぶと承認待ちになり approval_url が返る。",
     inputSchema: { type: "object", properties: { seminar_id: { type: "string" } }, required: ["seminar_id"] },
   },
   {
     name: "list_approvals",
+    screen: "ai",
+    say: "承認待ちを見る",
     description: "承認待ちの一覧。status は pending（既定）・approved・rejected・expired・failed・all。承認の期限は頼んでから 24 時間。",
     inputSchema: { type: "object", properties: { status: { type: "string" }, limit: { type: "integer" } } },
   },
   {
     name: "get_approval",
+    screen: "ai",
+    say: "承認 1 件の結果を見る",
     description: "承認待ち 1 件の状態と、承認されて実行されたときの結果を返す。",
     inputSchema: { type: "object", properties: { approval_id: { type: "string" } }, required: ["approval_id"] },
   },
   {
     name: "list_permissions",
+    screen: "ai",
+    say: "AI に任せる範囲（自動・承認・禁止）を見る",
     description: "道具ごとの権限（auto＝自動・approve＝承認が要る・deny＝禁止）を返す。表に無い道具は禁止。権限を変えられるのは Naoki だけ（シアニン用の画面）で、AI からは変えられない。",
     inputSchema: { type: "object", properties: {} },
   },
   {
     name: "list_products",
+    screen: "products",
+    say: "商品の一覧を見る",
     description: "商品の台帳を返す（名前・種類 one_time／subscription／installment・金額・周期・権利の日数・重ねて買えるか・販売数の上限・紹介用の価格の元・売っているか active・サイトに出すか public・売れた数 sold）。UTAGE の商品の価格の行から写したもの。",
     inputSchema: { type: "object", properties: { include_inactive: { type: "boolean", description: "売っていないものも含める（省略時 true）" } } },
   },
   {
     name: "set_product",
+    screen: "products",
+    say: "商品の値段や、売る・売らないを変える",
     description: "商品を 1 つ変える、または足す。承認が要る道具：呼ぶと承認待ちになり approval_url が返る。変えられる欄：name・amount（円）・period（monthly／annually・定期だけ）・grant_days（単発の権利の日数）・grants（権利の印の配列）・deny_multiple・sales_limit・list_price_of・description・active（売る）・public（サイトに出す）・sort・note・affiliate_rate（紹介の報酬の率 %・0〜100 の整数・null で払わない）。新しく足すときは id・kind・name・amount が要る（分割 installment は足せない）。",
     inputSchema: {
       type: "object",
@@ -1302,36 +1379,50 @@ const TOOLS = [
   },
   {
     name: "preview_audience",
+    screen: "deliver",
+    say: "一斉配信の宛先の人数を数える",
     description: "一斉配信の宛先を、条件で絞って数える（送らない）。filter の欄：source（流入元の配列 x／note／youtube／direct／other）・purchased（買った商品の id の配列）・not_purchased（買っていない商品の id の配列）・member（会員か true／false）・note_member（true／false）・registered_after／registered_before（日時）・emails（メールの配列。試しに送るとき）・labels（このラベルを全部持つ人。get_labels の名前）・not_labels（このラベルをどれも持たない人）。配信を止めている人の数も返す。コネクタのセレクタも同じ形。",
     inputSchema: { type: "object", properties: { filter: { type: "object" } } },
   },
   {
     name: "draft_broadcast",
+    screen: "deliver",
+    say: "一斉配信の下書きを作る・直す",
     description: "一斉配信の下書きを作る、または直す（送らない）。subject・body・filter（preview_audience と同じ形）。本文の {{name}} は名前に置き換わり、https のリンクは押したかを数える住所に置き換わる。id を渡すと下書きのままのものを直す。宛先の人数も返す。",
     inputSchema: { type: "object", properties: { id: { type: "string" }, subject: { type: "string" }, body: { type: "string" }, filter: { type: "object" } }, required: ["subject", "body"] },
   },
   {
     name: "queue_broadcast",
+    screen: "deliver",
+    say: "一斉配信を送る",
     description: "下書きの一斉配信を送る列に入れる。承認が要る道具：呼ぶと承認待ちになり approval_url が返る。送るのは毎時の定時の処理で、送信元を温めるための 1 日の上限の中から少しずつ送る。",
     inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
   },
   {
     name: "cancel_broadcast",
+    screen: "deliver",
+    say: "一斉配信を止める",
     description: "一斉配信を止める（下書き・列の中・送っている途中のどれでも）。もう送った分は戻らない。",
     inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
   },
   {
     name: "list_broadcasts",
+    screen: "deliver",
+    say: "一斉配信の一覧と結果を見る",
     description: "一斉配信の一覧と結果（状態・宛先の人数・送った・送らなかった・失敗・リンクを押した回数と人数）。open_to_all が false の間は、テスト宛て以外へは送らない。",
     inputSchema: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 100 } } },
   },
   {
     name: "list_steps",
+    screen: "deliver",
+    say: "コネクタ（〜したら → 誰に → 〜する）の一覧を見る",
     description: "コネクタ（トリガー → セレクタ → アクション）の一覧。便 5 のステップ配信もここに入る。欄：trigger（きっかけ）・trigger_args・product_id・delay_hours（何時間後）・selector（誰に。preview_audience の filter と同じ形・空なら全員）・action（send_email／notify_admin／add_label）・action_args・subject・body・active。結果の数（sent・clicks・notified・labeled・skipped）と、選べるきっかけ triggers・アクション actions も返す。",
     inputSchema: { type: "object", properties: {} },
   },
   {
     name: "set_step",
+    screen: "deliver",
+    say: "コネクタを足す・直す・動かす・止める",
     description: "コネクタを足す・直す・動かす・止める。承認が要る道具。欄：id（直すとき）・name・trigger（registered 登録した／purchase 買った／clicked メールのリンクを押した／lesson_viewed 教材を見た／correction_submitted 添削を出した／login ログインした／label_added ラベルが付いた）・trigger_args（label：label_added のときのラベル・url：clicked のときのリンク）・product_id（purchase のとき。省くとどの購入でも）・delay_hours（何時間後）・selector（誰に。preview_audience の filter と同じ形）・action（send_email メールを送る／notify_admin Naoki に知らせる／add_label ラベルを付ける）・action_args（label：add_label のとき）・subject・body（{{name}}・{{email}}・{{product}}・{{label}}・{{url}} が置き換わる）・active。動かした時刻より後のきっかけだけが対象。セレクタに当たらない人は connector_skipped として残る。",
     inputSchema: {
       type: "object",
@@ -1346,71 +1437,99 @@ const TOOLS = [
   },
   {
     name: "get_today",
+    screen: "home",
+    say: "今日の予定・やること・タスクを見る",
     description: "シアニン用のホーム「今日の 1 枚」。今日（日本時間）の Google カレンダーの予定（既定のカレンダーと UTAGE のカレンダーをまとめたもの。calendar.sources に読み元ごとの状態。calendar.state が unset ならどちらも未設定）・タスクマスターの今日の分（tasks：期限が今日の due と過ぎている overdue）・やること（承認待ち・未返信の添削・今日の個別相談・今日の知らせ）・段階ごとの人数を返す。",
     inputSchema: { type: "object", properties: {} },
   },
   {
     name: "get_stage_board",
+    screen: "home",
+    say: "段階のボードを見る",
     description: "段階のボード。人をお客さんの段階（出会う・登録・温める・相談・購入・受講・紹介）に振り分けて、段階ごとの人数と人（新しく動いた順に 50 人まで）を返す。段階は上から 受講（会員か教材を見た）→ 購入 → 相談 → 温める → 登録 の順に当てる。",
     inputSchema: { type: "object", properties: {} },
   },
   {
     name: "set_calendar_url",
+    screen: "settings",
+    say: "Google カレンダーをつなぐ・外す",
     description: "ホームに出す Google カレンダーの「iCal 形式の非公開 URL」を入れる・外す。承認が要る道具。which は main（既定のカレンダー・省略時）か utage（UTAGE のカレンダー）。url は https://calendar.google.com/calendar/ical/ で始まり .ics で終わる。空にすると外す。URL そのものは記録にも返事にも出さない。",
     inputSchema: { type: "object", properties: { url: { type: "string" }, which: { type: "string", enum: ["main", "utage"] } }, required: ["url"] },
   },
   {
     name: "get_labels",
+    screen: "people",
+    say: "ラベルを見る",
     description: "ラベル。person_id を渡すとその人のラベル（auto が true は出来事から自動で付いたもの・false は手かコネクタで付けたもの）、省くと全員のラベルの名前と人数。自動のラベル：流入元:X など・会員／会員でない・購入者・買った:商品の外の名前（生徒に見える名前）・リンクを押した・教材を見た・添削を出した・セミナーに申し込んだ・個別相談を予約した・企画:企画名・最後に動いた:7日以内／30日以内／30日より前。",
     inputSchema: { type: "object", properties: { person_id: { type: "string" } } },
   },
   {
     name: "add_label",
+    screen: "people",
+    say: "ラベルを手で付ける",
     description: "1 人にラベルを手で付ける。承認が要る道具。ラベルは空白・カンマ・山かっこ・引用符を含まない 1〜40 文字。もう付いていれば何もしない。付けると「ラベルが付いた」のコネクタのきっかけになる。",
     inputSchema: { type: "object", properties: { person_id: { type: "string" }, label: { type: "string" } }, required: ["person_id", "label"] },
   },
   {
     name: "remove_label",
+    screen: "people",
+    say: "手で付けたラベルを外す",
     description: "手かコネクタで付けたラベルを 1 人から外す。承認が要る道具。自動で付いたラベルは外せない（出来事から毎回計算するため）。",
     inputSchema: { type: "object", properties: { person_id: { type: "string" }, label: { type: "string" } }, required: ["person_id", "label"] },
   },
   {
     name: "get_blueprint",
+    screen: "blueprint",
+    say: "設計図（部品と線）を見る",
     description: "設計図を返す。部品（page・step・broadcast・seminar・booking・product・course・room・community）を集める・育てる・売る・届ける・紹介のレーンに並べ、実際の設定から引いたつながり（線）と、部品ごとの先週 7 日の数を返す。部品ごとに外の名前（name・生徒に見える）・中の名前（inner_name・企画名｜種類｜役目）・持ち主の企画・線でつながる別の企画（used_by）・どこともつながっていないか（isolated）が付く。campaign_id：all（しまった企画を除く全部）／unassigned（企画に入っていない部品）／企画の番号（その企画の部品と、線でつながる外の部品 outside）。",
     inputSchema: { type: "object", properties: { campaign_id: { type: "string" } } },
   },
   {
     name: "list_blocks",
+    screen: "blueprint",
+    say: "ブロックの中身と入口・出口を見る",
     description: "ブロックの一覧。企画の中の部品のひとまとまり（ブロック名で束ねたもの）ごとに、部品・入口の線・出口の線（それぞれ先週の人数つき）を返す。入口か出口が 4 本を超えるものは too_many。campaign_id で 1 企画に絞れる（省くと全部）。",
     inputSchema: { type: "object", properties: { campaign_id: { type: "string" } } },
   },
   {
     name: "list_templates",
+    screen: "ai_only",
+    say: "テンプレの一覧を見る",
     description: "テンプレの一覧。kind（block＝ブロック 1 つ／campaign＝企画まるごと）・版 version・中のブロックとコネクタの数・元の企画に開催日があったか has_date。kind で絞れる。",
     inputSchema: { type: "object", properties: { kind: { type: "string", enum: ["block", "campaign"] }, include_archived: { type: "boolean" } } },
   },
   {
     name: "save_template",
+    screen: "blueprint",
+    say: "ブロックや企画をテンプレとして保存する",
     description: "企画のブロック 1 つ（kind block・block_name が要る）か、企画まるごと（kind campaign）をテンプレとして保存する。中身はコネクタの設定の写し。同じ名前で保存し直すと版が 1 つ上がる。保存しても何も動かない。テンプレを直しても、前に作った部品は変わらない。",
     inputSchema: { type: "object", properties: { name: { type: "string" }, kind: { type: "string", enum: ["block", "campaign"] }, campaign_id: { type: "string" }, block_name: { type: "string" }, note: { type: "string" } }, required: ["name", "kind", "campaign_id"] },
   },
   {
     name: "use_template",
+    screen: "ai_only",
+    say: "テンプレから下書きを作る",
     description: "テンプレから下書きを作る（動かない）。入れる先は campaign_id（いまある企画）か campaign_title（新しく作る・年月は頭に自動）と starts_on。企画まるごとのテンプレで元に開催日があったときは、新しく作るなら starts_on が要る。ブロックのテンプレは block_name で名前を変えて入れられる。作った部品に、どのテンプレのどの版から作ったかが残る。動かすのは publish_block（承認）。",
     inputSchema: { type: "object", properties: { template_id: { type: "string" }, campaign_id: { type: "string" }, campaign_title: { type: "string" }, starts_on: { type: "string" }, block_name: { type: "string" } }, required: ["template_id"] },
   },
   {
     name: "copy_campaign",
+    screen: "blueprint",
+    say: "企画を下書きで複製する",
     description: "企画を下書きで複製する。新しい企画名 title と開催日 starts_on だけを入れる（元に開催日があれば starts_on が要る）。コネクタはブロックと役目ごと写り、すべて動かない下書きになる。常設は複製できない。動かすのは publish_block（承認）。",
     inputSchema: { type: "object", properties: { campaign_id: { type: "string" }, title: { type: "string" }, starts_on: { type: "string" } }, required: ["campaign_id", "title"] },
   },
   {
     name: "publish_block",
+    screen: "blueprint",
+    say: "ブロックの下書きをまとめて動かす",
     description: "ブロックの中の下書きを、1 回の承認でまとめて動かす。承認が要る道具：呼ぶと、動かす下書きの番号と部品の一覧（種類・名前・宛先の人数）を中身に書き込んで承認待ちになり approval_url が返る。承認されたら、頼んだ時点の下書きだけが動く（あとから足したものは動かない）。複製やテンプレから作った企画で、元に開催日があるのに開催日が空なら need_starts_on で止まる。",
     inputSchema: { type: "object", properties: { campaign_id: { type: "string" }, block_name: { type: "string" } }, required: ["campaign_id", "block_name"] },
   },
   {
     name: "draft_flow",
+    screen: "ai_only",
+    say: "一言で流れの下書きを作る",
     description: "一言の下書き。コネクタ（トリガー → セレクタ → アクション）を 1〜10 本、動かさない下書きのまま 1 回で作り、企画に入れる。connectors の 1 本の欄は set_step と同じ（name・trigger・trigger_args・product_id・delay_hours・selector・action・action_args・subject・body）に、企画の中の役目 role を足したもの。active は渡しても下書きになる。企画は campaign_id（いまある企画）か campaign_title（新しく作る・年月は頭に自動）と starts_on。返事に、作ったコネクタの番号と、その企画の設計図（部品と線）が付く。動かすのは set_step で active true（承認）。途中で形が合わなければ止め、それまでに作った番号 created と止まった位置 index を返す。",
     inputSchema: {
       type: "object",
@@ -1423,49 +1542,63 @@ const TOOLS = [
   },
   {
     name: "list_campaigns",
+    screen: "blueprint",
+    say: "企画の一覧を見る",
     description: "企画の一覧（名前・常設か・開催日・しまったか・持ち主の部品の数）と、企画に入っていない部品の数。include_archived が真ならしまった企画も返す。",
     inputSchema: { type: "object", properties: { include_archived: { type: "boolean" } } },
   },
   {
     name: "create_campaign",
+    screen: "blueprint",
+    say: "企画をつくる",
     description: "企画を作る（部品は動かない）。title は 1〜60 文字。名前の頭に年月が自動で付く（starts_on＝開催日 YYYY-MM-DD があればその月、無ければ今月）。しまっていない企画と同じ名前は作れない。",
     inputSchema: { type: "object", properties: { title: { type: "string" }, starts_on: { type: "string" } }, required: ["title"] },
   },
   {
     name: "set_part_campaign",
+    screen: "blueprint",
+    say: "部品の企画と役目を変える",
     description: "部品の持ち主の企画と役目を変える（部品は動かない）。part_type・part_id は get_blueprint の type と id。role は 60 文字まで（中の名前の最後に入る。空なら外の名前）。campaign_id を空にすると企画から外す。しまった企画には入れられない。",
     inputSchema: { type: "object", properties: { part_type: { type: "string" }, part_id: { type: "string" }, campaign_id: { type: ["string", "null"] }, role: { type: "string" } }, required: ["part_type", "part_id"] },
   },
   {
     name: "archive_campaign",
+    screen: "blueprint",
+    say: "企画をしまう・戻す",
     description: "企画をしまう（restore が真なら戻す）。承認が要る道具。常設はしまえない。持ち主の部品が 1 つでも動いていたら（動いているステップ・送る列の一斉配信・売っている商品・これからのセミナーなど）しまわずに running で並べて返す。しまうと一覧と設計図から消えるが、部品と数字は残る。",
     inputSchema: { type: "object", properties: { campaign_id: { type: "string" }, restore: { type: "boolean" } }, required: ["campaign_id"] },
   },
   // 便 8d：片付けと元に戻す
   {
     name: "get_tidy_plan",
+    screen: "blueprint",
+    say: "片付け案を見る",
     description: "片付け案を返す（何も変えない）。企画に入っていない部品ごとに、入れる先の企画と役目の案（既定は常設・商品はまとまりの名前）と、部品が 1 つも無い企画をしまう案（archives）。別の企画へ入れたいものは campaign_id を変えて apply_tidy に渡す。",
     inputSchema: { type: "object", properties: {} },
   },
   {
     name: "apply_tidy",
+    screen: "blueprint",
+    say: "片付け案を当てる",
     description: "片付け案を当てる。承認が要る道具。assignments（part_type・part_id・campaign_id・role の並び・200 件まで）と archives（しまう企画の campaign_id の並び）を渡すとそのとおり、どちらも渡さなければ get_tidy_plan の案のまま。部品の振り分けは 1 件ずつ変えた記録に残り、list_changes の番号で undo_change すると戻せる。しまった企画は archive_campaign（restore true）で戻す。",
     inputSchema: { type: "object", properties: { assignments: { type: "array", items: { type: "object" } }, archives: { type: "array", items: { type: "string" } } } },
   },
   {
     name: "list_changes",
+    screen: "blueprint",
+    say: "変えた記録を見る",
     description: "変えた記録（新しい順）。設定（メールの送り方・オプチャの招待リンク）と部品の持ち主の変更を、前と後・誰が・いつ・戻したかで返す。",
     inputSchema: { type: "object", properties: { limit: { type: "integer" } } },
   },
   {
     name: "undo_change",
+    screen: "blueprint",
+    say: "変えた記録を 1 件元に戻す",
     description: "変えた記録の 1 件を元に戻す。承認が要る道具。前の値を書き戻す。同じ記録は 1 回だけ。同じ設定・部品にあとの変更があるときは newer_change で止まる（あとのほうを先に戻す）。",
     inputSchema: { type: "object", properties: { id: { type: "integer" } }, required: ["id"] },
   },
 ];
 
-// 承認待ちの知らせに出す道具の名前（画面の TOOL_LABEL と同じ言い方）
-const TOOL_NAMES = { apply_tidy: "片付け案を当てる", add_label: "ラベルを付ける", remove_label: "ラベルを外す", set_step: "コネクタを変える", queue_broadcast: "一斉配信を送る", set_mail_settings: "メールの送り方を変える", set_community_link: "オプチャのリンクを変える", set_calendar_url: "カレンダーを変える", return_correction: "添削を返す", send_email: "メールを送る", send_chat: "メッセージを送る", set_product: "商品を変える", set_deal_stage: "商談を進める", set_note_member: "note の印を変える", send_seminar_archive: "アーカイブを配る", archive_campaign: "企画をしまう", undo_change: "元に戻す", mark_referral_paid: "紹介の報酬を払った記録", publish_block: "ブロックをまとめて動かす" };
 
 // 道具を 1 回実行する（権限の確かめは呼ぶ側で済ませる）。承認されたあとの実行もここを通る
 async function runTool(env, name, args) {
@@ -1590,7 +1723,8 @@ async function rpc(msg, env, origin = "") {
     });
   }
   if (method === "ping") return ok({});
-  if (method === "tools/list") return ok({ tools: TOOLS });
+  // 便 9：画面用の 2 欄（screen・say）は AI へ渡さない
+  if (method === "tools/list") return ok({ tools: TOOLS.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })) });
   if (method === "tools/call") {
     const name = params.name;
     const args = params.arguments || {};
@@ -1606,7 +1740,7 @@ async function rpc(msg, env, origin = "") {
         if (name === "publish_block") { const pre = await blocks.preparePublish(env, args); toApprove = pre.ok ? pre.args : null; if (!pre.ok) result = pre; }
         if (toApprove) result = await guard.requestApproval(env, name, toApprove, origin);
         // 便 8f-3：承認待ちができたら Naoki のスマホへ（押すとその承認の画面が開く）
-        if (result && result.pending_approval) await push.send(env, { title: "承認待ち：" + (TOOL_NAMES[name] || name), body: "AI が承認を頼んでいます。開いて中身を見て決めてください", url: `/admin#approval/${result.approval_id}`, tag: "approval" });
+        if (result && result.pending_approval) await push.send(env, { title: "承認待ち：" + sayOf(TOOLS, name), body: "AI が承認を頼んでいます。開いて中身を見て決めてください", url: `/admin#approval/${result.approval_id}`, tag: "approval" });
       }
       else result = await runTool(env, name, args);
       isError = result.ok === false;

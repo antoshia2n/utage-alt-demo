@@ -375,3 +375,33 @@ details.review time { font-family: var(--mono); font-size: 12px; color: var(--mu
 .bp-node.bp-block { border-width: 3px; border-style: double; }
 .bp-node.bp-block.draft { border-style: dashed; border-width: 2px; }
 .bp-node.bp-block .n { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+/* 便 9：使い方 */
+.guide-entry { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; font-size: 14px; color: var(--muted); }
+.guide-toc { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.guide-toc a { font-size: 13px; padding: 4px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); text-decoration: none; }
+.guide-sec { margin-bottom: 16px; scroll-margin-top: 16px; }
+.guide-h3 { font-size: 15px; margin: 0 0 6px; }
+.guide-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
+@media (max-width: 900px) { .guide-cols { grid-template-columns: minmax(0, 1fr); } }
+.guide-check { margin: 0; padding-left: 1.4em; font-size: 14px; }
+.guide-check li { margin-bottom: 6px; }
+.guide-step { border-top: 1px solid var(--line); padding-top: 14px; margin-top: 14px; }
+.guide-step:first-of-type { border-top: 0; padding-top: 0; margin-top: 0; }
+.guide-step ol { margin: 6px 0; padding-left: 1.4em; font-size: 14px; }
+.guide-where, .guide-hands, .guide-done { margin: 0 0 4px; font-size: 14px; }
+.guide-hands { color: var(--muted); }
+.guide-done { background: var(--accent-soft); border-radius: 10px; padding: 6px 10px; margin-top: 6px; }
+.guide-code { font-family: var(--mono); font-size: 13px; background: var(--bg); padding: 2px 6px; border-radius: 6px; user-select: all; word-break: break-all; }
+.gd-group { margin-top: 16px; }
+.gd-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.gd-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.gd-table th { text-align: left; font-size: 11px; color: var(--muted); font-weight: 700; padding: 4px 8px; border-bottom: 1px solid var(--line); }
+.gd-table td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.gd-table .gd-ai { width: 9em; white-space: nowrap; }
+.ap-ref { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px 12px; margin: 4px 0 8px; font-size: 14px; }
+.ap-ref dt { color: var(--muted); }
+.ap-ref dd { margin: 0; }
+.gd-group { border-bottom: 1px solid var(--line); padding: 8px 0; margin: 0; }
+.gd-group > summary { cursor: pointer; display: flex; align-items: baseline; gap: 10px; list-style: revert; }
+.gd-group > summary .guide-h3 { margin: 0; }
