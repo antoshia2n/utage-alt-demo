@@ -38,6 +38,12 @@ export const LABEL_EVENT_TYPES = ["registered", "login", "lesson_viewed", "corre
   "purchase_completed", "seminar_registered", "consult_booked", "announcement_opened", "label_added", "label_removed",
   "referred", "referral_reward", "form_submitted", "page_viewed", "page_clicked"];
 
+// 便 13：「セミナー:題名」（src/seminars.js の labelName と同じ形）
+export function seminarLabel(title) {
+  const t = String(title || "").replace(/\s+/g, "").replace(/[,<>"'`]+/g, "・").replace(/^・+|・+$/g, "");
+  return "セミナー:" + t.slice(0, 35);
+}
+
 const byTime = (a, b) => String(a.occurred_at).localeCompare(String(b.occurred_at)) || (Number(a.id || 0) - Number(b.id || 0));
 
 // 商品の外の名前（生徒に見える名前）をラベルに使える形にする。空白は詰め、カンマや引用符は「・」に、36 文字まで（「買った:」と合わせて 40）
@@ -64,7 +70,8 @@ export function autoLabels({ person, events = [], member = false, ownerOf = {}, 
     else if (e.type === "email_clicked") out.add("リンクを押した");
     else if (e.type === "lesson_viewed") out.add("教材を見た");
     else if (e.type === "correction_submitted") out.add("添削を出した");
-    else if (e.type === "seminar_registered") out.add("セミナーに申し込んだ");
+    // 便 13：どの回に申し込んだかも見分ける（あとからその回の申込者へ配信を足すため）。題名は申込のときのもの
+    else if (e.type === "seminar_registered") { out.add("セミナーに申し込んだ"); if (p.title) out.add(seminarLabel(p.title)); }
     else if (e.type === "consult_booked") out.add("個別相談を予約した");
     // 便 8g-2：紹介で来た人と、紹介した人（紹介した人の印は、その人のリンクから誰かが登録したとき）
     else if (e.type === "referred") out.add("紹介で来た");

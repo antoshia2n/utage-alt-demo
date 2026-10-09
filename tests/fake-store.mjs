@@ -56,7 +56,7 @@ export function fakeStore() {
           if (ex) { if (!String(prefer).includes("ignore")) Object.assign(ex, b); out.push(ex); continue; }
         }
         const row = { ...b };
-        if (row.id == null && name !== "b_page_versions") row.id = name === "b_pages" ? crypto.randomUUID() : seq++;
+        if (row.id == null && name !== "b_page_versions") row.id = name === "b_pages" || name === "b_seminars" ? crypto.randomUUID() : seq++;
         if (name === "b_page_hits") row.at = row.at || new Date().toISOString();
         if (name === "b_page_requests") row.created_at = new Date().toISOString();
         if (name === "b_page_versions") row.created_at = new Date().toISOString();

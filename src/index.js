@@ -29,6 +29,9 @@
 //   公開のページは会員の画面と別の住所（PAGES_ORIGIN・lp.shia2n.jp）で出す。その住所ではページと /api/p/ の下だけを返し、ほかは何も返さない
 //   ページの中の印（申込の枠・決済の枠・ボタン）に、B が /_lab/embed.js で中身を差し込む。見た・押したは b_page_hits と出来事に積む
 //   経路（?r=名前）：初めて登録したときの経路を registered の payload.route に残し、自動ラベル「経路:名前」になる
+// B の便 13：セミナーの回と知らせ（b_seminars・b_seminar_notices）。中身は src/seminars.js。本番の置き場ではこちらを使い、
+//   架空の 2 回（src/bin4.js の SEMINARS）はデモの置き場だけで使う。回のフォームに答えた人が申込者になり、受付のメール・
+//   開催の何分前の知らせ（定時の処理）・サンクスページへの移動が付く。申込者には自動のラベル「セミナー:題名」
 
 import { makeBin3 } from "./bin3.js";
 import { makeBin4 } from "./bin4.js";
@@ -48,9 +51,10 @@ import { makePush } from "./push.js";
 import { makeRefer } from "./refer.js";
 import { makeBlocks } from "./blocks.js";
 import { LANES } from "./plan.js";
+import { makeSeminars } from "./seminars.js";
 import { makePages, EMBED_JS, personToken, PURPOSES, ROUTE_RE as ROUTE_OK } from "./pages.js";
 
-const VERSION = "0.28.0-b12a";
+const VERSION = "0.29.0-b13";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -87,7 +91,8 @@ export default {
       if (missingConfig(env).length) return;
       try {
         const r = await bin3.remindUnread(env, roomEvents, roomState);
-        const s = await bin4.remindSeminars(env);
+        // 便 13：本番の置き場は表のセミナーの知らせ、デモの置き場は架空の 2 回の前日の知らせ
+        const s = env.B_STORE ? await seminars.run(env) : await bin4.remindSeminars(env);
         const d = await deliver.run(env);
         await logInbound(env, "cron", { cron: event.cron }, { room: r, seminars: s, deliver: d }, 200);
       } catch (e) {
@@ -115,7 +120,9 @@ const forms = makeForms({ db, addEvent, logInbound, registerPerson: (env, a) => 
 const deliver = makeDeliver({ db, addEvent, logInbound, bin3, sell, mailcfg, connect, forms, decorateClick: (env, u, cid) => pagesLinkFor(env, u, cid) });
 const learn = makeLearn({ db });
 const pages = makePages({ db, addEvent, logInbound, forms, sell });
-const plan = makePlan({ db, logInbound, communityLink, changes, pages });
+const seminars = makeSeminars({ db, addEvent, logInbound, bin3, pagesOrigin: (env) => pages.pagesOrigin(env) });
+forms.hooks.onSubmitted = (env, cid, slug) => seminars.onForm(env, cid, slug);
+const plan = makePlan({ db, logInbound, communityLink, changes, pages, seminars });
 // B の便 8g-4：ブロックとテンプレ。中身は src/blocks.js（draftFlow は下の関数）
 const blocks = makeBlocks({ db, logInbound, plan, deliver, draftFlow: (env, a, actor) => draftFlow(env, a, actor) });
 const today = makeToday({ db, logInbound, connect, bin4, guard, listRooms: (env, a) => core.listRooms(env, a) });
@@ -1019,6 +1026,23 @@ async function handleApi(request, env, url) {
       const r = await bin4.setDealStage(env, { ...body, person_id: dl[1] }, "admin");
       return json(r, r.ok === false ? 400 : 200);
     }
+    // 便 13：本番の置き場は表のセミナー（作る・直す・知らせを足す・いま送る）
+    if (env.B_STORE && path.startsWith("/api/admin/seminars")) {
+      const actor = a.email;
+      if (path === "/api/admin/seminars" && method === "GET") return json(await seminars.list(env, { include_archived: url.searchParams.get("all") === "1" }));
+      if (path === "/api/admin/seminars" && method === "POST") {
+        const r = await seminars.set(env, await request.json().catch(() => ({})), actor);
+        return json(r, r.ok ? 200 : 400);
+      }
+      const sd = path.match(/^[/]api[/]admin[/]seminars[/]([0-9a-f-]{36})(?:[/](notices|send))?$/i);
+      if (sd && !sd[2] && method === "GET") return json(await seminars.get(env, { seminar_id: sd[1] }));
+      if (sd && sd[2] && method === "POST") {
+        const body = await request.json().catch(() => ({}));
+        const r = sd[2] === "notices" ? await seminars.setNotice(env, { ...body, seminar_id: sd[1] }, actor) : await seminars.sendNotice(env, { seminar_id: sd[1], key: body.key }, actor);
+        return json(r, r.ok ? 200 : 400);
+      }
+      return json({ ok: false, error: "not_found" }, 404);
+    }
     if (path === "/api/admin/seminars" && method === "GET") return json(await bin4.seminarsAdmin(env));
     const sr = path.match(/^\/api\/admin\/seminars\/([a-z0-9-]+)\/(remind|archive)$/);
     if (sr && method === "POST") {
@@ -1421,8 +1445,36 @@ const TOOLS = [
     name: "list_seminars",
     screen: "deals",
     say: "セミナーと申込者の数を見る",
-    description: "セミナーの一覧（架空の 2 回）。申込者の数・前日の知らせを送った数・アーカイブを配った数を返す。",
-    inputSchema: { type: "object", properties: {} },
+    description: "セミナーの回の一覧（新しい順）。題名・日時（label は日本時間）・長さ・定員・申込者の数・Zoom の URL・申込のフォーム form_slug・サンクスページ・申込者に付く自動のラベル label_name。include_archived でしまった回も。0 件は count: 0。",
+    inputSchema: { type: "object", properties: { include_archived: { type: "boolean" } } },
+  },
+  {
+    name: "get_seminar",
+    screen: "deals",
+    say: "セミナーの回の知らせと申込者を見る",
+    description: "セミナーの回 1 つ（seminar_id）の中身・知らせの一覧（key・いつ送るか when・送る時刻 send_at・件名・本文・送った数 sent）・申込者（名前・メール・申込の時刻）・本文で使える差し込み（{{name}} など）を返す。",
+    inputSchema: { type: "object", properties: { seminar_id: { type: "string" } }, required: ["seminar_id"] },
+  },
+  {
+    name: "set_seminar",
+    screen: "deals",
+    say: "セミナーの回を作る・直す",
+    description: "セミナーの回を作る・直す。承認が要る道具。作るときは title と starts_at（例 2026-11-01 21:00・日本時間）が要る。ほかに minutes（長さ・分）・capacity（定員・空で無制限）・zoom_url・archive_url・form_slug（申込のフォームの住所の名前。そのフォームに答えた人がこの回の申込者になる）・thanks_page_slug（答えたあとに移るページ。公開中のときだけ移る）・campaign_id（作るときに入れる企画）・archived（しまう）。id を渡すと直す。作ると知らせ 3 本（申込の直後・前日・1 時間前）が入る。",
+    inputSchema: { type: "object", properties: { id: { type: "string" }, title: { type: "string" }, starts_at: { type: "string" }, minutes: { type: "integer" }, capacity: { type: ["integer", "null"] }, zoom_url: { type: "string" }, archive_url: { type: "string" }, form_slug: { type: "string" }, thanks_page_slug: { type: "string" }, campaign_id: { type: "string" }, archived: { type: "boolean" } } },
+  },
+  {
+    name: "set_seminar_notice",
+    screen: "deals",
+    say: "セミナーの知らせを足す・直す",
+    description: "セミナーの回の知らせを 1 本足す・直す。承認が要る道具。key（英小文字・数字・ハイフン。例 three-days-before）で見分け、同じ key なら直す。offset_minutes は開催の何分前か（1440＝前日・60＝1 時間前・-120＝開催の 2 時間あと・空なら申込の直後）。subject・body（{{name}}・{{title}}・{{date}}・{{minutes}}・{{zoom}}・{{archive}} が置き換わる）・active・sort。送るのは定時の処理（毎時 7 分）で、送る時刻より前に申し込んだ人だけ。",
+    inputSchema: { type: "object", properties: { seminar_id: { type: "string" }, key: { type: "string" }, offset_minutes: { type: ["integer", "null"] }, subject: { type: "string" }, body: { type: "string" }, active: { type: "boolean" }, sort: { type: "integer" } }, required: ["seminar_id", "key"] },
+  },
+  {
+    name: "send_seminar_notice",
+    screen: "deals",
+    say: "セミナーの知らせをいま送る",
+    description: "セミナーの回の知らせ 1 本（key）を、まだ受け取っていない申込者へいま送る（時刻は見ない）。承認が要る道具。試しと、送る時刻を過ぎてから足した知らせに使う。送った・送らなかった・失敗・受け取り済みの数を返す。",
+    inputSchema: { type: "object", properties: { seminar_id: { type: "string" }, key: { type: "string" } }, required: ["seminar_id", "key"] },
   },
   {
     name: "set_note_member",
@@ -1833,7 +1885,13 @@ async function runTool(env, name, args) {
   if (name === "send_email") return await bin3.sendMailTo(env, args, "mcp");
   if (name === "list_consults") return await bin4.listConsults(env, args);
   if (name === "set_deal_stage") return await bin4.setDealStage(env, args, "mcp");
-  if (name === "list_seminars") return await bin4.seminarsAdmin(env);
+  if (name === "list_seminars") return env.B_STORE ? await seminars.list(env, args) : await bin4.seminarsAdmin(env);
+  // 便 13
+  if (name === "get_seminar") return await seminars.get(env, args);
+  if (name === "set_seminar") return await seminars.set(env, args, "mcp");
+  if (name === "set_seminar_notice") return await seminars.setNotice(env, args, "mcp");
+  if (name === "send_seminar_notice") return await seminars.sendNotice(env, args, "mcp");
+  if ((name === "send_seminar_reminder" || name === "send_seminar_archive") && env.B_STORE) return { ok: false, error: "use_send_seminar_notice", note: "本番の置き場のセミナーは知らせ（set_seminar_notice）と send_seminar_notice で送る。この道具は架空の 2 回のためのもの" };
   if (name === "set_note_member") return await core.setNoteMember(env, { person_id: args.person_id, value: args.value }, "mcp");
   if (name === "send_seminar_reminder") {
     if (!/^[a-z0-9-]{1,40}$/.test(String(args.seminar_id || ""))) return { ok: false, error: "bad_seminar_id" };

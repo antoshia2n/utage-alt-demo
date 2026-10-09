@@ -66,7 +66,7 @@ export function buildParts({ products = [], steps = [], broadcasts = [], seminar
   add("page", "front", "meet", "トップの LP（/）", "running", { url: "/" });
   add("page", "register", "signup", "無料登録（/register）", "running", { url: "/register" });
   // 便 12a：Claude が作ったページ（出会うのレーン）。lp_parts は公開中（無ければ最新）の版の印
-  for (const pg of pages) add("page", pg.id, "meet", pg.title, pg.status === "published" ? "running" : pg.status === "stopped" ? "stopped" : "draft", { slug: pg.slug, url: pg.url, lp: true, lp_parts: pageParts[pg.id] || {} });
+  for (const pg of pages) add("page", pg.id, pg.purpose === "thanks" ? "signup" : "meet", pg.title, pg.status === "published" ? "running" : pg.status === "stopped" ? "stopped" : "draft", { slug: pg.slug, url: pg.url, lp: true, lp_parts: pageParts[pg.id] || {} });
   // 便 19：フォーム（答えた人は台帳に入るので、登録のレーンに置く）
   for (const f of forms) add("form", f.id, "signup", f.title, f.active ? "running" : "draft", { slug: f.slug, url: "/form?f=" + f.slug });
   // 便 8e：ステップの表はコネクタ（トリガー → セレクタ → アクション）。メールを送らないコネクタは名前で出す
@@ -79,7 +79,7 @@ export function buildParts({ products = [], steps = [], broadcasts = [], seminar
     const st = b.status === "draft" ? "draft" : (b.status === "queued" || b.status === "sending") ? "running" : "stopped";
     add("broadcast", b.id, "warm", b.subject || "（件名なし）", st, { filter: b.filter || {} });
   }
-  for (const s of seminars) add("seminar", s.id, "warm", s.title, new Date(s.starts_at) < now ? "stopped" : "running", { starts_at: s.starts_at });
+  for (const s of seminars) add("seminar", s.id, "warm", s.title, new Date(s.starts_at) < now ? "stopped" : "running", { starts_at: s.starts_at, form_slug: s.form_slug || null, thanks_page_slug: s.thanks_page_slug || null });
   add("booking", "consult", "consult", "個別相談（30 分）", "running");
   const groups = {};
   for (const p of products) { const g = p.utage_product_id || p.id; (groups[g] = groups[g] || []).push(p.name); }
@@ -104,6 +104,11 @@ export function buildEdges(parts) {
   for (const pg of parts.filter((p) => p.type === "page" && p.lp)) {
     for (const slug of (pg.lp_parts && pg.lp_parts.forms) || []) for (const f of parts.filter((x) => x.type === "form" && x.slug === slug)) add(pg.key, f.key, "申込");
     for (const id of (pg.lp_parts && pg.lp_parts.checkouts) || []) add(pg.key, `product:${id}`, "申し込む");
+  }
+  // 便 13：セミナーの回の申込のフォーム → 回、回 → サンクスページ
+  for (const sm of parts.filter((p) => p.type === "seminar")) {
+    if (sm.form_slug) for (const f of parts.filter((x) => x.type === "form" && x.slug === sm.form_slug)) add(f.key, sm.key, "申込");
+    if (sm.thanks_page_slug) for (const pg of parts.filter((x) => x.type === "page" && x.slug === sm.thanks_page_slug)) add(sm.key, pg.key, "サンクス");
   }
   for (const s of parts.filter((p) => p.type === "step")) {
     if (s.trigger === "registered") add("page:register", s.key, "登録した人");
@@ -264,7 +269,7 @@ export function assemble({ parts, edges, campaigns, owners, week, edgeWeek = {} 
 }
 
 export function makePlan(h) {
-  const { db, logInbound, communityLink, changes, pages: pagesMod } = h;
+  const { db, logInbound, communityLink, changes, pages: pagesMod, seminars: seminarsMod } = h;
 
   async function loadAll(env) {
     const since = new Date(Date.now() - 7 * 864e5).toISOString();
@@ -287,7 +292,8 @@ export function makePlan(h) {
     const owned = new Set(owners.filter((o) => o.part_type === "product").map((o) => o.part_id));
     const shownProducts = products.filter((p) => p.active || owned.has(p.id));
     const parts = buildParts({
-      products: shownProducts, steps, broadcasts, seminars: SEMINARS,
+      // 便 13：本番の置き場は表のセミナー（架空の 2 回は出さない）
+      products: shownProducts, steps, broadcasts, seminars: seminarsMod ? await seminarsMod.forPlan(env).catch(() => []) : SEMINARS,
       courseCount: new Set(lessons.map((l) => l.lesson_id)).size, community: community.url, forms, pages: lp.pages, pageParts: lp.partsOf,
     });
     const edges = buildEdges(parts);
