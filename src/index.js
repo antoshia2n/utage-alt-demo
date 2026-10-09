@@ -32,6 +32,8 @@
 // B の便 13：セミナーの回と知らせ（b_seminars・b_seminar_notices）。中身は src/seminars.js。本番の置き場ではこちらを使い、
 //   架空の 2 回（src/bin4.js の SEMINARS）はデモの置き場だけで使う。回のフォームに答えた人が申込者になり、受付のメール・
 //   開催の何分前の知らせ（定時の処理）・サンクスページへの移動が付く。申込者には自動のラベル「セミナー:題名」
+// B の便 12b：売るページ。商品に「決済のあとに移るページ」（b_products.thanks_page_slug）を持たせ、決済が通ったらそこへ移す。
+//   売るページ（目的 sale）と移る先のページはファネル構築のオファーの段に置く
 // B の便 13b：個別相談の予約。予約の種類は b_booking_types、予約は今までどおり出来事 consult_booked。中身は src/booking.js。
 //   空き時間は Naoki の Google カレンダーの予定を避けて出す。窓口はページの中の印 data-lab-part="booking:slug"（lp の住所・ログイン不要）
 
@@ -57,7 +59,7 @@ import { makeSeminars } from "./seminars.js";
 import { makeBooking } from "./booking.js";
 import { makePages, EMBED_JS, personToken, PURPOSES, ROUTE_RE as ROUTE_OK } from "./pages.js";
 
-const VERSION = "0.30.0-b13b";
+const VERSION = "0.31.0-b12b";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -1578,7 +1580,7 @@ const TOOLS = [
     name: "set_product",
     screen: "products",
     say: "商品の値段や、売る・売らないを変える",
-    description: "商品を 1 つ変える、または足す。承認が要る道具：呼ぶと承認待ちになり approval_url が返る。変えられる欄：name・amount（円）・period（monthly／annually・定期だけ）・grant_days（単発の権利の日数）・grants（権利の印の配列）・deny_multiple・sales_limit・list_price_of・description・active（売る）・public（サイトに出す）・sort・note・affiliate_rate（紹介の報酬の率 %・0〜100 の整数・null で払わない）。新しく足すときは id・kind・name・amount が要る（分割 installment は足せない）。",
+    description: "商品を 1 つ変える、または足す。承認が要る道具：呼ぶと承認待ちになり approval_url が返る。変えられる欄：name・amount（円）・period（monthly／annually・定期だけ）・grant_days（単発の権利の日数）・grants（権利の印の配列）・deny_multiple・sales_limit・list_price_of・description・active（売る）・public（サイトに出す）・sort・note・affiliate_rate（紹介の報酬の率 %・0〜100 の整数・null で払わない）・thanks_page_slug（決済のあとに移るページの住所の名前・公開中のときだけ移る・null で移さない）。新しく足すときは id・kind・name・amount が要る（分割 installment は足せない）。",
     inputSchema: {
       type: "object",
       properties: {
@@ -1589,6 +1591,7 @@ const TOOLS = [
         deny_multiple: { type: "boolean" }, sales_limit: { type: ["integer", "null"] }, list_price_of: { type: ["string", "null"] },
         description: { type: "string" }, active: { type: "boolean" }, public: { type: "boolean" }, sort: { type: "integer" }, note: { type: "string" },
         affiliate_rate: { type: ["integer", "null"], description: "紹介の報酬の率（%）。null で払わない" },
+        thanks_page_slug: { type: ["string", "null"], description: "決済のあとに移るページ（get_page の slug）。null で移さない" },
       },
       required: ["id"],
     },

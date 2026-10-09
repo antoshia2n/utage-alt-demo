@@ -15,7 +15,7 @@ const SUB_TYPES = ["subscription_started", "subscription_payment", "subscription
 const ID_RE = /^[a-z0-9-]{2,40}$/;
 const UUID_RE = /^[0-9a-f-]{36}$/i;
 const NL = String.fromCharCode(10);
-const EDITABLE = ["name", "amount", "period", "grant_days", "grants", "deny_multiple", "sales_limit", "list_price_of", "description", "active", "public", "sort", "note", "affiliate_rate"];
+const EDITABLE = ["name", "amount", "period", "grant_days", "grants", "deny_multiple", "sales_limit", "list_price_of", "description", "active", "public", "sort", "note", "affiliate_rate", "thanks_page_slug"];
 
 export function makeSell(h) {
   const { db, addEvent, bin3 } = h;
@@ -83,6 +83,11 @@ export function makeSell(h) {
     }
     const err = checkPatch(patch, before);
     if (err) return { ok: false, error: err };
+    // 便 12b：決済のあとに移るページ（サンクス）。ページの台帳にある住所の名前だけ
+    if (patch.thanks_page_slug) {
+      const [pg] = await db(env, "GET", `b_pages?select=id&slug=eq.${patch.thanks_page_slug}`);
+      if (!pg) return { ok: false, error: "thanks_page_not_found" };
+    }
     if (Object.keys(patch).length === 0) return { ok: false, error: "nothing_to_change" };
     patch.updated_at = new Date().toISOString();
     patch.updated_by = String(by || "unknown").slice(0, 120);
@@ -115,6 +120,10 @@ export function makeSell(h) {
     if ("sort" in p) { p.sort = Number(p.sort); if (!Number.isInteger(p.sort)) return "bad_sort"; }
     if ("description" in p) p.description = String(p.description || "").slice(0, 2000);
     if ("note" in p) p.note = String(p.note || "").slice(0, 500);
+    if ("thanks_page_slug" in p) {
+      p.thanks_page_slug = String(p.thanks_page_slug || "").trim().toLowerCase() || null;
+      if (p.thanks_page_slug && !/^[a-z0-9][a-z0-9-]{1,40}$/.test(p.thanks_page_slug)) return "bad_thanks_page_slug";
+    }
     // 便 8g-2：紹介の報酬の率（%）。空か null なら払わない
     if ("affiliate_rate" in p) {
       if (p.affiliate_rate === "" || p.affiliate_rate === null) p.affiliate_rate = null;
@@ -286,6 +295,14 @@ export function makeSell(h) {
   }
 
   // 画面が送ってきた番号を UnivaPay に聞き直す。単発は charge_id、定期は subscription_id
+  // 便 12b：決済のあとに移るページの住所。公開中のときだけ（下書きや止めたページへは移さない）
+  async function thanksUrl(env, p) {
+    if (!p.thanks_page_slug) return null;
+    const [pg] = await db(env, "GET", `b_pages?select=slug,status&slug=eq.${p.thanks_page_slug}`).catch(() => []);
+    if (!pg || pg.status !== "published") return null;
+    return `${String(env.PAGES_ORIGIN || "https://lp.shia2n.jp").replace(/[/]$/, "")}/${pg.slug}`;
+  }
+
   async function confirm(env, { email, product_id, charge_id, subscription_id }) {
     const st = bin3.univapayState(env);
     if (!st.configured || !st.store_id) return { ok: false, error: "univapay_not_configured" };
@@ -301,7 +318,7 @@ export function makeSell(h) {
     const done = await alreadyRecorded(env, key, id);
     if (done) {
       if (done.customer_id !== customer.id) return { ok: false, error: "payment_taken" };
-      return { ok: true, already: true, entitlement: await entitlement(env, customer.id) };
+      return { ok: true, already: true, entitlement: await entitlement(env, customer.id), thanks_url: await thanksUrl(env, p) };
     }
     const r = await lookupWithWait(env, st, isSub, id);
     if (!r.ok) return { ok: false, error: "univapay_lookup_failed", status: r.status };
@@ -318,7 +335,7 @@ export function makeSell(h) {
       text: [`${customer.name || ""} さん`, "", `${p.name}（${priceText(p)}）のお申し込みを受け付けました。`, "", `${env.PUBLIC_ORIGIN || "https://utage-alt-demo.gameister1.workers.dev"}/app`].join(NL),
       extra: { product_id: p.id },
     });
-    return { ok: true, already: false, product: publicShape(p), entitlement: await entitlement(env, customer.id), mail: mailResult.result };
+    return { ok: true, already: false, product: publicShape(p), entitlement: await entitlement(env, customer.id), mail: mailResult.result, thanks_url: await thanksUrl(env, p) };
   }
 
   // 単発の決済は、通った直後だと UnivaPay の側でまだ処理中のことがあるので、少し待って 3 回まで聞き直す

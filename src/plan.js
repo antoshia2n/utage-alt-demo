@@ -67,7 +67,10 @@ export function buildParts({ products = [], steps = [], broadcasts = [], seminar
   add("page", "front", "meet", "トップの LP（/）", "running", { url: "/" });
   add("page", "register", "signup", "無料登録（/register）", "running", { url: "/register" });
   // 便 12a：Claude が作ったページ（集客のレーン。サンクスはリストイン）。lp_parts は公開中（無ければ最新）の版の印
-  for (const pg of pages) add("page", pg.id, pg.purpose === "thanks" ? "signup" : "meet", pg.title, pg.status === "published" ? "running" : pg.status === "stopped" ? "stopped" : "draft", { slug: pg.slug, url: pg.url, lp: true, lp_parts: pageParts[pg.id] || {} });
+  // 便 12b：売るページと、決済のあとに移るページはオファーの段に置く
+  const buyThanks = new Set(products.map((p) => p.thanks_page_slug).filter(Boolean));
+  const pageLane = (pg) => (pg.purpose === "sale" || buyThanks.has(pg.slug) ? "buy" : pg.purpose === "thanks" ? "signup" : "meet");
+  for (const pg of pages) add("page", pg.id, pageLane(pg), pg.title, pg.status === "published" ? "running" : pg.status === "stopped" ? "stopped" : "draft", { slug: pg.slug, url: pg.url, lp: true, lp_parts: pageParts[pg.id] || {} });
   // 便 19：フォーム（答えた人は台帳に入るので、登録のレーンに置く）
   for (const f of forms) add("form", f.id, "signup", f.title, f.active ? "running" : "draft", { slug: f.slug, url: "/form?f=" + f.slug });
   // 便 8e：ステップの表はコネクタ（トリガー → セレクタ → アクション）。メールを送らないコネクタは名前で出す
@@ -88,7 +91,7 @@ export function buildParts({ products = [], steps = [], broadcasts = [], seminar
   for (const p of products) { const g = p.utage_product_id || p.id; (groups[g] = groups[g] || []).push(p.name); }
   for (const p of products) {
     const g = p.utage_product_id || p.id;
-    add("product", p.id, "buy", p.name, p.active ? "running" : "stopped", { grants: p.grants || [], group: `pg:${g}`, group_name: groupName(groups[g]), group_size: groups[g].length });
+    add("product", p.id, "buy", p.name, p.active ? "running" : "stopped", { grants: p.grants || [], group: `pg:${g}`, group_name: groupName(groups[g]), group_size: groups[g].length, thanks_page_slug: p.thanks_page_slug || null });
   }
   add("course", "mn", "learn", `しあらぼの教材（${courseCount} 本）`, courseCount ? "running" : "stopped");
   add("room", "correction", "learn", "添削ルーム", "running");
@@ -110,6 +113,8 @@ export function buildEdges(parts) {
     // 便 13b：ページの中の予約の枠 → その予約の種類
     for (const slug of (pg.lp_parts && pg.lp_parts.bookings) || []) for (const b of parts.filter((x) => x.type === "booking" && x.slug === slug)) add(pg.key, b.key, "予約");
   }
+  // 便 12b：商品 → 決済のあとに移るページ
+  for (const pr of parts.filter((p) => p.type === "product" && p.thanks_page_slug)) for (const pg of parts.filter((x) => x.type === "page" && x.slug === pr.thanks_page_slug)) add(pr.key, pg.key, "サンクス");
   for (const b of parts.filter((p) => p.type === "booking" && p.thanks_page_slug)) for (const pg of parts.filter((x) => x.type === "page" && x.slug === b.thanks_page_slug)) add(b.key, pg.key, "サンクス");
   // 便 13：セミナーの回の申込のフォーム → 回、回 → サンクスページ
   for (const sm of parts.filter((p) => p.type === "seminar")) {
@@ -280,7 +285,7 @@ export function makePlan(h) {
   async function loadAll(env) {
     const since = new Date(Date.now() - 7 * 864e5).toISOString();
     const [products, steps, broadcasts, lessons, community, campaigns, owners, events, forms] = await Promise.all([
-      db(env, "GET", "b_products?select=id,name,active,grants,sort,utage_product_id&order=sort.asc"),
+      db(env, "GET", "b_products?select=id,name,active,grants,sort,utage_product_id,thanks_page_slug&order=sort.asc"),
       db(env, "GET", "b_steps?select=id,name,trigger,trigger_args,product_id,subject,active,action&order=sort.asc,id.asc"),
       db(env, "GET", "b_broadcasts?select=id,subject,status,filter,created_at&order=created_at.desc&limit=50"),
       db(env, "GET", "mn_lessons?select=lesson_id&limit=5000"),

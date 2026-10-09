@@ -76,7 +76,9 @@
       $("pay").disabled = true;
       try {
         const { startCheckout } = await import("/js/pay.js");
-        await startCheckout({ email, product: product ? product.id : null, onStatus: (t) => payShow(t, true) });
+        const res = await startCheckout({ email, product: product ? product.id : null, onStatus: (t) => payShow(t, true) });
+        // 便 12b：商品に決済のあとのページ（サンクス）が結んであれば、そこへ移る
+        if (res && res.thanks_url && /^https:[/][/]/.test(res.thanks_url)) { location.href = res.thanks_url; return; }
         payShow("お申し込みを受け付けました。届いたメールのリンクからログインすると、教材と添削ルームが使えます。", true);
       } catch (err) {
         payShow(err.message, false);
