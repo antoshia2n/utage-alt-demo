@@ -26,8 +26,9 @@ import { makeLearn, normalizeNotes, LESSON_ID_RE } from "./learn.js";
 import { makeBridge } from "./bridge.js";
 import { makePlan } from "./plan.js";
 import { makeMailCfg } from "./mailcfg.js";
+import { makeChanges } from "./changes.js";
 
-const VERSION = "0.13.3-b7c1";
+const VERSION = "0.14.0-b8d";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_read"];
@@ -70,7 +71,8 @@ export default {
   },
 };
 
-const mailcfg = makeMailCfg({ db, logInbound });
+const changes = makeChanges({ db, logInbound });
+const mailcfg = makeMailCfg({ db, logInbound, changes });
 const bin3 = makeBin3({ db, addEvent, logInbound, json, mailcfg, onCharge: (env, event, data) => sell.onCharge(env, event, data), onSubEvent: (env, id) => sell.syncGrants(env, id) });
 const bin4 = makeBin4({ db, addEvent, bin3 });
 const guard = makeGuard({ db, logInbound });
@@ -78,7 +80,7 @@ const bridge = makeBridge({ db, rawDb, addEvent, secretHeaders });
 const sell = makeSell({ db, addEvent, bin3, bridge });
 const deliver = makeDeliver({ db, addEvent, logInbound, bin3, sell, mailcfg });
 const learn = makeLearn({ db });
-const plan = makePlan({ db, logInbound, communityLink });
+const plan = makePlan({ db, logInbound, communityLink, changes });
 
 // ---------- 共通 ----------
 
@@ -226,6 +228,7 @@ async function setCommunityLink(env, { url }, actor) {
     [{ key: COMMUNITY_KEY, value: v, updated_at: new Date().toISOString(), updated_by: String(actor).slice(0, 200) }],
     "resolution=merge-duplicates,return=representation");
   await logInbound(env, "community_set", { actor, cleared: !v, changed: before.url !== v }, { ok: true }, 200);
+  await changes.record(env, { kind: "setting", target: COMMUNITY_KEY, before: before.url, after: v, summary: v ? "オプチャの招待リンクを差し替えた" : "オプチャの招待リンクを外した", actor });
   return { ok: true, url: rows[0].value, cleared: !v, changed: before.url !== v, updated_at: rows[0].updated_at, updated_by: rows[0].updated_by };
 }
 // 渡してよいか。会員（門番の表を含む）とシアニン（b_admins）だけ。state：open（渡す）／locked（会員でない）／unset（リンクが未設定）
@@ -843,6 +846,18 @@ async function handleApi(request, env, url) {
       const r = await plan.archiveCampaign(env, body, a.email);
       return json(r, r.ok === false ? 400 : 200);
     }
+    // 便 8d：片付け案と、変えた記録・元に戻す（シアニン用の画面からは承認なし）
+    if (path === "/api/admin/tidy" && method === "GET") { const r = await plan.tidyPlan(env); return json(r, r.ok === false ? 400 : 200); }
+    if (path === "/api/admin/tidy" && method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      return json(await plan.applyTidy(env, body, a.email));
+    }
+    if (path === "/api/admin/changes" && method === "GET") { const r = await changes.list(env, { limit: url.searchParams.get("limit") || 50 }); return json(r, r.ok === false ? 400 : 200); }
+    if (path === "/api/admin/changes/undo" && method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      const r = await changes.undo(env, body, a.email);
+      return json(r, r.ok === false ? 400 : 200);
+    }
     // B の便 5：配信（シアニン用の画面からは承認なしで送れる。AI からは一斉配信とステップの変更に承認が要る）
     if (path === "/api/admin/deliver" && method === "GET") {
       const [b, s, w] = await Promise.all([deliver.listBroadcasts(env, {}), deliver.listSteps(env), env.B_STORE ? deliver.warmState(env) : null]);
@@ -1144,6 +1159,27 @@ const TOOLS = [
     description: "企画をしまう（restore が真なら戻す）。承認が要る道具。常設はしまえない。持ち主の部品が 1 つでも動いていたら（動いているステップ・送る列の一斉配信・売っている商品・これからのセミナーなど）しまわずに running で並べて返す。しまうと一覧と設計図から消えるが、部品と数字は残る。",
     inputSchema: { type: "object", properties: { campaign_id: { type: "string" }, restore: { type: "boolean" } }, required: ["campaign_id"] },
   },
+  // 便 8d：片付けと元に戻す
+  {
+    name: "get_tidy_plan",
+    description: "片付け案を返す（何も変えない）。企画に入っていない部品ごとに、入れる先の企画と役目の案（既定は常設・商品はまとまりの名前）。別の企画へ入れたいものは campaign_id を変えて apply_tidy に渡す。",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "apply_tidy",
+    description: "片付け案を当てる。承認が要る道具。assignments（part_type・part_id・campaign_id・role の並び・200 件まで）を渡すとそのとおり、渡さなければ get_tidy_plan の案のまま。1 件ずつ変えた記録に残り、list_changes の番号で undo_change すると戻せる。",
+    inputSchema: { type: "object", properties: { assignments: { type: "array", items: { type: "object" } } } },
+  },
+  {
+    name: "list_changes",
+    description: "変えた記録（新しい順）。設定（メールの送り方・オプチャの招待リンク）と部品の持ち主の変更を、前と後・誰が・いつ・戻したかで返す。",
+    inputSchema: { type: "object", properties: { limit: { type: "integer" } } },
+  },
+  {
+    name: "undo_change",
+    description: "変えた記録の 1 件を元に戻す。承認が要る道具。前の値を書き戻す。同じ記録は 1 回だけ。同じ設定・部品にあとの変更があるときは newer_change で止まる（あとのほうを先に戻す）。",
+    inputSchema: { type: "object", properties: { id: { type: "integer" } }, required: ["id"] },
+  },
 ];
 
 // 道具を 1 回実行する（権限の確かめは呼ぶ側で済ませる）。承認されたあとの実行もここを通る
@@ -1196,6 +1232,10 @@ async function runTool(env, name, args) {
   if (name === "create_campaign") return await plan.createCampaign(env, args, "mcp");
   if (name === "set_part_campaign") return await plan.setPartCampaign(env, args, "mcp");
   if (name === "archive_campaign") return await plan.archiveCampaign(env, args, "mcp");
+  if (name === "get_tidy_plan") return await plan.tidyPlan(env);
+  if (name === "apply_tidy") return await plan.applyTidy(env, args, "mcp");
+  if (name === "list_changes") return await changes.list(env, args);
+  if (name === "undo_change") return await changes.undo(env, args, "mcp");
   return { ok: false, error: "unknown_tool" };
 }
 

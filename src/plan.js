@@ -8,13 +8,29 @@
 import { SEMINARS } from "./bin4.js";
 import { MEMBER_KEYS } from "./bridge.js";
 
+// 便 8d：レーンはお客さんの段階で 7 つ（版 6・Naoki 確定）
 export const LANES = [
-  { id: "collect", label: "集める" },
-  { id: "nurture", label: "育てる" },
-  { id: "sell", label: "売る" },
-  { id: "deliver", label: "届ける" },
+  { id: "meet", label: "出会う" },
+  { id: "signup", label: "登録" },
+  { id: "warm", label: "温める" },
+  { id: "consult", label: "相談" },
+  { id: "buy", label: "購入" },
+  { id: "learn", label: "受講" },
   { id: "refer", label: "紹介" },
 ];
+
+// 便 8d：片付け案で常設へ入れるときの役目（商品はまとまりの名前を使う）
+const TIDY_ROLE = { page: "入口のページ", step: "ステップ", broadcast: "一斉配信", seminar: "セミナー", booking: "個別相談の枠", course: "教材", room: "添削", community: "オプチャ" };
+
+// 便 8d：商品のまとまりの名前。同じ UTAGE の商品から写した売り方の名前の、頭の共通部分（2 文字に満たなければ最初の名前）
+export function groupName(names) {
+  const list = names.map((x) => String(x || "")).filter(Boolean);
+  if (!list.length) return "";
+  let pre = list[0];
+  for (const n of list.slice(1)) { let i = 0; while (i < pre.length && i < n.length && pre[i] === n[i]) i++; pre = pre.slice(0, i); }
+  pre = pre.replace(/[\s（(【\[｜|・:：\-－]+$/u, "").trim();
+  return pre.length >= 2 ? pre : list[0];
+}
 
 export const PART_TYPES = {
   page: "ページ", step: "ステップ", broadcast: "一斉配信", seminar: "セミナー", booking: "予約",
@@ -45,19 +61,24 @@ export function campaignName(title, startsOn, now = new Date()) {
 export function buildParts({ products = [], steps = [], broadcasts = [], seminars = [], courseCount = 0, community = "" }, now = new Date()) {
   const parts = [];
   const add = (type, id, lane, name, state, extra = {}) => parts.push({ key: `${type}:${id}`, type, id: String(id), lane, name, state, ...extra });
-  add("page", "front", "collect", "トップの LP（/）", "running", { url: "/" });
-  add("page", "register", "collect", "無料登録（/register）", "running", { url: "/register" });
-  for (const s of steps) add("step", s.id, "nurture", s.subject || s.name || `ステップ ${s.id}`, s.active ? "running" : "draft", { trigger: s.trigger, product_id: s.product_id || null, note: s.name || "" });
+  add("page", "front", "meet", "トップの LP（/）", "running", { url: "/" });
+  add("page", "register", "signup", "無料登録（/register）", "running", { url: "/register" });
+  for (const s of steps) add("step", s.id, "warm", s.subject || s.name || `ステップ ${s.id}`, s.active ? "running" : "draft", { trigger: s.trigger, product_id: s.product_id || null, note: s.name || "" });
   for (const b of broadcasts) {
     const st = b.status === "draft" ? "draft" : (b.status === "queued" || b.status === "sending") ? "running" : "stopped";
-    add("broadcast", b.id, "nurture", b.subject || "（件名なし）", st, { filter: b.filter || {} });
+    add("broadcast", b.id, "warm", b.subject || "（件名なし）", st, { filter: b.filter || {} });
   }
-  for (const s of seminars) add("seminar", s.id, "nurture", s.title, new Date(s.starts_at) < now ? "stopped" : "running", { starts_at: s.starts_at });
-  add("booking", "consult", "sell", "個別相談（30 分）", "running");
-  for (const p of products) add("product", p.id, "sell", p.name, p.active ? "running" : "stopped", { grants: p.grants || [] });
-  add("course", "mn", "deliver", `しあらぼの教材（${courseCount} 本）`, courseCount ? "running" : "stopped");
-  add("room", "correction", "deliver", "添削ルーム", "running");
-  add("community", "openchat", "deliver", "オプチャ", community ? "running" : "stopped");
+  for (const s of seminars) add("seminar", s.id, "warm", s.title, new Date(s.starts_at) < now ? "stopped" : "running", { starts_at: s.starts_at });
+  add("booking", "consult", "consult", "個別相談（30 分）", "running");
+  const groups = {};
+  for (const p of products) { const g = p.utage_product_id || p.id; (groups[g] = groups[g] || []).push(p.name); }
+  for (const p of products) {
+    const g = p.utage_product_id || p.id;
+    add("product", p.id, "buy", p.name, p.active ? "running" : "stopped", { grants: p.grants || [], group: `pg:${g}`, group_name: groupName(groups[g]), group_size: groups[g].length });
+  }
+  add("course", "mn", "learn", `しあらぼの教材（${courseCount} 本）`, courseCount ? "running" : "stopped");
+  add("room", "correction", "learn", "添削ルーム", "running");
+  add("community", "openchat", "learn", "オプチャ", community ? "running" : "stopped");
   return parts;
 }
 
@@ -161,12 +182,12 @@ export function assemble({ parts, edges, campaigns, owners, week }, view = "all"
 }
 
 export function makePlan(h) {
-  const { db, logInbound, communityLink } = h;
+  const { db, logInbound, communityLink, changes } = h;
 
   async function loadAll(env) {
     const since = new Date(Date.now() - 7 * 864e5).toISOString();
     const [products, steps, broadcasts, lessons, community, campaigns, owners, events] = await Promise.all([
-      db(env, "GET", "b_products?select=id,name,active,grants,sort&order=sort.asc"),
+      db(env, "GET", "b_products?select=id,name,active,grants,sort,utage_product_id&order=sort.asc"),
       db(env, "GET", "b_steps?select=id,name,trigger,product_id,subject,active&order=sort.asc,id.asc"),
       db(env, "GET", "b_broadcasts?select=id,subject,status,filter,created_at&order=created_at.desc&limit=50"),
       db(env, "GET", "mn_lessons?select=lesson_id&limit=5000"),
@@ -226,9 +247,13 @@ export function makePlan(h) {
     const all = await loadAll(env);
     const key = `${part_type}:${String(part_id)}`;
     if (!all.parts.some((p) => p.key === key)) return { ok: false, error: "part_not_found", key };
+    const prev = all.owners.find((o) => o.part_type === part_type && String(o.part_id) === String(part_id));
+    const before = prev ? { campaign_id: prev.campaign_id, role: prev.role || "" } : null;
+    const outerName = (all.parts.find((p) => p.key === key) || {}).name || key;
     if (!campaign_id) {
       await db(env, "DELETE", `b_campaign_parts?part_type=eq.${part_type}&part_id=eq.${encodeURIComponent(String(part_id))}`, undefined, "return=minimal");
       await logInbound(env, "campaign", { action: "unassign", key, by: actor }, { ok: true }, 200);
+      if (changes) await changes.record(env, { kind: "part", target: key, before, after: null, summary: `${outerName} を企画から外した`, actor });
       return { ok: true, key, campaign_id: null };
     }
     if (!UUID_RE.test(String(campaign_id))) return { ok: false, error: "bad_campaign_id" };
@@ -239,6 +264,7 @@ export function makePlan(h) {
       [{ part_type, part_id: String(part_id), campaign_id, role: r, updated_at: new Date().toISOString(), updated_by: String(actor).slice(0, 200) }],
       "resolution=merge-duplicates,return=minimal");
     await logInbound(env, "campaign", { action: "assign", key, campaign_id, role: r, by: actor }, { ok: true }, 200);
+    if (changes) await changes.record(env, { kind: "part", target: key, before, after: { campaign_id, role: r }, summary: `${outerName} を企画「${c.name}」へ`, actor });
     const outer = (all.parts.find((p) => p.key === key) || {}).name;
     return { ok: true, key, campaign_id, campaign_name: c.name, role: r, inner_name: innerName(c.name, part_type, r, outer) };
   }
@@ -266,5 +292,34 @@ export function makePlan(h) {
     return { ok: true, campaign_id: c.id, archived: !back };
   }
 
-  return { blueprint, listCampaigns, createCampaign, setPartCampaign, archiveCampaign };
+  // 便 8d：片付け案。企画に入っていない部品を、常設へ入れる案にする（下書き・何も変えない）。
+  // AI が別の振り分けを考えたときは apply_tidy に assignments を渡して当てる
+  async function tidyPlan(env) {
+    if (!env.B_STORE) return { ok: false, error: "demo_store" };
+    const all = await loadAll(env);
+    const a = assemble(all, "all");
+    const standing = all.campaigns.find((c) => c.kind === "standing");
+    const loose = a.parts.filter((p) => !p.campaign_id);
+    const assignments = loose.map((p) => ({
+      part_type: p.type, part_id: p.id, name: p.name,
+      campaign_id: standing ? standing.id : null, campaign_name: standing ? standing.name : null,
+      role: p.type === "product" ? (p.group_name || p.name) : p.type === "broadcast" && p.state === "stopped" ? "過去の一斉配信" : (TIDY_ROLE[p.type] || ""),
+    }));
+    return { ok: true, count: assignments.length, assignments, note: standing ? "案のまま当てると、すべて常設に入る。企画へ入れたいものは assignments の campaign_id を変えて渡す" : "常設の企画が無い（b8c_plan.sql を流すと作られる）" };
+  }
+
+  async function applyTidy(env, { assignments } = {}, actor) {
+    if (!env.B_STORE) return { ok: false, error: "demo_store" };
+    let list = Array.isArray(assignments) ? assignments : null;
+    if (!list) { const p = await tidyPlan(env); if (!p.ok) return p; list = p.assignments; }
+    if (list.length > 200) return { ok: false, error: "too_many", max: 200 };
+    const applied = [], failed = [];
+    for (const x of list) {
+      const r = await setPartCampaign(env, { part_type: x.part_type, part_id: x.part_id, campaign_id: x.campaign_id, role: x.role || "" }, actor);
+      if (r.ok) applied.push(r.key); else failed.push({ part_type: x.part_type, part_id: x.part_id, error: r.error });
+    }
+    return { ok: failed.length === 0, applied: applied.length, failed, note: "元に戻すときは list_changes で番号を見て undo_change" };
+  }
+
+  return { blueprint, listCampaigns, createCampaign, setPartCampaign, archiveCampaign, tidyPlan, applyTidy };
 }

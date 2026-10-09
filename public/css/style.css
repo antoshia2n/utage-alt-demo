@@ -287,7 +287,16 @@ details.review time { font-family: var(--mono); font-size: 12px; color: var(--mu
 .bp-wrap { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr) 300px; align-items: start; }
 @media (max-width: 1100px) { .bp-wrap { grid-template-columns: minmax(0, 1fr); } }
 .bp-canvas { overflow-x: auto; padding: 16px; }
-.bp-lanes { position: relative; display: grid; grid-template-columns: repeat(5, minmax(150px, 1fr)); gap: 32px; min-width: 860px; padding-bottom: 28px; }
+.bp-lanes { position: relative; display: grid; grid-template-columns: repeat(7, minmax(132px, 1fr)); gap: 28px; min-width: 1100px; padding-bottom: 28px; }
+.bp-group { display: flex; flex-direction: column; gap: 8px; }
+.bp-group > summary { list-style: none; }
+.bp-group > summary::-webkit-details-marker { display: none; }
+.bp-group > summary .n { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.bp-group[open] > summary { border-style: solid; box-shadow: inset 4px 0 0 var(--accent-soft); }
+.bp-group .bp-node:not(summary) { margin-left: 10px; }
+.bp-list { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 0; padding: 0; list-style: none; font-size: 13px; }
+.bp-list li { display: flex; gap: 8px; align-items: flex-start; justify-content: space-between; padding: 6px 0; border-top: 1px solid var(--line); }
+.bp-list li .sub { font-size: 11px; color: var(--muted); }
 .bp-lane { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 14px; }
 .bp-lane h4 { margin: 0 0 2px; font-size: 12px; color: var(--muted); letter-spacing: .1em; font-weight: 700; }
 .bp-empty { margin: 0; font-size: 12px; }

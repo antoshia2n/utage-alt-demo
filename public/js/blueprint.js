@@ -1,5 +1,6 @@
 // B の便 8c：設計図（見る）と企画。
-// 部品を集める → 育てる → 売る → 届ける → 紹介のレーンに並べ、実際の設定から引いた線を引く。線の数字は先週 7 日の数。
+// 部品を出会う → 登録 → 温める → 相談 → 購入 → 受講 → 紹介のレーンに並べ（便 8d で 7 つ）、実際の設定から引いた線を引く。線の数字は先週 7 日の数。
+// 便 8d：商品は UTAGE の商品ごとのまとまり 1 箱にたたむ（押すと売り方が開く）。片付け案（承認 1 回で当てる）と、変えた記録・元に戻す。
 // 箱を押すと右の欄に中の名前・外の名前・入口と出口・持ち主の企画が出る。持ち主と役目はここで変える。
 // 線を引き直す・一言で下書きするのは 8e・8g。ここでは見ることと、企画の整理だけ。
 
@@ -13,6 +14,7 @@ export function makeBlueprint({ $, api, esc, getToken, fail, openView }) {
   let data = null;
   let selected = null;
   let campaigns = [];
+  const openGroups = new Set();
 
   async function load() {
     const r = await api(`/api/admin/blueprint?campaign=${encodeURIComponent(view)}`, { token: getToken() });
@@ -54,13 +56,36 @@ export function makeBlueprint({ $, api, esc, getToken, fail, openView }) {
         <span class="in">${esc(p.inner_name)}</span>
         ${p.week ? `<span class="wk">先週 ${p.week}</span>` : ""}
       </button>`;
+    // 商品は、売り方が 2 つ以上あるまとまりだけ 1 箱にたたむ
+    const laneHtml = (items) => {
+      const out = [], seen = new Set();
+      for (const p of items) {
+        if (p.type === "product" && p.group && p.group_size > 1) {
+          if (seen.has(p.group)) continue;
+          seen.add(p.group);
+          const members = items.filter((x) => x.type === "product" && x.group === p.group);
+          const open = members.some((x) => x.key === selected) || openGroups.has(p.group);
+          const running = members.filter((x) => x.state === "running").length;
+          const wk = members.reduce((n, x) => n + (x.week || 0), 0);
+          out.push(`<details class="bp-group" data-group="${esc(p.group)}"${open ? " open" : ""}>
+            <summary class="bp-node ${running ? "running" : "stopped"}"><span class="t">商品のまとまり</span><span class="nm">${esc(p.group_name)}</span><span class="n">売り方 ${members.length}（売っている ${running}）</span>${wk ? `<span class="wk">先週 ${wk}</span>` : ""}</summary>
+            ${members.map(node).join("")}
+          </details>`);
+        } else out.push(node(p));
+      }
+      return out.join("");
+    };
     $("bp-canvas").innerHTML = `<div class="bp-lanes" id="bp-lanes">
         <svg class="bp-lines" id="bp-lines" aria-hidden="true"></svg>
-        ${lanes.map((l) => `<div class="bp-lane"><h4>${esc(l.label)}</h4>${(byLane[l.id] || []).map(node).join("") || `<p class="note bp-empty">${l.id === "refer" ? "紹介は 8g で足します" : "まだ部品がありません"}</p>`}</div>`).join("")}
+        ${lanes.map((l) => `<div class="bp-lane"><h4>${esc(l.label)}</h4>${laneHtml(byLane[l.id] || []) || `<p class="note bp-empty">${l.id === "refer" ? "紹介は 8g で足します" : "まだ部品がありません"}</p>`}</div>`).join("")}
       </div>
       ${data.parts.length === 0 ? '<p class="note">この企画にはまだ部品がありません。「企画に入っていない」から部品を選び、右の欄で持ち主をこの企画にしてください。</p>' : ""}
       ${data.stopped_products_hidden ? `<p class="note" style="margin:8px 0 0">売っていない商品 ${data.stopped_products_hidden} 本は出していません（企画に入れたものは出ます）。</p>` : ""}`;
-    document.querySelectorAll("#bp-canvas .bp-node").forEach((b) => b.addEventListener("click", () => { selected = b.dataset.key; renderCanvas(); renderPanel(); }));
+    document.querySelectorAll("#bp-canvas button.bp-node").forEach((b) => b.addEventListener("click", () => { selected = b.dataset.key; renderCanvas(); renderPanel(); }));
+    document.querySelectorAll("#bp-canvas details.bp-group").forEach((d) => d.addEventListener("toggle", () => {
+      if (d.open) openGroups.add(d.dataset.group); else openGroups.delete(d.dataset.group);
+      requestAnimationFrame(drawLines);
+    }));
     requestAnimationFrame(drawLines);
   }
 
@@ -72,8 +97,10 @@ export function makeBlueprint({ $, api, esc, getToken, fail, openView }) {
     svg.setAttribute("width", wrap.scrollWidth);
     svg.setAttribute("height", wrap.scrollHeight);
     const box = (key) => {
-      const el = wrap.querySelector(`.bp-node[data-key="${CSS.escape(key)}"]`);
+      let el = wrap.querySelector(`.bp-node[data-key="${CSS.escape(key)}"]`);
       if (!el) return null;
+      const shut = el.closest("details.bp-group:not([open])");
+      if (shut) el = shut.querySelector("summary"); // たたんだまとまりの線は、まとまりの箱から引く
       const r = el.getBoundingClientRect();
       return { l: r.left - base.left, r: r.right - base.left, t: r.top - base.top, b: r.bottom - base.top, cy: (r.top + r.bottom) / 2 - base.top, cx: (r.left + r.right) / 2 - base.left };
     };
@@ -151,7 +178,54 @@ export function makeBlueprint({ $, api, esc, getToken, fail, openView }) {
     if (open) open.addEventListener("click", () => openView(EDIT_VIEW[p.type]));
   }
 
+  // 便 8d：片付け案（企画に入っていない部品を常設へ入れる案。当てると 1 件ずつ変えた記録に残り、元に戻せる）
+  async function showTidy() {
+    selected = null;
+    $("bp-panel").innerHTML = '<p class="note">片付け案を作っています…</p>';
+    const r = await api("/api/admin/tidy", { token: getToken() });
+    if (!r.ok) { $("bp-panel").innerHTML = `<p class="note">作れませんでした（${esc(r.error || r.status)}）</p>`; return; }
+    if (!r.count) { $("bp-panel").innerHTML = '<h3>片付け案</h3><p class="note">企画に入っていない部品はありません。</p>'; return; }
+    $("bp-panel").innerHTML = `<h3>片付け案</h3>
+      <p class="note">企画に入っていない部品 ${r.count} 個を、下の役目で「${esc(r.assignments[0].campaign_name || "常設")}」に入れます。あとから「変えた記録」で 1 件ずつ元に戻せます。企画へ入れたいものは、当てたあとに箱を押して持ち主を変えてください。</p>
+      <ul class="bp-list">${r.assignments.map((x) => `<li><span>${esc(x.name)}<br><span class="sub">役目：${esc(x.role || "（外の名前）")}</span></span></li>`).join("")}</ul>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:12px"><button class="btn small" type="button" id="bp-tidy-apply">この案で当てる</button><span class="note" id="bp-tidy-status"></span></div>`;
+    $("bp-tidy-apply").addEventListener("click", async () => {
+      $("bp-tidy-status").textContent = "当てています…";
+      const a = await api("/api/admin/tidy", { method: "POST", token: getToken(), body: { assignments: r.assignments } });
+      if (!a.ok && !a.applied) { $("bp-tidy-status").textContent = "当てられませんでした（" + (a.error || (a.failed && a.failed[0] && a.failed[0].error) || a.status) + "）"; return; }
+      view = "all";
+      await load();
+      $("bp-panel").innerHTML = `<h3>片付け案</h3><p class="note">${a.applied} 個を当てました${a.failed && a.failed.length ? `（当てられなかったもの ${a.failed.length}）` : ""}。戻すときは「変えた記録」から。</p>`;
+    });
+  }
+
+  // 便 8d：変えた記録と元に戻す
+  async function showChanges() {
+    selected = null;
+    $("bp-panel").innerHTML = '<p class="note">読み込んでいます…</p>';
+    const r = await api("/api/admin/changes?limit=50", { token: getToken() });
+    if (!r.ok) { $("bp-panel").innerHTML = `<p class="note">読めませんでした（${esc(r.error || r.status)}）</p>`; return; }
+    const who = (a) => a === "mcp" ? "AI" : esc(a || "");
+    $("bp-panel").innerHTML = `<h3>変えた記録</h3>
+      <p class="note">設定（メールの送り方・オプチャの招待リンク）と部品の持ち主の変更。AI の変更も、ここで元に戻せます。</p>
+      ${r.count ? `<ul class="bp-list">${r.changes.map((c) => `<li><span>${esc(c.summary || c.target)}<br><span class="sub">${who(c.actor)}・${esc(new Date(c.at).toLocaleString("ja-JP"))}${c.undone ? "・戻した" : ""}</span></span>${c.undone ? "" : `<button class="btn ghost small" type="button" data-undo="${esc(c.id)}">元に戻す</button>`}</li>`).join("")}</ul>` : '<p class="note">まだ記録はありません。</p>'}
+      <p class="note" id="bp-undo-status"></p>`;
+    document.querySelectorAll("#bp-panel [data-undo]").forEach((b) => b.addEventListener("click", async () => {
+      $("bp-undo-status").textContent = "戻しています…";
+      const u = await api("/api/admin/changes/undo", { method: "POST", token: getToken(), body: { id: Number(b.dataset.undo) } });
+      if (!u.ok) {
+        const why = { newer_change: "同じものに、あとの変更があります。あとのほうを先に戻してください", already_undone: "もう戻してあります" };
+        $("bp-undo-status").textContent = (why[u.error] || "戻せませんでした") + "（" + (u.error || u.status) + "）";
+        return;
+      }
+      await load();
+      await showChanges();
+    }));
+  }
+
   function wire() {
+    $("bp-tidy").addEventListener("click", showTidy);
+    $("bp-changes").addEventListener("click", showChanges);
     $("bp-show-archived").addEventListener("change", () => data && renderChips());
     $("bp-new").addEventListener("click", () => { $("bp-new-form").classList.toggle("hidden"); $("bp-title").focus(); });
     $("bp-new-form").addEventListener("submit", async (ev) => {
