@@ -358,8 +358,58 @@ function showPane(view, mode, sub, backText) {
   if (mode === "detail") window.scrollTo(0, 0);
 }
 // 詳細の上の帯（名前・状態・よく使う操作）
-function headHtml({ title, sub = "", pills = [], actions = "" }) {
-  return `<div class="card cust-head"><div class="cust-head-top"><div style="min-width:0"><h2 style="margin:0 0 2px">${esc(title)}</h2>${sub ? `<div class="note">${sub}</div>` : ""}</div><div class="cust-actions">${actions}</div></div>${pills.filter(Boolean).length ? `<div class="pill-row">${pills.filter(Boolean).join("")}</div>` : ""}</div>`;
+function headHtml({ title, sub = "", pills = [], actions = "", foot = "" }) {
+  return `<div class="card cust-head"><div class="cust-head-top"><div style="min-width:0"><h2 style="margin:0 0 2px">${esc(title)}</h2>${sub ? `<div class="note">${sub}</div>` : ""}</div><div class="cust-actions">${actions}</div></div>${pills.filter(Boolean).length ? `<div class="pill-row">${pills.filter(Boolean).join("")}</div>` : ""}${foot}</div>`;
+}
+
+// ---------- 便 19：企画（フォルダの代わり）。パーツの一覧を企画で絞り、詳細の上の帯で企画を変えられる ----------
+// 企画を作る・しまうのは設計図の画面。ここでは選ぶだけ
+let campData = { campaigns: [], owners: [] }, campAt = 0;
+const campFilterVal = {};
+async function loadCampaigns(force) {
+  if (!force && Date.now() - campAt < 20e3) return campData;
+  const r = await api("/api/admin/campaigns/owners", { token });
+  if (r.ok) { campData = { campaigns: r.campaigns || [], owners: r.owners || [] }; campAt = Date.now(); }
+  return campData;
+}
+function campOf(type, id) {
+  const o = campData.owners.find((x) => x.part_type === type && String(x.part_id) === String(id));
+  return o ? campData.campaigns.find((c) => c.id === o.campaign_id) || null : null;
+}
+const liveCamps = () => campData.campaigns.filter((c) => !c.archived_at);
+// 一覧の上の「企画で絞る」を置き、選んだ企画の行だけを返す。選び直すと rerender を呼ぶ
+function campRows(key, type, rows, idOf, rerender) {
+  const slot = document.querySelector(`[data-camp-slot="${key}"]`);
+  const v = campFilterVal[key] || "";
+  if (slot) {
+    slot.innerHTML = `<select class="inline camp-filter" aria-label="企画で絞る"><option value="">企画：すべて</option><option value="none" ${v === "none" ? "selected" : ""}>企画に入っていない</option>${liveCamps().map((c) => `<option value="${c.id}" ${v === c.id ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select>`;
+    slot.querySelector("select").addEventListener("change", (ev) => { campFilterVal[key] = ev.target.value; rerender(); });
+  }
+  if (!v) return rows;
+  return rows.filter((r) => { const c = campOf(type, idOf(r)); return v === "none" ? !c : c && c.id === v; });
+}
+// 表の「企画」の列
+const campCol = (type, idOf) => ({ key: "_camp", label: "企画", cls: "c-src", sortVal: (r) => (campOf(type, idOf(r)) || {}).name || "", html: (r) => { const c = campOf(type, idOf(r)); return c ? esc(c.name) : '<span class="sub">—</span>'; } });
+// 詳細の上の帯の下に置く「企画」の選び直し
+function campPicker(type, id) {
+  const cur = campOf(type, id);
+  return `<div class="camp-pick"><label>企画<select class="inline camp-set" data-part="${esc(type)}|${esc(String(id))}"><option value="">（企画に入っていない）</option>${liveCamps().map((c) => `<option value="${c.id}" ${cur && cur.id === c.id ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select></label><span class="note camp-status"></span></div>`;
+}
+function wireCampPicker(root, after) {
+  const sel = root.querySelector(".camp-set"), st = root.querySelector(".camp-status");
+  if (!sel) return;
+  sel.addEventListener("change", async () => {
+    const [part_type, part_id] = sel.dataset.part.split("|");
+    st.textContent = "変えています…";
+    const r = await api("/api/admin/campaigns/assign", { method: "POST", token, body: { part_type, part_id, campaign_id: sel.value || null } });
+    if (!r.ok) {
+      st.textContent = r.error === "part_not_found" ? "設計図に出ていない物（止めている商品など）は企画に入れられません" : "変えられませんでした（" + (r.error || r.status) + "）";
+      return;
+    }
+    await loadCampaigns(true);
+    st.textContent = sel.value ? "企画を変えました" : "企画から外しました";
+    if (after) after();
+  });
 }
 function tabsHtml(tabs, cur) {
   return `<div class="tabs cust-tabs" role="tablist">${tabs.map(([k, v]) => `<button type="button" role="tab" data-tab="${k}" aria-selected="${k === cur}">${v}</button>`).join("")}</div>`;
@@ -384,13 +434,13 @@ function setupViewTabs() {
     }));
   });
 }
-const PANE_VIEWS = ["forms", "deliver", "products", "refer", "deals"];
+const PANE_VIEWS = ["forms", "deliver", "connect", "products", "refer", "deals"];
 const pill = (t, kind = "") => `<span class="pill ${kind}">${esc(t)}</span>`;
 
 // ---------- 添削ルーム ----------
 let currentRoom = null;
 // 便 8c：左のメニュー。押した項目の画面だけを出し、上のナビにその名前を出す
-const VIEWS = ["home", "blueprint", "people", "rooms", "deals", "ai", "products", "deliver", "settings", "refer", "guide", "forms"];
+const VIEWS = ["home", "blueprint", "people", "rooms", "deals", "ai", "products", "deliver", "settings", "refer", "guide", "forms", "connect"];
 function openView(name) {
   const b = document.querySelector(`.side [data-view="${name}"]`);
   if (b) b.click();
@@ -411,7 +461,7 @@ function setupViews() {
     if (box && box.classList.contains("closed")) box.querySelector(".grp").click();
     if (b.dataset.view === "home") loadHome();
     if (b.dataset.view === "blueprint") bp.load();
-    if (b.dataset.view === "deliver") loadDeliver();
+    if (b.dataset.view === "deliver" || b.dataset.view === "connect") loadDeliver();
     if (b.dataset.view === "products") loadProducts();
     if (b.dataset.view === "deals") loadDeals();
     if (b.dataset.view === "ai") loadAi();
@@ -558,12 +608,15 @@ async function loadDeals(focusId, msg) {
   if (!s.ok) { $("sem-count").textContent = "読めませんでした"; return; }
   seminarsCache = s.seminars;
   $("sem-count").textContent = `${s.seminars.length} 件・これから ${s.seminars.filter((x) => !x.past).length}`;
+  await loadCampaigns();
+  const smRows = campRows("seminars", "seminar", s.seminars, (x) => x.id, () => loadDeals());
   table("seminars", [
     { key: "starts_at", label: "日時", html: (x) => esc(x.label) },
     { key: "title", label: "題名", html: (x) => `<div class="c-name">${esc(x.title)}</div>` },
     { key: "registrants", label: "申込", html: (x) => `${x.registrants} 人` },
+    campCol("seminar", (x) => x.id),
     { key: "past", label: "状態", sortVal: (x) => (x.past ? 1 : 0), html: (x) => x.past ? pill("終了", "gray") : pill("これから") },
-  ], s.seminars, (x) => seminarDetail(x.id), "セミナーはまだありません");
+  ], smRows, (x) => seminarDetail(x.id), s.seminars.length ? "この企画のセミナーはありません" : "セミナーはまだありません");
   if (focusId) seminarDetail(focusId, msg);
 }
 function seminarDetail(id, msg) {
@@ -575,12 +628,14 @@ function seminarDetail(id, msg) {
     sub: esc(x.label),
     pills: [x.past ? pill("終了", "gray") : pill("これから"), pill(`申込 ${x.registrants} 人`, "gray")],
     actions: x.past ? `<button class="btn small" type="button" id="sem-run" data-kind="archive">アーカイブを配る</button>` : `<button class="btn ghost small" type="button" id="sem-run" data-kind="remind">前日の知らせを今送る（試し）</button>`,
+    foot: campPicker("seminar", x.id),
   }) + `${msg ? `<p class="msg ok" style="margin:12px 0 0">${esc(msg)}</p>` : ""}
     <section class="card" style="margin-top:16px"><dl class="kv">
       <dt>申込</dt><dd>${x.registrants} 人</dd>
       <dt>前日の知らせ</dt><dd>${x.reminded} 人に送った</dd>
       <dt>アーカイブ</dt><dd>${x.archive_sent} 人に配った</dd>
     </dl><p class="note" id="sem-status" style="margin:12px 0 0"></p></section>`;
+  wireCampPicker($("seminar-detail"), () => loadDeals());
   $("sem-run").addEventListener("click", async () => {
     $("sem-status").textContent = "送っています…";
     const r = await api(`/api/admin/seminars/${x.id}/${$("sem-run").dataset.kind}`, { method: "POST", token });
@@ -759,8 +814,8 @@ async function loadDeliver() {
     });
     $("bc-new").addEventListener("click", () => {
       $("bf").reset(); $("bf-status").textContent = ""; bfTabs("body");
-      $("bc-detail").innerHTML = ""; $("bf-wrap").classList.remove("hidden"); $("sf-wrap").classList.add("hidden");
-      showPane("deliver", "detail", "新しい一斉配信", "一斉配信の一覧へ");
+      $("bc-detail").innerHTML = ""; $("bf-wrap").classList.remove("hidden");
+      showPane("deliver", "detail", "新しい一斉配信", "メールの一覧へ");
     });
     $("dv-run").addEventListener("click", async () => {
       $("dv-run").disabled = true;
@@ -801,13 +856,17 @@ async function loadDeliver() {
   if (!r.ok) { $("dv-warm").textContent = "読めませんでした（" + (r.error || r.status) + "）"; return; }
   deliverData = r;
   $("dv-warm").textContent = (r.warm ? `今日の上限 ${r.warm.cap} 通（送り始めて ${r.warm.day + 1} 日目・今日 ${r.warm.sent_today} 通）` : "デモの置き場") + (r.open_to_all ? "" : "・いまはテスト宛てにだけ届く");
+  await loadCampaigns();
+  const bcRows = campRows("deliver", "broadcast", r.broadcasts, (b) => b.id, () => loadDeliver());
+  const stRows = campRows("connect", "step", r.steps, (s) => s.id, () => loadDeliver());
   table("broadcasts", [
     { key: "subject", label: "件名", html: (b) => `<div class="c-name">${esc(b.subject)}</div><div class="sub">${esc(filterText(b.filter || {}))}</div>` },
     { key: "status", label: "状態", html: (b) => pill(BC_LABEL[b.status] || b.status, b.status === "draft" || b.status === "canceled" ? "gray" : b.status === "done" ? "" : "warn") },
     { key: "sent", label: "送った", sortVal: (b) => b.sent || 0, html: (b) => `${b.sent}${b.target_count != null ? ` <span class="sub">／${b.target_count}</span>` : ""}` },
     { key: "clicked_people", label: "押した人", cls: "c-src", sortVal: (b) => b.clicked_people || 0, html: (b) => String(b.clicked_people || 0) },
+    campCol("broadcast", (b) => b.id),
     { key: "created_at", label: "作った日", cls: "c-reg", html: (b) => esc(dayOf(b.created_at)) },
-  ], r.broadcasts, (b) => openBroadcast(b), "まだありません。「新しく作る」から作ります");
+  ], bcRows, (b) => openBroadcast(b), r.broadcasts.length ? "この企画のメールはありません" : "まだありません。「新しく作る」から作ります");
   stepsCache = r.steps;
   if (r.triggers && !$("sf-trigger").options.length) {
     triggerNames = r.triggers; actionNames = r.actions || {};
@@ -819,20 +878,22 @@ async function loadDeliver() {
   table("steps", [
     { key: "name", label: "名前", html: (s) => { const c = connectorText(s); return `<div class="c-name">${esc(s.name)}</div><div class="sub">${esc(c.when)} → ${esc(c.who)} → ${esc(c.what)}</div>`; } },
     { key: "active", label: "状態", sortVal: (s) => (s.active ? 1 : 0), html: (s) => s.active ? pill("動いている") : pill("止めている", "gray") },
-    { key: "result", label: "結果", nosort: true, cls: "c-src", html: (s) => esc(stepResult(s)) },
-  ], r.steps, (s) => openConnector(s), "まだありません。「新しく作る」から作ります");
+    campCol("step", (s) => s.id),
+    { key: "result", label: "結果", nosort: true, cls: "c-reg", html: (s) => esc(stepResult(s)) },
+  ], stRows, (s) => openConnector(s), r.steps.length ? "この企画のコネクタはありません" : "まだありません。「新しく作る」から作ります");
 }
 const stepResult = (s) => (s.action === "notify_admin" ? `知らせた ${s.notified || 0}` : s.action === "add_label" ? `付けた ${s.labeled || 0}` : `送った ${s.sent}・押した ${s.clicks} 回`) + (s.skipped ? `・条件外 ${s.skipped}` : "");
 
 function openBroadcast(b, msg) {
   const r = deliverData || {};
-  $("bf-wrap").classList.add("hidden"); $("sf-wrap").classList.add("hidden");
-  showPane("deliver", "detail", b.subject, "一斉配信の一覧へ");
+  $("bf-wrap").classList.add("hidden");
+  showPane("deliver", "detail", b.subject, "メールの一覧へ");
   $("bc-detail").innerHTML = headHtml({
     title: b.subject,
     sub: `作った日 ${esc(dayOf(b.created_at))}`,
-    pills: [pill(BC_LABEL[b.status] || b.status, b.status === "draft" || b.status === "canceled" ? "gray" : "warn"), r.open_to_all ? pill("誰にでも届く", "warn") : pill("いまはテスト宛てにだけ届く", "gray")],
+    pills: [pill(BC_LABEL[b.status] || b.status, b.status === "draft" || b.status === "canceled" ? "gray" : b.status === "done" ? "" : "warn"), r.open_to_all ? pill("誰にでも届く", "warn") : pill("いまはテスト宛てにだけ届く", "gray")],
     actions: `${b.status === "draft" ? `<button class="btn small" type="button" id="bc-queue">送る</button>` : ""}${["draft", "queued", "sending"].includes(b.status) ? `<button class="btn ghost small" type="button" id="bc-cancel">止める</button>` : ""}`,
+    foot: campPicker("broadcast", b.id),
   }) + `${msg ? `<p class="msg ok" style="margin:12px 0 0">${esc(msg)}</p>` : ""}`
     + tabsHtml([["result", "結果"], ["body", "中身"], ["who", "宛先"]], "result")
     + `<section class="card" data-pane="result"><dl class="kv">
@@ -843,6 +904,7 @@ function openBroadcast(b, msg) {
       <section class="card" data-pane="body"><div class="note" style="margin-bottom:6px">件名：${esc(b.subject)}</div><div class="pre">${esc(b.body || "")}</div></section>
       <section class="card" data-pane="who"><p style="margin:0">${esc(filterText(b.filter || {}))}</p><p class="note" style="margin:8px 0 0">${r.open_to_all ? "いまは条件に当たった人に本当に届きます" : "いまはテスト宛てにだけ届きます"}</p></section>`;
   wireTabs($("bc-detail"), "result");
+  wireCampPicker($("bc-detail"), () => loadDeliver());
   if ($("bc-queue")) $("bc-queue").addEventListener("click", async () => {
     // 便 9：確認の文に、件名・宛先・いま誰に届くかを出す（「使い方」の送る前に見ることと同じ中身）
     if (!confirm(`この一斉配信を送る列に入れます。\n\n件名：${b.subject || ""}\n宛先：${filterText(b.filter || {})}\n${r.open_to_all ? "いまは誰にでも届きます" : "いまはテスト宛てにだけ届きます"}\n\n毎時の定時の処理で、今日の上限の中から送ります。`)) return;
@@ -860,8 +922,7 @@ function openBroadcast(b, msg) {
 }
 
 function openConnector(s, keepStatus) {
-  $("bc-detail").innerHTML = ""; $("bf-wrap").classList.add("hidden"); $("sf-wrap").classList.remove("hidden");
-  showPane("deliver", "detail", s ? s.name : "新しいコネクタ", "コネクタの一覧へ");
+  showPane("connect", "detail", s ? s.name : "新しいコネクタ", "コネクタの一覧へ");
   if (!s) {
     $("sf").reset(); $("sf-id").value = "";
     $("sf-head").innerHTML = headHtml({ title: "新しいコネクタ", sub: "① 〜したら → ② 誰に → ③ 〜する の順に決めて保存します。「動かす」に印を付けると、その時刻より後のきっかけから動きます" });
@@ -872,7 +933,8 @@ function openConnector(s, keepStatus) {
     $("sf-labels").value = (sel.labels || []).join(","); $("sf-nolabels").value = (sel.not_labels || []).join(",");
     $("sf-action").value = s.action || "send_email"; $("sf-alabel").value = (s.action_args || {}).label || "";
     $("sf-delay").value = s.delay_hours; $("sf-subject").value = s.subject; $("sf-body").value = s.body; $("sf-active").checked = s.active;
-    $("sf-head").innerHTML = headHtml({ title: s.name, sub: `${esc(c.when)} → ${esc(c.who)} → ${esc(c.what)}`, pills: [s.active ? pill("動いている") : pill("止めている", "gray"), pill(stepResult(s), "gray")] });
+    $("sf-head").innerHTML = headHtml({ title: s.name, sub: `${esc(c.when)} → ${esc(c.who)} → ${esc(c.what)}`, pills: [s.active ? pill("動いている") : pill("止めている", "gray"), pill(stepResult(s), "gray")], foot: campPicker("step", s.id) });
+    wireCampPicker($("sf-head"), () => loadDeliver());
   }
   if (!keepStatus) $("sf-status").textContent = "";
   sfTabs("tr");
@@ -930,13 +992,15 @@ async function loadForms() {
   fieldNames = Object.fromEntries(fr.fields.map((f) => [f.key, f.label]));
   formsCache = fo.forms;
   $("fm-count").textContent = fo.store === "demo" ? "デモの置き場ではフォームは作れません" : `${fo.count} 件・公開中 ${fo.forms.filter((f) => f.active).length}`;
+  await loadCampaigns();
+  const fmRows = campRows("forms", "form", fo.forms, (f) => f.id, () => loadForms());
   table("forms-table", [
     { key: "title", label: "題名", html: (f) => `<div class="c-name">${esc(f.title)}</div><div class="sub">/form?f=${esc(f.slug)}</div>` },
     { key: "active", label: "状態", sortVal: (f) => (f.active ? 1 : 0), html: (f) => f.active ? pill("公開中") : pill("止めている", "gray") },
     { key: "answers", label: "回答", html: (f) => String(f.answers) },
-    { key: "last_answer_at", label: "最後の回答", cls: "c-src", html: (f) => esc(f.last_answer_at ? ago(f.last_answer_at) : "—") },
-    { key: "created_at", label: "作った日", cls: "c-reg", html: (f) => esc(dayOf(f.created_at)) },
-  ], fo.forms, (f) => formEditor(f), "まだありません。「新しく作る」から作ります");
+    campCol("form", (f) => f.id),
+    { key: "last_answer_at", label: "最後の回答", cls: "c-reg", html: (f) => esc(f.last_answer_at ? ago(f.last_answer_at) : "—") },
+  ], fmRows, (f) => formEditor(f), fo.forms.length ? "この企画のフォームはありません" : "まだありません。「新しく作る」から作ります");
   table("fields-table", [
     { key: "label", label: "項目の名前", html: (f) => `<div class="c-name">${esc(f.label)}</div>${f.type === "select" ? `<div class="sub">${esc((f.options || []).join("・"))}</div>` : ""}` },
     { key: "type", label: "型", html: (f) => esc(TYPE_LABEL[f.type] || f.type) },
@@ -990,6 +1054,7 @@ function formEditor(f, msg) {
     sub: f ? `/form?f=${esc(f.slug)}` : "題名と聞く項目を決めて保存します。「公開する」に印を付けると住所が開きます",
     pills: f ? [f.active ? pill("公開中") : pill("止めている", "gray"), pill(`回答 ${f.answers}`, "gray")] : [],
     actions: f && f.active ? `<a class="btn ghost small" href="${esc(url)}" target="_blank" rel="noopener">公開のページを開く</a><button class="btn ghost small" type="button" id="fe-copy">住所を写す</button>` : "",
+    foot: f ? campPicker("form", f.id) : "",
   }) + `${msg ? `<p class="msg ok" style="margin:12px 0 0">${esc(msg)}</p>` : ""}`
     + (f ? tabsHtml([["edit", "中身"], ["answers", `回答 ${f.answers}`]], "edit") : `<div style="height:16px"></div>`)
     + `<section class="card" data-pane="edit"><form id="fe" class="stack">
@@ -1007,6 +1072,7 @@ function formEditor(f, msg) {
     </form></section>`
     + (f ? `<section class="card" data-pane="answers"><div id="fe-answers" class="note">読んでいます…</div></section>` : "");
   if (f) wireTabs($("form-detail"), "edit");
+  wireCampPicker($("form-detail"), () => loadForms());
   if ($("fe-copy")) $("fe-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText(url); $("fe-copy").textContent = "写しました"; } catch { $("fe-copy").textContent = "写せませんでした"; } });
   $("fe").addEventListener("submit", async (ev) => {
     ev.preventDefault();
@@ -1122,13 +1188,16 @@ async function loadProducts(focusId, msg) {
   productsCache = r.products;
   const sellable = r.products.filter((p) => p.active).length, shown = r.products.filter((p) => p.public).length;
   $("pr-count").textContent = `${r.count} 件・売っている ${sellable}・サイトに出している ${shown}${r.store === "demo" ? "（デモの置き場：見本だけ）" : ""}`;
+  await loadCampaigns();
+  const prRows = campRows("products", "product", r.products, (p) => p.id, () => loadProducts());
   table("products", [
     { key: "name", label: "名前", html: (p) => `<div class="c-name">${esc(p.name)}</div>${p.list_price_of ? `<div class="sub">紹介用の価格</div>` : ""}` },
     { key: "kind", label: "種類", cls: "c-src", sortVal: (p) => KIND_LABEL[p.kind] || p.kind, html: (p) => esc(KIND_LABEL[p.kind] || p.kind) },
     { key: "amount", label: "値段", sortVal: (p) => Number(p.amount) || 0, html: (p) => esc(priceOf(p)) },
     { key: "sold", label: "売れた", sortVal: (p) => p.sold || 0, html: (p) => String(p.sold) },
+    campCol("product", (p) => p.id),
     { key: "active", label: "状態", sortVal: (p) => (p.active ? 2 : 0) + (p.public ? 1 : 0), html: (p) => (p.active ? pill("売る") : pill("売らない", "gray")) + (p.public ? " " + pill("サイト") : "") },
-  ], r.products, (p) => productDetail(p.id), "まだありません");
+  ], prRows, (p) => productDetail(p.id), r.products.length ? "この企画の商品はありません" : "まだありません");
   if (focusId) productDetail(focusId, msg);
 }
 function productDetail(id, msg) {
@@ -1142,6 +1211,7 @@ function productDetail(id, msg) {
     sub: `${esc(KIND_LABEL[p.kind] || p.kind)}・${esc(priceOf(p))}・売れた ${p.sold}${p.list_price_of ? "・紹介用（元：" + esc(p.list_price_of) + "）" : ""}`,
     pills: [p.active ? pill("売る") : pill("売らない", "gray"), p.public ? pill("サイトに出す") : pill("サイトに出さない", "gray")],
     actions: `<button class="btn ghost small" id="pf-copy" type="button">申し込みのリンクを写す</button>`,
+    foot: campPicker("product", p.id),
   }) + `${msg ? `<p class="msg ok" style="margin:12px 0 0">${esc(msg)}</p>` : ""}`
     + tabsHtml([["edit", "設定"], ["link", "申し込みのリンク"]], "edit")
     + `<section class="card" data-pane="edit">
@@ -1165,6 +1235,7 @@ function productDetail(id, msg) {
       <p style="word-break:break-all;margin:0"><code>${esc(link)}</code></p>
     </section>`;
   wireTabs($("product-detail"), "edit");
+  wireCampPicker($("product-detail"), () => loadProducts());
   $("pf-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText(link); $("pf-copy").textContent = "写しました"; } catch (_) { $("pf-copy").textContent = "写せませんでした"; } });
   $("pf").addEventListener("submit", async (ev) => {
     ev.preventDefault();

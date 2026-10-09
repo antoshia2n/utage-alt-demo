@@ -35,12 +35,14 @@ export function groupName(names) {
 export const PART_TYPES = {
   page: "ページ", step: "ステップ", broadcast: "一斉配信", seminar: "セミナー", booking: "予約",
   product: "商品", course: "教材", room: "添削", community: "オプチャ",
+  // 便 19：フォームも企画に入れられる（一覧を企画で絞るため）
+  form: "フォーム",
 };
 
 const UUID_RE = /^[0-9a-f-]{36}$/i;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MONTH_PREFIX_RE = /^\d{4}-\d{2}\s/;
-const WEEK_TYPES = ["registered", "purchase_completed", "email_sent", "consult_booked", "lesson_viewed", "correction_submitted", "seminar_registered"];
+const WEEK_TYPES = ["registered", "purchase_completed", "email_sent", "consult_booked", "lesson_viewed", "correction_submitted", "seminar_registered", "form_submitted"];
 
 // 中の名前（シアニン用）。役目が空なら外の名前を使う
 export function innerName(campaignName, partType, role, outerName) {
@@ -58,16 +60,18 @@ export function campaignName(title, startsOn, now = new Date()) {
 }
 
 // 部品の一覧（外の名前・レーン・状態）を、いまの表から作る
-export function buildParts({ products = [], steps = [], broadcasts = [], seminars = [], courseCount = 0, community = "" }, now = new Date()) {
+export function buildParts({ products = [], steps = [], broadcasts = [], seminars = [], courseCount = 0, community = "", forms = [] }, now = new Date()) {
   const parts = [];
   const add = (type, id, lane, name, state, extra = {}) => parts.push({ key: `${type}:${id}`, type, id: String(id), lane, name, state, ...extra });
   add("page", "front", "meet", "トップの LP（/）", "running", { url: "/" });
   add("page", "register", "signup", "無料登録（/register）", "running", { url: "/register" });
+  // 便 19：フォーム（答えた人は台帳に入るので、登録のレーンに置く）
+  for (const f of forms) add("form", f.id, "signup", f.title, f.active ? "running" : "draft", { slug: f.slug, url: "/form?f=" + f.slug });
   // 便 8e：ステップの表はコネクタ（トリガー → セレクタ → アクション）。メールを送らないコネクタは名前で出す
   for (const s of steps) {
     const mail = !s.action || s.action === "send_email";
     add("step", s.id, "warm", (mail ? s.subject || s.name : s.name || s.subject) || `コネクタ ${s.id}`, s.active ? "running" : "draft",
-      { trigger: s.trigger, product_id: s.product_id || null, action: s.action || "send_email", note: s.name || "" });
+      { trigger: s.trigger, product_id: s.product_id || null, trigger_args: s.trigger_args || {}, action: s.action || "send_email", note: s.name || "" });
   }
   for (const b of broadcasts) {
     const st = b.status === "draft" ? "draft" : (b.status === "queued" || b.status === "sending") ? "running" : "stopped";
@@ -102,6 +106,10 @@ export function buildEdges(parts) {
     }
     if (s.trigger === "lesson_viewed") add("course:mn", s.key, "教材を見た人");
     if (s.trigger === "correction_submitted") add("room:correction", s.key, "添削を出した人");
+    if (s.trigger === "form_submitted") {
+      const slug = s.trigger_args && s.trigger_args.form;
+      for (const f of parts.filter((x) => x.type === "form" && (!slug || x.slug === slug))) add(f.key, s.key, "答えた人");
+    }
   }
   for (const p of products) {
     if ((p.grants || []).some((g) => MEMBER_KEYS.includes(g))) {
@@ -126,6 +134,7 @@ export function partKeyOf(e) {
   if (e.type === "lesson_viewed") return "course:mn";
   if (e.type === "correction_submitted") return "room:correction";
   if (e.type === "seminar_registered" && p.seminar_id) return `seminar:${p.seminar_id}`;
+  if (e.type === "form_submitted" && p.form_id) return `form:${p.form_id}`;
   return null;
 }
 
@@ -233,9 +242,9 @@ export function makePlan(h) {
 
   async function loadAll(env) {
     const since = new Date(Date.now() - 7 * 864e5).toISOString();
-    const [products, steps, broadcasts, lessons, community, campaigns, owners, events] = await Promise.all([
+    const [products, steps, broadcasts, lessons, community, campaigns, owners, events, forms] = await Promise.all([
       db(env, "GET", "b_products?select=id,name,active,grants,sort,utage_product_id&order=sort.asc"),
-      db(env, "GET", "b_steps?select=id,name,trigger,product_id,subject,active,action&order=sort.asc,id.asc"),
+      db(env, "GET", "b_steps?select=id,name,trigger,trigger_args,product_id,subject,active,action&order=sort.asc,id.asc"),
       db(env, "GET", "b_broadcasts?select=id,subject,status,filter,created_at&order=created_at.desc&limit=50"),
       db(env, "GET", "mn_lessons?select=lesson_id&limit=5000"),
       communityLink(env),
@@ -243,12 +252,14 @@ export function makePlan(h) {
       db(env, "GET", "b_campaign_parts?select=*"),
       // 便 8g-3：線の人数を人ごとの足どりで数えるので、期間で切らずに人と時刻つきで読む（先週の数はこの中から数える）
       db(env, "GET", `events?select=customer_id,type,payload,occurred_at&type=in.(${WEEK_TYPES.join(",")})&order=id.asc&limit=50000`),
+      // 便 19：フォーム（表がまだ無い置き場でも設計図は出す）
+      db(env, "GET", "b_forms?select=id,title,slug,active&order=created_at.asc").catch(() => []),
     ]);
     const owned = new Set(owners.filter((o) => o.part_type === "product").map((o) => o.part_id));
     const shownProducts = products.filter((p) => p.active || owned.has(p.id));
     const parts = buildParts({
       products: shownProducts, steps, broadcasts, seminars: SEMINARS,
-      courseCount: new Set(lessons.map((l) => l.lesson_id)).size, community: community.url,
+      courseCount: new Set(lessons.map((l) => l.lesson_id)).size, community: community.url, forms,
     });
     const edges = buildEdges(parts);
     const t0 = new Date(since).getTime();
@@ -263,6 +274,16 @@ export function makePlan(h) {
     const all = await loadAll(env);
     if (UUID_RE.test(view) && !all.campaigns.some((c) => c.id === view)) return { ok: false, error: "campaign_not_found" };
     return { ok: true, ...assemble(all, view), stopped_products_hidden: all.hiddenProducts };
+  }
+
+  // 便 19：一覧の「企画」の列と絞り込みに使う軽い一覧（部品ごとの持ち主の企画）。出来事は読まない
+  async function owners(env) {
+    if (!env.B_STORE) return { ok: true, store: "demo", campaigns: [], owners: [] };
+    const [campaigns, rows] = await Promise.all([
+      db(env, "GET", "b_campaigns?select=id,name,kind,archived_at&order=kind.desc,created_at.asc"),
+      db(env, "GET", "b_campaign_parts?select=part_type,part_id,campaign_id,block_name"),
+    ]);
+    return { ok: true, campaigns, owners: rows };
   }
 
   async function listCampaigns(env, { include_archived = false } = {}) {
@@ -386,5 +407,5 @@ export function makePlan(h) {
     return { ok: failed.length === 0, applied: applied.length, archived: archived.length, failed, note: "部品は list_changes の番号で undo_change、しまった企画は archive_campaign（restore true）で戻す" };
   }
 
-  return { blueprint, listCampaigns, createCampaign, setPartCampaign, archiveCampaign, tidyPlan, applyTidy };
+  return { blueprint, owners, listCampaigns, createCampaign, setPartCampaign, archiveCampaign, tidyPlan, applyTidy };
 }

@@ -475,3 +475,8 @@ details.review time { font-family: var(--mono); font-size: 12px; color: var(--mu
 .topnav .crumb { min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .topnav #logout, .topnav .who { white-space: nowrap; }
 @media (max-width: 860px) { .topnav .crumb { flex: 1 1 0; } }
+/* 便 19：企画で絞る・企画を選び直す */
+.camp-filter { min-height: 40px; max-width: 220px; }
+.camp-pick { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 14px; }
+.camp-pick label { margin: 0; color: var(--muted); font-size: 13px; font-weight: 400; display: flex; align-items: center; gap: 8px; }
+.camp-pick select { min-height: 36px; max-width: 280px; }
