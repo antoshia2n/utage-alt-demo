@@ -104,6 +104,8 @@
         <div class="bp-bar">
           <div class="chips" id="bp-chips"></div>
           <div class="bp-actions">
+            <!-- 便 8g-3：見方を「流れ（レーンと線）」と「一覧（表）」で切り替える -->
+            <div class="chips" id="bp-mode" role="group" aria-label="見方"><button type="button" class="chip on" data-mode="flow" aria-pressed="true">流れ</button><button type="button" class="chip" data-mode="list" aria-pressed="false">一覧</button></div>
             <button class="btn ghost small" type="button" id="bp-new">企画をつくる</button>
             <button class="btn ghost small" type="button" id="bp-tidy">片付け案</button>
             <button class="btn ghost small" type="button" id="bp-changes">変えた記録</button>
@@ -118,7 +120,7 @@
           </div>
           <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="submit">つくる</button><span class="note" id="bp-new-status"></span></div>
         </form>
-        <div class="legend"><span><i class="lg-run"></i>動いている</span><span><i class="lg-draft"></i>下書き</span><span><i class="lg-stop"></i>止まっている</span><span><i class="lg-iso"></i>どこともつながっていない</span><span class="note">線の数字は先週 7 日に次へ進んだ数</span></div>
+        <div class="legend"><span><i class="lg-run"></i>動いている</span><span><i class="lg-draft"></i>下書き</span><span><i class="lg-stop"></i>止まっている</span><span><i class="lg-iso"></i>どこともつながっていない</span><span class="note">線の数字は先週 7 日に、出元を通って次へ進んだ人数</span></div>
         <div class="bp-wrap">
           <div class="card bp-canvas" id="bp-canvas"><p class="note">読み込んでいます…</p></div>
           <div class="card bp-panel" id="bp-panel"><p class="note">箱を押すと、中の名前・外の名前・入口と出口・先週の数が出ます。持ち主の企画と役目もここで変えます。</p></div>

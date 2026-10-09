@@ -115,26 +115,59 @@ export function buildEdges(parts) {
   return edges;
 }
 
+// 出来事 1 つが、どの部品に当たるか（当たらなければ null）
+export function partKeyOf(e) {
+  const p = e.payload || {};
+  if (e.type === "registered") return "page:register";
+  if (e.type === "purchase_completed" && p.product_id) return `product:${p.product_id}`;
+  if (e.type === "email_sent" && p.kind === "step" && p.step_id != null) return `step:${p.step_id}`;
+  if (e.type === "email_sent" && p.kind === "broadcast" && p.broadcast_id) return `broadcast:${p.broadcast_id}`;
+  if (e.type === "consult_booked") return "booking:consult";
+  if (e.type === "lesson_viewed") return "course:mn";
+  if (e.type === "correction_submitted") return "room:correction";
+  if (e.type === "seminar_registered" && p.seminar_id) return `seminar:${p.seminar_id}`;
+  return null;
+}
+
 // 先週（7 日）の数を部品ごとに数える
 export function weekCounts(events) {
   const c = {};
-  const inc = (k) => { c[k] = (c[k] || 0) + 1; };
-  for (const e of events) {
-    const p = e.payload || {};
-    if (e.type === "registered") inc("page:register");
-    else if (e.type === "purchase_completed" && p.product_id) inc(`product:${p.product_id}`);
-    else if (e.type === "email_sent" && p.kind === "step" && p.step_id != null) inc(`step:${p.step_id}`);
-    else if (e.type === "email_sent" && p.kind === "broadcast" && p.broadcast_id) inc(`broadcast:${p.broadcast_id}`);
-    else if (e.type === "consult_booked") inc("booking:consult");
-    else if (e.type === "lesson_viewed") inc("course:mn");
-    else if (e.type === "correction_submitted") inc("room:correction");
-    else if (e.type === "seminar_registered" && p.seminar_id) inc(`seminar:${p.seminar_id}`);
-  }
+  for (const e of events) { const k = partKeyOf(e); if (k) c[k] = (c[k] || 0) + 1; }
   return c;
 }
 
+// 便 8g-3：線ごとの人数。先週 7 日に行き先の部品に当たった人のうち、その前に出元の部品に当たっていた人の数（1 人 1 回）。
+// 人ごとの足どりで数えるので、行き先に入る線が 2 本以上あっても線ごとに分けられる。
+// 出元に出来事が無い部品（トップの LP など）は数えられないので、返す表に入れない（呼ぶ側で行き先の数に戻す）
+export function edgeCounts(edges, events, since) {
+  const t0 = new Date(since).getTime();
+  const first = new Map(); // 人 → 部品 → 最初に当たった時刻
+  const hits = []; // 先週の行き先の候補 { cid, key, at }
+  for (const e of events) {
+    const k = partKeyOf(e);
+    if (!k || !e.customer_id) continue;
+    const at = new Date(e.occurred_at).getTime();
+    if (!first.has(e.customer_id)) first.set(e.customer_id, new Map());
+    const m = first.get(e.customer_id);
+    if (!m.has(k) || at < m.get(k)) m.set(k, at);
+    if (at >= t0) hits.push({ cid: e.customer_id, key: k, at });
+  }
+  const out = {};
+  for (const ed of edges) {
+    if (ed.from === "page:front" || ed.from.startsWith("community:")) continue; // 出来事の無い部品
+    const people = new Set();
+    for (const h of hits) {
+      if (h.key !== ed.to) continue;
+      const fromAt = first.get(h.cid) && first.get(h.cid).get(ed.from);
+      if (fromAt != null && fromAt <= h.at) people.add(h.cid);
+    }
+    out[`${ed.from}>${ed.to}`] = people.size;
+  }
+  return out;
+}
+
 // 部品・線・企画・持ち主を合わせて、設計図 1 枚の形にする。view は all／unassigned／企画の番号
-export function assemble({ parts, edges, campaigns, owners, week }, view = "all") {
+export function assemble({ parts, edges, campaigns, owners, week, edgeWeek = {} }, view = "all") {
   const cmap = Object.fromEntries(campaigns.map((c) => [c.id, c]));
   const omap = Object.fromEntries(owners.map((o) => [`${o.part_type}:${o.part_id}`, o]));
   const archived = new Set(campaigns.filter((c) => c.archived_at).map((c) => c.id));
@@ -169,13 +202,16 @@ export function assemble({ parts, edges, campaigns, owners, week }, view = "all"
     shown = [...own, ...[...near].map((k) => ({ ...byKey[k], outside: true }))];
   }
   const shownKeys = new Set(shown.map((p) => p.key));
-  // 線の数は行き先の先週の数。行き先に入る線が 2 本以上あると、どの線から来たかを分けられないので出さない（0）
+  // 便 8g-3：線の数は人ごとの足どりで数えた先週の人数（edgeCounts）。出元に出来事が無い線（トップの LP → 登録など）だけは、
+  // 行き先に入る線が 1 本のときに限り行き先の先週の数を使う（2 本以上なら分けられないので 0・counted none）
   const incoming = {};
   for (const e of edges) incoming[e.to] = (incoming[e.to] || 0) + 1;
-  const sEdges = edges.filter((e) => shownKeys.has(e.from) && shownKeys.has(e.to)).map((e) => ({
-    ...e,
-    week: incoming[e.to] === 1 ? ((byKey[e.to] && byKey[e.to].week) || 0) : 0,
-  }));
+  const sEdges = edges.filter((e) => shownKeys.has(e.from) && shownKeys.has(e.to)).map((e) => {
+    const k = `${e.from}>${e.to}`;
+    if (k in edgeWeek) return { ...e, week: edgeWeek[k], counted: "path" };
+    if (incoming[e.to] === 1) return { ...e, week: (byKey[e.to] && byKey[e.to].week) || 0, counted: "target" };
+    return { ...e, week: 0, counted: "none" };
+  });
   const counts = {};
   for (const p of full) { const k = p.campaign_id || "unassigned"; counts[k] = (counts[k] || 0) + 1; }
   return {
@@ -201,7 +237,8 @@ export function makePlan(h) {
       communityLink(env),
       db(env, "GET", "b_campaigns?select=*&order=kind.desc,created_at.asc"),
       db(env, "GET", "b_campaign_parts?select=*"),
-      db(env, "GET", `events?select=type,payload&occurred_at=gte.${encodeURIComponent(since)}&type=in.(${WEEK_TYPES.join(",")})&limit=10000`),
+      // 便 8g-3：線の人数を人ごとの足どりで数えるので、期間で切らずに人と時刻つきで読む（先週の数はこの中から数える）
+      db(env, "GET", `events?select=customer_id,type,payload,occurred_at&type=in.(${WEEK_TYPES.join(",")})&order=id.asc&limit=50000`),
     ]);
     const owned = new Set(owners.filter((o) => o.part_type === "product").map((o) => o.part_id));
     const shownProducts = products.filter((p) => p.active || owned.has(p.id));
@@ -209,7 +246,10 @@ export function makePlan(h) {
       products: shownProducts, steps, broadcasts, seminars: SEMINARS,
       courseCount: new Set(lessons.map((l) => l.lesson_id)).size, community: community.url,
     });
-    return { parts, edges: buildEdges(parts), campaigns, owners, week: weekCounts(events), hiddenProducts: products.length - shownProducts.length };
+    const edges = buildEdges(parts);
+    const t0 = new Date(since).getTime();
+    const recent = events.filter((e) => new Date(e.occurred_at).getTime() >= t0);
+    return { parts, edges, campaigns, owners, week: weekCounts(recent), edgeWeek: edgeCounts(edges, events, since), hiddenProducts: products.length - shownProducts.length };
   }
 
   async function blueprint(env, { campaign_id = "all" } = {}) {

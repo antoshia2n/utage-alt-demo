@@ -25,6 +25,8 @@ export const DEFAULT_MODES = {
   get_community_link: "auto", set_community_link: "approve",
   list_campaigns: "auto", get_blueprint: "auto", create_campaign: "auto", set_part_campaign: "auto",
   archive_campaign: "approve",
+  // 便 8g-3：一言の下書きは動かない下書きだけを作るので自動（動かすのは set_step の承認）
+  draft_flow: "auto",
   get_mail_settings: "auto", set_mail_settings: "approve",
   get_tidy_plan: "auto", apply_tidy: "approve", list_changes: "auto", undo_change: "approve",
   // 便 8e：ラベルを読むのは自動、人の行を変える手のラベルは承認（B の原則 3 の最初の値に合わせる）

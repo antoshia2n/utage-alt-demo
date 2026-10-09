@@ -440,6 +440,43 @@ const core = {
   },
 };
 
+// 便 8g-3：一言の下書き。AI が組んだコネクタ（1〜10 本）を、動かさない下書きのまま 1 回で作り、企画に入れる。
+// 企画は campaign_id（いまある企画）か campaign_title（新しく作る）。動かすのは set_step で active true（承認）。
+// 途中で 1 本でも形が合わなければそこで止め、それまでに作った下書きの番号を返す（下書きは動かないので害は無い）
+const DRAFT_MAX = 10;
+async function draftFlow(env, { campaign_id = null, campaign_title = "", starts_on = null, connectors } = {}, actor = "mcp") {
+  if (!env.B_STORE) return { ok: false, error: "demo_store" };
+  const list = Array.isArray(connectors) ? connectors : [];
+  if (!list.length || list.length > DRAFT_MAX) return { ok: false, error: "need_connectors", min: 1, max: DRAFT_MAX };
+  let cid = campaign_id || null, cname = null;
+  if (!cid && String(campaign_title || "").trim()) {
+    const c = await plan.createCampaign(env, { title: campaign_title, starts_on }, actor);
+    if (!c.ok) return c;
+    cid = c.campaign.id; cname = c.campaign.name;
+  }
+  const created = [];
+  for (let i = 0; i < list.length; i++) {
+    const c = { ...(list[i] || {}) };
+    const role = String(c.role || "").slice(0, 60);
+    delete c.id; delete c.role; delete c.sort;
+    c.active = false;
+    const r = await deliver.setStep(env, c, actor);
+    if (!r.ok) return { ok: false, error: r.error, index: i, created, campaign_id: cid, note: "ここまでの下書きは作ってある（動いていない）" };
+    created.push(r.step.id);
+    if (cid) {
+      const a = await plan.setPartCampaign(env, { part_type: "step", part_id: r.step.id, campaign_id: cid, role }, actor);
+      if (!a.ok) return { ok: false, error: a.error, index: i, created, campaign_id: cid };
+      cname = a.campaign_name;
+    }
+  }
+  const bp = cid ? await plan.blueprint(env, { campaign_id: cid }) : null;
+  return {
+    ok: true, created: created.length, step_ids: created, campaign_id: cid, campaign_name: cname,
+    note: "すべて下書き（動いていない）。画面の「配信」で直し、動かすのは set_step で active true（承認）",
+    blueprint: bp && bp.ok ? { parts: bp.parts.map((p) => ({ key: p.key, name: p.name, inner_name: p.inner_name, state: p.state, outside: !!p.outside })), edges: bp.edges } : null,
+  };
+}
+
 // 便 6a：返した添削を新しい順に（生徒の振り返りと同じ中身）
 async function listCorrections(env, { person_id, limit } = {}) {
   if (!UUID_RE.test(String(person_id || ""))) return { ok: false, error: "bad_person_id" };
@@ -1279,6 +1316,18 @@ const TOOLS = [
     inputSchema: { type: "object", properties: { campaign_id: { type: "string" } } },
   },
   {
+    name: "draft_flow",
+    description: "一言の下書き。コネクタ（トリガー → セレクタ → アクション）を 1〜10 本、動かさない下書きのまま 1 回で作り、企画に入れる。connectors の 1 本の欄は set_step と同じ（name・trigger・trigger_args・product_id・delay_hours・selector・action・action_args・subject・body）に、企画の中の役目 role を足したもの。active は渡しても下書きになる。企画は campaign_id（いまある企画）か campaign_title（新しく作る・年月は頭に自動）と starts_on。返事に、作ったコネクタの番号と、その企画の設計図（部品と線）が付く。動かすのは set_step で active true（承認）。途中で形が合わなければ止め、それまでに作った番号 created と止まった位置 index を返す。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        campaign_id: { type: "string" }, campaign_title: { type: "string" }, starts_on: { type: "string" },
+        connectors: { type: "array", items: { type: "object" } },
+      },
+      required: ["connectors"],
+    },
+  },
+  {
     name: "list_campaigns",
     description: "企画の一覧（名前・常設か・開催日・しまったか・持ち主の部品の数）と、企画に入っていない部品の数。include_archived が真ならしまった企画も返す。",
     inputSchema: { type: "object", properties: { include_archived: { type: "boolean" } } },
@@ -1383,6 +1432,7 @@ async function runTool(env, name, args) {
   if (name === "add_label") return await connect.addLabel(env, args, "mcp");
   if (name === "remove_label") return await connect.removeLabel(env, args, "mcp");
   if (name === "get_blueprint") return await plan.blueprint(env, args);
+  if (name === "draft_flow") return await draftFlow(env, args, "mcp");
   if (name === "list_campaigns") return await plan.listCampaigns(env, args);
   if (name === "create_campaign") return await plan.createCampaign(env, args, "mcp");
   if (name === "set_part_campaign") return await plan.setPartCampaign(env, args, "mcp");
