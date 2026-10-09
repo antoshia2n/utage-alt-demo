@@ -1,5 +1,5 @@
 // B の便 8c：設計図（見る）と企画。
-// 部品を出会う → 登録 → 温める → 相談 → 購入 → 受講 → 紹介のレーンに並べ（便 8d で 7 つ）、実際の設定から引いた線を引く。線の数字は先週 7 日の数。
+// 部品を集客 → リストイン → アプローチ → 個別相談 → オファー → 受講 → 紹介の段に並べ（便 8d で 7 つ・便 13b で名前を直し、上から下へ降りる並びにした）、実際の設定から引いた線を引く。線の数字は先週 7 日の数。
 // 便 8d：商品は UTAGE の商品ごとのまとまり 1 箱にたたむ（押すと売り方が開く）。片付け案（承認 1 回で当てる）と、変えた記録・元に戻す。
 // 箱を押すと右の欄に中の名前・外の名前・入口と出口・持ち主の企画が出る。持ち主と役目はここで変える。
 // 線を引き直す・一言で下書きするのは 8e・8g。ここでは見ることと、企画の整理だけ。
@@ -145,7 +145,7 @@ export function makeBlueprint({ $, api, esc, getToken, fail, openView }) {
     };
     $("bp-canvas").innerHTML = `<div class="bp-lanes" id="bp-lanes">
         <svg class="bp-lines" id="bp-lines" aria-hidden="true"></svg>
-        ${lanes.map((l) => `<div class="bp-lane"><h4>${esc(l.label)}</h4>${((blockBoxes[l.id] || []).map(blockNode).join("") + laneHtml(byLane[l.id] || [])) || `<p class="note bp-empty">${l.id === "refer" ? "紹介は左のメニュー「紹介」で見ます" : "まだ部品がありません"}</p>`}</div>`).join("")}
+        ${lanes.map((l) => `<div class="bp-lane"><h4>${esc(l.label)}</h4><div class="bp-row">${((blockBoxes[l.id] || []).map(blockNode).join("") + laneHtml(byLane[l.id] || [])) || `<p class="note bp-empty">${l.id === "refer" ? "紹介は左のメニュー「紹介」で見ます" : "まだ部品がありません"}</p>`}</div></div>`).join("")}
       </div>
       ${data.parts.length === 0 ? '<p class="note">この企画にはまだ部品がありません。「企画に入っていない」から部品を選び、右の欄で持ち主をこの企画にしてください。</p>' : ""}
       ${data.stopped_products_hidden ? `<p class="note" style="margin:8px 0 0">売っていない商品 ${data.stopped_products_hidden} 本は出していません（企画に入れたものは出ます）。</p>` : ""}`;
@@ -182,15 +182,16 @@ export function makeBlueprint({ $, api, esc, getToken, fail, openView }) {
       const a = box(e.from), b = box(e.to);
       if (!a || !b) continue;
       let d, lx, ly;
-      if (b.l > a.r) { // 右のレーンへ
-        const mx = (a.r + b.l) / 2;
-        d = `M${a.r},${a.cy} C${mx},${a.cy} ${mx},${b.cy} ${b.l - 2},${b.cy}`; lx = mx; ly = (a.cy + b.cy) / 2;
-      } else if (Math.abs(a.cx - b.cx) < 4) { // 同じレーン
-        const down = b.t > a.b;
-        d = down ? `M${a.cx},${a.b} L${b.cx},${b.t - 2}` : `M${a.cx},${a.t} L${b.cx},${b.b + 2}`; lx = a.cx + 6; ly = down ? (a.b + b.t) / 2 : (a.t + b.b) / 2;
-      } else { // 左へ戻る
-        const y = Math.max(a.b, b.b) + 18;
-        d = `M${a.cx},${a.b} C${a.cx},${y} ${b.cx},${y} ${b.cx},${b.b + 2}`; lx = (a.cx + b.cx) / 2; ly = y - 4;
+      // 便 13b：上から下へ。下の段へは箱の下の真ん中から次の箱の上の真ん中へ、同じ段は横、上へ戻るときは右側を回る
+      if (b.t > a.b - 2) { // 下の段へ
+        const my = (a.b + b.t) / 2;
+        d = `M${a.cx},${a.b} C${a.cx},${my} ${b.cx},${my} ${b.cx},${b.t - 2}`; lx = (a.cx + b.cx) / 2; ly = my + 4;
+      } else if (Math.abs(a.cy - b.cy) < (a.b - a.t) / 2) { // 同じ段
+        const toRight = b.l > a.r;
+        d = toRight ? `M${a.r},${a.cy} L${b.l - 2},${b.cy}` : `M${a.l},${a.cy} L${b.r + 2},${b.cy}`; lx = toRight ? (a.r + b.l) / 2 : (a.l + b.r) / 2; ly = a.cy - 2;
+      } else { // 上の段へ戻る
+        const x = Math.max(a.r, b.r) + 18;
+        d = `M${a.r},${a.cy} C${x},${a.cy} ${x},${b.cy} ${b.r + 2},${b.cy}`; lx = x; ly = (a.cy + b.cy) / 2;
       }
       // 数は常に出す。「権利」などの言葉は、押した箱の線にだけ出す（重なって読めなくなるため）
       const on = (selected && (e.from === selected || e.to === selected)) || (selectedBlock && (shutBlock[e.from] === selectedBlock || shutBlock[e.to] === selectedBlock));

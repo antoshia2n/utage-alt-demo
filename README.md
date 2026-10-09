@@ -123,3 +123,14 @@ UTAGE の代わりになるサイト兼アプリ（PWA）のデモ。架空の�
 - サンクスページ（ページの目的 `thanks`）を回に結ぶと、答えたあとそこへ移る（公開中のときだけ）
 - AI の道具：`list_seminars`・`get_seminar`（自動）、`set_seminar`・`set_seminar_notice`・`send_seminar_notice`（承認）
 - 試験：`node --test tests/seminars.test.mjs`
+
+## B の便 13b で足したもの（個別相談の予約・ファネル構築を上から下へ）
+
+- 表 `b_booking_types`（予約の種類）。`supabase/b13b_booking.sql` を SQL Editor で 1 回流す。中身は `src/booking.js`
+- 種類ごとに、長さ・受け付ける曜日と時間帯・何日先まで・何時間前まで・Zoom・サンクスページ・受付と前日の知らせの文を持つ
+- 空きの時間は、受け付ける時間帯から、すでにある予約と Google カレンダー（設定の iCal の URL 2 つ）の予定を除いたもの
+- ページに `<div data-lab-part="booking:住所の名前"></div>` を置くと、空きの時間のボタンと名前・メール・相談したいことの欄が出る（`/api/p/booking/:slug`）
+- 予約は表を増やさず出来事（`consult_booked`）に積む。受付のメールはすぐ、前日の知らせは定時の処理で 1 回だけ（`consult_reminded`）
+- ファネル構築の段を、上が入口・下へ進む並びにした。段の名前は 集客・リストイン・アプローチ・個別相談・オファー・受講・紹介
+- AI の道具：`list_booking_types`・`get_booking_type`・`get_booking_slots`（自動）、`set_booking_type`（承認）
+- 試験：`node --test tests/booking.test.mjs`

@@ -625,6 +625,7 @@ async function loadDeals(focusId, msg) {
       { key: "stage", label: "段階", html: (x) => pill(STAGE[x.stage] || x.stage, "warn") },
     ], c.consults, (x) => { openView("people"); detail(x.person_id); }, "これからの予約はありません");
   }
+  await loadBookingTypes();
   const s = await api("/api/admin/seminars", { token });
   if (!s.ok) { $("sem-count").textContent = "読めませんでした"; return; }
   seminarsCache = s.seminars;
@@ -667,6 +668,131 @@ function seminarDetail(id, msg) {
     if (!r.ok) { $("sem-status").textContent = "送れませんでした（" + (r.error || r.status) + "）"; return; }
     await loadDeals(x.id, `送った ${r.sent}・テスト宛てでないので送らなかった ${r.blocked}・失敗 ${r.failed}${r.skipped ? "・送り済み " + r.skipped : ""}`);
   });
+}
+
+// ---------- 便 13b：個別相談の予約の種類（本番の置き場）。一覧 → 詳細（予約・知らせ・中身） ----------
+let btCache = [], btWired = false, currentBt = null;
+const WD_LABEL = ["日", "月", "火", "水", "木", "金", "土"];
+const BT_WHY = {
+  bad_title: "名前を入れてください（80 字まで）", bad_slug: "住所の名前は英小文字・数字・ハイフンの 2〜41 字（例 consult-30）", slug_taken: "その住所の名前はほかの種類で使っています",
+  bad_minutes: "長さは 10〜240 分", bad_weekdays: "曜日を 1 つ以上選んでください", bad_times: "時間帯は「10:00-12:00,20:00-22:00」の形で入れてください",
+  bad_days_ahead: "何日先までは 1〜90", bad_min_notice_hours: "何時間前までは 0〜168", bad_remind_minutes: "前日の知らせは 30 分〜7 日前（空なら送らない）",
+  bad_zoom_url: "Zoom の住所は https:// から", thanks_page_not_found: "そのページが見つかりません",
+};
+async function loadBookingTypes() {
+  const r = await api("/api/admin/booking-types", { token });
+  if (!r.ok) { $("bt-count").textContent = "読めませんでした（" + (r.error || r.status) + "）"; return; }
+  btCache = r.types || [];
+  const store = r.store === "production";
+  $("bt-new").classList.toggle("hidden", !store);
+  if (store && !btWired) { btWired = true; $("bt-new").addEventListener("click", () => bookingTypeEditor(null)); }
+  $("bt-count").textContent = store ? `${r.count} 件・受付中 ${btCache.filter((t) => t.active).length}` : "デモの置き場では予約の種類は作れません";
+  await loadCampaigns();
+  const rows = campRows("btypes", "booking", btCache, (t) => t.id, () => loadBookingTypes());
+  table("btypes", [
+    { key: "title", label: "名前", html: (t) => `<div class="c-name">${esc(t.title)}</div><div class="sub">${t.minutes} 分</div>` },
+    { key: "weekdays", label: "受け付ける時間", nosort: true, cls: "c-src", html: (t) => `<span class="sub">${esc((t.weekdays || []).map((w) => WD_LABEL[w]).join("・"))}　${esc(t.times)}</span>` },
+    { key: "upcoming", label: "これからの予約", html: (t) => `${t.upcoming} 件` },
+    { key: "active", label: "状態", sortVal: (t) => (t.active ? 1 : 0), html: (t) => t.active ? pill("受付中") : pill("止めている", "gray") },
+  ], rows, (t) => openBookingType(t.id), btCache.length ? "この企画の予約の種類はありません" : "まだありません。「新しく作る」から作ります");
+}
+async function openBookingType(id, opts = {}) {
+  currentBt = id;
+  showPane("deals", "detail", "読んでいます…", "予約の一覧へ");
+  $("seminar-detail").innerHTML = '<p class="note">読んでいます…</p>';
+  await Promise.all([loadCampaigns(true), loadPagesCache()]);
+  const [r, sl] = await Promise.all([api("/api/admin/booking-types/" + id, { token }), api("/api/admin/booking-types/" + id + "/slots", { token })]);
+  if (currentBt !== id) return;
+  if (!r.ok || !r.found) { $("seminar-detail").innerHTML = `<p class="note">読めませんでした（${esc(r.error || "見つかりません")}）</p>`; return; }
+  const t = r.type, tab = opts.tab || "bookings";
+  const calNote = { ok: "Google カレンダーの予定と重なる時間は出していません", unset: "カレンダーが入っていないので、予定は避けていません（決済・メール・オプチャの画面で入れられます）", error: "カレンダーが読めなかったので、予定は避けていません", off: "予定は避けない設定です" }[sl.calendar] || "";
+  showPane("deals", "detail", t.title, "予約の一覧へ");
+  const upcoming = r.bookings.filter((b) => !b.past);
+  $("seminar-detail").innerHTML = headHtml({
+    title: t.title,
+    sub: esc(`${t.minutes} 分・${(t.weekdays || []).map((w) => WD_LABEL[w]).join("・")}　${t.times}`),
+    pills: [t.active ? pill("受付中") : pill("止めている", "gray"), pill(`これからの予約 ${upcoming.length}`, "gray"), pill(`いまの空き ${sl.ok ? sl.count : "—"}`, "gray")],
+    foot: campPicker("booking", t.id),
+  }) + `${opts.msg ? `<p class="msg ok" style="margin:12px 0 0">${esc(opts.msg)}</p>` : ""}`
+    + tabsHtml([["bookings", `予約 ${r.bookings.length}`], ["slots", "空き時間"], ["notices", "知らせ"], ["edit", "中身"]], tab)
+    + `<section class="card" data-pane="bookings"><div id="bb-table" class="table-wrap"></div></section>
+    <section class="card" data-pane="slots"><p class="note" style="margin-top:0">${esc(calNote)}。お客さんの画面にはこの時間が出ます（最大 200）。</p>
+      <div class="stack">${(sl.slots || []).slice(0, 60).map((x) => `<div class="sub">${esc(x.label)}</div>`).join("") || '<p class="note">いま予約できる空き時間はありません</p>'}</div></section>
+    <section class="card" data-pane="notices"><form id="bn" class="stack">
+      <b>受付のメール（予約した直後）</b>
+      <div><label for="bn-cs">件名</label><input id="bn-cs" type="text" maxlength="200" value="${esc(t.confirm_subject)}"></div>
+      <div><label for="bn-cb">本文</label><textarea id="bn-cb" rows="7" maxlength="8000">${esc(t.confirm_body)}</textarea></div>
+      <b>前日の知らせ</b>
+      <div><label for="bn-rm">何時間前に送るか（空なら送らない）</label><input id="bn-rm" type="number" min="1" max="168" style="width:120px" value="${t.remind_minutes == null ? "" : Math.round(t.remind_minutes / 60)}"></div>
+      <div><label for="bn-rs">件名</label><input id="bn-rs" type="text" maxlength="200" value="${esc(t.remind_subject)}"></div>
+      <div><label for="bn-rb">本文</label><textarea id="bn-rb" rows="6" maxlength="8000">${esc(t.remind_body)}</textarea></div>
+      <p class="note" style="margin:0">差し込み：${esc((r.placeholders || []).join("　"))}（お客さんの名前・予約の種類の名前・日時・長さ・参加の URL・相談したいこと）</p>
+      <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="submit">保存</button><span class="note" id="bn-status"></span></div>
+    </form></section>
+    <section class="card" data-pane="edit">${bookingTypeForm(t)}
+      <div class="stack" style="margin-top:16px"><div class="note">ページに埋め込む印（Claude にページを頼むときに伝える）</div><textarea id="bt-embed" rows="2" readonly style="font-size:13px">${esc(t.embed)}</textarea></div></section>`;
+  wireTabs($("seminar-detail"), tab);
+  wireCampPicker($("seminar-detail"), () => loadBookingTypes());
+  wireBookingTypeForm(t);
+  table("bb-table", [
+    { key: "slot", label: "日時", html: (b) => esc(b.label) + (b.past ? ' <span class="sub">（終わった）</span>' : "") },
+    { key: "name", label: "名前", sortVal: (b) => b.name || b.email, html: (b) => `<div class="c-name">${esc(b.name || b.email)}</div><div class="sub">${esc(b.email)}</div>` },
+    { key: "topic", label: "相談したいこと", nosort: true, cls: "c-src", html: (b) => `<span class="sub">${esc(b.topic || "（未記入）")}</span>` },
+  ], r.bookings, (b) => { openView("people"); detail(b.person_id); }, "まだ予約はありません。ページの予約の枠から予約した人がここに並びます");
+  $("bn").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const h = $("bn-rm").value;
+    const body = { id: t.id, confirm_subject: $("bn-cs").value.trim(), confirm_body: $("bn-cb").value, remind_subject: $("bn-rs").value.trim(), remind_body: $("bn-rb").value, remind_minutes: h ? Math.round(Number(h) * 60) : null };
+    const res = await api("/api/admin/booking-types", { method: "POST", token, body });
+    if (!res.ok) { $("bn-status").textContent = BT_WHY[res.error] || "保存できませんでした（" + (res.error || res.status) + "）"; return; }
+    openBookingType(t.id, { tab: "notices", msg: "保存しました" });
+  });
+}
+function bookingTypeForm(t) {
+  const wds = new Set((t ? t.weekdays : [1, 2, 3, 4, 5]).map(Number));
+  const thanksOpts = pagesCache.map((p) => `<option value="${esc(p.slug)}" ${t && t.thanks_page_slug === p.slug ? "selected" : ""}>${esc(p.title)}${p.status === "published" ? "" : "（公開していない）"}</option>`).join("");
+  return `<form id="bt" class="stack">
+      <div><label for="bt-title">名前（お客さんに見える名前）</label><input id="bt-title" type="text" maxlength="80" placeholder="例 図解セミナー参加者の個別相談（30 分）" value="${esc(t ? t.title : "")}"></div>
+      <div><label for="bt-slug">住所の名前（英小文字・数字・ハイフン）</label><input id="bt-slug" type="text" maxlength="41" autocapitalize="off" autocomplete="off" placeholder="例 consult-30" value="${esc(t ? t.slug : "")}"></div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div style="flex:1 1 100px"><label for="bt-min">長さ（分）</label><input id="bt-min" type="number" min="10" max="240" value="${t ? t.minutes : 30}"></div>
+        <div style="flex:1 1 100px"><label for="bt-days">何日先まで</label><input id="bt-days" type="number" min="1" max="90" value="${t ? t.days_ahead : 14}"></div>
+        <div style="flex:1 1 100px"><label for="bt-notice">何時間前まで</label><input id="bt-notice" type="number" min="0" max="168" value="${t ? t.min_notice_hours : 12}"></div>
+      </div>
+      <div><div class="note" style="margin-bottom:6px">受け付ける曜日</div><div style="display:flex;gap:10px;flex-wrap:wrap">${WD_LABEL.map((w, i) => `<label class="check"><input type="checkbox" data-wd="${i}" ${wds.has(i) ? "checked" : ""}> <span>${w}</span></label>`).join("")}</div></div>
+      <div><label for="bt-times">受け付ける時間帯（日本時間・カンマ区切り）</label><input id="bt-times" type="text" maxlength="200" placeholder="例 10:00-12:00,20:00-22:00" value="${esc(t ? t.times : "10:00-12:00,20:00-22:00")}"></div>
+      <label class="check"><input type="checkbox" id="bt-avoid" ${!t || t.avoid_calendar ? "checked" : ""}> <span>Google カレンダーの予定と重なる時間は出さない</span></label>
+      <div><label for="bt-zoom">参加の URL（Zoom）</label><input id="bt-zoom" type="url" inputmode="url" maxlength="500" placeholder="https://zoom.us/j/..." value="${esc(t ? t.zoom_url : "")}"></div>
+      <div><label for="bt-thanks">サンクスページ（予約のあとに移るページ。公開中のときだけ移る）</label><select id="bt-thanks" class="inline"><option value="">（移さない・枠の中に受付の文を出す）</option>${thanksOpts}</select></div>
+      ${t ? "" : `<div><label for="bt-camp">企画</label><select id="bt-camp" class="inline"><option value="">（あとで決める）</option>${liveCamps().map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select></div>`}
+      <label class="check"><input type="checkbox" id="bt-active" ${!t || t.active ? "checked" : ""}> <span>受け付ける（外すと枠に「受け付けていません」と出る）</span></label>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn small" type="submit">${t ? "保存" : "作る"}</button><span class="note" id="bt-status"></span></div>
+      ${t ? "" : '<p class="note" style="margin:0">作ると、受付のメールと前日の知らせ（1 日前）の文が入ります。あとで直せます。</p>'}
+    </form>`;
+}
+function wireBookingTypeForm(t) {
+  $("bt").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const body = {
+      title: $("bt-title").value.trim(), slug: $("bt-slug").value.trim().toLowerCase(), minutes: Number($("bt-min").value || 30),
+      days_ahead: Number($("bt-days").value || 14), min_notice_hours: Number($("bt-notice").value || 0),
+      weekdays: [...document.querySelectorAll("#bt [data-wd]:checked")].map((x) => Number(x.dataset.wd)), times: $("bt-times").value.trim(),
+      avoid_calendar: $("bt-avoid").checked, zoom_url: $("bt-zoom").value.trim(), thanks_page_slug: $("bt-thanks").value, active: $("bt-active").checked,
+    };
+    if (t) body.id = t.id; else if ($("bt-camp") && $("bt-camp").value) body.campaign_id = $("bt-camp").value;
+    const r = await api("/api/admin/booking-types", { method: "POST", token, body });
+    if (!r.ok) { $("bt-status").textContent = BT_WHY[r.error] || "保存できませんでした（" + (r.error || r.status) + "）"; return; }
+    await loadBookingTypes();
+    openBookingType(r.type.id, { tab: t ? "edit" : "slots", msg: t ? "保存しました" : "作りました。いまの空き時間を出しています" });
+  });
+}
+async function bookingTypeEditor() {
+  currentBt = null;
+  await Promise.all([loadCampaigns(true), loadPagesCache()]);
+  showPane("deals", "detail", "新しい予約の種類", "予約の一覧へ");
+  $("seminar-detail").innerHTML = headHtml({ title: "新しい予約の種類", sub: "名前・長さ・受け付ける曜日と時間帯を入れて「作る」を押します。Google カレンダーの予定と重なる時間は自動で外れます" })
+    + `<section class="card" style="margin-top:16px">${bookingTypeForm(null)}</section>`;
+  wireBookingTypeForm(null);
 }
 
 // ---------- 便 13：セミナーの回（本番の置き場）。一覧 → 詳細（中身・知らせ・申込者）。作るは一覧の「新しく作る」 ----------

@@ -124,7 +124,7 @@
         </div>
         <div class="card" style="margin-top:16px">
           <h3 class="home-h">段階のボード <span class="note" id="hm-total"></span></h3>
-          <p class="note" style="margin-top:0">上から 受講（会員か教材を見た）→ 購入 → 相談 → 温める（リンクを押した・セミナー・ログイン）→ 登録 の順に当てる。人を押すと顧客管理でその人の詳細が開く</p>
+          <p class="note" style="margin-top:0">上から 受講（会員か教材を見た）→ オファー（買った）→ 個別相談 → アプローチ（リンクを押した・セミナー・ログイン）→ リストイン の順に当てる。人を押すと顧客管理でその人の詳細が開く</p>
           <div class="stage-board" id="hm-board"><p class="note">読み込んでいます…</p></div>
         </div>
       </div>
@@ -461,10 +461,15 @@
     <!-- 便 18：セミナーと予約。一覧（個別相談の予約／セミナー）→ セミナーの詳細。予約の行は顧客管理の詳細へ -->
     <div id="view-deals" style="display:none">
       <div id="deals-list">
-        <div class="tabs view-tabs" data-vtabs><button type="button" data-vtab="consults" aria-selected="true">個別相談の予約</button><button type="button" data-vtab="seminars" aria-selected="false">セミナー</button></div>
+        <div class="tabs view-tabs" data-vtabs><button type="button" data-vtab="consults" aria-selected="true">個別相談の予約</button><button type="button" data-vtab="btypes" aria-selected="false">予約の種類</button><button type="button" data-vtab="seminars" aria-selected="false">セミナー</button></div>
         <div class="card" data-vpane="consults">
           <div class="list-bar"><p class="note" id="consults-count"></p></div>
           <div id="consults" class="table-wrap"></div>
+        </div>
+        <div class="card hidden" data-vpane="btypes">
+          <div class="list-bar"><p class="note" id="bt-count"></p><div class="cust-actions"><span data-camp-slot="btypes"></span><button class="btn small hidden" type="button" id="bt-new">新しく作る</button></div></div>
+          <div id="btypes" class="table-wrap"></div>
+          <p class="note" style="margin:12px 0 0">予約の種類を作ると、ページに埋め込む印が出ます。Claude にページを頼むときに「この予約の枠を入れて」と伝えると、空き時間を選んで予約できる枠がページに入ります。</p>
         </div>
         <div class="card hidden" data-vpane="seminars">
           <div class="list-bar"><p class="note" id="sem-count"></p><div class="cust-actions"><span data-camp-slot="seminars"></span><button class="btn small hidden" type="button" id="sem-new">新しく作る</button></div></div>

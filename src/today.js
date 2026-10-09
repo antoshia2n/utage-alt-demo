@@ -270,7 +270,7 @@ export function makeToday(h) {
     }
     for (const l of lanes) l.people.sort((a, b) => String(b.last_event_at || "").localeCompare(String(a.last_event_at || "")));
     return { ok: true, total: people.length, lanes: lanes.map((l) => ({ id: l.id, label: l.label, count: l.people.length, people: l.people.slice(0, 50) })),
-      note: "出会う（まだ登録していない人）は記録が無いので 0。段階は上から 紹介（その人のリンクから誰かが登録した）→ 受講（会員か教材を見た）→ 購入 → 相談 → 温める（リンクを押した・セミナー・ログイン）→ 登録" };
+      note: "集客（まだリストインしていない人）は記録が無いので 0。段階は上から 紹介（その人のリンクから誰かが登録した）→ 受講（会員か教材を見た）→ オファー（買った）→ 個別相談 → アプローチ（リンクを押した・セミナー・ログイン）→ リストイン" };
   }
 
   async function today(env, now = Date.now()) {
@@ -304,5 +304,27 @@ export function makeToday(h) {
     };
   }
 
-  return { today, board, calendarUrl, calendarStatus, setCalendarUrl, maskUrl };
+  // 便 13b：予約の空き時間に使う「予定が入っている時間」。2 つの読み元を合わせ、終日の予定は入れない。
+  // state：ok（どれか読めた）／unset（どちらも入っていない）／error（入っているのに読めなかった）
+  async function busyBetween(env, fromMs, toMs) {
+    const days = [];
+    for (let t = jstMidnightUtc(jstDay(fromMs)); t < toMs; t += DAY) days.push(jstDay(t));
+    const busy = [];
+    let anySet = false, anyOk = false, error;
+    for (const cal of CALENDARS) {
+      const c = await calendarUrl(env, cal.which);
+      if (!c.url) continue;
+      anySet = true;
+      try {
+        const res = await fetch(c.url, { headers: { accept: "text/calendar" } });
+        if (!res.ok) { error = `status_${res.status}`; continue; }
+        const evs = parseIcs(await res.text());
+        anyOk = true;
+        for (const d of days) for (const e of eventsOn(evs, d).events) if (!e.all_day) busy.push({ start: Date.parse(e.start), end: Date.parse(e.end) });
+      } catch (e) { error = String(e && e.message || e).slice(0, 120); }
+    }
+    return { state: !anySet ? "unset" : anyOk ? "ok" : "error", error: anyOk ? undefined : error, busy };
+  }
+
+  return { today, board, calendarUrl, calendarStatus, setCalendarUrl, maskUrl, busyBetween };
 }

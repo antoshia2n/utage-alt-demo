@@ -46,6 +46,8 @@ export const DEFAULT_MODES = {
   publish_page: "approve",
   // 便 13：セミナーの回を読むのは自動。回を作る・知らせを足す・いま送るは承認（申込者へ届くもの・外から申し込める回が増えるため）
   get_seminar: "auto", set_seminar: "approve", set_seminar_notice: "approve", send_seminar_notice: "approve",
+  // 便 13b：予約の種類を読む・空き時間を見るのは自動。種類を作る・直すのは承認（外から予約できる枠が増えるため）
+  list_booking_types: "auto", get_booking_type: "auto", get_booking_slots: "auto", set_booking_type: "approve",
 };
 
 // 権限を問わず通す道具（承認待ちを見るための道具が承認待ちになると回らないため）

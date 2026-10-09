@@ -10,6 +10,7 @@
 //   data-lab-part="form:slug"        … 申込の枠（便 11a のフォーム）
 //   data-lab-part="checkout:商品の id" … 決済の枠（商品の名前と価格と申し込むボタン。押すと lab の /register?product= へ）
 //   data-lab-button="名前"             … ボタン。押したら出来事に積み、コネクタのきっかけ「ページのボタンを押した」になる
+//   data-lab-part="booking:slug"     … 便 13b：個別相談の予約の枠（空き時間を選び、名前とメールで予約する）
 // 経路：ページの住所の後ろの ?r=名前。初めて登録したときの経路をその人の経路にする（registered の payload.route）。
 
 import { SLUG_RE } from "./forms.js";
@@ -31,11 +32,12 @@ const now = () => new Date().toISOString();
 export function parseParts(html) {
   // 便 13：HTML の注意書き（<!-- -->）の中の印は読まない（便 12a の版 1 で、説明の文の印を印として拾った件）
   const s = String(html || "").replace(/<!--[\s\S]*?-->/g, "");
-  const forms = new Set(), checkouts = new Set(), buttons = new Set(), bad = [];
+  const forms = new Set(), checkouts = new Set(), buttons = new Set(), bookings = new Set(), bad = [];
   for (const m of s.matchAll(/data-lab-part\s*=\s*["']([^"']*)["']/g)) {
     const v = m[1].trim();
-    const f = v.match(/^form:(.+)$/), c = v.match(/^checkout:(.+)$/);
+    const f = v.match(/^form:(.+)$/), c = v.match(/^checkout:(.+)$/), bk = v.match(/^booking:(.+)$/);
     if (f && SLUG_RE.test(f[1])) forms.add(f[1]);
+    else if (bk && SLUG_RE.test(bk[1])) bookings.add(bk[1]);
     else if (c && PRODUCT_ID_RE.test(c[1])) checkouts.add(c[1]);
     else bad.push(v.slice(0, 60));
   }
@@ -43,7 +45,7 @@ export function parseParts(html) {
     const v = m[1].trim();
     if (BUTTON_RE.test(v)) buttons.add(v); else bad.push("button:" + v.slice(0, 40));
   }
-  return { forms: [...forms], checkouts: [...checkouts], buttons: [...buttons], bad };
+  return { forms: [...forms], checkouts: [...checkouts], buttons: [...buttons], bookings: [...bookings], bad };
 }
 
 // 公開のときに B の差し込みの仕掛けを足す（Claude が書いた同じ行は外してから 1 回だけ）
@@ -185,6 +187,7 @@ export function makePages(h) {
       style: "差し込む枠は class lab-form・lab-checkout・lab-btn・lab-input・lab-note を持つ。ページの CSS で上書きして見た目をそろえる",
       legal: `特商法 ${labOrigin(env)}/legal/tokushoho・プライバシーポリシー ${labOrigin(env)}/legal/privacy。ページの下に置く`,
       dont: "鍵・会員の個人情報・実在しない実績や数字を書かない。公開はしない（publish_page は Naoki が承認する）",
+      booking: "予約の枠：<div data-lab-part=\"booking:予約の種類の住所の名前\"></div>。空き時間の一覧と、名前・メール・相談したいこと・同意の欄が入る。予約した人は台帳に入り、受付のメールが届く",
       thanks: "サンクスページ（目的 thanks）：申込の枠もボタンも要らない。申込を受け付けたこと・日時・参加の URL はメールで届くこと・迷惑メールの確かめ方を書く。セミナーの回に結ぶのは set_seminar の thanks_page_slug",
       forms: fl.filter((f) => f.active).map((f) => ({ slug: f.slug, title: f.title })),
       forms_not_open: fl.filter((f) => !f.active).map((f) => ({ slug: f.slug, title: f.title })),
@@ -431,6 +434,18 @@ export function makePages(h) {
     return out;
   }
 
+  // 便 13b：予約する（lp の住所から）。フォームと同じく経路とページを送る。初めて台帳に入った人にだけ「この端末の人」の印を返す
+  async function submitBooking(env, booking, slug, body = {}) {
+    const page = body.page ? await pageById(env, body.page) : null;
+    const route = ROUTE_RE.test(String(body.r || "")) ? String(body.r) : undefined;
+    const r = await booking.book(env, slug, { ...body, route, page_id: page && page.status === "published" ? page.id : undefined });
+    if (!r.ok) return r;
+    const out = { ok: true, slot: r.slot, label: r.label, is_new: r.is_new };
+    if (r.thanks_url) out.thanks_url = r.thanks_url + (route ? `?r=${encodeURIComponent(route)}` : "");
+    if (r.is_new && r.id) out.u = await personToken(env, r.id);
+    return out;
+  }
+
   // ページを返す。下書きは印（preview）があるときだけ
   async function serve(env, slug, previewTok) {
     const page = await pageBySlug(env, slug);
@@ -464,7 +479,7 @@ export function makePages(h) {
     return { pages, partsOf };
   }
 
-  return { createRequest, getRequest, listRequests, saveDraft, listPages, getPage, publish, routeStats, hit, publicProduct, submitForm, serve, forPlan, hitsSince, pagesOrigin, rules };
+  return { createRequest, getRequest, listRequests, saveDraft, listPages, getPage, publish, routeStats, hit, publicProduct, submitForm, submitBooking, serve, forPlan, hitsSince, pagesOrigin, rules };
 }
 
 // 公開のページに差し込む仕掛け（lp の住所の /_lab/embed.js）。ページの中の印を本物の枠に変え、見た・押したを送る
@@ -501,7 +516,7 @@ export const EMBED_JS = `(() => {
     return '<input class="lab-input" id="' + id + '" type="text"' + (it.type === "number" ? ' inputmode="numeric"' : ' maxlength="200"') + req + '>';
   }
   const css = document.createElement("style");
-  css.textContent = ".lab-form,.lab-checkout{max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:12px;text-align:left;box-sizing:border-box}.lab-form label{display:block;font-size:14px;margin:0 0 4px}.lab-input{width:100%;box-sizing:border-box;min-height:44px;padding:10px 12px;font-size:16px;border:1px solid #c9c9c9;border-radius:8px;background:#fff;color:#111}.lab-btn{display:inline-block;box-sizing:border-box;width:100%;min-height:52px;border:0;border-radius:10px;background:#1f6f5c;color:#fff;font-size:17px;font-weight:700;cursor:pointer;text-align:center;text-decoration:none;line-height:52px;padding:0 16px}.lab-btn[disabled]{opacity:.6}.lab-note{font-size:13px;opacity:.8}.lab-err{color:#b3261e;font-size:13px}.lab-check{display:flex;gap:8px;align-items:flex-start;font-size:14px}";
+  css.textContent = ".lab-form,.lab-checkout{max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:12px;text-align:left;box-sizing:border-box}.lab-form label{display:block;font-size:14px;margin:0 0 4px}.lab-input{width:100%;box-sizing:border-box;min-height:44px;padding:10px 12px;font-size:16px;border:1px solid #c9c9c9;border-radius:8px;background:#fff;color:#111}.lab-btn{display:inline-block;box-sizing:border-box;width:100%;min-height:52px;border:0;border-radius:10px;background:#1f6f5c;color:#fff;font-size:17px;font-weight:700;cursor:pointer;text-align:center;text-decoration:none;line-height:52px;padding:0 16px}.lab-btn[disabled]{opacity:.6}.lab-note{font-size:13px;opacity:.8}.lab-err{color:#b3261e;font-size:13px}.lab-check{display:flex;gap:8px;align-items:flex-start;font-size:14px}.lab-days{display:flex;flex-direction:column;gap:10px}.lab-day-h{font-size:13px;font-weight:700;margin-bottom:4px}.lab-slots{display:flex;flex-wrap:wrap;gap:6px}.lab-slot{min-height:40px;padding:0 12px;border:1px solid #c9c9c9;border-radius:8px;background:#fff;color:#111;font-size:15px;cursor:pointer}.lab-slot.on{background:#1f6f5c;border-color:#1f6f5c;color:#fff}";
   // ページの CSS で上書きできるよう、差し込む見た目は head のいちばん前に置く
   document.head.insertBefore(css, document.head.firstChild);
   async function mountForm(el, slug) {
@@ -544,9 +559,51 @@ export const EMBED_JS = `(() => {
     el.innerHTML = '<div style="font-weight:700">' + esc(p.name) + '</div><div style="font-size:22px;font-weight:700">' + esc(price) + "</div>"
       + '<a class="lab-btn" href="' + (PREVIEW ? "#" : esc(href)) + '" data-lab-button="checkout:' + esc(p.id) + '">申し込む</a>';
   }
+  // 便 13b：予約の枠。空き時間を日ごとに並べ、押した枠で予約する
+  async function mountBooking(el, slug) {
+    el.classList.add("lab-form");
+    const r = await fetch("/api/p/booking/" + encodeURIComponent(slug)).then((x) => x.json()).catch(() => ({}));
+    if (!r.ok) { el.innerHTML = '<p class="lab-note">この予約はいま受け付けていません</p>'; return; }
+    if (!r.slots.length) { el.innerHTML = '<p class="lab-note">いま予約できる空き時間がありません。少し時間をおいてもう一度ご覧ください</p>'; return; }
+    const days = [];
+    for (const s of r.slots) { let d = days.find((x) => x.day === s.day); if (!d) days.push(d = { day: s.day, items: [] }); d.items.push(s); }
+    let picked = "";
+    el.innerHTML = '<div style="font-weight:700">' + esc(r.type.title) + (/分/.test(r.type.title) ? '' : '（' + esc(r.type.minutes) + ' 分）') + '</div><div class="lab-note">ご都合のよい時間を 1 つ選んでください</div>'
+      + '<div class="lab-days">' + days.map((d) => '<div class="lab-day"><div class="lab-day-h">' + esc(d.day) + '</div><div class="lab-slots">' + d.items.map((s) => '<button type="button" class="lab-slot" data-slot="' + esc(s.slot) + '">' + esc(s.label.split("）")[1] || s.label) + "</button>").join("") + "</div></div>").join("") + "</div>"
+      + '<div class="lab-picked lab-note" data-picked>まだ選んでいません</div>'
+      + '<div><label>お名前</label><input class="lab-input" data-k="name" type="text" maxlength="60" autocomplete="name"></div>'
+      + '<div><label>メールアドレス<span class="lab-note">（必須）</span></label><input class="lab-input" data-k="email" type="email" required autocomplete="email"></div>'
+      + '<div><label>相談したいこと</label><textarea class="lab-input" data-k="topic" rows="3" maxlength="1000"></textarea></div>'
+      + '<label class="lab-check"><input type="checkbox" data-k="consent"><span><a href="' + LAB + '/legal/privacy" target="_blank" rel="noopener">プライバシーポリシー</a>と<a href="' + LAB + '/legal/tokushoho" target="_blank" rel="noopener">特定商取引法に基づく表記</a>を確かめました</span></label>'
+      + '<button type="button" class="lab-btn" data-go>' + (PREVIEW ? "（見本なので予約できません）" : "この時間で予約する") + '</button><div class="lab-err" data-msg></div>';
+    const q = (s) => el.querySelector(s), msg = q("[data-msg]"), go = q("[data-go]");
+    el.querySelectorAll("[data-slot]").forEach((b) => b.addEventListener("click", () => {
+      el.querySelectorAll("[data-slot]").forEach((x) => x.classList.toggle("on", x === b));
+      picked = b.dataset.slot;
+      const s = r.slots.find((x) => x.slot === picked);
+      q("[data-picked]").textContent = "選んだ時間：" + (s ? s.label : "");
+    }));
+    if (PREVIEW) { go.disabled = true; return; }
+    go.addEventListener("click", async () => {
+      const email = q('[data-k="email"]').value.trim();
+      if (!picked) { msg.textContent = "時間を 1 つ選んでください"; return; }
+      if (!/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(email)) { msg.textContent = "メールアドレスを確かめてください"; return; }
+      if (!q('[data-k="consent"]').checked) { msg.textContent = "プライバシーポリシーと表記を確かめて、チェックを入れてください"; return; }
+      go.disabled = true; msg.textContent = "予約しています…";
+      const res = await fetch("/api/p/booking/" + encodeURIComponent(slug), { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email, name: q('[data-k="name"]').value.trim(), topic: q('[data-k="topic"]').value, consent: true, slot: picked, page: PAGE, r: route, vid, source: store.get("lab_src") || "direct" }) })
+        .then((x) => x.json()).catch(() => ({ ok: false, error: "network" }));
+      go.disabled = false;
+      if (res.ok && res.u) store.set("lab_u", res.u);
+      if (res.ok && res.thanks_url && /^https:[/][/]/.test(res.thanks_url)) { location.href = res.thanks_url; return; }
+      if (res.ok) { el.innerHTML = '<p class="lab-note" style="white-space:pre-wrap">' + esc(res.label + " で予約を受け付けました。確認のメールをお送りしました。") + "</p>"; return; }
+      msg.textContent = res.error === "slot_taken" ? "その時間はちょうど埋まりました。ほかの時間を選んでください" : res.error === "already_booked" ? "すでに " + (res.label || "") + " で予約があります" : res.error === "bad_email" ? "メールアドレスを確かめてください" : "予約できませんでした。時間をおいてもう一度お試しください";
+    });
+  }
   document.querySelectorAll("[data-lab-part]").forEach((el) => {
     const v = el.getAttribute("data-lab-part") || "";
-    if (v.startsWith("form:")) mountForm(el, v.slice(5));
+    if (v.startsWith("booking:")) mountBooking(el, v.slice(8));
+    else if (v.startsWith("form:")) mountForm(el, v.slice(5));
     else if (v.startsWith("checkout:")) mountCheckout(el, v.slice(9));
   });
 })();
