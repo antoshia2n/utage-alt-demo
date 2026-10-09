@@ -314,7 +314,7 @@ export function makeBlueprint({ $, api, esc, getToken, fail, openView }) {
       const s = $("bp-assign-status"); if (s) s.textContent = "保存しました";
     });
     const open = $("bp-open");
-    if (open) open.addEventListener("click", () => openView(EDIT_VIEW[p.type]));
+    if (open) open.addEventListener("click", () => openView(EDIT_VIEW[p.type], p));
   }
 
   // 便 8d：片付け案（企画に入っていない部品を常設へ入れる案。当てると 1 件ずつ変えた記録に残り、元に戻せる）

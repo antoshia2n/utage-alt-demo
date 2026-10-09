@@ -434,14 +434,29 @@ function setupViewTabs() {
     }));
   });
 }
-const PANE_VIEWS = ["forms", "deliver", "connect", "products", "refer", "deals"];
+// 一覧のタブを外から選ぶ（ファネル構築の「自動の動き」など）
+function selectVtab(view, key) {
+  const b = document.querySelector(`#view-${view} [data-vtab="${key}"]`);
+  if (b && b.getAttribute("aria-selected") !== "true") b.click();
+}
+const PANE_VIEWS = ["forms", "deliver", "blueprint", "products", "refer", "deals"];
 const pill = (t, kind = "") => `<span class="pill ${kind}">${esc(t)}</span>`;
 
 // ---------- 添削ルーム ----------
 let currentRoom = null;
 // 便 8c：左のメニュー。押した項目の画面だけを出し、上のナビにその名前を出す
-const VIEWS = ["home", "blueprint", "people", "rooms", "deals", "ai", "products", "deliver", "settings", "refer", "guide", "forms", "connect"];
-function openView(name) {
+const VIEWS = ["home", "blueprint", "people", "rooms", "deals", "ai", "products", "deliver", "settings", "refer", "guide", "forms"];
+// 便 20：コネクタだけの画面は無くした。"connect" は行き先の名前としてだけ残す。
+// メールを送るコネクタ（ステップ配信）は メール、送らないもの（自動の動き）は ファネル構築 のタブで開く。part を渡すとその 1 件を開く
+function openView(name, part) {
+  if (name === "connect") {
+    const mail = !!part && isMailStep(part);
+    const home = mail ? "deliver" : "blueprint";
+    openView(home);
+    selectVtab(home, mail ? "step" : "auto");
+    if (part && part.id != null) openStepById(part.id);
+    return;
+  }
   const b = document.querySelector(`.side [data-view="${name}"]`);
   if (b) b.click();
 }
@@ -461,7 +476,7 @@ function setupViews() {
     if (box && box.classList.contains("closed")) box.querySelector(".grp").click();
     if (b.dataset.view === "home") loadHome();
     if (b.dataset.view === "blueprint") bp.load();
-    if (b.dataset.view === "deliver" || b.dataset.view === "connect") loadDeliver();
+    if (b.dataset.view === "deliver" || b.dataset.view === "blueprint") loadDeliver();
     if (b.dataset.view === "products") loadProducts();
     if (b.dataset.view === "deals") loadDeals();
     if (b.dataset.view === "ai") loadAi();
@@ -814,7 +829,7 @@ async function loadDeliver() {
     });
     $("bc-new").addEventListener("click", () => {
       $("bf").reset(); $("bf-status").textContent = ""; bfTabs("body");
-      $("bc-detail").innerHTML = ""; $("bf-wrap").classList.remove("hidden");
+      $("bc-detail").innerHTML = ""; $("bf-wrap").classList.remove("hidden"); $("sf-wrap").classList.add("hidden");
       showPane("deliver", "detail", "新しい一斉配信", "メールの一覧へ");
     });
     $("dv-run").addEventListener("click", async () => {
@@ -848,7 +863,8 @@ async function loadDeliver() {
       if (s) openConnector(s, true);
       $("sf-status").textContent = "保存しました";
     });
-    $("sf-new").addEventListener("click", () => openConnector(null));
+    $("sf-new").addEventListener("click", () => openConnector(null, false, "auto"));
+    $("ms-new").addEventListener("click", () => openConnector(null, false, "mail"));
     $("sf-trigger").addEventListener("change", showConnectorFields);
     $("sf-action").addEventListener("change", showConnectorFields);
   }
@@ -858,7 +874,10 @@ async function loadDeliver() {
   $("dv-warm").textContent = (r.warm ? `今日の上限 ${r.warm.cap} 通（送り始めて ${r.warm.day + 1} 日目・今日 ${r.warm.sent_today} 通）` : "デモの置き場") + (r.open_to_all ? "" : "・いまはテスト宛てにだけ届く");
   await loadCampaigns();
   const bcRows = campRows("deliver", "broadcast", r.broadcasts, (b) => b.id, () => loadDeliver());
-  const stRows = campRows("connect", "step", r.steps, (s) => s.id, () => loadDeliver());
+  // 便 20：メールを送るコネクタはステップ配信（メールの画面）、送らないものは自動の動き（ファネル構築の画面）
+  const mailSteps = r.steps.filter(isMailStep), autoSteps = r.steps.filter((s) => !isMailStep(s));
+  const msRows = campRows("mailsteps", "step", mailSteps, (s) => s.id, () => loadDeliver());
+  const stRows = campRows("connect", "step", autoSteps, (s) => s.id, () => loadDeliver());
   table("broadcasts", [
     { key: "subject", label: "件名", html: (b) => `<div class="c-name">${esc(b.subject)}</div><div class="sub">${esc(filterText(b.filter || {}))}</div>` },
     { key: "status", label: "状態", html: (b) => pill(BC_LABEL[b.status] || b.status, b.status === "draft" || b.status === "canceled" ? "gray" : b.status === "done" ? "" : "warn") },
@@ -875,18 +894,31 @@ async function loadDeliver() {
     showConnectorFields();
   }
   loadLabelNames();
+  table("mail-steps", [
+    { key: "subject", label: "件名", html: (s) => { const c = connectorText(s); return `<div class="c-name">${esc(s.subject || s.name)}</div><div class="sub">${esc(c.when)} → ${esc(c.who)}</div>`; } },
+    { key: "active", label: "状態", sortVal: (s) => (s.active ? 1 : 0), html: (s) => s.active ? pill("動いている") : pill("止めている", "gray") },
+    { key: "delay_hours", label: "何時間後", cls: "c-src", sortVal: (s) => s.delay_hours || 0, html: (s) => String(s.delay_hours || 0) },
+    { key: "sent", label: "送った", sortVal: (s) => s.sent || 0, html: (s) => `${s.sent || 0} <span class="sub">押した ${s.clicks || 0}</span>` },
+    campCol("step", (s) => s.id),
+  ], msRows, (s) => openConnector(s), mailSteps.length ? "この企画のステップ配信はありません" : "まだありません。「新しく作る」から作ります");
   table("steps", [
     { key: "name", label: "名前", html: (s) => { const c = connectorText(s); return `<div class="c-name">${esc(s.name)}</div><div class="sub">${esc(c.when)} → ${esc(c.who)} → ${esc(c.what)}</div>`; } },
     { key: "active", label: "状態", sortVal: (s) => (s.active ? 1 : 0), html: (s) => s.active ? pill("動いている") : pill("止めている", "gray") },
     campCol("step", (s) => s.id),
     { key: "result", label: "結果", nosort: true, cls: "c-reg", html: (s) => esc(stepResult(s)) },
-  ], stRows, (s) => openConnector(s), r.steps.length ? "この企画のコネクタはありません" : "まだありません。「新しく作る」から作ります");
+  ], stRows, (s) => openConnector(s), autoSteps.length ? "この企画の自動の動きはありません" : "まだありません。「新しく作る」から作ります");
+}
+const isMailStep = (s) => !s.action || s.action === "send_email";
+async function openStepById(id) {
+  await loadDeliver();
+  const s = stepsCache.find((x) => String(x.id) === String(id));
+  if (s) openConnector(s);
 }
 const stepResult = (s) => (s.action === "notify_admin" ? `知らせた ${s.notified || 0}` : s.action === "add_label" ? `付けた ${s.labeled || 0}` : `送った ${s.sent}・押した ${s.clicks} 回`) + (s.skipped ? `・条件外 ${s.skipped}` : "");
 
 function openBroadcast(b, msg) {
   const r = deliverData || {};
-  $("bf-wrap").classList.add("hidden");
+  $("bf-wrap").classList.add("hidden"); $("sf-wrap").classList.add("hidden");
   showPane("deliver", "detail", b.subject, "メールの一覧へ");
   $("bc-detail").innerHTML = headHtml({
     title: b.subject,
@@ -921,11 +953,23 @@ function openBroadcast(b, msg) {
   });
 }
 
-function openConnector(s, keepStatus) {
-  showPane("connect", "detail", s ? s.name : "新しいコネクタ", "コネクタの一覧へ");
+// 便 20：同じ欄（#sf-wrap）を、メールを送るものはメールの画面、送らないものはファネル構築の画面の詳細へ移して出す
+function openConnector(s, keepStatus, kind) {
+  const mail = s ? isMailStep(s) : kind === "mail";
+  const home = mail ? "deliver" : "blueprint";
+  const cur = document.querySelector('.side [data-view][aria-selected="true"]');
+  if (!cur || cur.dataset.view !== home) openView(home);
+  selectVtab(home, mail ? "step" : "auto");
+  $(home + "-detail").appendChild($("sf-wrap"));
+  $("sf-wrap").classList.remove("hidden");
+  if (mail) { $("bc-detail").innerHTML = ""; $("bf-wrap").classList.add("hidden"); }
+  const what = mail ? "ステップ配信" : "自動の動き";
+  showPane(home, "detail", s ? (mail ? s.subject || s.name : s.name) : "新しい" + what, what + "の一覧へ");
   if (!s) {
     $("sf").reset(); $("sf-id").value = "";
-    $("sf-head").innerHTML = headHtml({ title: "新しいコネクタ", sub: "① 〜したら → ② 誰に → ③ 〜する の順に決めて保存します。「動かす」に印を付けると、その時刻より後のきっかけから動きます" });
+    const ac = mail ? "send_email" : ([...$("sf-action").options].find((o) => o.value !== "send_email") || {}).value;
+    if (ac) $("sf-action").value = ac;
+    $("sf-head").innerHTML = headHtml({ title: "新しい" + what, sub: mail ? "① 何をした人に → ② 誰に → ③ 何時間後にこのメールを送る、の順に決めて保存します。「動かす」に印を付けると、その時刻より後のきっかけから動きます" : "① 〜したら → ② 誰に → ③ 〜する の順に決めて保存します。「動かす」に印を付けると、その時刻より後のきっかけから動きます" });
   } else {
     const ta = s.trigger_args || {}, sel = s.selector || {}, c = connectorText(s);
     $("sf-id").value = s.id; $("sf-name").value = s.name; $("sf-trigger").value = s.trigger; $("sf-product").value = s.product_id || "";
@@ -1305,7 +1349,7 @@ async function loadHome() {
       + row(t.approvals.count, "承認待ち", "ai", t.approvals.items.length ? `<span class="sub">${t.approvals.items.map((x) => esc(sayOf(x.tool))).join("・")}</span>` : "")
       + row(t.rooms.count, "未返信の添削", "rooms", t.rooms.items.length ? `<span class="sub">${t.rooms.items.map((x) => esc(x.name)).join("・")}</span>` : "")
       + row(t.consults.count, "今日の個別相談", "deals", t.consults.items.length ? `<span class="sub">${t.consults.items.map((x) => esc(fmtHm(x.slot)) + " " + esc(x.name)).join("・")}</span>` : "")
-      + row(t.notices.count, "今日の知らせ", "deliver", t.notices.items.length ? `<span class="sub">${t.notices.items.map((x) => esc(x.connector) + "：" + esc(x.name)).join("・")}</span>` : "")
+      + row(t.notices.count, "今日の知らせ", "connect", t.notices.items.length ? `<span class="sub">${t.notices.items.map((x) => esc(x.connector) + "：" + esc(x.name)).join("・")}</span>` : "")
       + `</ul>`;
     document.querySelectorAll("#hm-todo [data-open]").forEach((x) => x.addEventListener("click", () => openView(x.dataset.open)));
     // 便 8f-2：タスクマスターの今日の分（期限が今日・過ぎている未完了）。中身は shia2n-mcp から読む

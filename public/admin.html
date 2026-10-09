@@ -69,7 +69,7 @@
         <button class="it" type="button" data-view="refer" aria-selected="false">紹介</button>
       </div>
     </div>
-    <!-- 便 19：作る物（パーツ）と、それをつなぐ物（コネクタ・設計図）に分ける。パーツの一覧は企画で絞れる -->
+    <!-- 便 20：パーツ＝お客さんが見る・受け取る物。パーツの一覧は企画で絞れる -->
     <div class="grp-box" data-grp="parts">
       <button class="grp" type="button" aria-expanded="true">パーツ</button>
       <div class="grp-items">
@@ -80,12 +80,9 @@
         <button class="it" type="button" data-view="products" aria-selected="false">商品</button>
       </div>
     </div>
-    <div class="grp-box" data-grp="connect">
-      <button class="grp" type="button" aria-expanded="true">つなぐ</button>
-      <div class="grp-items">
-        <button class="it" type="button" data-view="connect" aria-selected="false">コネクタ</button>
-        <button class="it" type="button" data-view="blueprint" aria-selected="false">設計図</button>
-      </div>
+    <!-- 便 20：ファネル構築は 1 項目。企画ごとにパーツを並べてつなぐ場所（設計図と自動の動き） -->
+    <div class="grp-solo">
+      <button class="it" type="button" data-view="blueprint" aria-selected="false">ファネル構築</button>
     </div>
     <div class="grp-box" data-grp="settings">
       <button class="grp" type="button" aria-expanded="true">設定</button>
@@ -210,7 +207,11 @@
           </article>
         </section>
       </div>
+      <!-- 便 20：ファネル構築。企画ごとにパーツを並べてつなぐ場所。タブは「設計図」と「自動の動き（メールを送らないコネクタ）」 -->
       <div id="view-blueprint" style="display:none">
+       <div id="blueprint-list">
+        <div class="tabs view-tabs" data-vtabs><button type="button" data-vtab="bp" aria-selected="true">設計図</button><button type="button" data-vtab="auto" aria-selected="false">自動の動き</button></div>
+        <div data-vpane="bp">
         <div class="bp-bar">
           <div class="chips" id="bp-chips"></div>
           <div class="bp-actions">
@@ -235,6 +236,53 @@
           <div class="card bp-canvas" id="bp-canvas"><p class="note">読み込んでいます…</p></div>
           <div class="card bp-panel" id="bp-panel"><p class="note">箱を押すと、中の名前・外の名前・入口と出口・先週の数が出ます。持ち主の企画と役目もここで変えます。</p></div>
         </div>
+        </div>
+        <div class="card hidden" data-vpane="auto">
+          <div class="list-bar"><p class="note">〜したら → 誰に → 〜する（ラベルを付ける・Naoki に知らせる）。メールを送るものは「メール」のステップ配信にあります</p><div class="cust-actions"><span data-camp-slot="connect"></span><button class="btn small" type="button" id="sf-new">新しく作る</button></div></div>
+          <div id="steps" class="table-wrap"></div>
+        </div>
+       </div>
+       <div id="blueprint-detail" class="hidden">
+        <button type="button" class="back-link" data-back="blueprint">← 一覧へ</button>
+        <div id="sf-wrap">
+          <div id="sf-head"></div>
+        <form id="sf" class="stack">
+          <input type="hidden" id="sf-id">
+          <section class="card stack">
+            <div><label for="sf-name">名前（自分用）</label><input id="sf-name" type="text" maxlength="120"></div>
+            <label class="check"><input type="checkbox" id="sf-active"> <span>動かす（動かした時刻より後のきっかけだけが対象）</span></label>
+          </section>
+          <div class="tabs cust-tabs" role="tablist"><button type="button" role="tab" data-tab="tr" aria-selected="true">① 〜したら</button><button type="button" role="tab" data-tab="sel" aria-selected="false">② 誰に</button><button type="button" role="tab" data-tab="ac" aria-selected="false">③ 〜する</button></div>
+          <section class="card stack" data-pane="tr">
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <div><label for="sf-trigger">きっかけ</label><select id="sf-trigger" class="inline"></select></div>
+            <div data-tr="purchase"><label for="sf-product">商品の番号（空ならどれでも）</label><input id="sf-product" type="text"></div>
+            <div data-tr="label_added"><label for="sf-tlabel">付いたラベル</label><input id="sf-tlabel" type="text" list="label-names"></div>
+            <div data-tr="clicked"><label for="sf-turl">押したリンク（空ならどれでも）</label><input id="sf-turl" type="text" placeholder="https://"></div>
+            <div data-tr="form_submitted"><label for="sf-tform">答えたフォーム（空ならどれでも）</label><select id="sf-tform" class="inline"><option value="">どれでも</option></select></div>
+            <div><label for="sf-delay">何時間後</label><input id="sf-delay" type="text" inputmode="numeric" value="0" style="max-width:120px"></div>
+          </div>
+          </section>
+          <section class="card stack hidden" data-pane="sel">
+            <div class="note">空なら、きっかけに当たった人全員</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <div><label for="sf-labels">このラベルを全部持つ人</label><input id="sf-labels" type="text" list="label-names"></div>
+            <div><label for="sf-nolabels">このラベルを持たない人</label><input id="sf-nolabels" type="text" list="label-names"></div>
+          </div>
+          </section>
+          <section class="card stack hidden" data-pane="ac">
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <div><label for="sf-action">何をする</label><select id="sf-action" class="inline"></select></div>
+            <div data-ac="add_label"><label for="sf-alabel">付けるラベル</label><input id="sf-alabel" type="text" list="label-names"></div>
+          </div>
+          <div data-ac="send_email notify_admin"><label for="sf-subject">件名（Naoki への知らせは空でもよい）</label><input id="sf-subject" type="text" maxlength="200"></div>
+          <div data-ac="send_email notify_admin"><label for="sf-body">本文（{{name}}・{{email}}・{{product}}・{{label}} が置き換わる）</label><textarea id="sf-body" rows="5"></textarea></div>
+          </section>
+          <datalist id="label-names"></datalist>
+          <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="submit">保存</button><span class="note" id="sf-status"></span></div>
+        </form>
+        </div>
+      </div>
       </div>
       <div id="view-settings" style="display:none">
     <details class="setup card" id="setup"><summary>決済とメールの設定（UnivaPay の Webhook に入れる値）</summary><div id="setup-body" class="note">読み込んでいます…</div></details>
@@ -302,12 +350,19 @@
       </div>
       <div id="forms-detail" class="hidden"><button type="button" class="back-link" data-back="forms">← 一覧へ</button><div id="form-detail"></div></div>
     </div>
-    <!-- 便 18：メール（一斉配信）。一覧 → 1 件の詳細。作る欄は詳細の中でタブに分ける。便 19 でコネクタは「つなぐ」へ分けた -->
+    <!-- 便 18：メール。一覧 → 1 件の詳細。便 20 で一斉配信とステップ配信（メールを送るコネクタ）のタブに分けた -->
     <div id="view-deliver" style="display:none">
-      <div id="deliver-list" class="card">
-        <div class="list-bar"><p class="note" id="dv-warm"></p><div class="cust-actions"><span data-camp-slot="deliver"></span><button class="btn ghost small" type="button" id="dv-run">いま送る（毎時を待たずに 1 回）</button><button class="btn small" type="button" id="bc-new">新しく作る</button></div></div>
-        <p class="note hidden" id="dv-run-status"></p>
-        <div id="broadcasts" class="table-wrap"></div>
+      <div id="deliver-list">
+        <div class="tabs view-tabs" data-vtabs><button type="button" data-vtab="bc" aria-selected="true">一斉配信</button><button type="button" data-vtab="step" aria-selected="false">ステップ配信</button></div>
+        <div class="card" data-vpane="bc">
+          <div class="list-bar"><p class="note" id="dv-warm"></p><div class="cust-actions"><span data-camp-slot="deliver"></span><button class="btn ghost small" type="button" id="dv-run">いま送る（毎時を待たずに 1 回）</button><button class="btn small" type="button" id="bc-new">新しく作る</button></div></div>
+          <p class="note hidden" id="dv-run-status"></p>
+          <div id="broadcasts" class="table-wrap"></div>
+        </div>
+        <div class="card hidden" data-vpane="step">
+          <div class="list-bar"><p class="note">何かをした人へ、決めた時間のあとに順に送るメール。毎時動きます</p><div class="cust-actions"><span data-camp-slot="mailsteps"></span><button class="btn small" type="button" id="ms-new">新しく作る</button></div></div>
+          <div id="mail-steps" class="table-wrap"></div>
+        </div>
       </div>
       <div id="deliver-detail" class="hidden">
         <button type="button" class="back-link" data-back="deliver">← 一覧へ</button>
@@ -340,54 +395,6 @@
             <button class="btn small" type="submit">下書きに保存</button>
             <span class="note" id="bf-status"></span>
           </div>
-        </form>
-        </div>
-      </div>
-    </div>
-    <!-- 便 19：コネクタ（つなぐ）。〜したら → 誰に → 〜する。一覧 → 1 件の詳細 -->
-    <div id="view-connect" style="display:none">
-      <div id="connect-list" class="card">
-        <div class="list-bar"><p class="note">〜したら → 誰に → 〜する。ステップ配信もここに入り、毎時動きます</p><div class="cust-actions"><span data-camp-slot="connect"></span><button class="btn small" type="button" id="sf-new">新しく作る</button></div></div>
-        <div id="steps" class="table-wrap"></div>
-      </div>
-      <div id="connect-detail" class="hidden">
-        <button type="button" class="back-link" data-back="connect">← 一覧へ</button>
-        <div id="sf-wrap">
-          <div id="sf-head"></div>
-        <form id="sf" class="stack">
-          <input type="hidden" id="sf-id">
-          <section class="card stack">
-            <div><label for="sf-name">名前（自分用）</label><input id="sf-name" type="text" maxlength="120"></div>
-            <label class="check"><input type="checkbox" id="sf-active"> <span>動かす（動かした時刻より後のきっかけだけが対象）</span></label>
-          </section>
-          <div class="tabs cust-tabs" role="tablist"><button type="button" role="tab" data-tab="tr" aria-selected="true">① 〜したら</button><button type="button" role="tab" data-tab="sel" aria-selected="false">② 誰に</button><button type="button" role="tab" data-tab="ac" aria-selected="false">③ 〜する</button></div>
-          <section class="card stack" data-pane="tr">
-            <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <div><label for="sf-trigger">きっかけ</label><select id="sf-trigger" class="inline"></select></div>
-            <div data-tr="purchase"><label for="sf-product">商品の番号（空ならどれでも）</label><input id="sf-product" type="text"></div>
-            <div data-tr="label_added"><label for="sf-tlabel">付いたラベル</label><input id="sf-tlabel" type="text" list="label-names"></div>
-            <div data-tr="clicked"><label for="sf-turl">押したリンク（空ならどれでも）</label><input id="sf-turl" type="text" placeholder="https://"></div>
-            <div data-tr="form_submitted"><label for="sf-tform">答えたフォーム（空ならどれでも）</label><select id="sf-tform" class="inline"><option value="">どれでも</option></select></div>
-            <div><label for="sf-delay">何時間後</label><input id="sf-delay" type="text" inputmode="numeric" value="0" style="max-width:120px"></div>
-          </div>
-          </section>
-          <section class="card stack hidden" data-pane="sel">
-            <div class="note">空なら、きっかけに当たった人全員</div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <div><label for="sf-labels">このラベルを全部持つ人</label><input id="sf-labels" type="text" list="label-names"></div>
-            <div><label for="sf-nolabels">このラベルを持たない人</label><input id="sf-nolabels" type="text" list="label-names"></div>
-          </div>
-          </section>
-          <section class="card stack hidden" data-pane="ac">
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <div><label for="sf-action">何をする</label><select id="sf-action" class="inline"></select></div>
-            <div data-ac="add_label"><label for="sf-alabel">付けるラベル</label><input id="sf-alabel" type="text" list="label-names"></div>
-          </div>
-          <div data-ac="send_email notify_admin"><label for="sf-subject">件名（Naoki への知らせは空でもよい）</label><input id="sf-subject" type="text" maxlength="200"></div>
-          <div data-ac="send_email notify_admin"><label for="sf-body">本文（{{name}}・{{email}}・{{product}}・{{label}} が置き換わる）</label><textarea id="sf-body" rows="5"></textarea></div>
-          </section>
-          <datalist id="label-names"></datalist>
-          <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="submit">保存</button><span class="note" id="sf-status"></span></div>
         </form>
         </div>
       </div>

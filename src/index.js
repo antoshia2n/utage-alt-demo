@@ -45,7 +45,7 @@ import { makeRefer } from "./refer.js";
 import { makeBlocks } from "./blocks.js";
 import { LANES } from "./plan.js";
 
-const VERSION = "0.26.0-b19";
+const VERSION = "0.27.0-b20";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -1452,14 +1452,14 @@ const TOOLS = [
   },
   {
     name: "list_steps",
-    screen: "connect",
-    say: "コネクタ（〜したら → 誰に → 〜する）の一覧を見る",
+    screen: "blueprint",
+    say: "コネクタ（〜したら → 誰に → 〜する。ステップ配信も入る）の一覧を見る",
     description: "コネクタ（トリガー → セレクタ → アクション）の一覧。便 5 のステップ配信もここに入る。欄：trigger（きっかけ）・trigger_args・product_id・delay_hours（何時間後）・selector（誰に。preview_audience の filter と同じ形・空なら全員）・action（send_email／notify_admin／add_label）・action_args・subject・body・active。結果の数（sent・clicks・notified・labeled・skipped）と、選べるきっかけ triggers・アクション actions も返す。",
     inputSchema: { type: "object", properties: {} },
   },
   {
     name: "set_step",
-    screen: "connect",
+    screen: "blueprint",
     say: "コネクタを足す・直す・動かす・止める",
     description: "コネクタを足す・直す・動かす・止める。承認が要る道具。欄：id（直すとき）・name・trigger（registered 登録した／purchase 買った／clicked メールのリンクを押した／lesson_viewed 教材を見た／correction_submitted 添削を出した／login ログインした／label_added ラベルが付いた／form_submitted フォームに答えた）・trigger_args（label：label_added のときのラベル・url：clicked のときのリンク・form：form_submitted のときのフォームの slug）・product_id（purchase のとき。省くとどの購入でも）・delay_hours（何時間後）・selector（誰に。preview_audience の filter と同じ形）・action（send_email メールを送る／notify_admin Naoki に知らせる／add_label ラベルを付ける）・action_args（label：add_label のとき）・subject・body（{{name}}・{{email}}・{{product}}・{{label}}・{{url}} が置き換わる）・active。動かした時刻より後のきっかけだけが対象。セレクタに当たらない人は connector_skipped として残る。",
     inputSchema: {
