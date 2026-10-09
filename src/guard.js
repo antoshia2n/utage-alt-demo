@@ -27,6 +27,8 @@ export const DEFAULT_MODES = {
   archive_campaign: "approve",
   get_mail_settings: "auto", set_mail_settings: "approve",
   get_tidy_plan: "auto", apply_tidy: "approve", list_changes: "auto", undo_change: "approve",
+  // 便 8e：ラベルを読むのは自動、人の行を変える手のラベルは承認（B の原則 3 の最初の値に合わせる）
+  get_labels: "auto", add_label: "approve", remove_label: "approve",
 };
 
 // 権限を問わず通す道具（承認待ちを見るための道具が承認待ちになると回らないため）
