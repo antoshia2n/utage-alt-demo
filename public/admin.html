@@ -26,6 +26,11 @@
     <div><label for="email">メールアドレス</label><input id="email" type="email" autocomplete="email"></div>
     <button class="btn block" id="send">ログイン用のリンクを送る</button>
     <div id="sent" class="msg ok hidden"></div>
+    <!-- 便 8f-3：ホーム画面に足した Lab OS ではメールのリンクが別のブラウザで開くので、メールの確認コードでも入れる -->
+    <div id="code-box" class="stack hidden">
+      <div><label for="otp">メールの確認コード（ホーム画面の Lab OS から入るとき）</label><input id="otp" inputmode="numeric" autocomplete="one-time-code" maxlength="10"></div>
+      <button class="btn block ghost" id="otp-go">確認コードで入る</button>
+    </div>
   </section>
 
   <section id="step-enroll" class="card stack hidden" style="max-width:480px">
