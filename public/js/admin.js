@@ -1798,6 +1798,7 @@ function productDetail(id, msg) {
       <div><label for="pf-rate">紹介の報酬（%・空なら払わない）</label><input id="pf-rate" type="text" inputmode="numeric" value="${p.affiliate_rate ?? ""}"></div>
       <div><label for="pf-grants">権利の印（カンマ区切り。例 shiarabo_basic）</label><input id="pf-grants" type="text" value="${esc((p.grants || []).join(","))}"></div>
       <div><label for="pf-desc">説明（生徒に見える）</label><textarea id="pf-desc" rows="2">${esc(p.description || "")}</textarea></div>
+      <div><label for="pf-thanks">決済のあとに移るページ（公開中のときだけ移る）</label><select id="pf-thanks" class="inline"><option value="">（移さない・登録の画面に受付の文を出す）</option>${p.thanks_page_slug ? `<option value="${esc(p.thanks_page_slug)}" selected>${esc(p.thanks_page_slug)}</option>` : ""}</select></div>
       <label class="check"><input type="checkbox" id="pf-multi" ${p.deny_multiple ? "checked" : ""}> <span>重ねて買えない</span></label>
       <label class="check"><input type="checkbox" id="pf-active" ${p.active ? "checked" : ""} ${ro}> <span>売る</span></label>
       <label class="check"><input type="checkbox" id="pf-public" ${p.public ? "checked" : ""} ${ro}> <span>サイトの一覧に出す（出さなくても、申し込みのリンクを渡した人は買える）</span></label>
@@ -1809,6 +1810,12 @@ function productDetail(id, msg) {
     </section>`;
   wireTabs($("product-detail"), "edit");
   wireCampPicker($("product-detail"), () => loadProducts());
+  // 便 12b：ページの一覧を読んでから、移る先の選び肢を埋める
+  loadPagesCache().then(() => {
+    const sel = $("pf-thanks");
+    if (!sel) return;
+    sel.innerHTML = '<option value="">（移さない・登録の画面に受付の文を出す）</option>' + pagesCache.map((g) => `<option value="${esc(g.slug)}" ${g.slug === p.thanks_page_slug ? "selected" : ""}>${esc(g.title)}${g.status === "published" ? "" : "（公開していない）"}</option>`).join("");
+  }).catch(() => {});
   $("pf-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText(link); $("pf-copy").textContent = "写しました"; } catch (_) { $("pf-copy").textContent = "写せませんでした"; } });
   $("pf").addEventListener("submit", async (ev) => {
     ev.preventDefault();
@@ -1823,13 +1830,14 @@ function productDetail(id, msg) {
     if (num($("pf-rate").value) !== (p.affiliate_rate ?? null)) body.affiliate_rate = num($("pf-rate").value);
     if ($("pf-period")) body.period = $("pf-period").value;
     if ($("pf-days")) body.grant_days = num($("pf-days").value);
+    if (($("pf-thanks").value || null) !== (p.thanks_page_slug || null)) body.thanks_page_slug = $("pf-thanks").value || null;
     $("pf-status").textContent = "保存しています…";
     const r = await api("/api/admin/products", { method: "POST", token, body });
     if (!r.ok) { $("pf-status").textContent = "保存できませんでした（" + (r.error || r.status) + "）"; return; }
     await loadProducts(p.id, r.changed && Object.keys(r.changed).length ? "保存しました（変えたところ：" + Object.keys(r.changed).map((k) => PF_LABEL[k] || k).join("・") + "）" : "変わったところはありません");
   });
 }
-const PF_LABEL = { name: "名前", amount: "金額", period: "周期", grant_days: "権利の日数", sales_limit: "販売数の上限", affiliate_rate: "紹介の報酬", grants: "権利の印", description: "説明", deny_multiple: "重ねて買えない", active: "売る", public: "サイトに出す" };
+const PF_LABEL = { name: "名前", amount: "金額", period: "周期", grant_days: "権利の日数", sales_limit: "販売数の上限", affiliate_rate: "紹介の報酬", grants: "権利の印", description: "説明", deny_multiple: "重ねて買えない", active: "売る", public: "サイトに出す", thanks_page_slug: "決済のあとに移るページ" };
 
 // 便 7a：オプチャの招待リンク。表 b_settings の 1 行を読み、差し替える（AI の set_community_link と同じ処理）
 function communityStatus(r) {

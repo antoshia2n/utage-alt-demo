@@ -134,3 +134,10 @@ UTAGE の代わりになるサイト兼アプリ（PWA）のデモ。架空の�
 - ファネル構築の段を、上が入口・下へ進む並びにした。段の名前は 集客・リストイン・アプローチ・個別相談・オファー・受講・紹介
 - AI の道具：`list_booking_types`・`get_booking_type`・`get_booking_slots`（自動）、`set_booking_type`（承認）
 - 試験：`node --test tests/booking.test.mjs`
+
+## B の便 12b で足したもの（売るページ）
+
+- 商品に「決済のあとに移るページ」（`b_products.thanks_page_slug`）。`supabase/b12b_sale.sql` を SQL Editor で 1 回流す
+- 決済が通ると、登録の画面からそのページへ移る（公開中のときだけ）。商品の画面と AI の道具 `set_product` で選ぶ
+- 売るページ（目的 `sale`）と、商品から移る先のページは、ファネル構築のオファーの段に並ぶ。商品 → 移る先のページに「サンクス」の線
+- 試験：`node --test tests/sale.test.mjs`
