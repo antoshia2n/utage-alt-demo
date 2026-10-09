@@ -73,7 +73,7 @@
     <div class="grp-box" data-grp="parts">
       <button class="grp" type="button" aria-expanded="true">パーツ</button>
       <div class="grp-items">
-        <button class="it" type="button" disabled title="便 12a で作ります">ページ<span class="soon">準備中</span></button>
+        <button class="it" type="button" data-view="pages" aria-selected="false">ページ</button>
         <button class="it" type="button" data-view="forms" aria-selected="false">フォーム</button>
         <button class="it" type="button" data-view="deliver" aria-selected="false">メール</button>
         <button class="it" type="button" data-view="deals" aria-selected="false">セミナーと予約</button>
@@ -260,6 +260,8 @@
             <div data-tr="label_added"><label for="sf-tlabel">付いたラベル</label><input id="sf-tlabel" type="text" list="label-names"></div>
             <div data-tr="clicked"><label for="sf-turl">押したリンク（空ならどれでも）</label><input id="sf-turl" type="text" placeholder="https://"></div>
             <div data-tr="form_submitted"><label for="sf-tform">答えたフォーム（空ならどれでも）</label><select id="sf-tform" class="inline"><option value="">どれでも</option></select></div>
+            <div data-tr="page_viewed page_clicked"><label for="sf-tpage">ページ（空ならどれでも）</label><select id="sf-tpage" class="inline"><option value="">どれでも</option></select></div>
+            <div data-tr="page_clicked"><label for="sf-tbutton">ボタンの名前（空ならどれでも）</label><input id="sf-tbutton" type="text" maxlength="49" autocapitalize="off" placeholder="例 cta-1"></div>
             <div><label for="sf-delay">何時間後</label><input id="sf-delay" type="text" inputmode="numeric" value="0" style="max-width:120px"></div>
           </div>
           </section>
@@ -349,6 +351,32 @@
         </div>
       </div>
       <div id="forms-detail" class="hidden"><button type="button" class="back-link" data-back="forms">← 一覧へ</button><div id="form-detail"></div></div>
+    </div>
+    <!-- 便 12a：ページ。中身は Claude が書く（ここで依頼文を出して、Claude に貼る）。一覧 → 1 枚の詳細。経路のタブで ?r= の住所を作って数を見る -->
+    <div id="view-pages" style="display:none">
+      <div id="pages-list">
+        <div class="tabs view-tabs" data-vtabs><button type="button" data-vtab="pages" aria-selected="true">ページ</button><button type="button" data-vtab="routes" aria-selected="false">経路</button></div>
+        <div class="card" data-vpane="pages">
+          <div class="list-bar"><p class="note" id="pg-count"></p><div class="cust-actions"><span data-camp-slot="pages"></span><button class="btn small" type="button" id="pg-new">新しく作る</button></div></div>
+          <div id="pages-table" class="table-wrap"></div>
+          <p class="note" style="margin:12px 0 0">ページの中身は Claude が書きます。「新しく作る」で依頼文を出し、Claude（Chrome のサイドパネル）に貼ると、下書きがこの一覧に届きます</p>
+        </div>
+        <div class="card hidden" data-vpane="routes">
+          <div class="list-bar"><p class="note" id="rt-count"></p></div>
+          <form id="rt-make" class="stack" style="margin:0 0 16px">
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+              <div style="flex:1 1 200px"><label for="rt-page">ページ</label><select id="rt-page" class="inline" style="width:100%"></select></div>
+              <div style="flex:1 1 200px"><label for="rt-name">経路の名前</label><input id="rt-name" type="text" maxlength="40" placeholder="例 x-固定ポスト"></div>
+              <button class="btn small" type="submit">住所を作る</button>
+            </div>
+            <div id="rt-out" class="hidden" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><code id="rt-url" style="word-break:break-all"></code><button class="btn ghost small" type="button" id="rt-copy">写す</button></div>
+            <p class="note" id="rt-msg" style="margin:0"></p>
+          </form>
+          <div id="routes-table" class="table-wrap"></div>
+          <p class="note" style="margin:12px 0 0">経路は、その人が初めて登録したときのものに決まります。顧客には「経路:名前」のラベルが付き、一斉配信の宛先やコネクタの「誰に」で絞れます</p>
+        </div>
+      </div>
+      <div id="pages-detail" class="hidden"><button type="button" class="back-link" data-back="pages">← 一覧へ</button><div id="page-detail"></div></div>
     </div>
     <!-- 便 18：メール。一覧 → 1 件の詳細。便 20 で一斉配信とステップ配信（メールを送るコネクタ）のタブに分けた -->
     <div id="view-deliver" style="display:none">

@@ -41,6 +41,7 @@
   const qs = new URLSearchParams(location.search);
   const slug = (qs.get("f") || "").toLowerCase();
   const refCode = (qs.get("ref") || "").slice(0, 20);
+  const routeName = (qs.get("r") || "").slice(0, 40); // 便 12a：経路（?r=名前）
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const show = (text, ok) => { const m = $("msg"); m.textContent = text; m.className = "msg " + (ok ? "ok" : "err"); };
   const WHY = { required: "答えてください", not_number: "数で入れてください", not_date: "日付を選んでください", not_option: "選択肢から選んでください", too_long: "長すぎます" };
@@ -77,7 +78,7 @@
     for (const it of form.items) answers[it.key] = $("a-" + it.key).value;
     $("go").disabled = true;
     show("送っています…", true);
-    const r = await fetch("/api/forms/" + encodeURIComponent(slug), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, name: $("name").value.trim(), consent: true, answers, source: currentSource(), ref: refCode }) }).then((x) => x.json()).catch(() => ({ ok: false, error: "network" }));
+    const r = await fetch("/api/forms/" + encodeURIComponent(slug), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, name: $("name").value.trim(), consent: true, answers, source: currentSource(), ref: refCode, route: routeName }) }).then((x) => x.json()).catch(() => ({ ok: false, error: "network" }));
     $("go").disabled = false;
     if (r.ok) {
       $("f").classList.add("hidden");

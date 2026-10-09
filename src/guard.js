@@ -41,6 +41,9 @@ export const DEFAULT_MODES = {
   send_chat: "approve", notify_naoki: "auto", get_push_status: "auto",
   // 便 8g-2：紹介の集計を読むのは自動、払った記録はお金の記録なので承認
   list_referrals: "auto", mark_referral_paid: "approve",
+  // 便 12a：ページ。読む・依頼を読む・下書きを置く・経路を数えるのは自動（外の人には何も見えない）。公開と止めるのは承認
+  list_pages: "auto", get_page: "auto", list_page_requests: "auto", get_page_request: "auto", save_page_draft: "auto", list_routes: "auto",
+  publish_page: "approve",
 };
 
 // 権限を問わず通す道具（承認待ちを見るための道具が承認待ちになると回らないため）
