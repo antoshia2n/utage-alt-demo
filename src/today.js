@@ -164,6 +164,8 @@ export function eventsOn(events, day) {
 // 段階（レーン）の振り分け。上から順に見て、最初に当たったもの
 export function stageOf({ labels = [], deal = "none", logins = 0 }) {
   const has = (x) => labels.includes(x);
+  // 便 8g-2：誰かを紹介した人は、いちばん先の段階「紹介」
+  if (has("紹介した")) return "refer";
   if (has("会員") || has("教材を見た")) return "learn";
   if (has("購入者") || deal === "won") return "buy";
   if (deal === "booked" || deal === "done" || has("個別相談を予約した")) return "consult";
@@ -268,7 +270,7 @@ export function makeToday(h) {
     }
     for (const l of lanes) l.people.sort((a, b) => String(b.last_event_at || "").localeCompare(String(a.last_event_at || "")));
     return { ok: true, total: people.length, lanes: lanes.map((l) => ({ id: l.id, label: l.label, count: l.people.length, people: l.people.slice(0, 50) })),
-      note: "出会う（まだ登録していない人）と紹介は記録が無いので 0。段階は上から 受講（会員か教材を見た）→ 購入 → 相談 → 温める（リンクを押した・セミナー・ログイン）→ 登録" };
+      note: "出会う（まだ登録していない人）は記録が無いので 0。段階は上から 紹介（その人のリンクから誰かが登録した）→ 受講（会員か教材を見た）→ 購入 → 相談 → 温める（リンクを押した・セミナー・ログイン）→ 登録" };
   }
 
   async function today(env, now = Date.now()) {

@@ -15,7 +15,7 @@ const SUB_TYPES = ["subscription_started", "subscription_payment", "subscription
 const ID_RE = /^[a-z0-9-]{2,40}$/;
 const UUID_RE = /^[0-9a-f-]{36}$/i;
 const NL = String.fromCharCode(10);
-const EDITABLE = ["name", "amount", "period", "grant_days", "grants", "deny_multiple", "sales_limit", "list_price_of", "description", "active", "public", "sort", "note"];
+const EDITABLE = ["name", "amount", "period", "grant_days", "grants", "deny_multiple", "sales_limit", "list_price_of", "description", "active", "public", "sort", "note", "affiliate_rate"];
 
 export function makeSell(h) {
   const { db, addEvent, bin3 } = h;
@@ -115,6 +115,11 @@ export function makeSell(h) {
     if ("sort" in p) { p.sort = Number(p.sort); if (!Number.isInteger(p.sort)) return "bad_sort"; }
     if ("description" in p) p.description = String(p.description || "").slice(0, 2000);
     if ("note" in p) p.note = String(p.note || "").slice(0, 500);
+    // 便 8g-2：紹介の報酬の率（%）。空か null なら払わない
+    if ("affiliate_rate" in p) {
+      if (p.affiliate_rate === "" || p.affiliate_rate === null) p.affiliate_rate = null;
+      else { p.affiliate_rate = Number(p.affiliate_rate); if (!Number.isInteger(p.affiliate_rate) || p.affiliate_rate < 0 || p.affiliate_rate > 100) return "bad_affiliate_rate"; }
+    }
     return null;
   }
 
@@ -272,6 +277,11 @@ export function makeSell(h) {
       }, via === "webhook" ? "webhook" : "site");
     }
     await syncGrants(env, customer.id);
+    // 便 8g-2：紹介された人の購入なら、紹介者に報酬を積む（失敗しても買った記録は取り消さない）
+    if (api.onPurchased) {
+      try { await api.onPurchased(env, customer.id, ev, p, via === "webhook" ? "webhook" : "site"); }
+      catch (e) { if (h.logInbound) await h.logInbound(env, "referral", { buyer_id: customer.id, product_id: p.id }, { ok: false, error: String(e && e.message || e).slice(0, 160) }, 500); }
+    }
     return ev;
   }
 
@@ -358,5 +368,6 @@ export function makeSell(h) {
     return { ok: true, recorded: true, type: "purchase_completed" };
   }
 
-  return { allProducts, product, listForSite, listProducts, setProduct, entitlement, entitlementMap, syncGrants, prepare, confirm, onCharge, priceText };
+  const api = { allProducts, product, listForSite, listProducts, setProduct, entitlement, entitlementMap, syncGrants, prepare, confirm, onCharge, priceText, onPurchased: null };
+  return api;
 }

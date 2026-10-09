@@ -69,6 +69,9 @@ export const EVENT_LABEL = {
   room_chat: "メッセージ",
   push_subscribed: "スマホの通知を受け取り始めた",
   push_unsubscribed: "スマホの通知をやめた",
+  referred: "紹介のリンクから登録",
+  referral_reward: "紹介した人が買った（報酬）",
+  referral_paid: "紹介の報酬を払った",
 };
 
 // ログインが要る画像を読み、画面に出せる住所に変える（img の src に鍵を付けられないため）

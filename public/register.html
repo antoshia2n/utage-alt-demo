@@ -52,6 +52,8 @@
   const payShow = (text, ok) => { const m = $("paymsg"); m.textContent = text; m.className = "msg " + (ok ? "ok" : "err"); };
   // B の便 4：?product=<商品の id> で来たら、その商品を申し込む（紹介用の価格のリンクもこれ）。無ければデモの置き場の見本のプラン（本番の置き場には無いので出さない）
   const productId = new URLSearchParams(location.search).get("product") || "";
+  // 便 8g-2：紹介のリンク（?ref=番号）。登録のときに一緒に送る
+  const refCode = (new URLSearchParams(location.search).get("ref") || "").slice(0, 20);
   async function openJoin(email) {
     const cfg = await fetch("/api/config").then((r) => r.json()).catch(() => ({}));
     if (!cfg.univapayAppId) return;
@@ -87,7 +89,7 @@
     if (!$("consent").checked) return show("同意のチェックが必要です。", false);
     $("go").disabled = true;
     try {
-      const r = await api("/api/register", { method: "POST", body: { name, email, source: src, consent: true } });
+      const r = await api("/api/register", { method: "POST", body: { name, email, source: src, consent: true, ...(refCode ? { ref: refCode } : {}) } });
       if (!r.ok) throw new Error(r.error === "bad_email" ? "メールアドレスの形が正しくありません。" : "登録できませんでした（" + (r.error || r.status) + "）");
       const sb = await getClient();
       const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.origin + "/app", shouldCreateUser: true, data: { name } } });

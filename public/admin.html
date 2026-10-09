@@ -60,7 +60,7 @@
     <div class="grp">集める</div>
     <button class="it" type="button" disabled title="8d で作ります">LP<span class="soon">準備中</span></button>
     <button class="it" type="button" data-view="deals" aria-selected="false">セミナーと予約</button>
-    <button class="it" type="button" disabled title="8g で作ります">紹介<span class="soon">準備中</span></button>
+    <button class="it" type="button" data-view="refer" aria-selected="false">紹介</button>
     <div class="grp">育てる</div>
     <button class="it" type="button" data-view="deliver" aria-selected="false">配信</button>
     <div class="grp">売る・届ける</div>
@@ -240,6 +240,14 @@
         <ul class="people" id="products"></ul>
       </div>
       <div class="card" id="product-detail"><p class="note">左から商品を選ぶと、値段や「売る・サイトに出す」を変えられます。UTAGE の商品の価格の行から写したものです。</p></div>
+    </div>
+    <!-- 便 8g-2：紹介。紹介者ごとの集計と、払ったことの記録（払う作業は B の外） -->
+    <div class="admin-layout" id="view-refer" style="display:none">
+      <div class="card">
+        <p class="note" id="rf-count" style="margin:0"></p>
+        <ul class="people" id="referrers"></ul>
+      </div>
+      <div class="card" id="referrer-detail"><p class="note">左から紹介した人を選ぶと、紹介で来た人と報酬、払った記録が見られます。報酬の率は「商品」の各商品で決めます（空なら払わない）。紹介のリンクは /register?ref=番号 の形で、生徒は自分の画面の「お知らせ」から写せます。</p></div>
     </div>
     <div class="admin-layout" id="view-ai" style="display:none">
       <div class="card">

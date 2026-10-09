@@ -69,6 +69,15 @@ async function main() {
   $("tab-news").innerHTML = r.announcements.map((a) => `
     <div class="card"><time class="note">${fmtTime(a.published_at)}</time><h3>${esc(a.title)}</h3><p class="note" style="margin:0">${esc(a.body)}</p></div>`).join("")
     || '<p class="note">お知らせはまだありません。</p>';
+  // 便 8g-2：自分の紹介のリンク（このリンクから登録した人の数だけを出す）
+  if (r.referral && r.referral.link) {
+    const rf = r.referral;
+    $("tab-news").insertAdjacentHTML("afterbegin", `<div class="card" id="referral"><h3>紹介のリンク</h3>
+      <p class="note">このリンクから登録した人は、あなたの紹介として記録されます。</p>
+      <p class="note" style="word-break:break-all;margin:0"><code>${esc(rf.link)}</code></p>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:8px"><button class="btn ghost small" id="rf-copy" type="button">リンクを写す</button><span class="note">紹介で登録 ${rf.referred} 人${rf.reward_total ? "・報酬 " + Number(rf.reward_total).toLocaleString() + " 円（払い済み " + Number(rf.paid_total).toLocaleString() + " 円）" : ""}</span></div></div>`);
+    $("rf-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText(rf.link); $("rf-copy").textContent = "写しました"; } catch (_) { $("rf-copy").textContent = "写せませんでした"; } });
+  }
 
   const sections = ["lessons", "lesson", "news", "room", "review", "booking"];
   const showTab = (name) => {

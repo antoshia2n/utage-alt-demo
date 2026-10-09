@@ -220,7 +220,7 @@ async function detail(id) {
 // ---------- 添削ルーム ----------
 let currentRoom = null;
 // 便 8c：左のメニュー。押した項目の画面だけを出し、上のナビにその名前を出す
-const VIEWS = ["home", "blueprint", "people", "rooms", "deals", "ai", "products", "deliver", "settings"];
+const VIEWS = ["home", "blueprint", "people", "rooms", "deals", "ai", "products", "deliver", "settings", "refer"];
 function openView(name) {
   const b = document.querySelector(`.side [data-view="${name}"]`);
   if (b) b.click();
@@ -238,6 +238,7 @@ function setupViews() {
     if (b.dataset.view === "products") loadProducts();
     if (b.dataset.view === "deals") loadDeals();
     if (b.dataset.view === "ai") loadAi();
+    if (b.dataset.view === "refer") loadReferrals();
   }));
   $("only-unreplied").addEventListener("change", loadRooms);
 }
@@ -601,6 +602,48 @@ async function loadLabelNames() {
   $("label-names").innerHTML = r.labels.map((x) => `<option value="${esc(x.label)}">${x.people} 人${x.auto ? "" : "・手"}</option>`).join("");
 }
 
+// ---------- 紹介（便 8g-2） ----------
+let referCache = [];
+const yen = (n) => Number(n || 0).toLocaleString() + " 円";
+async function loadReferrals(focusId) {
+  const r = await api("/api/admin/referrals", { token });
+  if (!r.ok) { $("rf-count").textContent = "読めませんでした（" + (r.error || r.status) + "）"; return; }
+  referCache = r.referrers;
+  $("rf-count").textContent = r.count ? `紹介した人 ${r.count} 人・まだ払っていない報酬 ${yen(r.unpaid_total)}（紹介から ${r.days} 日以内の購入だけ）` : "紹介のリンクから登録した人はまだいません";
+  $("referrers").innerHTML = r.referrers.map((x) => `
+    <li data-rid="${esc(x.referrer_id)}"><div style="min-width:0"><div>${esc(x.name || x.email)}</div><div class="sub">紹介で登録 ${x.referred} 人・購入 ${x.purchases} 件</div></div>
+      <div style="flex-shrink:0">${x.unpaid ? `<span class="pill warn">未払い ${esc(yen(x.unpaid))}</span>` : '<span class="pill gray">未払い 0</span>'}</div></li>`).join("");
+  document.querySelectorAll("#referrers li").forEach((li) => li.addEventListener("click", () => referrerDetail(li.dataset.rid)));
+  if (focusId) referrerDetail(focusId);
+}
+function referrerDetail(id) {
+  const x = referCache.find((y) => y.referrer_id === id);
+  if (!x) return;
+  document.querySelectorAll("#referrers li").forEach((li) => li.toggleAttribute("aria-current", li.dataset.rid === id));
+  $("referrer-detail").innerHTML = `
+    <h2 style="margin-bottom:2px">${esc(x.name || x.email)}</h2>
+    <div class="note">${esc(x.email)}・紹介の番号 ${esc(x.code)}</div>
+    <p class="note" style="word-break:break-all"><code>${esc(x.link)}</code></p>
+    <p>報酬 ${esc(yen(x.reward_total))}・払った ${esc(yen(x.paid_total))}・<b>まだ払っていない ${esc(yen(x.unpaid))}</b></p>
+    <h4>紹介で来た人</h4>
+    <ul class="people">${x.people.map((q) => `<li><div style="min-width:0"><div>${esc(q.name || q.email || q.id)}</div><div class="sub">${esc(fmtTime(q.at))}・購入 ${q.bought} 件${q.reward ? "・報酬 " + esc(yen(q.reward)) : ""}</div></div></li>`).join("") || '<li class="note">（まだいない）</li>'}</ul>
+    ${x.unpaid ? `<form id="rf-pay" class="stack" style="margin-top:12px">
+      <div><label for="rf-amount">払った金額（円）</label><input id="rf-amount" type="text" inputmode="numeric" value="${x.unpaid}"></div>
+      <div><label for="rf-note">メモ（任意・例 10/31 振込）</label><input id="rf-note" type="text" maxlength="200"></div>
+      <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="submit">払ったことを記録する</button><span class="note" id="rf-status"></span></div>
+      <p class="note" style="margin:0">払う作業（振込など）は B の外で行い、ここには記録だけを残します。</p>
+    </form>` : ""}`;
+  if (!x.unpaid) return;
+  $("rf-pay").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const amount = Number(String($("rf-amount").value).replace(/[^0-9]/g, ""));
+    $("rf-status").textContent = "記録しています…";
+    const r = await api("/api/admin/referrals/paid", { method: "POST", token, body: { referrer_id: x.referrer_id, amount, note: $("rf-note").value } });
+    if (!r.ok) { $("rf-status").textContent = r.error === "over_unpaid" ? "まだ払っていない分（" + yen(r.unpaid) + "）を超えています" : "記録できませんでした（" + (r.error || r.status) + "）"; return; }
+    await loadReferrals(x.referrer_id);
+  });
+}
+
 // ---------- 商品（B の便 4） ----------
 const KIND_LABEL = { one_time: "単発", subscription: "定期", installment: "分割" };
 let productsCache = [];
@@ -638,6 +681,7 @@ function productDetail(id) {
       ${p.kind === "subscription" ? `<div><label for="pf-period">周期</label><select id="pf-period" class="inline"><option value="monthly" ${p.period === "monthly" ? "selected" : ""}>毎月</option><option value="annually" ${p.period === "annually" ? "selected" : ""}>毎年</option></select></div>` : ""}
       ${p.kind === "one_time" ? `<div><label for="pf-days">権利の日数（空なら期限なし）</label><input id="pf-days" type="text" inputmode="numeric" value="${p.grant_days ?? ""}"></div>` : ""}
       <div><label for="pf-limit">販売数の上限（空なら無し）</label><input id="pf-limit" type="text" inputmode="numeric" value="${p.sales_limit ?? ""}"></div>
+      <div><label for="pf-rate">紹介の報酬（%・空なら払わない）</label><input id="pf-rate" type="text" inputmode="numeric" value="${p.affiliate_rate ?? ""}"></div>
       <div><label for="pf-grants">権利の印（カンマ区切り。例 shiarabo_basic）</label><input id="pf-grants" type="text" value="${esc((p.grants || []).join(","))}"></div>
       <div><label for="pf-desc">説明（生徒に見える）</label><textarea id="pf-desc" rows="2">${esc(p.description || "")}</textarea></div>
       <label class="check"><input type="checkbox" id="pf-multi" ${p.deny_multiple ? "checked" : ""}> <span>重ねて買えない</span></label>
@@ -658,6 +702,8 @@ function productDetail(id) {
       grants: $("pf-grants").value.split(",").map((x) => x.trim()).filter(Boolean),
       deny_multiple: $("pf-multi").checked, active: $("pf-active").checked, public: $("pf-public").checked,
     };
+    // 便 8g-2：紹介の報酬の率は、変えたときだけ送る
+    if (num($("pf-rate").value) !== (p.affiliate_rate ?? null)) body.affiliate_rate = num($("pf-rate").value);
     if ($("pf-period")) body.period = $("pf-period").value;
     if ($("pf-days")) body.grant_days = num($("pf-days").value);
     $("pf-status").textContent = "変えています…";
@@ -732,7 +778,7 @@ async function loadHome() {
   }
   if (!b.ok) { $("hm-board").innerHTML = `<p class="note">読めませんでした（${esc(b.error || b.status)}）</p>`; return; }
   $("hm-total").textContent = `${b.total} 人`;
-  $("hm-board").innerHTML = b.lanes.map((l) => `<div class="stage-col"><h4>${esc(l.label)} <span class="n">${l.count}</span></h4>${l.people.map((p) => `<button type="button" class="stage-card" data-person="${p.id}"><span class="nm">${esc(p.name || p.email)}</span>${p.name ? `<span class="sub">${esc(p.email)}</span>` : ""}</button>`).join("") || `<p class="note">${l.id === "meet" ? "まだ登録していない人は記録が無い" : l.id === "refer" ? "紹介は 8g で足す" : "0 人"}</p>`}</div>`).join("");
+  $("hm-board").innerHTML = b.lanes.map((l) => `<div class="stage-col"><h4>${esc(l.label)} <span class="n">${l.count}</span></h4>${l.people.map((p) => `<button type="button" class="stage-card" data-person="${p.id}"><span class="nm">${esc(p.name || p.email)}</span>${p.name ? `<span class="sub">${esc(p.email)}</span>` : ""}</button>`).join("") || `<p class="note">${l.id === "meet" ? "まだ登録していない人は記録が無い" : l.id === "refer" ? "紹介した人はまだいない" : "0 人"}</p>`}</div>`).join("");
   document.querySelectorAll("#hm-board [data-person]").forEach((x) => x.addEventListener("click", () => { openView("people"); detail(x.dataset.person); }));
 }
 async function loadCalendar() {
@@ -902,6 +948,9 @@ function detailText(e) {
   if (e.type === "correction_returned") return `<span class="note">（${esc(String(p.comment || p.corrected || "").slice(0, 30))}）</span>`;
   if (e.type === "room_chat") return `<span class="note">（${p.from === "student" ? "生徒から" : "シアニンから"}・${esc(String(p.text || "").slice(0, 30))}${(p.images || []).length ? " 画像" + p.images.length : ""}）</span>`;
   if (e.type === "push_subscribed" || e.type === "push_unsubscribed") return `<span class="note">（${esc(p.device || "")}${p.reason ? "・" + esc(p.reason) : ""}）</span>`;
+  if (e.type === "referred") return `<span class="note">（紹介の番号 ${esc(p.code || "")}）</span>`;
+  if (e.type === "referral_reward") return `<span class="note">（${esc(p.product_name || p.product_id || "")}・${Number(p.amount || 0).toLocaleString()} 円の ${esc(p.rate)}%＝${Number(p.reward || 0).toLocaleString()} 円）</span>`;
+  if (e.type === "referral_paid") return `<span class="note">（${Number(p.amount || 0).toLocaleString()} 円${p.note ? "・" + esc(p.note) : ""}）</span>`;
   if (e.type === "room_read") return `<span class="note">（${p.by === "admin" ? "シアニン" : "生徒"}）</span>`;
   if (e.type === "label_added" || e.type === "label_removed") return `<span class="note">（${esc(p.label || "")}${p.step_id != null ? "・コネクタ " + esc(p.step_id) : ""}）</span>`;
   if (e.type === "admin_notified" || e.type === "admin_notify_failed" || e.type === "connector_skipped") return `<span class="note">（コネクタ ${esc(p.step_id)}${p.reason ? "・" + esc(p.reason) : ""}${p.error ? "・" + esc(p.error) : ""}）</span>`;

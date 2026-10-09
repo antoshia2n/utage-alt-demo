@@ -77,7 +77,7 @@ export function makeBlueprint({ $, api, esc, getToken, fail, openView }) {
     };
     $("bp-canvas").innerHTML = `<div class="bp-lanes" id="bp-lanes">
         <svg class="bp-lines" id="bp-lines" aria-hidden="true"></svg>
-        ${lanes.map((l) => `<div class="bp-lane"><h4>${esc(l.label)}</h4>${laneHtml(byLane[l.id] || []) || `<p class="note bp-empty">${l.id === "refer" ? "紹介は 8g で足します" : "まだ部品がありません"}</p>`}</div>`).join("")}
+        ${lanes.map((l) => `<div class="bp-lane"><h4>${esc(l.label)}</h4>${laneHtml(byLane[l.id] || []) || `<p class="note bp-empty">${l.id === "refer" ? "紹介は左のメニュー「紹介」で見ます" : "まだ部品がありません"}</p>`}</div>`).join("")}
       </div>
       ${data.parts.length === 0 ? '<p class="note">この企画にはまだ部品がありません。「企画に入っていない」から部品を選び、右の欄で持ち主をこの企画にしてください。</p>' : ""}
       ${data.stopped_products_hidden ? `<p class="note" style="margin:8px 0 0">売っていない商品 ${data.stopped_products_hidden} 本は出していません（企画に入れたものは出ます）。</p>` : ""}`;
