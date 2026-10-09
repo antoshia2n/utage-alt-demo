@@ -39,12 +39,13 @@ import { makeChanges } from "./changes.js";
 import { makeConnect } from "./connect.js";
 import { makeToday, stageOf } from "./today.js";
 import { buildGuide, sayOf, makeExplain } from "./guide.js";
+import { makeForms } from "./forms.js";
 import { makePush } from "./push.js";
 import { makeRefer } from "./refer.js";
 import { makeBlocks } from "./blocks.js";
 import { LANES } from "./plan.js";
 
-const VERSION = "0.22.0-b9";
+const VERSION = "0.23.0-b11a";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -102,7 +103,9 @@ const refer = makeRefer({ db, addEvent, logInbound });
 sell.onPurchased = (env, buyerId, ev, product, actor) => refer.onPurchase(env, buyerId, ev, product, actor);
 const push = makePush({ db, addEvent, logInbound });
 const connect = makeConnect({ db, addEvent, logInbound, sell, mailcfg, push });
-const deliver = makeDeliver({ db, addEvent, logInbound, bin3, sell, mailcfg, connect });
+// 便 11a：人の項目とフォーム。答えた人は無料登録と同じ道（registerPerson）で台帳に入る
+const forms = makeForms({ db, addEvent, logInbound, registerPerson: (env, a) => registerPerson(env, a) });
+const deliver = makeDeliver({ db, addEvent, logInbound, bin3, sell, mailcfg, connect, forms });
 const learn = makeLearn({ db });
 const plan = makePlan({ db, logInbound, communityLink, changes });
 // B の便 8g-4：ブロックとテンプレ。中身は src/blocks.js（draftFlow は下の関数）
@@ -202,6 +205,31 @@ async function rawDb(env, method, pathAndQuery, body, prefer) {
   const text = await res.text();
   if (!res.ok) throw new Error(`db ${method} ${pathAndQuery.split("?")[0]} ${res.status}: ${text.slice(0, 300)}`);
   return text ? JSON.parse(text) : null;
+}
+
+// 無料登録と同じ道（登録フォーム・便 11a のフォームの両方から呼ぶ）。台帳にいなければ入れ、いれば register_again を積む
+async function registerPerson(env, body = {}) {
+  const email = String(body.email || "").trim().toLowerCase();
+  const name = String(body.name || "").trim().slice(0, 60);
+  const source = SOURCES.includes(body.source) ? body.source : "direct";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { ok: false, error: "bad_email" };
+  if (body.consent !== true) return { ok: false, error: "need_consent" };
+  const via = body.via ? String(body.via).slice(0, 60) : undefined;
+  const existing = await db(env, "GET", `customers?select=id&email=eq.${encodeURIComponent(email)}`);
+  let id, isNew = false;
+  if (existing.length) {
+    id = existing[0].id;
+    await addEvent(env, id, "register_again", { source, via }, "site");
+  } else {
+    const rows = await db(env, "POST", "customers", [{ email, name, source, consent_at: new Date().toISOString() }], "return=representation");
+    id = rows[0].id; isNew = true;
+    await addEvent(env, id, "registered", { source, via }, "site");
+  }
+  // 便 8g-2：紹介のリンク（/register?ref=番号）から来たら、紹介された印を積む（1 人 1 回・自分の番号は積まない）
+  let referred = false;
+  if (env.B_STORE && body.ref) referred = (await refer.onRegister(env, id, String(body.ref), isNew)).referred === true;
+  await logInbound(env, "register", { email, source, via, ref: body.ref ? String(body.ref).slice(0, 20) : undefined }, { ok: true, isNew, referred }, 200);
+  return { ok: true, id, is_new: isNew };
 }
 
 async function addEvent(env, customerId, type, payload = {}, actor = "site") {
@@ -653,26 +681,17 @@ async function handleApi(request, env, url) {
 
   if (path === "/api/register" && method === "POST") {
     const body = await request.json().catch(() => ({}));
-    const email = String(body.email || "").trim().toLowerCase();
-    const name = String(body.name || "").trim().slice(0, 60);
-    const source = SOURCES.includes(body.source) ? body.source : "direct";
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({ ok: false, error: "bad_email" }, 400);
-    if (body.consent !== true) return json({ ok: false, error: "need_consent" }, 400);
-    const existing = await db(env, "GET", `customers?select=id&email=eq.${encodeURIComponent(email)}`);
-    let id, isNew = false;
-    if (existing.length) {
-      id = existing[0].id;
-      await addEvent(env, id, "register_again", { source }, "site");
-    } else {
-      const rows = await db(env, "POST", "customers", [{ email, name, source, consent_at: new Date().toISOString() }], "return=representation");
-      id = rows[0].id; isNew = true;
-      await addEvent(env, id, "registered", { source }, "site");
-    }
-    // 便 8g-2：紹介のリンク（/register?ref=番号）から来たら、紹介された印を積む（1 人 1 回・自分の番号は積まない）
-    let referred = false;
-    if (env.B_STORE && body.ref) referred = (await refer.onRegister(env, id, String(body.ref), isNew)).referred === true;
-    await logInbound(env, "register", { email, source, ref: body.ref ? String(body.ref).slice(0, 20) : undefined }, { ok: true, isNew, referred }, 200);
-    return json({ ok: true, is_new: isNew });
+    const r = await registerPerson(env, body);
+    return json(r.ok ? { ok: true, is_new: r.is_new } : r, r.ok ? 200 : 400);
+  }
+
+  // 便 11a：公開のフォーム（ログイン不要）。/form?f=slug の頁がここを読む・送る
+  const pf = path.match(/^[/]api[/]forms[/]([a-z0-9-]{2,41})$/);
+  if (pf && method === "GET") { const r = await forms.publicForm(env, pf[1]); return json(r, r.ok ? 200 : 404); }
+  if (pf && method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    const r = await forms.submit(env, pf[1], body);
+    return json(r, r.ok ? 200 : r.error === "not_found" ? 404 : 400);
   }
 
   // B の便 6a：公開の面（公式サイトの公開中の記事と教材の数。ログイン不要・中身や動画は出さない）
@@ -875,6 +894,23 @@ async function handleApi(request, env, url) {
       const r = await mailcfg.set(env, patch, a.email);
       return json(r, r.ok ? 200 : 400);
     }
+    // 便 11a：人の項目・フォーム・回答（画面から作るときは承認なし。AI の set_form は承認が要る）
+    if (path === "/api/admin/fields" && method === "GET") return json(await forms.listFields(env, { include_archived: url.searchParams.get("all") === "1" }));
+    if (path === "/api/admin/fields" && method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      const r = await forms.setField(env, body, a.email);
+      return json(r, r.ok ? 200 : 400);
+    }
+    if (path === "/api/admin/forms" && method === "GET") return json(await forms.listForms(env, { origin: url.origin }));
+    if (path === "/api/admin/forms" && method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      const r = await forms.setForm(env, body, a.email);
+      return json(r, r.ok ? 200 : 400);
+    }
+    const fa = path.match(/^[/]api[/]admin[/]forms[/]([0-9a-f-]{36})[/]answers$/i);
+    if (fa && method === "GET") return json(await forms.listAnswers(env, { form_id: fa[1], limit: 200 }));
+    const pv = path.match(/^[/]api[/]admin[/]people[/]([0-9a-f-]{36})[/]values$/i);
+    if (pv && method === "GET") return json(await forms.personValues(env, pv[1]));
     if (path === "/api/admin/people" && method === "GET") {
       return json(await core.findPeople(env, { query: url.searchParams.get("q") || "", source: url.searchParams.get("source") || "" }));
     }
@@ -1381,7 +1417,7 @@ const TOOLS = [
     name: "preview_audience",
     screen: "deliver",
     say: "一斉配信の宛先の人数を数える",
-    description: "一斉配信の宛先を、条件で絞って数える（送らない）。filter の欄：source（流入元の配列 x／note／youtube／direct／other）・purchased（買った商品の id の配列）・not_purchased（買っていない商品の id の配列）・member（会員か true／false）・note_member（true／false）・registered_after／registered_before（日時）・emails（メールの配列。試しに送るとき）・labels（このラベルを全部持つ人。get_labels の名前）・not_labels（このラベルをどれも持たない人）。配信を止めている人の数も返す。コネクタのセレクタも同じ形。",
+    description: "一斉配信の宛先を、条件で絞って数える（送らない）。filter の欄：source（流入元の配列 x／note／youtube／direct／other）・purchased（買った商品の id の配列）・not_purchased（買っていない商品の id の配列）・member（会員か true／false）・note_member（true／false）・registered_after／registered_before（日時）・emails（メールの配列。試しに送るとき）・labels（このラベルを全部持つ人。get_labels の名前）・not_labels（このラベルをどれも持たない人）・fields（人の項目の値で絞る [{ key, op, value }]。op は eq 等しい／contains 含む／gte 以上／lte 以下／empty 空／not_empty 空でない）。配信を止めている人の数も返す。コネクタのセレクタも同じ形。",
     inputSchema: { type: "object", properties: { filter: { type: "object" } } },
   },
   {
@@ -1423,12 +1459,12 @@ const TOOLS = [
     name: "set_step",
     screen: "deliver",
     say: "コネクタを足す・直す・動かす・止める",
-    description: "コネクタを足す・直す・動かす・止める。承認が要る道具。欄：id（直すとき）・name・trigger（registered 登録した／purchase 買った／clicked メールのリンクを押した／lesson_viewed 教材を見た／correction_submitted 添削を出した／login ログインした／label_added ラベルが付いた）・trigger_args（label：label_added のときのラベル・url：clicked のときのリンク）・product_id（purchase のとき。省くとどの購入でも）・delay_hours（何時間後）・selector（誰に。preview_audience の filter と同じ形）・action（send_email メールを送る／notify_admin Naoki に知らせる／add_label ラベルを付ける）・action_args（label：add_label のとき）・subject・body（{{name}}・{{email}}・{{product}}・{{label}}・{{url}} が置き換わる）・active。動かした時刻より後のきっかけだけが対象。セレクタに当たらない人は connector_skipped として残る。",
+    description: "コネクタを足す・直す・動かす・止める。承認が要る道具。欄：id（直すとき）・name・trigger（registered 登録した／purchase 買った／clicked メールのリンクを押した／lesson_viewed 教材を見た／correction_submitted 添削を出した／login ログインした／label_added ラベルが付いた／form_submitted フォームに答えた）・trigger_args（label：label_added のときのラベル・url：clicked のときのリンク・form：form_submitted のときのフォームの slug）・product_id（purchase のとき。省くとどの購入でも）・delay_hours（何時間後）・selector（誰に。preview_audience の filter と同じ形）・action（send_email メールを送る／notify_admin Naoki に知らせる／add_label ラベルを付ける）・action_args（label：add_label のとき）・subject・body（{{name}}・{{email}}・{{product}}・{{label}}・{{url}} が置き換わる）・active。動かした時刻より後のきっかけだけが対象。セレクタに当たらない人は connector_skipped として残る。",
     inputSchema: {
       type: "object",
       properties: {
         id: { type: "integer" }, name: { type: "string" },
-        trigger: { type: "string", enum: ["registered", "purchase", "clicked", "lesson_viewed", "correction_submitted", "login", "label_added"] },
+        trigger: { type: "string", enum: ["registered", "purchase", "clicked", "lesson_viewed", "correction_submitted", "login", "label_added", "form_submitted"] },
         trigger_args: { type: "object" }, product_id: { type: ["string", "null"] }, delay_hours: { type: "integer" },
         selector: { type: "object" }, action: { type: "string", enum: ["send_email", "notify_admin", "add_label"] }, action_args: { type: "object" },
         subject: { type: "string" }, body: { type: "string" }, active: { type: "boolean" }, sort: { type: "integer" },
@@ -1597,6 +1633,42 @@ const TOOLS = [
     description: "変えた記録の 1 件を元に戻す。承認が要る道具。前の値を書き戻す。同じ記録は 1 回だけ。同じ設定・部品にあとの変更があるときは newer_change で止まる（あとのほうを先に戻す）。",
     inputSchema: { type: "object", properties: { id: { type: "integer" } }, required: ["id"] },
   },
+  // 便 11a：人の項目とフォーム
+  {
+    name: "list_fields",
+    screen: "forms",
+    say: "人の項目の一覧を見る",
+    description: "人の項目（フォームで集めて人の 1 枚に出す欄）の一覧。key・label（名前）・type（text 1 行／textarea 長い文／number 数／date 日付／select 選ぶ）・options（select の選択肢）・sort。include_archived でしまった項目も。",
+    inputSchema: { type: "object", properties: { include_archived: { type: "boolean" } } },
+  },
+  {
+    name: "set_field",
+    screen: "forms",
+    say: "人の項目を足す・直す・しまう",
+    description: "人の項目を足す・直す。key は英小文字で始まり英小文字・数字・下線の 2〜31 字（例 x_account）。新しく足すときは label と type が要る（select なら options も）。型はあとから変えられない。archived true でしまう（答えは残る）。",
+    inputSchema: { type: "object", properties: { key: { type: "string" }, label: { type: "string" }, type: { type: "string", enum: ["text", "textarea", "number", "date", "select"] }, options: { type: "array", items: { type: "string" } }, sort: { type: "integer" }, archived: { type: "boolean" } }, required: ["key"] },
+  },
+  {
+    name: "list_forms",
+    screen: "forms",
+    say: "フォームの一覧と回答の数を見る",
+    description: "フォームの一覧。題名・slug（公開の住所 /form?f=slug の名前）・並べる項目 items（key・required）・公開中か active・回答の数 answers・最後の回答の時刻・公開の住所 url。",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "set_form",
+    screen: "forms",
+    say: "フォームを作る・直す・公開する",
+    description: "フォームを作る・直す。承認が要る道具。新しく作るときは title・slug・items（[{ key, required }]。項目は先に set_field で作る）が要る。intro（上の説明）・thanks（答えたあとの文）・ask_name（名前も聞くか）・active（公開する）。id を渡すと直す。メールアドレスと同意は必ず聞き、答えた人は台帳に入る（いなければ無料登録と同じ扱い）。",
+    inputSchema: { type: "object", properties: { id: { type: "string" }, title: { type: "string" }, slug: { type: "string" }, intro: { type: "string" }, thanks: { type: "string" }, items: { type: "array", items: { type: "object" } }, ask_name: { type: "boolean" }, active: { type: "boolean" } } },
+  },
+  {
+    name: "list_answers",
+    screen: "forms",
+    say: "フォームの回答を見る",
+    description: "フォームの回答を新しい順に返す。form_id でフォームごと、person_id で 1 人の回答の履歴。答えは項目の名前つき。0 件は count: 0。",
+    inputSchema: { type: "object", properties: { form_id: { type: "string" }, person_id: { type: "string" }, limit: { type: "integer" } } },
+  },
 ];
 
 
@@ -1676,6 +1748,12 @@ async function runTool(env, name, args) {
   if (name === "apply_tidy") return await plan.applyTidy(env, args, "mcp");
   if (name === "list_changes") return await changes.list(env, args);
   if (name === "undo_change") return await changes.undo(env, args, "mcp");
+  // 便 11a
+  if (name === "list_fields") return await forms.listFields(env, args);
+  if (name === "set_field") return await forms.setField(env, args, "mcp");
+  if (name === "list_forms") return await forms.listForms(env, { origin: env.PUBLIC_ORIGIN || "" });
+  if (name === "set_form") return await forms.setForm(env, args, "mcp");
+  if (name === "list_answers") return await forms.listAnswers(env, args);
   return { ok: false, error: "unknown_tool" };
 }
 

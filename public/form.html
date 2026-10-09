@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f5c4d">
+<link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css">
+<title>フォーム｜シアラボ</title>
+</head>
+<body>
+<!-- 便 11a：Lab OS で作ったフォーム。/form?f=住所の名前 で開く。答えは人の 1 枚に残る -->
+<div class="wrap">
+  <header class="top"><a class="brand" href="/">シアラボ</a></header>
+  <main style="padding:24px 0 8px">
+    <h1 style="font-size:24px" id="title">読み込んでいます…</h1>
+    <p class="note pre" id="intro"></p>
+    <form id="f" class="card stack hidden" novalidate>
+      <div id="name-wrap"><label for="name">お名前</label><input id="name" type="text" autocomplete="name" maxlength="60"></div>
+      <div><label for="email">メールアドレス<span class="note">（必須）</span></label><input id="email" type="email" autocomplete="email" required></div>
+      <div id="items" class="stack"></div>
+      <label class="check"><input id="consent" type="checkbox"> <span><a href="/legal/privacy" target="_blank">プライバシーポリシー</a>と<a href="/legal/tokushoho" target="_blank">特定商取引法に基づく表記</a>を確かめ、お知らせのメールを受け取ります（いつでも配信を止められます）。</span></label>
+      <button class="btn block" id="go" type="submit">送る</button>
+      <div id="msg" class="msg hidden" role="status"></div>
+    </form>
+    <div id="done" class="card hidden"><p class="pre" id="thanks" style="margin:0"></p></div>
+  </main>
+</div>
+<footer class="site wrap">
+  <a href="/legal/tokushoho">特定商取引法に基づく表記</a><a href="/legal/privacy">プライバシーポリシー</a>
+  <div style="margin-top:8px">© シアラボ（株式会社Best Life Consulting）</div>
+</footer>
+<script type="module">
+  import { rememberSource, currentSource } from "/js/common.js";
+  rememberSource();
+  const $ = (id) => document.getElementById(id);
+  const qs = new URLSearchParams(location.search);
+  const slug = (qs.get("f") || "").toLowerCase();
+  const refCode = (qs.get("ref") || "").slice(0, 20);
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const show = (text, ok) => { const m = $("msg"); m.textContent = text; m.className = "msg " + (ok ? "ok" : "err"); };
+  const WHY = { required: "答えてください", not_number: "数で入れてください", not_date: "日付を選んでください", not_option: "選択肢から選んでください", too_long: "長すぎます" };
+  let form = null;
+
+  function input(it) {
+    const id = "a-" + it.key, req = it.required ? " required" : "";
+    if (it.type === "textarea") return `<textarea id="${id}" rows="4"${req}></textarea>`;
+    if (it.type === "number") return `<input id="${id}" type="text" inputmode="numeric"${req}>`;
+    if (it.type === "date") return `<input id="${id}" type="date"${req}>`;
+    if (it.type === "select") return `<select id="${id}" class="inline" style="width:100%;min-height:48px"${req}><option value="">選んでください</option>${(it.options || []).map((o) => `<option>${esc(o)}</option>`).join("")}</select>`;
+    return `<input id="${id}" type="text" maxlength="200"${req}>`;
+  }
+
+  async function load() {
+    const r = slug ? await fetch("/api/forms/" + encodeURIComponent(slug)).then((x) => x.json()).catch(() => ({})) : {};
+    if (!r.ok) { $("title").textContent = "このフォームは開いていません"; $("intro").textContent = "住所が違うか、受付を止めています。"; return; }
+    form = r.form;
+    document.title = form.title + "｜シアラボ";
+    $("title").textContent = form.title;
+    $("intro").textContent = form.intro || "";
+    $("name-wrap").classList.toggle("hidden", !form.ask_name);
+    $("items").innerHTML = form.items.map((it) => `<div><label for="a-${it.key}">${esc(it.label)}${it.required ? '<span class="note">（必須）</span>' : ""}</label>${input(it)}<div class="note err-text hidden" id="e-${it.key}"></div></div>`).join("");
+    $("f").classList.remove("hidden");
+  }
+
+  $("f").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    document.querySelectorAll(".err-text").forEach((x) => x.classList.add("hidden"));
+    const email = $("email").value.trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return show("メールアドレスを確かめてください", false);
+    if (!$("consent").checked) return show("プライバシーポリシーと表記を確かめて、チェックを入れてください", false);
+    const answers = {};
+    for (const it of form.items) answers[it.key] = $("a-" + it.key).value;
+    $("go").disabled = true;
+    show("送っています…", true);
+    const r = await fetch("/api/forms/" + encodeURIComponent(slug), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, name: $("name").value.trim(), consent: true, answers, source: currentSource(), ref: refCode }) }).then((x) => x.json()).catch(() => ({ ok: false, error: "network" }));
+    $("go").disabled = false;
+    if (r.ok) {
+      $("f").classList.add("hidden");
+      $("thanks").textContent = r.thanks || "受け取りました。ありがとうございます。";
+      $("done").classList.remove("hidden");
+      scrollTo(0, 0);
+      return;
+    }
+    if (r.error === "bad_answers") {
+      for (const b of r.fields || []) { const e = $("e-" + b.key); if (e) { e.textContent = WHY[b.error] || "確かめてください"; e.classList.remove("hidden"); } }
+      return show("赤い字の欄を直してください", false);
+    }
+    show(r.error === "bad_email" ? "メールアドレスを確かめてください" : "送れませんでした。時間をおいてもう一度お試しください（" + (r.error || "") + "）", false);
+  });
+  load();
+</script>
+</body>
+</html>

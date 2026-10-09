@@ -33,6 +33,8 @@ export const DEFAULT_MODES = {
   get_tidy_plan: "auto", apply_tidy: "approve", list_changes: "auto", undo_change: "approve",
   // 便 8e：ラベルを読むのは自動、人の行を変える手のラベルは承認（B の原則 3 の最初の値に合わせる）
   get_labels: "auto", add_label: "approve", remove_label: "approve",
+  // 便 11a：項目とフォームを読む・項目を足すのは自動（何も送らない）。フォームを作る・公開するのは承認（外の人が見る面のため）
+  list_fields: "auto", set_field: "auto", list_forms: "auto", list_answers: "auto", set_form: "approve",
   // 便 8f-1：読むのは自動、カレンダーの非公開 URL を変えるのは承認
   get_today: "auto", get_stage_board: "auto", set_calendar_url: "approve",
   // 便 8f-3：生徒へのメッセージは承認（添削の返信と同じ）、Naoki への通知と端末の一覧は自動

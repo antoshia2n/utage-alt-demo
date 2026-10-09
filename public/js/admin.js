@@ -134,6 +134,7 @@ async function detail(id) {
       <div><b>チャット</b> <span class="note">${r.room.messages ? `シアニンが読んでいない ${r.room.unread_for_admin}・添削の未返信 ${r.room.unreplied}・相手が読んでいない ${r.room.unread_for_student}` : "まだやりとりはありません"}</span></div>
       <button class="btn small" type="button" id="open-chat">チャットを開く</button></div>` : ""}
     ${r.purchases && r.purchases.length ? `<div class="note" style="margin:0 0 4px">買ったもの</div><ul class="plain" style="margin:0 0 12px;padding-left:18px">${r.purchases.map((x) => `<li>${esc(x.name)}${x.amount != null ? "・" + Number(x.amount).toLocaleString() + " 円" : ""}${x.mode === "test" ? "（テスト）" : ""} <span class="note">${fmtTime(x.at)}</span></li>`).join("")}</ul>` : ""}
+    <div id="pv-box" style="margin:0 0 12px"></div>
     <form id="lb" style="display:flex;gap:6px;align-items:center;margin:0 0 16px"><input id="lb-name" type="text" maxlength="40" placeholder="ラベルを手で付ける" style="max-width:220px;min-height:36px"><button class="btn ghost small" type="submit">付ける</button><span class="note" id="lb-status"></span></form>
     <div class="deal-box">
       <h4>商談 ${p.deal && p.deal.stage !== "none" ? `<span class="pill warn">${esc(STAGE[p.deal.stage])}</span>` : '<span class="note">（まだ無し）</span>'}</h4>
@@ -166,6 +167,7 @@ async function detail(id) {
     <ol class="timeline">${r.events.map((e) => `
       <li><time>${fmtTime(e.occurred_at)}</time>${esc(EVENT_LABEL[e.type] || e.type)}${detailText(e)}<span class="note"> · ${esc(e.actor)}</span></li>`).join("")}
     </ol>`;
+  loadPersonValues(id);
   // 便 8f-3：人の 1 枚からその人の部屋へ
   if ($("open-chat")) $("open-chat").addEventListener("click", () => { openView("rooms"); openRoom(id); });
   // 便 8e：ラベルを手で付ける・外す（画面からは承認なし。AI からは承認が要る）
@@ -220,7 +222,7 @@ async function detail(id) {
 // ---------- 添削ルーム ----------
 let currentRoom = null;
 // 便 8c：左のメニュー。押した項目の画面だけを出し、上のナビにその名前を出す
-const VIEWS = ["home", "blueprint", "people", "rooms", "deals", "ai", "products", "deliver", "settings", "refer", "guide"];
+const VIEWS = ["home", "blueprint", "people", "rooms", "deals", "ai", "products", "deliver", "settings", "refer", "guide", "forms"];
 function openView(name) {
   const b = document.querySelector(`.side [data-view="${name}"]`);
   if (b) b.click();
@@ -240,6 +242,7 @@ function setupViews() {
     if (b.dataset.view === "ai") loadAi();
     if (b.dataset.view === "refer") loadReferrals();
     if (b.dataset.view === "guide") loadGuide();
+    if (b.dataset.view === "forms") loadForms();
   }));
   $("hm-guide").addEventListener("click", () => openView("guide"));
   $("only-unreplied").addEventListener("change", loadRooms);
@@ -505,6 +508,9 @@ function bfFilter() {
   const labels = splitList($("bf-labels").value), notLabels = splitList($("bf-nolabels").value);
   if (labels.length) f.labels = labels;
   if (notLabels.length) f.not_labels = notLabels;
+  // 便 11a：人の項目で絞る（1 つ）
+  const fk = $("bf-fkey").value, fop = $("bf-fop").value, fv = $("bf-fval").value.trim();
+  if (fk && (fv || fop === "empty" || fop === "not_empty")) f.fields = [{ key: fk, op: fop, value: fv }];
   return f;
 }
 const splitList = (v) => String(v || "").split(/[,、]/).map((x) => x.trim()).filter(Boolean);
@@ -516,7 +522,7 @@ function showConnectorFields() {
 }
 function connectorText(s) {
   const ta = s.trigger_args || {};
-  const when = (triggerNames[s.trigger] || s.trigger) + (s.product_id ? "（" + s.product_id + "）" : "") + (ta.label ? "「" + ta.label + "」" : "") + (ta.url ? "（" + String(ta.url).slice(0, 30) + "）" : "") + (s.delay_hours ? `・${s.delay_hours} 時間後` : "");
+  const when = (triggerNames[s.trigger] || s.trigger) + (s.product_id ? "（" + s.product_id + "）" : "") + (ta.label ? "「" + ta.label + "」" : "") + (ta.url ? "（" + String(ta.url).slice(0, 30) + "）" : "") + (ta.form ? "「" + (formNames[ta.form] || ta.form) + "」" : "") + (s.delay_hours ? `・${s.delay_hours} 時間後` : "");
   const who = filterText(s.selector || {});
   const what = (actionNames[s.action] || s.action) + (s.action === "add_label" && s.action_args && s.action_args.label ? "「" + s.action_args.label + "」" : "");
   return { when, who, what };
@@ -529,10 +535,12 @@ function filterText(f) {
   if (f.emails) parts.push("メール指定 " + f.emails.length + " 件");
   if (f.labels) parts.push("ラベル " + f.labels.join("・"));
   if (f.not_labels) parts.push("ラベルなし " + f.not_labels.join("・"));
+  for (const c of f.fields || []) parts.push("項目 " + (fieldNames[c.key] || c.key) + " " + (OP_LABEL[c.op] || c.op) + (["empty", "not_empty"].includes(c.op) ? "" : " " + c.value));
   return parts.join("／") || "全員";
 }
 let deliverReady = false;
 async function loadDeliver() {
+  loadFieldOptions();
   if (!deliverReady) {
     deliverReady = true;
     $("bf-src").innerHTML = ["x", "note", "youtube", "direct", "other"].map((s) => `<label class="check" style="margin:0"><input type="checkbox" value="${s}"> <span>${esc(SOURCE_LABEL[s] || s)}</span></label>`).join("");
@@ -562,7 +570,7 @@ async function loadDeliver() {
       if (sn.length) selector.not_labels = sn;
       const body = {
         name: $("sf-name").value, trigger: tr, product_id: tr === "purchase" ? ($("sf-product").value.trim() || null) : null,
-        trigger_args: tr === "label_added" ? { label: $("sf-tlabel").value.trim() } : tr === "clicked" && $("sf-turl").value.trim() ? { url: $("sf-turl").value.trim() } : {},
+        trigger_args: tr === "label_added" ? { label: $("sf-tlabel").value.trim() } : tr === "clicked" && $("sf-turl").value.trim() ? { url: $("sf-turl").value.trim() } : tr === "form_submitted" && $("sf-tform").value ? { form: $("sf-tform").value } : {},
         delay_hours: Number($("sf-delay").value.replace(/[^0-9]/g, "") || 0), selector,
         action: ac, action_args: ac === "add_label" ? { label: $("sf-alabel").value.trim() } : {},
         subject: $("sf-subject").value, body: $("sf-body").value,
@@ -627,13 +635,139 @@ async function loadDeliver() {
     const s = stepsCache.find((y) => String(y.id) === x.dataset.step);
     const ta = s.trigger_args || {}, sel = s.selector || {};
     $("sf-id").value = s.id; $("sf-name").value = s.name; $("sf-trigger").value = s.trigger; $("sf-product").value = s.product_id || "";
-    $("sf-tlabel").value = ta.label || ""; $("sf-turl").value = ta.url || "";
+    $("sf-tlabel").value = ta.label || ""; $("sf-turl").value = ta.url || ""; $("sf-tform").value = ta.form || "";
     $("sf-labels").value = (sel.labels || []).join(","); $("sf-nolabels").value = (sel.not_labels || []).join(",");
     $("sf-action").value = s.action || "send_email"; $("sf-alabel").value = (s.action_args || {}).label || "";
     $("sf-delay").value = s.delay_hours; $("sf-subject").value = s.subject; $("sf-body").value = s.body; $("sf-active").checked = s.active;
     $("sf-status").textContent = "直しています：" + s.name;
     showConnectorFields();
   }));
+}
+
+// ---------- フォームと人の項目（便 11a） ----------
+const OP_LABEL = { eq: "＝", contains: "を含む", gte: "以上", lte: "以下", empty: "答えがない", not_empty: "答えがある" };
+const TYPE_LABEL = { text: "1 行の文字", textarea: "長い文", number: "数", date: "日付", select: "選ぶ" };
+let fieldNames = {}, formNames = {}, fieldsCache = [], formsCache = [], fieldsAt = 0;
+async function loadFieldOptions(force) {
+  if (!force && Date.now() - fieldsAt < 30e3) return;
+  fieldsAt = Date.now();
+  const [fr, fo] = await Promise.all([api("/api/admin/fields", { token }), api("/api/admin/forms", { token })]);
+  if (fr.ok) {
+    fieldsCache = fr.fields; fieldNames = Object.fromEntries(fr.fields.map((f) => [f.key, f.label]));
+    const keep = $("bf-fkey").value;
+    $("bf-fkey").innerHTML = '<option value="">（使わない）</option>' + fr.fields.map((f) => `<option value="${esc(f.key)}">${esc(f.label)}</option>`).join("");
+    $("bf-fkey").value = keep;
+  }
+  if (fo.ok) {
+    formsCache = fo.forms; formNames = Object.fromEntries(fo.forms.map((f) => [f.slug, f.title]));
+    const keep = $("sf-tform").value;
+    $("sf-tform").innerHTML = '<option value="">どれでも</option>' + fo.forms.map((f) => `<option value="${esc(f.slug)}">${esc(f.title)}</option>`).join("");
+    $("sf-tform").value = keep;
+  }
+}
+
+async function loadPersonValues(id) {
+  const r = await api(`/api/admin/people/${id}/values`, { token });
+  if (current !== id || !$("pv-box")) return;
+  if (!r.ok || (!r.values.length && !r.answers.length)) { $("pv-box").innerHTML = ""; return; }
+  $("pv-box").innerHTML = `
+    <div class="note" style="margin:0 0 4px">項目（フォームの答えの新しい方）</div>
+    <dl style="margin:0 0 8px">${r.values.map((v) => `<dt>${esc(v.label)}</dt><dd class="pre">${esc(v.value)}</dd>`).join("") || "<dd class=\"note\">（無し）</dd>"}</dl>
+    <details class="setup"><summary>回答の履歴 ${r.answers.length} 件</summary>
+      ${r.answers.map((a) => `<div class="card" style="margin-top:8px"><div class="reply-h">${esc(a.form.title)}・${fmtTime(a.submitted_at)}</div><dl>${a.items.map((i) => `<dt>${esc(i.label)}</dt><dd class="pre">${esc(i.value) || '<span class="note">（空）</span>'}</dd>`).join("")}</dl></div>`).join("")}
+    </details>`;
+}
+
+let formsReady = false, currentForm = null;
+async function loadForms() {
+  if (!formsReady) {
+    formsReady = true;
+    $("fm-new").addEventListener("click", () => formEditor(null));
+    $("fd-type").addEventListener("change", () => $("fd-opts-wrap").classList.toggle("hidden", $("fd-type").value !== "select"));
+    $("fd").addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const body = { key: $("fd-key").value.trim(), label: $("fd-label").value.trim(), type: $("fd-type").value };
+      if (body.type === "select") body.options = $("fd-opts").value;
+      const r = await api("/api/admin/fields", { method: "POST", token, body });
+      const why = { bad_key: "中の名前は英小文字で始め、英小文字・数字・下線の 2〜31 字", bad_label: "項目の名前を入れてください", need_options: "選択肢を入れてください", type_locked: "その中の名前は別の型で使っています" };
+      $("fd-status").textContent = r.ok ? (r.created ? "足しました" : "直しました") : (why[r.error] || "足せませんでした（" + (r.error || r.status) + "）");
+      if (r.ok) { $("fd").reset(); $("fd-opts-wrap").classList.add("hidden"); await loadForms(); }
+    });
+  }
+  const [fr, fo] = await Promise.all([api("/api/admin/fields?all=1", { token }), api("/api/admin/forms", { token })]);
+  if (!fr.ok || !fo.ok) { $("fm-count").textContent = "読めませんでした（" + ((fr.ok ? fo : fr).error || "") + "）"; return; }
+  fieldsAt = 0;
+  fieldsCache = fr.fields.filter((f) => !f.archived_at);
+  fieldNames = Object.fromEntries(fr.fields.map((f) => [f.key, f.label]));
+  formsCache = fo.forms;
+  $("fm-count").textContent = fo.store === "demo" ? "デモの置き場ではフォームは作れません" : `フォーム ${fo.count}・項目 ${fieldsCache.length}`;
+  $("forms-list").innerHTML = fo.forms.map((f) => `
+    <li data-form="${f.id}" ${f.id === currentForm ? 'aria-current="true"' : ""}>
+      <div><div>${esc(f.title)}</div><div class="sub">/form?f=${esc(f.slug)}</div></div>
+      <div style="text-align:right">${f.active ? '<span class="pill">公開中</span>' : '<span class="pill gray">止めている</span>'}<div class="sub">回答 ${f.answers}</div></div>
+    </li>`).join("") || '<li class="note">まだありません</li>';
+  document.querySelectorAll("[data-form]").forEach((li) => li.addEventListener("click", () => formEditor(formsCache.find((x) => x.id === li.dataset.form))));
+  $("fields-list").innerHTML = fr.fields.map((f) => `
+    <li><div><div>${esc(f.label)}${f.archived_at ? ' <span class="pill gray">しまった</span>' : ""}</div><div class="sub">${esc(TYPE_LABEL[f.type] || f.type)}${f.type === "select" ? "：" + esc((f.options || []).join("・")) : ""}</div></div>
+      <div><button class="btn ghost small" type="button" data-farch="${esc(f.key)}" data-to="${f.archived_at ? "0" : "1"}">${f.archived_at ? "戻す" : "しまう"}</button></div></li>`).join("") || '<li class="note">まだありません。下で足します</li>';
+  document.querySelectorAll("[data-farch]").forEach((b) => b.addEventListener("click", async () => {
+    const r = await api("/api/admin/fields", { method: "POST", token, body: { key: b.dataset.farch, archived: b.dataset.to === "1" } });
+    if (!r.ok) fail("変えられませんでした（" + (r.error || r.status) + "）");
+    loadForms();
+  }));
+  if (currentForm) { const f = formsCache.find((x) => x.id === currentForm); if (f) formEditor(f, true); }
+}
+
+function formEditor(f, keepStatus) {
+  currentForm = f ? f.id : null;
+  document.querySelectorAll("[data-form]").forEach((li) => li.toggleAttribute("aria-current", li.dataset.form === currentForm));
+  const items = new Map(((f && f.items) || []).map((it) => [it.key, it]));
+  const url = f ? location.origin + "/form?f=" + f.slug : "";
+  const prevStatus = keepStatus && $("fe-status") ? $("fe-status").textContent : "";
+  $("form-detail").innerHTML = `
+    <h3 style="margin-top:0">${f ? "フォームを直す" : "新しいフォーム"}</h3>
+    ${f && f.active ? `<div class="note" style="margin:0 0 10px">公開の住所：<a href="${esc(url)}" target="_blank">${esc(url)}</a> <button class="btn ghost small" type="button" id="fe-copy">写す</button></div>` : ""}
+    <form id="fe" class="stack">
+      <div><label for="fe-title">題名</label><input id="fe-title" type="text" maxlength="80" value="${esc(f ? f.title : "")}"></div>
+      <div><label for="fe-slug">住所の名前（英小文字・数字・ハイフン。/form?f= のあと）</label><input id="fe-slug" type="text" maxlength="41" autocapitalize="off" autocomplete="off" placeholder="例 monthly" value="${esc(f ? f.slug : "")}"></div>
+      <div><label for="fe-intro">最初の説明</label><textarea id="fe-intro" rows="3">${esc(f ? f.intro : "")}</textarea></div>
+      <div><label for="fe-thanks">送ったあとに出す文</label><textarea id="fe-thanks" rows="2" placeholder="空なら「受け取りました。ありがとうございます。」">${esc(f ? f.thanks : "")}</textarea></div>
+      <div class="note">聞く項目（上から並ぶ。項目は「人の項目」の欄で足す）</div>
+      <div class="fm-items">${fieldsCache.map((x) => `<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <label class="check"><input type="checkbox" data-item="${esc(x.key)}" ${items.has(x.key) ? "checked" : ""}> <span>${esc(x.label)} <span class="note">${esc(TYPE_LABEL[x.type] || x.type)}</span></span></label>
+        <label class="check"><input type="checkbox" data-req="${esc(x.key)}" ${items.get(x.key) && items.get(x.key).required ? "checked" : ""}> <span class="note">必須</span></label></div>`).join("") || '<p class="note">項目がまだありません</p>'}</div>
+      <label class="check"><input type="checkbox" id="fe-askname" ${!f || f.ask_name ? "checked" : ""}> <span>お名前も聞く</span></label>
+      <label class="check"><input type="checkbox" id="fe-active" ${f && f.active ? "checked" : ""}> <span>公開する（外すと住所を開いても「開いていません」と出る）</span></label>
+      <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="submit">保存</button><span class="note" id="fe-status">${esc(prevStatus)}</span></div>
+    </form>
+    ${f ? `<h3 style="margin-top:20px">回答 <span class="note">${f.answers} 件</span></h3><div id="fe-answers" class="note">読んでいます…</div>` : ""}`;
+  if ($("fe-copy")) $("fe-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText(url); $("fe-copy").textContent = "写しました"; } catch { $("fe-copy").textContent = "写せませんでした"; } });
+  $("fe").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const order = fieldsCache.map((x) => x.key);
+    const picked = [...document.querySelectorAll("[data-item]:checked")].map((x) => x.dataset.item);
+    const body = {
+      title: $("fe-title").value.trim(), slug: $("fe-slug").value.trim().toLowerCase(), intro: $("fe-intro").value, thanks: $("fe-thanks").value,
+      items: order.filter((k) => picked.includes(k)).map((k) => ({ key: k, required: !!document.querySelector(`[data-req="${k}"]:checked`) })),
+      ask_name: $("fe-askname").checked, active: $("fe-active").checked,
+    };
+    if (f) body.id = f.id;
+    const r = await api("/api/admin/forms", { method: "POST", token, body });
+    const why = { bad_title: "題名を入れてください", bad_slug: "住所の名前は英小文字・数字・ハイフンの 2〜41 字", slug_taken: "その住所の名前はほかのフォームで使っています", need_items: "聞く項目を 1 つ以上選んでください" };
+    $("fe-status").textContent = r.ok ? (body.active ? "保存しました（公開中）" : "保存しました（まだ公開していません）") : (why[r.error] || "保存できませんでした（" + (r.error || r.status) + "）");
+    if (r.ok) { currentForm = r.form.id; loadForms(); }
+  });
+  if (f) loadFormAnswers(f.id);
+}
+
+async function loadFormAnswers(id) {
+  const r = await api(`/api/admin/forms/${id}/answers`, { token });
+  if (currentForm !== id || !$("fe-answers")) return;
+  if (!r.ok) { $("fe-answers").textContent = "読めませんでした（" + (r.error || r.status) + "）"; return; }
+  $("fe-answers").innerHTML = r.answers.map((a) => `<div class="card" style="margin-top:8px">
+    <div class="reply-h"><a href="#" data-pp="${esc(a.person.id)}">${esc(a.person.name || a.person.email || "（名前なし）")}</a>・${fmtTime(a.submitted_at)}</div>
+    <dl>${a.items.map((i) => `<dt>${esc(i.label)}</dt><dd class="pre">${esc(i.value) || '<span class="note">（空）</span>'}</dd>`).join("")}</dl></div>`).join("") || "まだありません";
+  document.querySelectorAll("[data-pp]").forEach((x) => x.addEventListener("click", (ev) => { ev.preventDefault(); openView("people"); detail(x.dataset.pp); }));
 }
 
 // 便 8e：ラベルの名前の候補（入力欄の下に出す）

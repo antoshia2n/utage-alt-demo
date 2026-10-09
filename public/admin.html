@@ -60,6 +60,7 @@
     <button class="it" type="button" data-view="guide" aria-selected="false">使い方</button>
     <div class="grp">集める</div>
     <button class="it" type="button" disabled title="8d で作ります">LP<span class="soon">準備中</span></button>
+    <button class="it" type="button" data-view="forms" aria-selected="false">フォーム</button>
     <button class="it" type="button" data-view="deals" aria-selected="false">セミナーと予約</button>
     <button class="it" type="button" data-view="refer" aria-selected="false">紹介</button>
     <div class="grp">育てる</div>
@@ -259,6 +260,29 @@
       <div id="view-people-wrap" style="display:none">
         <div class="stats" id="stats" style="margin-bottom:12px"></div>
       </div>
+    <!-- 便 11a：フォームと人の項目。フォームは /form?f=住所の名前 で公開。答えは人の 1 枚に履歴で並び、一斉配信の宛先を項目で絞れる -->
+    <div class="admin-layout" id="view-forms" style="display:none">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h3 style="margin:0">フォーム</h3><button class="btn small" type="button" id="fm-new">新しいフォーム</button></div>
+        <p class="note" id="fm-count" style="margin:4px 0 0"></p>
+        <ul class="people" id="forms-list"></ul>
+        <h3 style="margin-top:20px">人の項目</h3>
+        <p class="note" style="margin-top:0">フォームで聞く欄。答えは人ごとに残り、一斉配信の宛先をこの値で絞れます。型（文字・数・日付・選ぶ）はあとから変えられません。</p>
+        <ul class="people" id="fields-list"></ul>
+        <form id="fd" class="stack" style="margin-top:8px">
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <div style="flex:2 1 160px"><label for="fd-label">項目の名前</label><input id="fd-label" type="text" maxlength="40" placeholder="例 X アカウント名"></div>
+            <div style="flex:1 1 120px"><label for="fd-type">型</label><select id="fd-type" class="inline" style="width:100%"><option value="text">1 行の文字</option><option value="textarea">長い文</option><option value="number">数</option><option value="date">日付</option><option value="select">選ぶ</option></select></div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <div style="flex:1 1 160px"><label for="fd-key">中の名前（英小文字・数字・下線）</label><input id="fd-key" type="text" maxlength="31" placeholder="例 x_account" autocapitalize="off" autocomplete="off"></div>
+            <div style="flex:2 1 200px" id="fd-opts-wrap" class="hidden"><label for="fd-opts">選択肢（カンマ区切り）</label><input id="fd-opts" type="text" placeholder="例 はい,いいえ"></div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="submit">項目を足す</button><span class="note" id="fd-status"></span></div>
+        </form>
+      </div>
+      <div class="card" id="form-detail"><p class="note">左からフォームを選ぶか、「新しいフォーム」を押すと、題名と聞く項目を決める欄が出ます。公開すると住所が出て、答えはこの下に新しい順に並びます。</p></div>
+    </div>
     <div class="admin-layout" id="view-deliver" style="display:none">
       <div class="card">
         <h3 style="margin-top:0">一斉配信</h3>
@@ -273,6 +297,12 @@
           <div><label for="bf-labels">このラベルを全部持つ人（カンマ区切り）</label><input id="bf-labels" type="text" list="label-names" placeholder="例 購入者,最後に動いた:30日以内"></div>
           <div><label for="bf-nolabels">このラベルを持たない人（カンマ区切り）</label><input id="bf-nolabels" type="text" list="label-names"></div>
           <div><label for="bf-emails">メールで指定（試しに送るとき。カンマ区切り）</label><input id="bf-emails" type="text"></div>
+          <div class="note">人の項目で絞る（フォームの答え。空なら絞らない）</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+            <div><label for="bf-fkey">項目</label><select id="bf-fkey" class="inline"><option value="">（使わない）</option></select></div>
+            <div><label for="bf-fop">条件</label><select id="bf-fop" class="inline"><option value="eq">等しい</option><option value="contains">含む</option><option value="gte">以上</option><option value="lte">以下</option><option value="not_empty">答えがある</option><option value="empty">答えがない</option></select></div>
+            <div style="flex:1 1 140px"><label for="bf-fval">値</label><input id="bf-fval" type="text"></div>
+          </div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <button class="btn ghost small" type="button" id="bf-count">人数を数える</button>
             <button class="btn small" type="submit">下書きに保存</button>
@@ -298,6 +328,7 @@
             <div data-tr="purchase"><label for="sf-product">商品の id（空ならどれでも）</label><input id="sf-product" type="text"></div>
             <div data-tr="label_added"><label for="sf-tlabel">付いたラベル</label><input id="sf-tlabel" type="text" list="label-names"></div>
             <div data-tr="clicked"><label for="sf-turl">押したリンク（空ならどれでも）</label><input id="sf-turl" type="text" placeholder="https://"></div>
+            <div data-tr="form_submitted"><label for="sf-tform">答えたフォーム（空ならどれでも）</label><select id="sf-tform" class="inline"><option value="">どれでも</option></select></div>
             <div><label for="sf-delay">何時間後</label><input id="sf-delay" type="text" inputmode="numeric" value="0" style="max-width:120px"></div>
           </div>
           <div class="note">セレクタ（誰に・空なら全員）</div>
