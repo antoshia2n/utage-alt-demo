@@ -4,10 +4,10 @@
 // 箱を押すと右の欄に中の名前・外の名前・入口と出口・持ち主の企画が出る。持ち主と役目はここで変える。
 // 線を引き直す・一言で下書きするのは 8e・8g。ここでは見ることと、企画の整理だけ。
 
-const TYPE_LABEL = { page: "ページ", step: "ステップ", broadcast: "一斉配信", seminar: "セミナー", booking: "予約", product: "商品", course: "教材", room: "添削", community: "オプチャ" };
+const TYPE_LABEL = { page: "ページ", step: "ステップ", broadcast: "一斉配信", seminar: "セミナー", booking: "予約", product: "商品", course: "教材", room: "添削", community: "オプチャ", form: "フォーム" };
 const STATE_LABEL = { running: "動いている", draft: "下書き", stopped: "止まっている" };
 // 「開いて直す」で開く左のメニューの項目
-const EDIT_VIEW = { step: "deliver", broadcast: "deliver", seminar: "deals", booking: "deals", product: "products", room: "rooms", community: "settings" };
+const EDIT_VIEW = { form: "forms", step: "connect", broadcast: "deliver", seminar: "deals", booking: "deals", product: "products", room: "rooms", community: "settings" };
 
 export function makeBlueprint({ $, api, esc, getToken, fail, openView }) {
   let view = "all";
