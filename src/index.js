@@ -64,8 +64,9 @@ import { makeLessonQA, openLessonQuestions, QUESTION_MAX } from "./lessonqa.js";
 import { roomNotices } from "./roomview.js";
 import { makeLine } from "./line.js";
 import { makeUtageImport } from "./utageimport.js";
+import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail } from "./shield.js";
 
-const VERSION = "0.42.1-b16a2";
+const VERSION = "0.43.0-br1";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -82,22 +83,17 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
     try {
-      // 便 14a：LINE の受け口（ログイン不要・署名で確かめる。転送は ctx.waitUntil）
-      const lw = path.match(/^[/]api[/]line[/]webhook[/]([a-z_]{2,20})$/);
-      if (lw && request.method === "POST") return await line.handleWebhook(request, env, ctx, lw[1]);
-      // 便 12a：公開のページの住所（lp.shia2n.jp）では、ページと /api/p/ の下だけを返す（シアニン用の画面や API はこの住所では開かない）
-      if (isPagesHost(env, url)) return await handlePagesHost(request, env, url);
-      if (path === "/mcp" || path.startsWith("/mcp/")) return await handleMcp(request, env, url);
-      if (path.startsWith("/api/")) return await handleApi(request, env, url);
-      // B の便 5：メールの中のリンク（押したら記録して元の住所へ）
-      const rl = path.match(/^[/]r[/]([0-9a-f]{12})$/);
-      if (rl && !missingConfig(env).length) return await deliver.handleClick(env, url, rl[1]);
-      // B の便 11b：メールを開いたかを数える画像
-      const ro = path.match(/^[/]o[/](step|broadcast)[/]([0-9a-f-]{36}|[0-9]{1,9})$/);
-      if (ro && !missingConfig(env).length) return await deliver.handleOpen(env, url, ro[1], ro[2]);
-      return env.ASSETS.fetch(request);
+      const res = await route(request, env, ctx, url, path);
+      // 便 R1：外から誰でも呼べる口では、エラーの中身（detail）を外へ返さない。中身は受け口の記録（channel=error_detail）にだけ残す
+      if (!isPrivatePath(path) && path.startsWith("/api/") && res.status >= 400) {
+        return await stripDetail(res, (detail) => logInbound(env, "error_detail", { path, method: request.method, status: res.status }, { detail: String(detail).slice(0, 300) }, res.status));
+      }
+      return res;
     } catch (err) {
-      return json({ ok: false, error: "internal_error", detail: String(err && err.message || err) }, 500);
+      const detail = String(err && err.message || err);
+      // 便 R1：外には種類だけを返し、中身は記録にだけ残す（Naoki の画面と AI の窓口には今までどおり中身も返す）
+      await logInbound(env, "error_detail", { path, method: request.method, status: 500 }, { detail: detail.slice(0, 300) }, 500);
+      return json(isPrivatePath(path) ? { ok: false, error: "internal_error", detail } : { ok: false, error: "internal_error" }, 500);
     }
   },
 
@@ -122,7 +118,32 @@ export default {
   },
 };
 
+// 便 R1：入口の振り分け（前は fetch の中にあった。外へ返す前にエラーの中身を外すため、ここへ分けた）
+async function route(request, env, ctx, url, path) {
+  // 便 14a：LINE の受け口（ログイン不要・署名で確かめる。転送は ctx.waitUntil）
+  const lw = path.match(/^[/]api[/]line[/]webhook[/]([a-z_]{2,20})$/);
+  if (lw && request.method === "POST") return await line.handleWebhook(request, env, ctx, lw[1]);
+  // 便 12a：公開のページの住所（lp.shia2n.jp）では、ページと /api/p/ の下だけを返す（シアニン用の画面や API はこの住所では開かない）
+  if (isPagesHost(env, url)) return await handlePagesHost(request, env, url);
+  if (path === "/mcp" || path.startsWith("/mcp/")) return await handleMcp(request, env, url);
+  if (path.startsWith("/api/")) return await handleApi(request, env, url);
+  // B の便 5：メールの中のリンク（押したら記録して元の住所へ）
+  const rl = path.match(/^[/]r[/]([0-9a-f]{12})$/);
+  if (rl && !missingConfig(env).length) return await deliver.handleClick(env, url, rl[1]);
+  // B の便 11b：メールを開いたかを数える画像
+  const ro = path.match(/^[/]o[/](step|broadcast)[/]([0-9a-f-]{36}|[0-9]{1,9})$/);
+  if (ro && !missingConfig(env).length) return await deliver.handleOpen(env, url, ro[1], ro[2]);
+  return env.ASSETS.fetch(request);
+}
+
 const changes = makeChanges({ db, logInbound });
+// 便 R1：公開の入口の守り（ロボット判定・回数の上限）。中身は src/shield.js
+const shield = makeShield({ db, logInbound });
+// 止めるときの返事を作る。通すときは null
+async function guardPublic(request, env, mouth, opts) {
+  const stop = await shield.check(env, request, mouth, opts);
+  return stop ? json(stop.body, stop.status) : null;
+}
 const mailcfg = makeMailCfg({ db, logInbound, changes });
 const bin3 = makeBin3({ db, addEvent, logInbound, json, mailcfg, onCharge: (env, event, data) => sell.onCharge(env, event, data), onSubEvent: async (env, id, type, subId) => {
   const g = (await sell.syncGrants(env, id)) || {};
@@ -323,22 +344,28 @@ async function handlePagesHost(request, env, url) {
   if (path === "/robots.txt") return new Response("User-agent: *\nAllow: /\n", { headers: { "content-type": "text/plain; charset=utf-8" } });
   if (missingConfig(env).length || !env.B_STORE) return html(PAGE_404, 503, { "cache-control": "no-store" });
   if (path === "/api/p/hit" && method === "POST") {
+    const stop = await guardPublic(request, env, "lp_hit", { ip: "hit" });
+    if (stop) return stop;
     const body = await request.json().catch(() => ({}));
     const r = await pages.hit(env, body);
     return json(r, r.ok ? 200 : 400);
   }
   const pf = path.match(/^[/]api[/]p[/]form[/]([a-z0-9-]{2,41})$/);
-  if (pf && method === "GET") { const r = await forms.publicForm(env, pf[1]); return json(r, r.ok ? 200 : 404); }
+  if (pf && method === "GET") { const r = await forms.publicForm(env, pf[1]); return json(r.ok ? { ...r, bot_site_key: botSiteKey(env) } : r, r.ok ? 200 : 404); }
   if (pf && method === "POST") {
     const body = await request.json().catch(() => ({}));
+    const stop = await guardPublic(request, env, "lp_form", { ip: "public", bot: true, token: body.turnstile, email: body.email || "" });
+    if (stop) return stop;
     const r = await pages.submitForm(env, pf[1], body);
     return json(r, r.ok ? 200 : r.error === "not_found" ? 404 : 400);
   }
   // 便 13b：予約の枠（空き時間を読む・予約する）
   const pb = path.match(/^[/]api[/]p[/]booking[/]([a-z0-9-]{2,41})$/);
-  if (pb && method === "GET") { const r = await booking.publicSlots(env, pb[1]); return json(r, r.ok ? 200 : 404); }
+  if (pb && method === "GET") { const r = await booking.publicSlots(env, pb[1]); return json(r.ok ? { ...r, bot_site_key: botSiteKey(env) } : r, r.ok ? 200 : 404); }
   if (pb && method === "POST") {
     const body = await request.json().catch(() => ({}));
+    const stop = await guardPublic(request, env, "lp_booking", { ip: "public", bot: true, token: body.turnstile, email: body.email || "" });
+    if (stop) return stop;
     const r = await pages.submitBooking(env, booking, pb[1], body);
     return json(r, r.ok ? 200 : r.error === "not_found" ? 404 : 400);
   }
@@ -766,6 +793,8 @@ async function handleApi(request, env, url) {
     return json({
       ok: missing.length === 0 && dbOk === true, version: VERSION, missing_settings: missing, db: dbOk, images: !!env.IMAGES,
       store: env.B_STORE ? "production" : "demo", manabu, public_origin: env.PUBLIC_ORIGIN || null,
+      // 便 R1：公開の入口の守り。bot_check は両方の鍵がそろったときだけ on。ip_limit は Cloudflare の回数制限の結び
+      shield: { bot_check: botCheckOn(env), site_key: !!env.TURNSTILE_SITE_KEY, secret_key: !!env.TURNSTILE_SECRET_KEY, ip_limit: !!(env.PUBLIC_LIMIT && env.HIT_LIMIT) },
       univapay: { configured: pay.configured, mode: pay.mode, store: !!pay.store_id },
       mail: { binding: mail.binding, from: mail.from, from_name: mail.from_name || null, reply_to: mail.reply_to || null, scope: mail.scope, open_to_all: mail.scope === "all", auth_hook: !!env.B_AUTH_HOOK_SECRET, ...(mail.error ? { error: mail.error } : {}) },
     });
@@ -777,6 +806,8 @@ async function handleApi(request, env, url) {
       supabaseKey: env.SUPABASE_PUBLISHABLE_KEY || null,
       univapayAppId: bin3.univapayState(env).app_id,
       univapayMode: bin3.univapayState(env).mode || null,
+      // 便 R1：ロボット判定の表示用の鍵（判定を掛けるときだけ。公開してよい値）
+      botSiteKey: botSiteKey(env),
       plan: env.B_STORE ? null : bin3.PLAN,
       version: VERSION,
     });
@@ -789,6 +820,8 @@ async function handleApi(request, env, url) {
   // 便 7c-1 の続き：台帳（member）にいるのに、まだ Supabase のログインの番号が無い人（ポータル時代の会員）が、ログインの頁でリンクを受け取れるようにする。
   // 台帳にいる人だけ、ログインの番号を先に作る（メールは確かめ済みにする）。台帳にいない人には何も作らない。返事はどちらも同じ形
   if (path === "/api/login/prepare" && method === "POST") {
+    const stop = await guardPublic(request, env, "login_prepare", { ip: "public" });
+    if (stop) return stop;
     const body = await request.json().catch(() => ({}));
     const email = String(body.email || "").trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({ ok: false, error: "bad_email" }, 400);
@@ -805,6 +838,8 @@ async function handleApi(request, env, url) {
 
   if (path === "/api/register" && method === "POST") {
     const body = await request.json().catch(() => ({}));
+    const stop = await guardPublic(request, env, "register", { ip: "public", bot: true, token: body.turnstile, email: body.email || "" });
+    if (stop) return stop;
     const r = await registerPerson(env, body);
     return json(r.ok ? { ok: true, is_new: r.is_new } : r, r.ok ? 200 : 400);
   }
@@ -812,15 +847,19 @@ async function handleApi(request, env, url) {
   // 便 14b：LINE の友だちが「メールを登録」のリンクの頁から送る（ログイン不要・リンクの印で確かめる）
   if (path === "/api/line/link" && method === "POST") {
     const body = await request.json().catch(() => ({}));
+    const stop = await guardPublic(request, env, "line_link", { ip: "public", email: body.email || "" });
+    if (stop) return stop;
     const r = await line.link(env, body);
     return json(r, r.ok ? 200 : 400);
   }
 
   // 便 11a：公開のフォーム（ログイン不要）。/form?f=slug の頁がここを読む・送る
   const pf = path.match(/^[/]api[/]forms[/]([a-z0-9-]{2,41})$/);
-  if (pf && method === "GET") { const r = await forms.publicForm(env, pf[1]); return json(r, r.ok ? 200 : 404); }
+  if (pf && method === "GET") { const r = await forms.publicForm(env, pf[1]); return json(r.ok ? { ...r, bot_site_key: botSiteKey(env) } : r, r.ok ? 200 : 404); }
   if (pf && method === "POST") {
     const body = await request.json().catch(() => ({}));
+    const stop = await guardPublic(request, env, "form", { ip: "public", bot: true, token: body.turnstile, email: body.email || "" });
+    if (stop) return stop;
     const r = await forms.submit(env, pf[1], body);
     if (r.ok) delete r.id; // 台帳の番号は外へ出さない
     return json(r, r.ok ? 200 : r.error === "not_found" ? 404 : 400);
@@ -2182,21 +2221,14 @@ async function handleMcp(request, env, url) {
   const missing = missingConfig(env);
   if (missing.length) return json({ ok: false, error: "not_configured", missing_settings: missing }, 503);
 
-  const pathToken = url.pathname.startsWith("/mcp/") ? url.pathname.slice(5) : "";
+  // 便 R1：合言葉はヘッダー（Authorization: Bearer）だけで受ける。住所の中の合言葉（/mcp/合言葉）は受けない（住所は通信の記録に残りやすいため）
+  if (url.pathname !== "/mcp") return json({ error: "not_found" }, 404);
   const auth = request.headers.get("authorization") || "";
   const headerToken = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  if (!safeEqual(pathToken || headerToken, env.MCP_SECRET)) return json({ error: "unauthorized" }, 401);
+  if (!safeEqual(headerToken, env.MCP_SECRET)) return json({ error: "unauthorized" }, 401);
 
-  if (request.method === "GET") {
-    // 確かめ用：?tool=find_person&query=... で道具を 1 回呼べる（合言葉は同じ。POST と同じ処理を通す）
-    const tool = url.searchParams.get("tool");
-    if (tool) {
-      const args = Object.fromEntries([...url.searchParams].filter(([k]) => k !== "tool"));
-      const r = await rpc({ jsonrpc: "2.0", id: "get", method: "tools/call", params: { name: tool, arguments: args } }, env, url.origin);
-      return json(r.result || r);
-    }
-    return json({ ok: true, name: "utage-alt-demo", version: VERSION, tools: TOOLS.map((t) => t.name) });
-  }
+  // 便 R1：GET で道具を呼ぶ確かめ用の口（?tool=）は閉じた。GET は名前と版と道具の一覧だけ返す
+  if (request.method === "GET") return json({ ok: true, name: "utage-alt-demo", version: VERSION, tools: TOOLS.map((t) => t.name) });
   if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
   const msg = await request.json().catch(() => null);

@@ -25,6 +25,7 @@
       <div><label for="name">お名前</label><input id="name" type="text" autocomplete="name" required maxlength="60"></div>
       <div><label for="email">メールアドレス</label><input id="email" type="email" autocomplete="email" required></div>
       <label class="check"><input id="consent" type="checkbox"> <span><a href="/legal/privacy" target="_blank">プライバシーポリシー</a>と<a href="/legal/tokushoho" target="_blank">特定商取引法に基づく表記</a>を確かめ、お知らせのメールを受け取ります（いつでも配信を止められます）。</span></label>
+      <div id="bot"></div>
       <button class="btn block" id="go" type="submit">登録してリンクを受け取る</button>
       <div id="msg" class="msg hidden" role="status"></div>
     </form>
@@ -45,6 +46,7 @@
 </footer>
 <script type="module">
   import { getClient, api, rememberSource, currentSource, SOURCE_LABEL } from "/js/common.js";
+  import { mountBotCheck, botWaitMessage, BOT_ERROR_MESSAGE } from "/js/botcheck.js";
   rememberSource();
   const src = currentSource();
   if (src !== "direct") document.getElementById("srcnote").textContent = "流入元：" + (SOURCE_LABEL[src] || src);
@@ -57,6 +59,9 @@
   const refCode = (new URLSearchParams(location.search).get("ref") || "").slice(0, 20);
   // 便 12a：公開のページの決済の枠から来たときの経路（?r=名前）。初めて登録したときの経路として残る
   const routeName = (new URLSearchParams(location.search).get("r") || "").slice(0, 40);
+  // 便 R1：ロボット判定（表示用の鍵が返ったときだけ出す）
+  let bot = null;
+  fetch("/api/config").then((r) => r.json()).then(async (c) => { bot = await mountBotCheck($("bot"), c.botSiteKey); }).catch(() => {});
   async function openJoin(email) {
     const cfg = await fetch("/api/config").then((r) => r.json()).catch(() => ({}));
     if (!cfg.univapayAppId) return;
@@ -100,10 +105,13 @@
     const name = $("name").value.trim(), email = $("email").value.trim();
     if (!name || !email) return show("お名前とメールアドレスを入れてください。", false);
     if (!$("consent").checked) return show("同意のチェックが必要です。", false);
+    const wait = botWaitMessage(bot);
+    if (wait) return show(wait, false);
     $("go").disabled = true;
     try {
-      const r = await api("/api/register", { method: "POST", body: { name, email, source: src, consent: true, ...(refCode ? { ref: refCode } : {}), ...(routeName ? { route: routeName } : {}) } });
-      if (!r.ok) throw new Error(r.error === "bad_email" ? "メールアドレスの形が正しくありません。" : "登録できませんでした（" + (r.error || r.status) + "）");
+      const r = await api("/api/register", { method: "POST", body: { name, email, source: src, consent: true, ...(refCode ? { ref: refCode } : {}), ...(routeName ? { route: routeName } : {}), turnstile: bot ? bot.get() : "" } });
+      if (!r.ok && bot) bot.reset();
+      if (!r.ok) throw new Error(BOT_ERROR_MESSAGE[r.error] || (r.error === "bad_email" ? "メールアドレスの形が正しくありません。" : "登録できませんでした（" + (r.error || r.status) + "）"));
       const sb = await getClient();
       const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.origin + "/app", shouldCreateUser: true, data: { name } } });
       if (error) throw new Error("メールを送れませんでした：" + error.message);

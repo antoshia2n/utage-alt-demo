@@ -69,11 +69,17 @@ function sameHex(a, b) {
   for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return d === 0;
 }
-export async function personToken(env, cid) { return `${cid}.${await hmacHex(env, "person:" + cid)}`; }
+// 便 R1：人の印に期限を付けた（既定 30 日）。形は「人の番号.期限（秒）.署名」。期限切れと、期限の無い前の形（人の番号.署名）は「知らない人」
+export const PERSON_TOKEN_TTL_MS = 30 * 864e5;
+export async function personToken(env, cid, ttlMs = PERSON_TOKEN_TTL_MS) {
+  const exp = Math.floor((Date.now() + ttlMs) / 1000);
+  return `${cid}.${exp}.${await hmacHex(env, `person:${cid}:${exp}`)}`;
+}
 export async function readPersonToken(env, tok) {
-  const m = String(tok || "").match(/^([0-9a-f-]{36})[.]([0-9a-f]{32})$/i);
+  const m = String(tok || "").match(/^([0-9a-f-]{36})[.]([0-9]{9,11})[.]([0-9a-f]{32})$/i);
   if (!m) return null;
-  return sameHex(m[2], await hmacHex(env, "person:" + m[1])) ? m[1] : null;
+  if (Number(m[2]) * 1000 < Date.now()) return null;
+  return sameHex(m[3], await hmacHex(env, `person:${m[1]}:${m[2]}`)) ? m[1] : null;
 }
 export async function previewToken(env, pageId, version, ttlMs = 6 * 3600e3) {
   const exp = Math.floor((Date.now() + ttlMs) / 1000);
@@ -508,6 +514,26 @@ export const EMBED_JS = `(() => {
     const b = ev.target.closest && ev.target.closest("[data-lab-button]");
     if (b) send("click", b.getAttribute("data-lab-button"));
   }, true);
+  // 便 R1：ロボット判定（Cloudflare Turnstile）。フォームと予約の GET が表示用の鍵を返したときだけ、送るボタンの上に判定の欄を出す
+  let tsLoad = null;
+  const loadTs = () => tsLoad || (tsLoad = new Promise((res) => {
+    if (window.turnstile) { res(window.turnstile); return; }
+    const sc = document.createElement("script");
+    sc.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"; sc.async = true;
+    sc.onload = () => res(window.turnstile || null); sc.onerror = () => res(null);
+    document.head.appendChild(sc);
+  }));
+  async function mountBot(el, key, before) {
+    if (!key || PREVIEW) return null;
+    const box = document.createElement("div"); box.className = "lab-bot";
+    el.insertBefore(box, before);
+    const ts = await loadTs();
+    if (!ts) return { get: () => "", reset() {}, broken: true };
+    let token = "";
+    const id = ts.render(box, { sitekey: key, callback: (t) => { token = t; }, "expired-callback": () => { token = ""; }, "error-callback": () => { token = ""; } });
+    return { get: () => token, reset() { token = ""; try { ts.reset(id); } catch (_) {} } };
+  }
+  const BOT_MSG = { bot_check_failed: "確認のチェックが通りませんでした。チェックをやり直してから、もう一度送ってください", too_many: "短い時間に何度も送られています。時間をおいてもう一度お試しください" };
   const WHY = { required: "答えてください", not_number: "数で入れてください", not_date: "日付を選んでください", not_option: "選択肢から選んでください", too_long: "長すぎます" };
   function input(it) {
     const id = "lab-a-" + it.key, req = it.required ? " required" : "";
@@ -532,8 +558,10 @@ export const EMBED_JS = `(() => {
       + '<button type="button" class="lab-btn">' + (PREVIEW ? "（見本なので送れません）" : "送る") + '</button><div class="lab-err" data-msg></div>';
     const q = (s) => el.querySelector(s), go = q(".lab-btn"), msg = q("[data-msg]");
     if (PREVIEW) { go.disabled = true; return; }
+    const bot = await mountBot(el, r.bot_site_key, go);
     go.addEventListener("click", async () => {
       el.querySelectorAll("[data-e]").forEach((x) => (x.textContent = ""));
+      if (bot && !bot.get()) { msg.textContent = bot.broken ? "確認のチェックを読み込めませんでした。ページを開き直してください" : "確認のチェックが終わるまでお待ちください"; return; }
       const email = q('[data-k="email"]').value.trim();
       if (!/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(email)) { msg.textContent = "メールアドレスを確かめてください"; return; }
       if (!q('[data-k="consent"]').checked) { msg.textContent = "プライバシーポリシーと表記を確かめて、チェックを入れてください"; return; }
@@ -541,9 +569,11 @@ export const EMBED_JS = `(() => {
       for (const it of f.items) answers[it.key] = q("#lab-a-" + CSS.escape(it.key)).value;
       go.disabled = true; msg.textContent = "送っています…";
       const res = await fetch("/api/p/form/" + encodeURIComponent(slug), { method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email, name: q('[data-k="name"]') ? q('[data-k="name"]').value.trim() : "", consent: true, answers, page: PAGE, r: route, vid, source: store.get("lab_src") || "direct" }) })
+        body: JSON.stringify({ email, name: q('[data-k="name"]') ? q('[data-k="name"]').value.trim() : "", consent: true, answers, page: PAGE, r: route, vid, source: store.get("lab_src") || "direct", turnstile: bot ? bot.get() : "" }) })
         .then((x) => x.json()).catch(() => ({ ok: false, error: "network" }));
       go.disabled = false;
+      if (!res.ok && bot) bot.reset();
+      if (BOT_MSG[res.error]) { msg.textContent = BOT_MSG[res.error]; return; }
       if (res.ok && res.thanks_url && /^https:[/][/]/.test(res.thanks_url)) { if (res.u) store.set("lab_u", res.u); location.href = res.thanks_url; return; }
       if (res.ok) { if (res.u) store.set("lab_u", res.u); el.innerHTML = '<p class="lab-note" style="white-space:pre-wrap">' + esc(res.thanks || "受け取りました。ありがとうございます。") + "</p>"; return; }
       if (res.error === "bad_answers") { for (const b of res.fields || []) { const e = q('[data-e="' + b.key + '"]'); if (e) e.textContent = WHY[b.error] || "確かめてください"; } msg.textContent = "赤い字の欄を直してください"; return; }
@@ -585,16 +615,20 @@ export const EMBED_JS = `(() => {
       q("[data-picked]").textContent = "選んだ時間：" + (s ? s.label : "");
     }));
     if (PREVIEW) { go.disabled = true; return; }
+    const bot = await mountBot(el, r.bot_site_key, go);
     go.addEventListener("click", async () => {
       const email = q('[data-k="email"]').value.trim();
       if (!picked) { msg.textContent = "時間を 1 つ選んでください"; return; }
+      if (bot && !bot.get()) { msg.textContent = bot.broken ? "確認のチェックを読み込めませんでした。ページを開き直してください" : "確認のチェックが終わるまでお待ちください"; return; }
       if (!/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(email)) { msg.textContent = "メールアドレスを確かめてください"; return; }
       if (!q('[data-k="consent"]').checked) { msg.textContent = "プライバシーポリシーと表記を確かめて、チェックを入れてください"; return; }
       go.disabled = true; msg.textContent = "予約しています…";
       const res = await fetch("/api/p/booking/" + encodeURIComponent(slug), { method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email, name: q('[data-k="name"]').value.trim(), topic: q('[data-k="topic"]').value, consent: true, slot: picked, page: PAGE, r: route, vid, source: store.get("lab_src") || "direct" }) })
+        body: JSON.stringify({ email, name: q('[data-k="name"]').value.trim(), topic: q('[data-k="topic"]').value, consent: true, slot: picked, page: PAGE, r: route, vid, source: store.get("lab_src") || "direct", turnstile: bot ? bot.get() : "" }) })
         .then((x) => x.json()).catch(() => ({ ok: false, error: "network" }));
       go.disabled = false;
+      if (!res.ok && bot) bot.reset();
+      if (BOT_MSG[res.error]) { msg.textContent = BOT_MSG[res.error]; return; }
       if (res.ok && res.u) store.set("lab_u", res.u);
       if (res.ok && res.thanks_url && /^https:[/][/]/.test(res.thanks_url)) { location.href = res.thanks_url; return; }
       if (res.ok) { el.innerHTML = '<p class="lab-note" style="white-space:pre-wrap">' + esc(res.label + " で予約を受け付けました。確認のメールをお送りしました。") + "</p>"; return; }
