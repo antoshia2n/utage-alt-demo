@@ -219,3 +219,38 @@ test("ログインのメール：台帳にいない住所へは送らない。�
   assert.equal(r3.status, 200);
   assert.equal(sent.length, 2);
 });
+
+// 統括 2026-10-11 の決め 2：AI の窓口から版とロボット判定の入切と回数の上限を読める（/api/health に届かない会話のため）
+test("get_health：版・ロボット判定の入切・回数の上限を返し、鍵の値は返さない", async () => {
+  const env = { ...baseEnv, TURNSTILE_SITE_KEY: "site-k", TURNSTILE_SECRET_KEY: "secret-k" };
+  const res = await call(env, "https://lab.shia2n.jp/mcp", { method: "POST", headers: { authorization: "Bearer test-secret", "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 9, method: "tools/call", params: { name: "get_health", arguments: {} } }) });
+  const j = await res.json();
+  const text = JSON.stringify(j);
+  const r = JSON.parse(j.result.content[0].text);
+  assert.match(r.version, /^0\.\d+\.\d+-b[0-9a-z]+$/);
+  assert.equal(r.shield.bot_check, true);
+  assert.deepEqual(r.limits.ip.PUBLIC_LIMIT, { limit: 10, period: 60 });
+  assert.equal(r.limits.email[0].max, 3);
+  assert.ok(!text.includes("secret-k") && !text.includes("site-k"), "鍵の値を返さない");
+});
+
+test("回数の上限の写し（IP_LIMITS）は wrangler.jsonc の ratelimits と同じ値", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { IP_LIMITS } = await import("../src/shield.js");
+  const w = readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8");
+  for (const [name, v] of Object.entries(IP_LIMITS)) {
+    const m = w.match(new RegExp(`"name": "${name}"[^}]*"limit": (\\d+), "period": (\\d+)`));
+    assert.ok(m, name + " が wrangler.jsonc に無い");
+    assert.deepEqual({ limit: Number(m[1]), period: Number(m[2]) }, v, name);
+  }
+});
+
+test("B の決済の窓は metadata に source=lab を付け、知らせの受け口は記録に meta_source を残す", async () => {
+  const { readFileSync } = await import("node:fs");
+  const pay = readFileSync(new URL("../public/js/pay.js", import.meta.url), "utf8");
+  const metas = pay.match(/metadata: \{[^}]*\}/g) || [];
+  assert.equal(metas.length, 2);
+  for (const m of metas) assert.ok(m.includes('source: "lab"'), m);
+  const bin3 = readFileSync(new URL("../src/bin3.js", import.meta.url), "utf8");
+  assert.ok(bin3.includes("meta_source: (data.metadata && data.metadata.source) || null"));
+});

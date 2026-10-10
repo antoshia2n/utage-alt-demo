@@ -155,7 +155,7 @@ export function makeBin3(h) {
     const expected = await webhookAuth(env);
     const event = body && body.event;
     const data = (body && body.data) || {};
-    const reqLog = { event: event || null, id: data.id || null, subscription_id: data.subscription_id || (String(event || "").startsWith("subscription_") ? data.id : null), status: data.status || null, auth_ok: safeEqual(auth, expected) };
+    const reqLog = { event: event || null, id: data.id || null, subscription_id: data.subscription_id || (String(event || "").startsWith("subscription_") ? data.id : null), status: data.status || null, meta_source: (data.metadata && data.metadata.source) || null, auth_ok: safeEqual(auth, expected) };
     if (!safeEqual(auth, expected)) {
       await logInbound(env, "univapay", reqLog, { ok: false, error: "unauthorized" }, 401);
       return json({ ok: false, error: "unauthorized" }, 401);

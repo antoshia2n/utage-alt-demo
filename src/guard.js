@@ -47,6 +47,8 @@ export const DEFAULT_MODES = {
   get_today: "auto", get_stage_board: "auto", set_calendar_url: "approve",
   // 便 8f-3：生徒へのメッセージは承認（添削の返信と同じ）、Naoki への通知と端末の一覧は自動
   send_chat: "approve", notify_naoki: "auto", get_push_status: "auto",
+  // 版と入口の守りを読むだけ（統括 2026-10-11 の決め 2）
+  get_health: "auto",
   // 便 8g-2：紹介の集計を読むのは自動、払った記録はお金の記録なので承認
   list_referrals: "auto", mark_referral_paid: "approve",
   // 便 12a：ページ。読む・依頼を読む・下書きを置く・経路を数えるのは自動（外の人には何も見えない）。公開と止めるのは承認
