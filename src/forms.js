@@ -279,5 +279,19 @@ export function makeForms(h) {
     return people.filter((p) => conds.every((c) => matchField((map.get(p.id) || {})[c.key], c)));
   }
 
-  return { listFields, setField, listForms, setForm, publicForm, submit, listAnswers, personValues, filterByFields, hooks };
+  // 便 11b：自動の動きの「人の項目に値を書く」。項目の型どおりに直してから書く。前と同じ値なら changed false
+  async function setPersonValue(env, person_id, key, raw) {
+    if (!UUID_RE.test(String(person_id || ""))) return { ok: false, error: "bad_person_id" };
+    if (!KEY_RE.test(String(key || ""))) return { ok: false, error: "bad_field" };
+    const [field] = await db(env, "GET", `b_fields?select=*&key=eq.${key}`);
+    if (!field || field.archived_at) return { ok: false, error: "no_field" };
+    const r = cleanValue(field, raw);
+    if (r.error) return { ok: false, error: "bad_value", detail: r.error };
+    const [cur] = await db(env, "GET", `b_person_values?select=value&customer_id=eq.${person_id}&key=eq.${key}`);
+    if (cur && String(cur.value) === r.value) return { ok: true, changed: false, value: r.value };
+    await db(env, "POST", "b_person_values?on_conflict=customer_id,key", [{ customer_id: person_id, key, value: r.value, updated_at: now() }], "resolution=merge-duplicates,return=minimal");
+    return { ok: true, changed: true, value: r.value, before: cur ? cur.value : null };
+  }
+
+  return { listFields, setField, listForms, setForm, publicForm, submit, listAnswers, personValues, filterByFields, setPersonValue, hooks };
 }

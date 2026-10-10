@@ -61,7 +61,7 @@ import { makeSeminars } from "./seminars.js";
 import { makeBooking } from "./booking.js";
 import { makePages, EMBED_JS, personToken, PURPOSES, ROUTE_RE as ROUTE_OK } from "./pages.js";
 
-const VERSION = "0.33.0-b12d";
+const VERSION = "0.34.0-b11b";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -85,6 +85,9 @@ export default {
       // B の便 5：メールの中のリンク（押したら記録して元の住所へ）
       const rl = path.match(/^[/]r[/]([0-9a-f]{12})$/);
       if (rl && !missingConfig(env).length) return await deliver.handleClick(env, url, rl[1]);
+      // B の便 11b：メールを開いたかを数える画像
+      const ro = path.match(/^[/]o[/](step|broadcast)[/]([0-9a-f-]{36}|[0-9]{1,9})$/);
+      if (ro && !missingConfig(env).length) return await deliver.handleOpen(env, url, ro[1], ro[2]);
       return env.ASSETS.fetch(request);
     } catch (err) {
       return json({ ok: false, error: "internal_error", detail: String(err && err.message || err) }, 500);
@@ -1631,14 +1634,14 @@ const TOOLS = [
     name: "preview_audience",
     screen: "deliver",
     say: "一斉配信の宛先の人数を数える",
-    description: "一斉配信の宛先を、条件で絞って数える（送らない）。filter の欄：source（流入元の配列 x／note／youtube／direct／other）・purchased（買った商品の id の配列）・not_purchased（買っていない商品の id の配列）・member（会員か true／false）・note_member（true／false）・registered_after／registered_before（日時）・emails（メールの配列。試しに送るとき）・labels（このラベルを全部持つ人。get_labels の名前）・not_labels（このラベルをどれも持たない人）・fields（人の項目の値で絞る [{ key, op, value }]。op は eq 等しい／contains 含む／gte 以上／lte 以下／empty 空／not_empty 空でない）。配信を止めている人の数も返す。コネクタのセレクタも同じ形。",
+    description: "一斉配信の宛先を、条件で絞って数える（送らない）。filter の欄：source（流入元の配列 x／note／youtube／direct／other）・purchased（買った商品の id の配列）・not_purchased（買っていない商品の id の配列）・member（会員か true／false）・note_member（true／false）・registered_after／registered_before（日時）・emails（メールの配列。試しに送るとき）・labels（このラベルを全部持つ人。get_labels の名前）・not_labels（このラベルをどれも持たない人）・fields（人の項目の値で絞る [{ key, op, value }]。op は eq 等しい／contains 含む／gte 以上／lte 以下／empty 空／not_empty 空でない）・opened（このメールを全部開いた人。「broadcast:一斉配信の番号」か「step:ステップの番号」の配列）・not_opened（どれも開いていない人。同じ形）。開いたかは目安（iPhone のメールは受け取っただけで開いたことになる場合がある）。配信を止めている人の数も返す。コネクタのセレクタも同じ形。",
     inputSchema: { type: "object", properties: { filter: { type: "object" } } },
   },
   {
     name: "draft_broadcast",
     screen: "deliver",
     say: "一斉配信の下書きを作る・直す",
-    description: "一斉配信の下書きを作る、または直す（送らない）。subject・body・filter（preview_audience と同じ形）。本文の {{name}} は名前に置き換わり、https のリンクは押したかを数える住所に置き換わる。id を渡すと下書きのままのものを直す。宛先の人数も返す。",
+    description: "一斉配信の下書きを作る、または直す（送らない）。subject・body・filter（preview_audience と同じ形）。本文の {{name}} は名前に置き換わり、https のリンクは押したかを数える住所に置き換わる。[[ボタンの文字|https://…]] と書くと見た目の付いたボタンになる（文字だけのメールでは「ボタンの文字：住所」）。メールには開いたかを数える画像が付く。id を渡すと下書きのままのものを直す。宛先の人数も返す。",
     inputSchema: { type: "object", properties: { id: { type: "string" }, subject: { type: "string" }, body: { type: "string" }, filter: { type: "object" } }, required: ["subject", "body"] },
   },
   {
@@ -1659,28 +1662,28 @@ const TOOLS = [
     name: "list_broadcasts",
     screen: "deliver",
     say: "一斉配信の一覧と結果を見る",
-    description: "一斉配信の一覧と結果（状態・宛先の人数・送った・送らなかった・失敗・リンクを押した回数と人数）。open_to_all が false の間は、テスト宛て以外へは送らない。",
+    description: "一斉配信の一覧と結果（状態・宛先の人数・送った・送らなかった・失敗・リンクを押した回数と人数・開いた人の数 opened_people（目安））。open_to_all が false の間は、テスト宛て以外へは送らない。",
     inputSchema: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 100 } } },
   },
   {
     name: "list_steps",
     screen: "blueprint",
     say: "コネクタ（〜したら → 誰に → 〜する。ステップ配信も入る）の一覧を見る",
-    description: "コネクタ（トリガー → セレクタ → アクション）の一覧。便 5 のステップ配信もここに入る。欄：trigger（きっかけ）・trigger_args・product_id・delay_hours（何時間後）・selector（誰に。preview_audience の filter と同じ形・空なら全員）・action（send_email／notify_admin／add_label）・action_args・subject・body・active。結果の数（sent・clicks・notified・labeled・skipped）と、選べるきっかけ triggers・アクション actions も返す。",
+    description: "コネクタ（トリガー → セレクタ → アクション）の一覧。便 5 のステップ配信もここに入る。欄：trigger（きっかけ）・trigger_args・product_id・delay_hours（何時間後）・selector（誰に。preview_audience の filter と同じ形・空なら全員）・action（send_email／notify_admin／add_label／move_to／set_field）・action_args・subject・body・active。結果の数（sent・clicks・opened_people（開いた人・目安）・notified・labeled・moved・fields_set・skipped）と、選べるきっかけ triggers・アクション actions も返す。",
     inputSchema: { type: "object", properties: {} },
   },
   {
     name: "set_step",
     screen: "blueprint",
     say: "コネクタを足す・直す・動かす・止める",
-    description: "コネクタを足す・直す・動かす・止める。承認が要る道具。欄：id（直すとき）・name・trigger（registered 登録した／purchase 買った／clicked メールのリンクを押した／lesson_viewed 教材を見た／correction_submitted 添削を出した／login ログインした／label_added ラベルが付いた／form_submitted フォームに答えた）・trigger_args（label：label_added のときのラベル・url：clicked のときのリンク・form：form_submitted のときのフォームの slug）・product_id（purchase のとき。省くとどの購入でも）・delay_hours（何時間後）・selector（誰に。preview_audience の filter と同じ形）・action（send_email メールを送る／notify_admin Naoki に知らせる／add_label ラベルを付ける）・action_args（label：add_label のとき）・subject・body（{{name}}・{{email}}・{{product}}・{{label}}・{{url}} が置き換わる）・active。動かした時刻より後のきっかけだけが対象。セレクタに当たらない人は connector_skipped として残る。",
+    description: "コネクタを足す・直す・動かす・止める。承認が要る道具。欄：id（直すとき）・name・trigger（registered 登録した／purchase 買った／clicked メールのリンクを押した／lesson_viewed 教材を見た／correction_submitted 添削を出した／login ログインした／label_added ラベルが付いた／form_submitted フォームに答えた／page_viewed ページを見た／page_clicked ページのボタンを押した／moved ほかの自動の動きから移された）・trigger_args（label：label_added のときのラベル・url：clicked のときのリンク・form：form_submitted のときのフォームの slug）・product_id（purchase のとき。省くとどの購入でも）・delay_hours（何時間後）・selector（誰に。preview_audience の filter と同じ形）・action（send_email メールを送る／notify_admin Naoki に知らせる／add_label ラベルを付ける／move_to 別の自動の動きへ移す／set_field 人の項目に値を書く）・action_args（label：add_label のとき・step_id：move_to のとき。移す先はきっかけが moved の自動の動きだけ・field と value：set_field のとき。field は list_fields の key）・subject・body（{{name}}・{{email}}・{{product}}・{{label}}・{{url}} が置き換わる。[[ボタンの文字|https://…]] でボタン）・active。移す・移されるの連なりは 5 段まで。動かした時刻より後のきっかけだけが対象。セレクタに当たらない人は connector_skipped として残る。",
     inputSchema: {
       type: "object",
       properties: {
         id: { type: "integer" }, name: { type: "string" },
-        trigger: { type: "string", enum: ["registered", "purchase", "clicked", "lesson_viewed", "correction_submitted", "login", "label_added", "form_submitted"] },
+        trigger: { type: "string", enum: ["registered", "purchase", "clicked", "lesson_viewed", "correction_submitted", "login", "label_added", "form_submitted", "page_viewed", "page_clicked", "moved"] },
         trigger_args: { type: "object" }, product_id: { type: ["string", "null"] }, delay_hours: { type: "integer" },
-        selector: { type: "object" }, action: { type: "string", enum: ["send_email", "notify_admin", "add_label"] }, action_args: { type: "object" },
+        selector: { type: "object" }, action: { type: "string", enum: ["send_email", "notify_admin", "add_label", "move_to", "set_field"] }, action_args: { type: "object" },
         subject: { type: "string" }, body: { type: "string" }, active: { type: "boolean" }, sort: { type: "integer" },
       },
     },

@@ -7,6 +7,8 @@
 //   email_unsubscribed     … 配信を止めた
 // 外から来た知らせ（UnivaPay の Webhook）は inbound_log に受け取った中身と返事を 1 件ずつ残す。
 
+import { mailHtml, mailText } from "./mailhtml.js";
+
 export const PLAN = { name: "言語化ラボ 月額（テスト）", amount: 3000, currency: "jpy", period: "monthly" };
 
 const UNIVAPAY_API = "https://api.univapay.com";
@@ -226,7 +228,8 @@ export function makeBin3(h) {
   }
 
   // 送った・送らなかった・失敗した、のどれでも出来事として積む（0 件と失敗を混ぜない）
-  async function sendMail(env, customer, { kind, subject, text, actor = "site", force = false, extra = {} }) {
+  // 便 11b：見た目の付いた型（src/mailhtml.js）で送る。openUrl があれば開いたかを数える画像を付ける
+  async function sendMail(env, customer, { kind, subject, text, actor = "site", force = false, extra = {}, openUrl = "" }) {
     const base = { kind, to: customer.email, subject, ...extra };
     if (!force && await unsubscribed(env, customer.id)) {
       await addEvent(env, customer.id, "email_blocked", { ...base, reason: "unsubscribed" }, actor);
@@ -245,9 +248,8 @@ export function makeBin3(h) {
     const origin = env.PUBLIC_ORIGIN || "https://utage-alt-demo.gameister1.workers.dev";
     const unsubUrl = `${origin}/api/unsubscribe?c=${customer.id}&t=${await unsubToken(env, customer.id)}`;
     const foot = h.mailcfg.footer(env, cfg, unsubUrl);
-    const bodyText = String(text) + foot.text;
-    const html = "<div style=\"font-family:sans-serif;line-height:1.8;white-space:pre-wrap\">" + escapeHtml(String(text)) + "</div>"
-      + "<hr style=\"border:0;border-top:1px solid #ddd;margin:24px 0\"><div style=\"font-size:12px;color:#777;font-family:sans-serif\">" + foot.html + "</div>";
+    const bodyText = mailText(text) + foot.text;
+    const html = mailHtml(String(text), { footHtml: foot.html, openUrl, brand: env.B_STORE ? "シアラボ" : "言語化ラボ（デモ）" });
     try {
       const msg = {
         to: customer.email, from: h.mailcfg.fromField(cfg), subject, text: bodyText, html,

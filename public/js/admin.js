@@ -1084,7 +1084,29 @@ function bfFilter() {
   // 便 11a：人の項目で絞る（1 つ）
   const fk = $("bf-fkey").value, fop = $("bf-fop").value, fv = $("bf-fval").value.trim();
   if (fk && (fv || fop === "empty" || fop === "not_empty")) f.fields = [{ key: fk, op: fop, value: fv }];
+  addOpenCond(f, $("bf-open").value);
   return f;
+}
+// 便 11b：「メールを開いたか」の選ぶ欄。値は "opened|broadcast:番号" の形
+function addOpenCond(f, v) {
+  const [k, ref] = String(v || "").split("|");
+  if ((k === "opened" || k === "not_opened") && ref) f[k] = [ref];
+}
+const openValue = (f) => (f.opened && f.opened[0] ? "opened|" + f.opened[0] : f.not_opened && f.not_opened[0] ? "not_opened|" + f.not_opened[0] : "");
+let mailNames = {};
+function fillMailOpenOptions(r) {
+  mailNames = {};
+  for (const b of r.broadcasts || []) mailNames["broadcast:" + b.id] = b.subject || "（件名なし）";
+  for (const s of (r.steps || []).filter(isMailStep)) mailNames["step:" + s.id] = s.subject || s.name;
+  const opts = '<option value="">（使わない）</option>' + Object.entries(mailNames).map(([k, n]) =>
+    `<option value="opened|${esc(k)}">開いた：${esc(n)}</option><option value="not_opened|${esc(k)}">開いていない：${esc(n)}</option>`).join("");
+  document.querySelectorAll("select.mail-open").forEach((sel) => { const keep = sel.value; sel.innerHTML = opts; sel.value = keep; });
+}
+function fillActionOptions(r) {
+  const keepS = $("sf-astep").value, keepF = $("sf-afield").value;
+  $("sf-astep").innerHTML = '<option value="">（選ぶ）</option>' + (r.steps || []).filter((s) => s.trigger === "moved").map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join("");
+  $("sf-afield").innerHTML = '<option value="">（選ぶ）</option>' + (fieldsCache || []).filter((f) => !f.archived_at).map((f) => `<option value="${esc(f.key)}">${esc(f.label)}</option>`).join("");
+  $("sf-astep").value = keepS; $("sf-afield").value = keepF;
 }
 const splitList = (v) => String(v || "").split(/[,、]/).map((x) => x.trim()).filter(Boolean);
 let triggerNames = {}, actionNames = {};
@@ -1097,7 +1119,10 @@ function connectorText(s) {
   const ta = s.trigger_args || {};
   const when = (triggerNames[s.trigger] || s.trigger) + (s.product_id ? "（" + s.product_id + "）" : "") + (ta.label ? "「" + ta.label + "」" : "") + (ta.url ? "（" + String(ta.url).slice(0, 30) + "）" : "") + (ta.form ? "「" + (formNames[ta.form] || ta.form) + "」" : "") + (ta.page ? "「" + (pageNames[ta.page] || ta.page) + "」" : "") + (ta.button ? "のボタン " + ta.button : "") + (s.delay_hours ? `・${s.delay_hours} 時間後` : "");
   const who = filterText(s.selector || {});
-  const what = (actionNames[s.action] || s.action) + (s.action === "add_label" && s.action_args && s.action_args.label ? "「" + s.action_args.label + "」" : "");
+  const aa = s.action_args || {};
+  const target = s.action === "move_to" && aa.step_id ? (stepsCache.find((x) => x.id === aa.step_id) || {}).name || "番号 " + aa.step_id : "";
+  const what = (actionNames[s.action] || s.action) + (s.action === "add_label" && aa.label ? "「" + aa.label + "」" : "")
+    + (target ? "「" + target + "」" : "") + (s.action === "set_field" && aa.field ? "「" + (fieldNames[aa.field] || aa.field) + " ＝ " + (aa.value || "（空）") + "」" : "");
   return { when, who, what };
 }
 function filterText(f) {
@@ -1109,11 +1134,13 @@ function filterText(f) {
   if (f.labels) parts.push("ラベル " + f.labels.join("・"));
   if (f.not_labels) parts.push("ラベルなし " + f.not_labels.join("・"));
   for (const c of f.fields || []) parts.push("項目 " + (fieldNames[c.key] || c.key) + " " + (OP_LABEL[c.op] || c.op) + (["empty", "not_empty"].includes(c.op) ? "" : " " + c.value));
+  for (const k of f.opened || []) parts.push("開いた「" + (mailNames[k] || k) + "」");
+  for (const k of f.not_opened || []) parts.push("開いていない「" + (mailNames[k] || k) + "」");
   return parts.join("／") || "全員";
 }
 let deliverReady = false, deliverData = null, bfTabs = null, sfTabs = null;
 async function loadDeliver() {
-  loadFieldOptions();
+  await loadFieldOptions();
   if (!deliverReady) {
     deliverReady = true;
     $("bf-src").innerHTML = ["x", "note", "youtube", "direct", "other"].map((s) => `<label class="check" style="margin:0"><input type="checkbox" value="${s}"> <span>${esc(SOURCE_LABEL[s] || s)}</span></label>`).join("");
@@ -1151,12 +1178,15 @@ async function loadDeliver() {
       const sl = splitList($("sf-labels").value), sn = splitList($("sf-nolabels").value);
       if (sl.length) selector.labels = sl;
       if (sn.length) selector.not_labels = sn;
+      addOpenCond(selector, $("sf-open").value);
       const body = {
         name: $("sf-name").value, trigger: tr, product_id: tr === "purchase" ? ($("sf-product").value.trim() || null) : null,
         trigger_args: tr === "label_added" ? { label: $("sf-tlabel").value.trim() } : tr === "clicked" && $("sf-turl").value.trim() ? { url: $("sf-turl").value.trim() } : tr === "form_submitted" && $("sf-tform").value ? { form: $("sf-tform").value }
           : tr === "page_viewed" || tr === "page_clicked" ? { ...($("sf-tpage").value ? { page: $("sf-tpage").value } : {}), ...(tr === "page_clicked" && $("sf-tbutton").value.trim() ? { button: $("sf-tbutton").value.trim() } : {}) } : {},
         delay_hours: Number($("sf-delay").value.replace(/[^0-9]/g, "") || 0), selector,
-        action: ac, action_args: ac === "add_label" ? { label: $("sf-alabel").value.trim() } : {},
+        action: ac, action_args: ac === "add_label" ? { label: $("sf-alabel").value.trim() }
+          : ac === "move_to" ? { step_id: Number($("sf-astep").value) || null }
+          : ac === "set_field" ? { field: $("sf-afield").value, value: $("sf-avalue").value.trim() } : {},
         subject: $("sf-subject").value, body: $("sf-body").value,
         active: $("sf-active").checked,
       };
@@ -1176,6 +1206,7 @@ async function loadDeliver() {
   const r = await api("/api/admin/deliver", { token });
   if (!r.ok) { $("dv-warm").textContent = "読めませんでした（" + (r.error || r.status) + "）"; return; }
   deliverData = r;
+  fillMailOpenOptions(r);
   $("dv-warm").textContent = (r.warm ? `今日の上限 ${r.warm.cap} 通（送り始めて ${r.warm.day + 1} 日目・今日 ${r.warm.sent_today} 通）` : "デモの置き場") + (r.open_to_all ? "" : "・いまはテスト宛てにだけ届く");
   await loadCampaigns();
   const bcRows = campRows("deliver", "broadcast", r.broadcasts, (b) => b.id, () => loadDeliver());
@@ -1187,11 +1218,13 @@ async function loadDeliver() {
     { key: "subject", label: "件名", html: (b) => `<div class="c-name">${esc(b.subject)}</div><div class="sub">${esc(filterText(b.filter || {}))}</div>` },
     { key: "status", label: "状態", html: (b) => pill(BC_LABEL[b.status] || b.status, b.status === "draft" || b.status === "canceled" ? "gray" : b.status === "done" ? "" : "warn") },
     { key: "sent", label: "送った", sortVal: (b) => b.sent || 0, html: (b) => `${b.sent}${b.target_count != null ? ` <span class="sub">／${b.target_count}</span>` : ""}` },
+    { key: "opened_people", label: "開いた人", cls: "c-src", sortVal: (b) => b.opened_people || 0, html: (b) => String(b.opened_people || 0) },
     { key: "clicked_people", label: "押した人", cls: "c-src", sortVal: (b) => b.clicked_people || 0, html: (b) => String(b.clicked_people || 0) },
     campCol("broadcast", (b) => b.id),
     { key: "created_at", label: "作った日", cls: "c-reg", html: (b) => esc(dayOf(b.created_at)) },
   ], bcRows, (b) => openBroadcast(b), r.broadcasts.length ? "この企画のメールはありません" : "まだありません。「新しく作る」から作ります");
   stepsCache = r.steps;
+  fillActionOptions(r);
   if (r.triggers && !$("sf-trigger").options.length) {
     triggerNames = r.triggers; actionNames = r.actions || {};
     $("sf-trigger").innerHTML = Object.entries(triggerNames).map(([k, v]) => `<option value="${esc(k)}">${esc(v)}</option>`).join("");
@@ -1203,7 +1236,7 @@ async function loadDeliver() {
     { key: "subject", label: "件名", html: (s) => { const c = connectorText(s); return `<div class="c-name">${esc(s.subject || s.name)}</div><div class="sub">${esc(c.when)} → ${esc(c.who)}</div>`; } },
     { key: "active", label: "状態", sortVal: (s) => (s.active ? 1 : 0), html: (s) => s.active ? pill("動いている") : pill("止めている", "gray") },
     { key: "delay_hours", label: "何時間後", cls: "c-src", sortVal: (s) => s.delay_hours || 0, html: (s) => String(s.delay_hours || 0) },
-    { key: "sent", label: "送った", sortVal: (s) => s.sent || 0, html: (s) => `${s.sent || 0} <span class="sub">押した ${s.clicks || 0}</span>` },
+    { key: "sent", label: "送った", sortVal: (s) => s.sent || 0, html: (s) => `${s.sent || 0} <span class="sub">開いた ${s.opened_people || 0}・押した ${s.clicks || 0}</span>` },
     campCol("step", (s) => s.id),
   ], msRows, (s) => openConnector(s), mailSteps.length ? "この企画のステップ配信はありません" : "まだありません。「新しく作る」から作ります");
   table("steps", [
@@ -1219,7 +1252,9 @@ async function openStepById(id) {
   const s = stepsCache.find((x) => String(x.id) === String(id));
   if (s) openConnector(s);
 }
-const stepResult = (s) => (s.action === "notify_admin" ? `知らせた ${s.notified || 0}` : s.action === "add_label" ? `付けた ${s.labeled || 0}` : `送った ${s.sent}・押した ${s.clicks} 回`) + (s.skipped ? `・条件外 ${s.skipped}` : "");
+const stepResult = (s) => (s.action === "notify_admin" ? `知らせた ${s.notified || 0}` : s.action === "add_label" ? `付けた ${s.labeled || 0}`
+  : s.action === "move_to" ? `移した ${s.moved || 0}` : s.action === "set_field" ? `書いた ${s.fields_set || 0}`
+  : `送った ${s.sent}・開いた ${s.opened_people || 0} 人・押した ${s.clicks} 回`) + (s.skipped ? `・条件外 ${s.skipped}` : "");
 
 function openBroadcast(b, msg) {
   const r = deliverData || {};
@@ -1236,6 +1271,7 @@ function openBroadcast(b, msg) {
     + `<section class="card" data-pane="result"><dl class="kv">
         <dt>宛先</dt><dd>${b.target_count ?? "送る列に入れたときに数える"}${b.target_count != null ? " 人" : ""}</dd>
         <dt>送った</dt><dd>${b.sent}・送らなかった ${b.blocked}・失敗 ${b.failed}</dd>
+        <dt>開いた（目安）</dt><dd>${b.opened_people || 0} 人<span class="note">　iPhone のメールは受け取っただけで開いたことになる場合があります</span></dd>
         <dt>リンクを押した</dt><dd>${b.clicked_people} 人（${b.clicks} 回）</dd>
       </dl></section>
       <section class="card" data-pane="body"><div class="note" style="margin-bottom:6px">件名：${esc(b.subject)}</div><div class="pre">${esc(b.body || "")}</div></section>
@@ -1281,6 +1317,8 @@ function openConnector(s, keepStatus, kind) {
     $("sf-tlabel").value = ta.label || ""; $("sf-turl").value = ta.url || ""; $("sf-tform").value = ta.form || ""; $("sf-tpage").value = ta.page || ""; $("sf-tbutton").value = ta.button || "";
     $("sf-labels").value = (sel.labels || []).join(","); $("sf-nolabels").value = (sel.not_labels || []).join(",");
     $("sf-action").value = s.action || "send_email"; $("sf-alabel").value = (s.action_args || {}).label || "";
+    $("sf-astep").value = (s.action_args || {}).step_id || ""; $("sf-afield").value = (s.action_args || {}).field || ""; $("sf-avalue").value = (s.action_args || {}).value || "";
+    $("sf-open").value = openValue(sel);
     $("sf-delay").value = s.delay_hours; $("sf-subject").value = s.subject; $("sf-body").value = s.body; $("sf-active").checked = s.active;
     $("sf-head").innerHTML = headHtml({ title: s.name, sub: `${esc(c.when)} → ${esc(c.who)} → ${esc(c.what)}`, pills: [s.active ? pill("動いている") : pill("止めている", "gray"), pill(stepResult(s), "gray")], foot: campPicker("step", s.id) });
     wireCampPicker($("sf-head"), () => loadDeliver());

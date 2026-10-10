@@ -43,7 +43,7 @@ export const PART_TYPES = {
 const UUID_RE = /^[0-9a-f-]{36}$/i;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MONTH_PREFIX_RE = /^\d{4}-\d{2}\s/;
-const WEEK_TYPES = ["registered", "purchase_completed", "email_sent", "consult_booked", "lesson_viewed", "correction_submitted", "seminar_registered", "form_submitted", "page_viewed"];
+const WEEK_TYPES = ["registered", "purchase_completed", "email_sent", "consult_booked", "lesson_viewed", "correction_submitted", "seminar_registered", "form_submitted", "page_viewed", "step_entered"];
 
 // 中の名前（シアニン用）。役目が空なら外の名前を使う
 export function innerName(campaignName, partType, role, outerName) {
@@ -77,7 +77,7 @@ export function buildParts({ products = [], steps = [], broadcasts = [], seminar
   for (const s of steps) {
     const mail = !s.action || s.action === "send_email";
     add("step", s.id, "warm", (mail ? s.subject || s.name : s.name || s.subject) || `コネクタ ${s.id}`, s.active ? "running" : "draft",
-      { trigger: s.trigger, product_id: s.product_id || null, trigger_args: s.trigger_args || {}, action: s.action || "send_email", note: s.name || "" });
+      { trigger: s.trigger, product_id: s.product_id || null, trigger_args: s.trigger_args || {}, action: s.action || "send_email", action_args: s.action_args || {}, note: s.name || "" });
   }
   for (const b of broadcasts) {
     const st = b.status === "draft" ? "draft" : (b.status === "queued" || b.status === "sending") ? "running" : "stopped";
@@ -129,6 +129,8 @@ export function buildEdges(parts) {
     }
     if (s.trigger === "lesson_viewed") add("course:mn", s.key, "教材を見た人");
     if (s.trigger === "correction_submitted") add("room:correction", s.key, "添削を出した人");
+    // 便 11b：「別の自動の動きへ移す」→ 移した先
+    if (s.action === "move_to" && s.action_args && s.action_args.step_id != null) add(s.key, `step:${s.action_args.step_id}`, "移す");
     if (s.trigger === "form_submitted") {
       const slug = s.trigger_args && s.trigger_args.form;
       for (const f of parts.filter((x) => x.type === "form" && (!slug || x.slug === slug))) add(f.key, s.key, "答えた人");
@@ -153,6 +155,8 @@ export function partKeyOf(e) {
   if (e.type === "purchase_completed" && p.product_id) return `product:${p.product_id}`;
   if (e.type === "email_sent" && p.kind === "step" && p.step_id != null) return `step:${p.step_id}`;
   if (e.type === "email_sent" && p.kind === "broadcast" && p.broadcast_id) return `broadcast:${p.broadcast_id}`;
+  // 便 11b：別の自動の動きから移された（移された先の部品に当たる）
+  if (e.type === "step_entered" && p.to != null) return `step:${p.to}`;
   if (e.type === "consult_booked") return p.type_id ? `booking:${p.type_id}` : "booking:consult";
   if (e.type === "lesson_viewed") return "course:mn";
   if (e.type === "correction_submitted") return "room:correction";
