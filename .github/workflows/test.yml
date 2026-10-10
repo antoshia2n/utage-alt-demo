@@ -1,0 +1,26 @@
+# 便 R2：プルリクと main への Merge のたびに試験を回す。結果はプルリクの画面（Merge のボタンの上）に緑か赤の印で出る。
+# 試験は外の部品を使わない（node: の組み込みだけ）ので、入れるのは Node だけ。本番への反映は今までどおり Cloudflare が main から行う
+name: test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      # 画面側の部品（public/js）は試験から読まれないので、書き間違いだけをここで確かめる
+      - name: 画面側の部品の書き間違い
+        run: for f in public/js/*.js src/*.js; do node --check "$f"; done
+      - name: 試験
+        run: node --test tests/*.test.mjs
