@@ -41,8 +41,10 @@ export function paidUntil(lastPaidAt, period) {
   d.setUTCDate(Math.min(day, last));
   return d.toISOString();
 }
-// 便 R3：止めたあとも期限まで使えるか（止めた出来事の keep_until が今より先）
-const keepsUntil = (e, now = Date.now()) => !!(e && e.type === "subscription_canceled" && e.payload && e.payload.keep_until && Date.parse(e.payload.keep_until) > now);
+// 便 R3：止めたあとも期限まで使えるか（最後が「止めた」で、本人が止めたときの keep_until が今より先）
+// 便 R3 の直し：本人が止めた直後に UnivaPay の「止まった」の知らせ（keep_until なし）が続いても、期限は消さない
+const keepsUntil = (last, keep, now = Date.now()) => !!(last && last.type === "subscription_canceled" && keep && Date.parse(keep) > now);
+const keepOf = (e) => (e && e.type === "subscription_canceled" && e.payload && e.payload.keep_until) || null;
 
 import { isTestPurchase } from "./purchase.js";
 
@@ -211,6 +213,7 @@ export function makeSell(h) {
       if (!subs.has(sid)) subs.set(sid, { since: null, product_id: null, last: null, amount: null });
       const s = subs.get(sid);
       if (e.type === "subscription_started") { s.since = s.since || e.occurred_at; s.product_id = p.product_id || s.product_id; s.amount = p.amount ?? s.amount; s.installments = p.installments || null; s.mode = p.mode || s.mode || null; }
+      if (keepOf(e)) s.keep = keepOf(e);
       s.last = e;
     }
     for (const [sid, s] of subs) {
@@ -219,8 +222,8 @@ export function makeSell(h) {
         product_id: s.product_id, subscription_id: sid, kind: s.installments ? "installment" : "subscription",
         name: prod ? prod.name : (s.product_id ? s.product_id : bin3.PLAN.name),
         // 便 R3：本人が止めた定期は、払った期間の終わり（keep_until）まで続いている扱い。期限は門番の表の expires_at にも入る
-        status: s.mode === "test" ? "test" : (SUB_ACTIVE.has(s.last.type) || keepsUntil(s.last) ? "active" : s.last.type.replace("subscription_", "")), mode: s.mode || null,
-        since: s.since, until: keepsUntil(s.last) ? s.last.payload.keep_until : null, ending: keepsUntil(s.last) || undefined,
+        status: s.mode === "test" ? "test" : (SUB_ACTIVE.has(s.last.type) || keepsUntil(s.last, s.keep) ? "active" : s.last.type.replace("subscription_", "")), mode: s.mode || null,
+        since: s.since, until: keepsUntil(s.last, s.keep) ? s.keep : null, ending: keepsUntil(s.last, s.keep) || undefined,
         grants: prod ? prod.grants : [], amount: s.amount, last_event_at: s.last.occurred_at,
       });
     }
@@ -458,15 +461,16 @@ export function makeSell(h) {
       if (e.type === "subscription_payment" && !(s.since && Date.parse(e.occurred_at) - Date.parse(s.since) < 600e3)) s.payments += 1;
       if (e.type === "subscription_payment") s.last_paid_at = e.occurred_at;
       if (e.type === "subscription_failed") s.failures += 1;
+      if (keepOf(e)) s.keep_until = keepOf(e);
       s.last_type = e.type; s.last_at = e.occurred_at; s.last_event = e;
     }
     return [...subs.values()].map(({ last_event, ...s }) => {
       const prod = s.product_id ? pmap[s.product_id] : null;
       let status = SUB_ACTIVE.has(s.last_type) ? "active" : s.last_type.replace("subscription_", "");
       if (s.installments && s.payments >= s.installments && status === "active") status = "completed";
-      if (keepsUntil(last_event)) status = "ending";
+      if (keepsUntil(last_event, s.keep_until)) status = "ending";
       const period = s.period || (prod && prod.period) || "monthly";
-      return { ...s, period, paid_until: paidUntil(s.last_paid_at, period), keep_until: (last_event.payload || {}).keep_until || null,
+      return { ...s, period, paid_until: paidUntil(s.last_paid_at, period), keep_until: s.keep_until || null,
         product_name: prod ? prod.name : s.product_id || bin3.PLAN.name, kind: s.installments ? "installment" : "subscription", status, status_label: STATUS_LABEL[status] || status };
     });
   }
