@@ -108,6 +108,7 @@ async function main() {
       : "この教材には動画がありません";
     showTab("lesson");
     window.scrollTo(0, 0);
+    loadLessonNotes(id);
     const res = await api("/api/events", { method: "POST", token, body: { type: "lesson_viewed", lesson_id: id } });
     // 記録できたら一覧の印をその場で付ける（読み直さなくても見える）
     if (res.ok && !viewed.has(id)) {
@@ -115,6 +116,39 @@ async function main() {
       document.querySelectorAll(`.lesson[data-id="${CSS.escape(id)}"] .meta`).forEach((meta) => meta.insertAdjacentHTML("beforeend", ' <span class="pill">視聴済み</span>'));
     }
   };
+  // 便 15：教材の下の質問と答え・自分のメモ
+  let qaLesson = null;
+  const fmtQa = (t) => `<time class="note">${esc(fmtTime(t))}</time>`;
+  async function loadLessonNotes(id) {
+    qaLesson = id;
+    $("l-q").value = ""; $("l-q-status").textContent = ""; $("l-memo-status").textContent = "";
+    const n = await api("/api/lesson/notes?lesson_id=" + encodeURIComponent(id), { token });
+    if (qaLesson !== id) return; // 読み込みの間に別の教材を開いた
+    $("l-qa").classList.toggle("hidden", !n.ok);
+    $("l-memo-box").classList.toggle("hidden", !n.ok);
+    if (!n.ok) return;
+    $("l-questions").innerHTML = n.questions.map((q) => `<div class="qa">
+      <div class="msg-me"><div class="bubble chat mine"><div class="pre">${esc(q.text)}</div></div><div class="meta">${fmtQa(q.at)}</div></div>
+      ${q.answers.length ? q.answers.map((a) => `<div class="msg-them"><div class="bubble chat"><div class="pre">${esc(a.text)}</div></div><div class="meta">${fmtQa(a.at)}<span class="pill gray">シアニンの答え</span></div></div>`).join("")
+        : '<p class="note" style="margin:4px 0 0">答えを待っています</p>'}
+    </div>`).join("");
+    $("l-memo").value = n.memo ? n.memo.text : "";
+  }
+  $("l-ask").addEventListener("click", async () => {
+    const text = $("l-q").value.trim();
+    if (!qaLesson || !text) { $("l-q-status").textContent = "質問を入れてください"; return; }
+    $("l-ask").disabled = true;
+    const r2 = await api("/api/room", { method: "POST", token, body: { kind: "chat", lesson_id: qaLesson, text } });
+    $("l-ask").disabled = false;
+    if (!r2.ok) { $("l-q-status").textContent = "送れませんでした（" + (r2.error || r2.status) + "）"; return; }
+    await loadLessonNotes(qaLesson);
+    $("l-q-status").textContent = "送りました";
+  });
+  $("l-memo-save").addEventListener("click", async () => {
+    if (!qaLesson) return;
+    const r2 = await api("/api/lesson/memo", { method: "POST", token, body: { lesson_id: qaLesson, text: $("l-memo").value } });
+    $("l-memo-status").textContent = r2.ok ? "保存しました" : "保存できませんでした（" + (r2.error || r2.status) + "）";
+  });
   document.querySelectorAll(".lesson").forEach((el) => {
     el.addEventListener("click", () => openLesson(el.dataset.id));
     el.addEventListener("keydown", (e) => { if (e.key === "Enter") openLesson(el.dataset.id); });
@@ -274,8 +308,8 @@ function setupRoom(token, communityUrl, communityState) {
     list.innerHTML = msgs.map((m) => m.kind === "chat"
       ? (m.from === "student"
         ? `<div class="msg-me"><div class="bubble chat mine">${m.text ? `<div class="pre">${esc(m.text)}</div>` : ""}${m.images.length ? `<div class="imgs">${m.images.map((k) => `<img data-key="${esc(k)}" alt="出した画像">`).join("")}</div>` : ""}</div>
-          <div class="meta"><time>${fmtTime(m.at)}</time>${m.read_by_cyanin ? '<span class="pill gray">既読</span>' : ""}</div></div>`
-        : `<div class="msg-them"><div class="bubble chat"><div class="reply-h">シアニン</div><div class="pre">${esc(m.text)}</div></div><div class="meta"><time>${fmtTime(m.at)}</time></div></div>`)
+          <div class="meta"><time>${fmtTime(m.at)}</time>${m.lesson ? `<span class="pill gray">教材の質問：${esc(m.lesson.title)}</span>` : ""}${m.read_by_cyanin ? '<span class="pill gray">既読</span>' : ""}</div></div>`
+        : `<div class="msg-them"><div class="bubble chat"><div class="reply-h">シアニン</div><div class="pre">${esc(m.text)}</div></div><div class="meta"><time>${fmtTime(m.at)}</time>${m.lesson ? `<span class="pill gray">「${esc(m.lesson.title)}」への答え</span>` : ""}</div></div>`)
       : m.from === "student"
       ? `<div class="msg-me"><div class="bubble">${m.text ? `<div class="pre">${esc(m.text)}</div>` : ""}${m.images.length ? `<div class="imgs">${m.images.map((k) => `<img data-key="${esc(k)}" alt="出した画像">`).join("")}</div>` : ""}</div>
           <div class="meta"><time>${fmtTime(m.at)}</time>${m.replied ? '<span class="pill">返信済み</span>' : m.read_by_cyanin ? '<span class="pill gray">既読</span>' : ""}</div></div>`
