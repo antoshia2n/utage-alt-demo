@@ -6,7 +6,12 @@
 //   中身は知らせの要点（種類・LINE の番号・メッセージの種類と文）と、転送の結果（状態の番号・かかった時間）。
 // LINE には署名を確かめた時点ですぐ 200 を返し、転送はそのあと（ctx.waitUntil）で行う。転送は 10 秒で打ち切る。
 // 戻し方（統括の条件 2）：LINE Developers の Webhook URL を、控えた UTAGE の住所に戻せば元どおり（B を通らなくなる）。
-// 表は増やさない。友だちと台帳の人を結ぶのと LINE で送るのは便 14b。
+// 表は増やさない。
+// 便 14b：LINE で送る。鍵は Cloudflare の秘密の値 LINE_TOKEN_<ACCOUNT を大文字>（LINE Developers の長期のチャネルアクセストークン）。
+//   友だち追加の知らせが来たら、その人専用の「メールを登録」のリンクを 1 通送る（push。UTAGE があいさつに返事の番号を使うので返事の番号は使わない）。
+//   リンクの先 /line-link?t=… でメールを入れると、台帳の人と LINE の番号が出来事 line_linked（account・user）で結ばれる。
+//   リンクの印は「アカウント:LINE の番号」をチャネルシークレットで署名したもの（ほかの人の番号をすり替えられない）。
+//   送る道具（send_line）は承認が要る。送ったら 1 人ずつ出来事 line_sent を積む。ブロックした人（最後が unfollow）には送らない。
 
 export const ACCOUNT_RE = /^[a-z][a-z_]{1,19}$/;
 export const FORWARD_PREFIX = "line_forward_";
@@ -15,6 +20,25 @@ const FORWARD_TIMEOUT_MS = 10000;
 const TEXT_KEEP = 1000;
 
 export const secretName = (account) => "LINE_SECRET_" + String(account).toUpperCase();
+export const tokenName = (account) => "LINE_TOKEN_" + String(account).toUpperCase();
+const LINE_API = "https://api.line.me/v2/bot";
+const TEXT_MAX = 2000;
+const b64u = (s) => btoa(String.fromCharCode(...new TextEncoder().encode(s))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const unb64u = (s) => { const b = atob(String(s).replace(/-/g, "+").replace(/_/g, "/")); return new TextDecoder().decode(Uint8Array.from(b, (c) => c.charCodeAt(0))); };
+
+// リンクの印：「account:user」を base64url にし、チャネルシークレットの HMAC の頭 22 字を付ける
+export async function linkToken(secret, account, user) {
+  const body = b64u(`${account}:${user}`);
+  const sig = (await lineSignature(secret, "link:" + body)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "").slice(0, 22);
+  return `${body}.${sig}`;
+}
+export function parseLinkToken(t) {
+  const m = String(t || "").match(/^([A-Za-z0-9_-]{8,200})[.]([A-Za-z0-9_-]{22})$/);
+  if (!m) return null;
+  let raw = ""; try { raw = unb64u(m[1]); } catch (_) { return null; }
+  const mm = raw.match(/^([a-z][a-z_]{1,19}):(U[0-9a-f]{32})$/);
+  return mm ? { account: mm[1], user: mm[2], body: m[1], sig: m[2] } : null;
+}
 
 // 署名：チャネルシークレットを鍵にした本文の HMAC-SHA256 を base64 にしたもの（LINE の公式の決まり）
 export async function lineSignature(secret, rawBody) {
@@ -89,6 +113,11 @@ export function makeLine(h) {
       const fw = await forwardUrl(env, account);
       const r = fw.url ? await forward(env, fw.url, raw, sig) : { ok: false, status: 0, ms: 0, error: "no_forward_url" };
       await logInbound(env, r.ok ? "line" : "line_forward_failed", request_, { forward: r }, r.ok ? 200 : (r.status || 502));
+      // 便 14b：友だち追加の人へ「メールを登録」のリンクを 1 通（鍵があり、まだ結ばれていない人だけ）
+      for (const e of events) {
+        if (e.type !== "follow" || !e.source || !e.source.userId) continue;
+        try { await sendLinkInvite(env, account, e.source.userId, secret); } catch (err) { await logInbound(env, "line_link_invite", { account }, { ok: false, error: String(err && err.message || err).slice(0, 200) }, 500); }
+      }
     })();
     if (ctx && ctx.waitUntil) ctx.waitUntil(work); else await work;
     return res({ ok: true }, 200);
@@ -104,7 +133,7 @@ export function makeLine(h) {
     const accounts = [...names].sort().map((a) => {
       const row = rows.find((r) => r.key === forwardKey(a));
       let host = null; try { host = row && row.value ? new URL(row.value).host : null; } catch (_) { host = "読めない住所"; }
-      return { account: a, webhook_url: `${origin}/api/line/webhook/${a}`, secret_name: secretName(a), secret_set: !!env[secretName(a)],
+      return { account: a, webhook_url: `${origin}/api/line/webhook/${a}`, secret_name: secretName(a), secret_set: !!env[secretName(a)], token_name: tokenName(a), token_set: !!env[tokenName(a)],
         forward_set: !!(row && row.value), forward_host: host, updated_at: row ? row.updated_at : null, updated_by: row ? row.updated_by : null };
     });
     return { ok: true, count: accounts.length, accounts, undo: "LINE Developers の Webhook URL を、控えた UTAGE の住所に戻せば元どおり" };
@@ -160,5 +189,116 @@ export function makeLine(h) {
     return { ok: true, days: d, count: accounts.length, ...total, accounts };
   }
 
-  return { handleWebhook, settings, setForward, inbound, forwardUrl };
+  // ---------- 便 14b：結ぶ・送る ----------
+  const origin = (env) => String(env.PUBLIC_ORIGIN || "https://lab.shia2n.jp").replace(/\/+$/, "");
+  async function api(env, account, method, path, body) {
+    const token = env[tokenName(account)];
+    if (!token) return { ok: false, status: 0, error: "no_token", need: tokenName(account) };
+    const r = await (h.fetch || fetch)(LINE_API + path, { method, headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+    const text = await r.text();
+    let data = null; try { data = text ? JSON.parse(text) : {}; } catch (_) { data = { raw: text.slice(0, 200) }; }
+    return r.ok ? { ok: true, status: r.status, data } : { ok: false, status: r.status, error: (data && data.message) || `line_${r.status}` };
+  }
+
+  // 結ばれている人：LINE の番号 → 台帳の人（最後に結んだもの）
+  async function links(env, account) {
+    const rows = await db(env, "GET", `events?select=customer_id,payload,occurred_at&type=eq.line_linked&payload->>account=eq.${account}&order=id.asc&limit=20000`);
+    const byUser = new Map(), byPerson = new Map();
+    for (const r of rows) { const u = r.payload && r.payload.user; if (!u) continue; byUser.set(u, r.customer_id); byPerson.set(r.customer_id, u); }
+    return { byUser, byPerson };
+  }
+  // 友だちの状態（受け口の記録から）：最後が unfollow ならブロック
+  async function friendState(env, account) {
+    const rows = await db(env, "GET", `inbound_log?select=request,at&channel=in.(line,line_forward_failed)&request->>account=eq.${account}&order=id.asc&limit=20000`);
+    const st = new Map();
+    for (const r of rows) for (const e of (r.request && r.request.events) || []) {
+      const u = e.source && e.source.user; if (!u) continue;
+      const o = st.get(u) || { user: u, first_at: e.at || r.at, last_at: null, blocked: false, messages: 0 };
+      if (e.type === "follow") o.blocked = false;
+      if (e.type === "unfollow") o.blocked = true;
+      if (e.type === "message") o.messages++;
+      o.last_at = e.at || r.at;
+      st.set(u, o);
+    }
+    return st;
+  }
+
+  async function sendLinkInvite(env, account, user, secret) {
+    if (!env[tokenName(account)]) return { ok: false, skipped: "no_token" };
+    const { byUser } = await links(env, account);
+    if (byUser.has(user)) return { ok: true, skipped: "linked" };
+    const url = `${origin(env)}/line-link?t=${await linkToken(secret, account, user)}`;
+    const text = `友だち追加ありがとうございます。\nお知らせをメールでも受け取れるよう、こちらからメールアドレスを登録してください。\n${url}`;
+    const r = await api(env, account, "POST", "/message/push", { to: user, messages: [{ type: "text", text }] });
+    await logInbound(env, "line_link_invite", { account, user }, { ok: r.ok, status: r.status, error: r.error || null }, r.ok ? 200 : (r.status || 500));
+    return r;
+  }
+
+  // リンクの頁から：印を確かめ、台帳に入れて（いなければ）LINE の番号を結ぶ
+  async function link(env, { t, email, name, consent }) {
+    if (!env.B_STORE) return { ok: false, error: "demo_store" };
+    const p = parseLinkToken(t);
+    if (!p) return { ok: false, error: "bad_link" };
+    const secret = env[secretName(p.account)];
+    if (!secret || (await linkToken(secret, p.account, p.user)) !== `${p.body}.${p.sig}`) return { ok: false, error: "bad_link" };
+    const reg = await h.registerPerson(env, { email, name, consent: consent === true, source: "other", via: "line" });
+    if (!reg.ok) return reg;
+    const { byUser } = await links(env, p.account);
+    const already = byUser.get(p.user) === reg.id;
+    if (!already) await h.addEvent(env, reg.id, "line_linked", { account: p.account, user: p.user }, "site");
+    return { ok: true, linked: true, already };
+  }
+
+  // AI：友だちの一覧（結ばれた人の名前とメール・ブロック）
+  async function friends(env, { account }) {
+    if (!env.B_STORE) return { ok: false, error: "demo_store" };
+    if (!ACCOUNT_RE.test(String(account || ""))) return { ok: false, error: "bad_account" };
+    const [st, { byUser }] = await Promise.all([friendState(env, account), links(env, account)]);
+    const ids = [...new Set(byUser.values())];
+    const people = ids.length ? await db(env, "GET", `customers?select=id,name,email&id=in.(${ids.join(",")})`) : [];
+    const pm = new Map(people.map((x) => [x.id, x]));
+    for (const u of byUser.keys()) if (!st.has(u)) st.set(u, { user: u, first_at: null, last_at: null, blocked: false, messages: 0 });
+    const list = [...st.values()].map((o) => { const pid = byUser.get(o.user); const pr = pid ? pm.get(pid) : null;
+      return { user: o.user.slice(0, 6) + "…", linked: !!pid, person_id: pid || null, name: pr ? pr.name || "" : null, email: pr ? pr.email : null, blocked: o.blocked, messages: o.messages, first_at: o.first_at, last_at: o.last_at }; });
+    return { ok: true, account, token_set: !!env[tokenName(account)], count: list.length, linked: list.filter((x) => x.linked).length, blocked: list.filter((x) => x.blocked).length, friends: list };
+  }
+
+  // AI：送る（承認の道具）。person_id で 1 人、filter（一斉配信の宛先と同じ形）で絞った人たち。結ばれていない・ブロックの人は数えるだけ
+  async function send(env, { account, person_id, filter, text }, actor) {
+    if (!env.B_STORE) return { ok: false, error: "demo_store" };
+    if (!ACCOUNT_RE.test(String(account || ""))) return { ok: false, error: "bad_account" };
+    const body = String(text || "").trim();
+    if (!body) return { ok: false, error: "need_text" };
+    if (body.length > TEXT_MAX) return { ok: false, error: "too_long", max: TEXT_MAX };
+    if (!env[tokenName(account)]) return { ok: false, error: "no_token", need: tokenName(account) };
+    let targets;
+    if (person_id) targets = [String(person_id)];
+    else if (filter && typeof filter === "object") targets = (await h.audience(env, filter)).people.map((x) => x.id);
+    else return { ok: false, error: "need_person_or_filter" };
+    const [{ byPerson }, st] = await Promise.all([links(env, account), friendState(env, account)]);
+    const to = [], notLinked = [], blocked = [];
+    for (const id of targets) { const u = byPerson.get(id); if (!u) notLinked.push(id); else if (st.get(u) && st.get(u).blocked) blocked.push(id); else to.push({ id, u }); }
+    let sent = 0, failed = 0, error = null;
+    for (let i = 0; i < to.length; i += 500) {
+      const part = to.slice(i, i + 500);
+      const r = part.length === 1
+        ? await api(env, account, "POST", "/message/push", { to: part[0].u, messages: [{ type: "text", text: body }] })
+        : await api(env, account, "POST", "/message/multicast", { to: part.map((x) => x.u), messages: [{ type: "text", text: body }] });
+      if (r.ok) sent += part.length; else { failed += part.length; error = r.error; }
+      const rows = part.map((x) => ({ customer_id: x.id, type: "line_sent", payload: { account, text: body.slice(0, 200), ok: r.ok, ...(r.ok ? {} : { error: String(r.error).slice(0, 120) }) }, actor: actor === "mcp" ? "mcp" : "admin" }));
+      await db(env, "POST", "events", rows, "return=minimal");
+    }
+    await logInbound(env, "line_send", { account, targets: targets.length, actor }, { sent, failed, not_linked: notLinked.length, blocked: blocked.length, error }, failed ? 502 : 200);
+    return { ok: failed === 0, account, targets: targets.length, sent, failed, not_linked: notLinked.length, blocked: blocked.length, ...(error ? { error } : {}) };
+  }
+
+  // AI：今月の送れる数と使った数（LINE の公式の数）
+  async function quota(env, { account }) {
+    if (!ACCOUNT_RE.test(String(account || ""))) return { ok: false, error: "bad_account" };
+    const [q, c] = await Promise.all([api(env, account, "GET", "/message/quota"), api(env, account, "GET", "/message/quota/consumption")]);
+    if (!q.ok) return { ok: false, error: q.error, ...(q.need ? { need: q.need } : {}) };
+    return { ok: true, account, type: q.data.type, limit: q.data.type === "limited" ? q.data.value : null, used: c.ok ? c.data.totalUsage : null };
+  }
+
+  return { handleWebhook, settings, setForward, inbound, forwardUrl, link, friends, send, quota, sendLinkInvite };
 }
