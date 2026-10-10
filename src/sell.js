@@ -179,15 +179,17 @@ export function makeSell(h) {
       if (e.type === "purchase_completed") {
         if (p.kind === "subscription" || p.kind === "installment") continue; // 定期と回数を決めた分割は subscription_* の側で見る
         const active = !p.grant_until || new Date(p.grant_until).getTime() > Date.now();
+        // 便 12d：試しの決済（UnivaPay の mode test）は記録だけ残し、会員にも権利にも数えない
+        const test = p.mode === "test";
         items.push({ product_id: p.product_id, name: (pmap[p.product_id] || {}).name || p.product_name || p.product_id, kind: p.kind,
-          status: active ? "active" : "expired", since: e.occurred_at, until: p.grant_until || null, grants: p.grants || [], amount: p.amount });
+          status: test ? "test" : (active ? "active" : "expired"), mode: p.mode || null, since: e.occurred_at, until: p.grant_until || null, grants: p.grants || [], amount: p.amount });
         continue;
       }
       const sid = p.subscription_id;
       if (!sid) continue;
       if (!subs.has(sid)) subs.set(sid, { since: null, product_id: null, last: null, amount: null });
       const s = subs.get(sid);
-      if (e.type === "subscription_started") { s.since = s.since || e.occurred_at; s.product_id = p.product_id || s.product_id; s.amount = p.amount ?? s.amount; s.installments = p.installments || null; }
+      if (e.type === "subscription_started") { s.since = s.since || e.occurred_at; s.product_id = p.product_id || s.product_id; s.amount = p.amount ?? s.amount; s.installments = p.installments || null; s.mode = p.mode || s.mode || null; }
       s.last = e;
     }
     for (const [sid, s] of subs) {
@@ -195,17 +197,17 @@ export function makeSell(h) {
       items.push({
         product_id: s.product_id, subscription_id: sid, kind: s.installments ? "installment" : "subscription",
         name: prod ? prod.name : (s.product_id ? s.product_id : bin3.PLAN.name),
-        status: SUB_ACTIVE.has(s.last.type) ? "active" : s.last.type.replace("subscription_", ""),
+        status: s.mode === "test" ? "test" : (SUB_ACTIVE.has(s.last.type) ? "active" : s.last.type.replace("subscription_", "")), mode: s.mode || null,
         since: s.since, until: null, grants: prod ? prod.grants : [], amount: s.amount, last_event_at: s.last.occurred_at,
       });
     }
     // 会員＝続いている定期が 1 つでもある、または期限付き・権利付きの単発が生きている
     const live = items.filter((x) => x.status === "active");
     const memberItem = live.find((x) => x.kind === "subscription" || x.kind === "installment" || x.until || (x.grants && x.grants.length));
-    const lastSub = [...subs.values()].pop();
+    const lastSub = [...subs.values()].filter((x) => x.mode !== "test").pop();
     return {
       member: !!memberItem,
-      status: memberItem ? "active" : (lastSub ? lastSub.last.type.replace("subscription_", "") : (items.length ? "purchased" : "none")),
+      status: memberItem ? "active" : (lastSub ? lastSub.last.type.replace("subscription_", "") : (items.some((x) => x.status !== "test") ? "purchased" : "none")),
       plan: memberItem ? memberItem.name : null,
       since: memberItem ? memberItem.since : null,
       grants: [...new Set(live.flatMap((x) => x.grants || []))],
