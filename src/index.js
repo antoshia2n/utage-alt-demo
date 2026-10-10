@@ -62,8 +62,9 @@ import { makeBooking } from "./booking.js";
 import { makePages, EMBED_JS, personToken, PURPOSES, ROUTE_RE as ROUTE_OK } from "./pages.js";
 import { makeLessonQA, openLessonQuestions, QUESTION_MAX } from "./lessonqa.js";
 import { roomNotices } from "./roomview.js";
+import { makeLine } from "./line.js";
 
-const VERSION = "0.37.0-b12e";
+const VERSION = "0.38.0-b14a";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -75,11 +76,14 @@ const TEXT_MAX = 8000;
 const UUID_RE = /^[0-9a-f-]{36}$/i;
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     env = withStore(env);
     const url = new URL(request.url);
     const path = url.pathname;
     try {
+      // 便 14a：LINE の受け口（ログイン不要・署名で確かめる。転送は ctx.waitUntil）
+      const lw = path.match(/^[/]api[/]line[/]webhook[/]([a-z_]{2,20})$/);
+      if (lw && request.method === "POST") return await line.handleWebhook(request, env, ctx, lw[1]);
       // 便 12a：公開のページの住所（lp.shia2n.jp）では、ページと /api/p/ の下だけを返す（シアニン用の画面や API はこの住所では開かない）
       if (isPagesHost(env, url)) return await handlePagesHost(request, env, url);
       if (path === "/mcp" || path.startsWith("/mcp/")) return await handleMcp(request, env, url);
@@ -146,6 +150,8 @@ const booking = makeBooking({ db, addEvent, logInbound, bin3, registerPerson: (e
 const plan = makePlan({ db, logInbound, communityLink, changes, pages, seminars, booking });
 // B の便 8g-4：ブロックとテンプレ。中身は src/blocks.js（draftFlow は下の関数）
 const blocks = makeBlocks({ db, logInbound, plan, deliver, draftFlow: (env, a, actor) => draftFlow(env, a, actor) });
+// B の便 14a：LINE の受け口（中身は src/line.js）
+const line = makeLine({ db, logInbound, changes });
 const today = makeToday({ db, logInbound, connect, bin4, guard, listRooms: (env, a) => core.listRooms(env, a) });
 
 // ---------- 共通 ----------
@@ -1445,6 +1451,27 @@ const TOOLS = [
     inputSchema: { type: "object", properties: { prefix: { type: "string" } } },
   },
   {
+    name: "get_line_settings",
+    screen: "settings",
+    say: "LINE の受け口の設定を見る",
+    description: "LINE の受け口（便 14a）の設定をアカウントごとに返す：LINE Developers の Webhook URL に入れる B の住所 webhook_url・署名の鍵（Cloudflare の秘密の値 secret_name）が入っているか secret_set・UTAGE への転送先が入っているか forward_set と住所の頭 forward_host。account を渡すと、まだ設定の無いアカウントの住所も返す。戻し方 undo も返す。",
+    inputSchema: { type: "object", properties: { account: { type: "string", description: "英小文字で始まる英小文字と下線の 2〜20 字（例 college_ops）" } } },
+  },
+  {
+    name: "set_line_forward",
+    screen: "settings",
+    say: "LINE の知らせの転送先（UTAGE の住所）を入れる・外す",
+    description: "LINE の受け口が受けた知らせを、同じ中身と署名のまま転送する先（UTAGE の Webhook の住所）を入れる。url を空にすると転送を外す（UTAGE に届かなくなる・UTAGE を止める日に使う）。https:// で始まる 500 文字まで。B 自身の住所は入れられない。承認が要る道具：呼ぶと承認待ちになり approval_url が返る。",
+    inputSchema: { type: "object", properties: { account: { type: "string" }, url: { type: "string" } }, required: ["account", "url"] },
+  },
+  {
+    name: "list_line_inbound",
+    screen: "settings",
+    say: "LINE の受け口が受けた数と転送の失敗を数える",
+    description: "LINE の受け口が days 日（既定 7・最大 90）に受けた知らせを、アカウントごとに数える：受けた回数 received・UTAGE へ転送できた forwarded・転送の失敗 forward_failed（直近 5 件の時刻と理由 failures）・署名が合わなかった bad_signature・知らせの数 events（友だち追加 follows・ブロック unfollows・メッセージ messages）・LINE の人の数 people・最後に受けた時刻。account で 1 つに絞れる。0 件は count: 0。",
+    inputSchema: { type: "object", properties: { account: { type: "string" }, days: { type: "integer" } } },
+  },
+  {
     name: "get_community_link",
     screen: "settings",
     say: "オプチャの招待リンクを見る",
@@ -2002,6 +2029,9 @@ async function runTool(env, name, args) {
   if (name === "list_lessons") return await learn.listLessons(env, args);
   if (name === "get_meetings") return await bridge.meetings(env, args);
   if (name === "list_tables") return await bridge.listTables(env, args);
+  if (name === "get_line_settings") return await line.settings(env, { account: args.account });
+  if (name === "set_line_forward") return await line.setForward(env, { account: args.account, url: args.url }, "mcp");
+  if (name === "list_line_inbound") return await line.inbound(env, { account: args.account, days: args.days });
   if (name === "get_community_link") return { ok: true, ...(await communityLink(env)) };
   if (name === "set_community_link") return await setCommunityLink(env, { url: args.url }, "mcp");
   if (name === "get_mail_settings") return { ok: true, settings: mailcfg.view(await mailcfg.get(env)) };

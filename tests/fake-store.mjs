@@ -17,6 +17,7 @@ export function fakeStore() {
     if (v.startsWith("in.(")) return v.slice(4, -1).split(",").includes(String(x));
     if (v.startsWith("gte.")) return x != null && String(x) >= v.slice(4);
     if (v.startsWith("lte.")) return x != null && String(x) <= v.slice(4);
+    if (v.startsWith("like.")) { const re = new RegExp("^" + v.slice(5).replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$"); return x != null && re.test(String(x)); }
     throw new Error("fake: 知らない条件 " + k + "=" + v);
   };
   const parse = (pq) => {
