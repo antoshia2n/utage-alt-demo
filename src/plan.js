@@ -7,6 +7,7 @@
 
 import { SEMINARS } from "./bin4.js";
 import { MEMBER_KEYS } from "./bridge.js";
+import { isTestPurchase } from "./purchase.js";
 
 // 便 8d：レーンはお客さんの段階で 7 つ（版 6・Naoki 確定）
 // 便 13b（2026-10-10 Naoki 確定）：段の名前をマーケをやっている人にも初心者にも分かる言葉に。id は変えない（記録と線が id で結ばれているため）
@@ -152,7 +153,7 @@ export function buildEdges(parts) {
 export function partKeyOf(e) {
   const p = e.payload || {};
   if (e.type === "registered") return "page:register";
-  if (e.type === "purchase_completed" && p.product_id) return `product:${p.product_id}`;
+  if (e.type === "purchase_completed" && p.product_id) return isTestPurchase(p) ? null : `product:${p.product_id}`; // 便 12e：試しの決済は設計図の数に入れない
   if (e.type === "email_sent" && p.kind === "step" && p.step_id != null) return `step:${p.step_id}`;
   if (e.type === "email_sent" && p.kind === "broadcast" && p.broadcast_id) return `broadcast:${p.broadcast_id}`;
   // 便 11b：別の自動の動きから移された（移された先の部品に当たる）

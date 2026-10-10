@@ -14,6 +14,7 @@
 // 経路：ページの住所の後ろの ?r=名前。初めて登録したときの経路をその人の経路にする（registered の payload.route）。
 
 import { SLUG_RE } from "./forms.js";
+import { isTestPurchase } from "./purchase.js";
 
 export const PURPOSES = { signup: "無料登録", seminar: "セミナーの申込", sale: "販売", news: "お知らせ", thanks: "サンクス" };
 export const PAGE_SLUG_RE = SLUG_RE;
@@ -368,11 +369,11 @@ export function makePages(h) {
     const [hits, regs, buys] = await Promise.all([
       hitsSince(env, since),
       db(env, "GET", "events?select=customer_id,payload,occurred_at&type=eq.registered&payload->>route=not.is.null&limit=50000"),
-      db(env, "GET", "events?select=customer_id&type=eq.purchase_completed&limit=50000"),
+      db(env, "GET", "events?select=customer_id,payload&type=eq.purchase_completed&limit=50000"),
     ]);
     const routeOf = new Map();
     for (const e of regs) if (e.payload && e.payload.route && !routeOf.has(e.customer_id)) routeOf.set(e.customer_id, { route: e.payload.route, at: e.occurred_at });
-    const bought = new Set(buys.map((e) => e.customer_id));
+    const bought = new Set(buys.filter((e) => !isTestPurchase(e.payload)).map((e) => e.customer_id)); // 便 12e：試しの決済は数えない
     const out = {};
     const row = (r) => (out[r] = out[r] || { route: r, viewers: new Set(), registered: 0, bought: 0 });
     for (const x of hits) if (x.kind === "view" && x.route) row(x.route).viewers.add(x.vid);

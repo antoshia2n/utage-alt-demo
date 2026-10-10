@@ -63,7 +63,7 @@ import { makePages, EMBED_JS, personToken, PURPOSES, ROUTE_RE as ROUTE_OK } from
 import { makeLessonQA, openLessonQuestions, QUESTION_MAX } from "./lessonqa.js";
 import { roomNotices } from "./roomview.js";
 
-const VERSION = "0.36.0-b15b";
+const VERSION = "0.37.0-b12e";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
