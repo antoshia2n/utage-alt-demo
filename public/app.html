@@ -92,18 +92,19 @@
     </section>
 
     <section id="tab-room" class="hidden">
-      <p class="note" style="margin-top:0">シアニンと 1 対 1 の部屋です。「添削を頼む」で文章（と画像）を出すと、原文・添削後・コメントの 3 欄で返ってきます。添削以外の質問や連絡は「メッセージ」で送れます。</p>
+      <p class="note" style="margin-top:0">シアニンと 1 対 1 の部屋です。「添削」で文章（と画像）を出すと、原文・添削後・コメントの 3 欄で返ってきます。質問や連絡、予約や申し込みの知らせは「やり取り」に出ます。</p>
       <!-- 便 8g-1：スマホの通知（シアニンからのメッセージ・添削が返ってきたとき） -->
       <div id="push-box" class="card stack hidden" style="margin-bottom:12px">
         <div class="note" id="push-status">読み込んでいます…</div>
         <div><button class="btn small" id="push-on" type="button">この端末で受け取る</button> <button class="btn ghost small hidden" id="push-off" type="button">この端末で受け取らない</button></div>
       </div>
+      <!-- 便 15b：部屋の 2 つの枠 -->
+      <div class="rtabs" role="tablist" aria-label="部屋の枠">
+        <button type="button" role="tab" data-pane="corr" aria-selected="true">添削<span class="badge hidden" data-pane-n="corr"></span></button>
+        <button type="button" role="tab" data-pane="chat" aria-selected="false">やり取り<span class="badge hidden" data-pane-n="chat"></span></button>
+      </div>
       <div id="room-list" class="room" aria-live="polite"></div>
       <form id="composer" class="composer card">
-        <div class="seg" role="radiogroup" aria-label="出し方">
-          <label><input type="radio" name="c-kind" value="correction" checked> <span>添削を頼む</span></label>
-          <label><input type="radio" name="c-kind" value="chat"> <span>メッセージ</span></label>
-        </div>
         <label for="c-text" class="sr">出す文章</label>
         <textarea id="c-text" rows="5" placeholder="添削してほしい文章を貼ってください" maxlength="8000"></textarea>
         <div id="c-thumbs" class="thumbs"></div>

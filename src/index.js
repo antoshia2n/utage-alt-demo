@@ -61,8 +61,9 @@ import { makeSeminars } from "./seminars.js";
 import { makeBooking } from "./booking.js";
 import { makePages, EMBED_JS, personToken, PURPOSES, ROUTE_RE as ROUTE_OK } from "./pages.js";
 import { makeLessonQA, openLessonQuestions, QUESTION_MAX } from "./lessonqa.js";
+import { roomNotices } from "./roomview.js";
 
-const VERSION = "0.35.0-b15";
+const VERSION = "0.36.0-b15b";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -461,7 +462,7 @@ const core = {
     }
     const ev = await addEvent(env, person_id, "room_chat", payload, actor === "mcp" ? "mcp" : "admin");
     // 便 8g-1：生徒のスマホへ（端末が無ければ何もしない・失敗しても送ったことは取り消さない）
-    const pushed = await push.sendTo(env, person_id, { title: payload.lesson ? "質問への答え：" + String(payload.lesson.title || "").slice(0, 40) : "シアニンからメッセージ", body: t.replace(/\s+/g, " ").slice(0, 120), url: "/app#room", tag: "room" });
+    const pushed = await push.sendTo(env, person_id, { title: payload.lesson ? "質問への答え：" + String(payload.lesson.title || "").slice(0, 40) : "シアニンからメッセージ", body: t.replace(/\s+/g, " ").slice(0, 120), url: "/app#room/chat", tag: "room" });
     return { ok: true, found: true, id: ev.id, pushed: pushed.sent || 0 };
   },
 
@@ -549,6 +550,8 @@ const core = {
       unreplied: s.unreplied.map((e) => e.id),
       count: messages.length,
       messages,
+      // 便 15b：やり取りの枠に出す 1 行の知らせ（予約・申込・申し込み・フォームの回答）
+      notices: await roomNotices(db, env, person_id),
     };
   },
 
@@ -583,7 +586,7 @@ const core = {
       comment: String(comment || "").trim(),
       ...(nn.notes.length ? { notes: nn.notes } : {}),
     }, actor);
-    const pushed = await push.sendTo(env, person_id, { title: "添削が返ってきました", body: "添削ルームで、原文・添削後・コメントを見られます", url: "/app#room", tag: "room" });
+    const pushed = await push.sendTo(env, person_id, { title: "添削が返ってきました", body: "添削ルームで、原文・添削後・コメントを見られます", url: "/app#room/corr", tag: "room" });
     return { ok: true, found: true, id: ev.id, reply_to: target.id, remaining_unreplied: s.unreplied.filter((e) => e.id !== target.id).length, pushed: pushed.sent || 0 };
   },
 };
@@ -929,7 +932,7 @@ async function handleApi(request, env, url) {
       const evs = await roomEvents(env, customer.id);
       const s = roomState(evs);
       const messages = evs.filter((e) => e.type !== "room_read").map((e) => toMessage(e, s));
-      return json({ ok: true, count: messages.length, unread: s.unreadForStudent, messages, images_enabled: !!env.IMAGES });
+      return json({ ok: true, count: messages.length, unread: s.unreadForStudent, messages, notices: await roomNotices(db, env, customer.id), images_enabled: !!env.IMAGES });
     }
 
     if (path === "/api/room" && method === "POST") {
@@ -952,7 +955,7 @@ async function handleApi(request, env, url) {
       const ev = await addEvent(env, customer.id, isChat ? "room_chat" : "correction_submitted", isChat ? { from: "student", text, images, ...(lesson ? { lesson } : {}) } : { text, images }, "site");
       await logInbound(env, "room", { customer_id: customer.id, kind: isChat ? "chat" : "correction", chars: text.length, images: images.length }, { ok: true, id: ev.id }, 200);
       // 生徒からのメッセージはすぐ Naoki のスマホへ（添削の依頼はコネクタの知らせで届く）
-      if (isChat) await push.send(env, { title: `${lesson ? "教材の質問" : "メッセージ"}：${customer.name || customer.email}`, body: (lesson ? `「${String(lesson.title).slice(0, 30)}」` : "") + (text ? text.replace(/\s+/g, " ").slice(0, 120) : "（画像）"), url: `/admin#room/${customer.id}`, tag: `room-${customer.id}` });
+      if (isChat) await push.send(env, { title: `${lesson ? "教材の質問" : "メッセージ"}：${customer.name || customer.email}`, body: (lesson ? `「${String(lesson.title).slice(0, 30)}」` : "") + (text ? text.replace(/\s+/g, " ").slice(0, 120) : "（画像）"), url: `/admin#room/${customer.id}/chat`, tag: `room-${customer.id}` });
       return json({ ok: true, id: ev.id });
     }
 
@@ -1360,7 +1363,7 @@ const TOOLS = [
     name: "get_room",
     screen: "rooms",
     say: "1 人の添削ルームのやりとりを読む",
-    description: "1 人の添削ルームのやりとりを古い順に返す。kind が correction は添削（生徒の投稿は text・images・replied、返したものは original・corrected・comment）、chat はふつうのメッセージ（from：student／cyanin・text。教材の質問には lesson（id・title）、その答えには reply_to と lesson が付く）。unreplied は添削の未返信の投稿の id（メッセージは数えない）。読んだ印は付けない。",
+    description: "1 人の添削ルームのやりとりを古い順に返す。kind が correction は添削（生徒の投稿は text・images・replied、返したものは original・corrected・comment）、chat はふつうのメッセージ（from：student／cyanin・text。教材の質問には lesson（id・title）、その答えには reply_to と lesson が付く）。unreplied は添削の未返信の投稿の id（メッセージは数えない）。notices はその人の予約・取り消し・セミナーの申込・申し込み・フォームの回答の 1 行の知らせ（新しい 50 件・古い順）。読んだ印は付けない。",
     inputSchema: { type: "object", properties: { person_id: { type: "string" } }, required: ["person_id"] },
   },
   {

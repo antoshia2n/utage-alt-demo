@@ -1,4 +1,4 @@
-import { getClient, api, esc, fmtTime, authImage, shrinkImage } from "/js/common.js";
+import { getClient, api, esc, fmtTime, authImage, shrinkImage, noticeHtml } from "/js/common.js";
 import { correctionHtml, wireNotes } from "/js/correction.js";
 import { setupStudentPush } from "/js/pushclient.js";
 
@@ -157,11 +157,16 @@ async function main() {
   setupMember(r.entitlement, r.me.email);
   const room = setupRoom(token, r.community_url, r.community);
   room.setBadge(r.room_unread);
-  if (location.hash === "#room") showTab("room");
+  // 便 15b：#room/chat・#room/corr は、部屋のその枠を開く
+  if (location.hash.startsWith("#room")) { room.setPane(location.hash.split("/")[1]); showTab("room"); }
   if (location.hash === "#review") showTab("review");
   if (location.hash === "#booking") showTab("booking");
   // 便 8g-1：通知を押して開いた画面がもう出ているとき、住所の # だけが変わるので、ここで部屋へ移る
-  window.addEventListener("hashchange", () => { const h = location.hash.slice(1); if (["room", "review", "booking"].includes(h)) showTab(h); });
+  window.addEventListener("hashchange", () => {
+    const [h, pane] = location.hash.slice(1).split("/");
+    if (h === "room") room.setPane(pane);
+    if (["room", "review", "booking"].includes(h)) showTab(h);
+  });
   setupStudentPush({ box: $("push-box"), status: $("push-status"), on: $("push-on"), off: $("push-off") }, token);
 
   $("logout").addEventListener("click", async (e) => { e.preventDefault(); await sb.auth.signOut(); location.replace("/"); });
@@ -175,7 +180,7 @@ async function loadReview(token) {
   const r = await api("/api/room", { token });
   if (!r.ok) { box.innerHTML = `<div class="msg err">読めませんでした（${esc(r.error || r.status)}）</div>`; return; }
   const subs = Object.fromEntries(r.messages.filter((m) => m.from === "student").map((m) => [String(m.id), m]));
-  const back = r.messages.filter((m) => m.from === "cyanin").reverse();
+  const back = r.messages.filter((m) => m.from === "cyanin" && m.kind !== "chat").reverse();
   $("review-count").textContent = back.length ? `これまでに返ってきた添削 ${back.length} 件（新しい順）` : "";
   box.innerHTML = back.map((m, i) => {
     const sub = subs[String(m.reply_to)];
@@ -282,6 +287,10 @@ function setupMember(ent, email) {
 // ---------- 添削ルーム ----------
 function setupRoom(token, communityUrl, communityState) {
   let opened = false, pending = [], timer = null, lastCount = -1, lastSig = "";
+  // 便 15b：今の枠（corr 添削／chat やり取り）と、まだ開いていない枠の新着の数（部屋を開くと全部既読になるので、枠を見るまでここで覚える）
+  let pane = null, last = { messages: [], notices: [] };
+  const seen = { corr: 0, chat: 0 };
+  try { const p = localStorage.getItem("room_pane"); if (p === "corr" || p === "chat") pane = p; } catch (_) {}
 
   // 便 7a：招待リンクは会員にだけ届く（会員でない人には URL そのものが返らない）
   $("community").innerHTML = communityUrl
@@ -299,41 +308,86 @@ function setupRoom(token, communityUrl, communityState) {
 
   const block = (label, text, cls = "") => `<div class="rb ${cls}"><div class="rb-l">${label}</div><div class="rb-t">${esc(text) || '<span class="note">（なし）</span>'}</div></div>`;
 
-  const render = (msgs) => {
+  const imgs = (m, alt) => m.images.length ? `<div class="imgs">${m.images.map((k) => `<img data-key="${esc(k)}" alt="${alt}">`).join("")}</div>` : "";
+  const corrHtml = (m) => m.from === "student"
+    ? `<div class="msg-me"><div class="bubble">${m.text ? `<div class="pre">${esc(m.text)}</div>` : ""}${imgs(m, "出した画像")}</div>
+        <div class="meta"><time>${fmtTime(m.at)}</time>${m.replied ? '<span class="pill">返信済み</span>' : m.read_by_cyanin ? '<span class="pill gray">既読</span>' : ""}</div></div>`
+    : `<div class="msg-them"><div class="reply card">
+        <div class="reply-h">シアニンからの添削</div>
+        ${correctionHtml(m)}
+      </div><div class="meta"><time>${fmtTime(m.at)}</time></div></div>`;
+  const chatHtml = (m) => m.from === "student"
+    ? `<div class="msg-me"><div class="bubble chat mine">${m.text ? `<div class="pre">${esc(m.text)}</div>` : ""}${imgs(m, "出した画像")}</div>
+        <div class="meta"><time>${fmtTime(m.at)}</time>${m.lesson ? `<span class="pill gray">教材の質問：${esc(m.lesson.title)}</span>` : ""}${m.read_by_cyanin ? '<span class="pill gray">既読</span>' : ""}</div></div>`
+    : `<div class="msg-them"><div class="bubble chat"><div class="reply-h">シアニン</div><div class="pre">${esc(m.text)}</div></div><div class="meta"><time>${fmtTime(m.at)}</time>${m.lesson ? `<span class="pill gray">「${esc(m.lesson.title)}」への答え</span>` : ""}</div></div>`;
+  // 添削の動きは、やり取りの枠では 1 行の知らせにして、押すと添削の枠へ移る
+  const corrLine = (m) => `<div class="notice"><span class="pill gray">${m.from === "student" ? "添削を頼んだ" : "添削が返ってきた"}</span><button class="link" type="button" data-go="corr">添削の枠で見る</button><time>${fmtTime(m.at)}</time></div>`;
+
+  const unreadOf = (msgs) => ({
+    corr: msgs.filter((m) => m.kind !== "chat" && m.from === "cyanin" && !m.read_by_student).length,
+    chat: msgs.filter((m) => m.kind === "chat" && m.from === "cyanin" && !m.read_by_student).length,
+  });
+  const drawPaneBadges = () => {
+    document.querySelectorAll("#tab-room [data-pane-n]").forEach((b) => {
+      const n = b.dataset.paneN === pane ? 0 : seen[b.dataset.paneN];
+      b.textContent = n > 0 ? String(n) : "";
+      b.classList.toggle("hidden", !(n > 0));
+    });
+  };
+
+  const render = () => {
     const list = $("room-list");
-    if (!msgs.length) {
-      list.innerHTML = '<div class="empty note">まだやりとりはありません。下の欄から最初の文章を出してください。</div>';
-      return;
+    const { messages: msgs, notices } = last;
+    document.querySelectorAll("#tab-room [data-pane]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.pane === pane)));
+    if (pane === "chat") {
+      const items = [
+        ...msgs.filter((m) => m.kind === "chat").map((m) => ({ id: m.id, html: chatHtml(m) })),
+        ...msgs.filter((m) => m.kind !== "chat").map((m) => ({ id: m.id, html: corrLine(m) })),
+        ...notices.map((n) => ({ id: n.id, html: noticeHtml(n) })),
+      ].sort((a, b) => a.id - b.id);
+      list.innerHTML = items.length ? items.map((x) => x.html).join("") : '<div class="empty note">まだやり取りはありません。質問や連絡は下の欄から送れます。</div>';
+    } else {
+      const corr = msgs.filter((m) => m.kind !== "chat");
+      list.innerHTML = corr.length ? corr.map(corrHtml).join("") : '<div class="empty note">まだ添削はありません。下の欄から最初の文章を出してください。</div>';
     }
-    list.innerHTML = msgs.map((m) => m.kind === "chat"
-      ? (m.from === "student"
-        ? `<div class="msg-me"><div class="bubble chat mine">${m.text ? `<div class="pre">${esc(m.text)}</div>` : ""}${m.images.length ? `<div class="imgs">${m.images.map((k) => `<img data-key="${esc(k)}" alt="出した画像">`).join("")}</div>` : ""}</div>
-          <div class="meta"><time>${fmtTime(m.at)}</time>${m.lesson ? `<span class="pill gray">教材の質問：${esc(m.lesson.title)}</span>` : ""}${m.read_by_cyanin ? '<span class="pill gray">既読</span>' : ""}</div></div>`
-        : `<div class="msg-them"><div class="bubble chat"><div class="reply-h">シアニン</div><div class="pre">${esc(m.text)}</div></div><div class="meta"><time>${fmtTime(m.at)}</time>${m.lesson ? `<span class="pill gray">「${esc(m.lesson.title)}」への答え</span>` : ""}</div></div>`)
-      : m.from === "student"
-      ? `<div class="msg-me"><div class="bubble">${m.text ? `<div class="pre">${esc(m.text)}</div>` : ""}${m.images.length ? `<div class="imgs">${m.images.map((k) => `<img data-key="${esc(k)}" alt="出した画像">`).join("")}</div>` : ""}</div>
-          <div class="meta"><time>${fmtTime(m.at)}</time>${m.replied ? '<span class="pill">返信済み</span>' : m.read_by_cyanin ? '<span class="pill gray">既読</span>' : ""}</div></div>`
-      : `<div class="msg-them"><div class="reply card">
-          <div class="reply-h">シアニンからの添削</div>
-          ${correctionHtml(m)}
-        </div><div class="meta"><time>${fmtTime(m.at)}</time></div></div>`).join("");
     wireNotes(list);
+    list.querySelectorAll("[data-go]").forEach((b) => b.addEventListener("click", () => showPane(b.dataset.go)));
     list.querySelectorAll("img[data-key]").forEach(async (img) => {
       try { img.src = await authImage("/api/room/image?key=" + encodeURIComponent(img.dataset.key), token); }
       catch (_) { img.alt = "画像を読めませんでした"; img.classList.add("broken"); }
     });
   };
 
+  // 枠を替える。出す欄の案内とボタンも、その枠の出し方に替える
+  const showPane = (p) => {
+    pane = p === "chat" ? "chat" : "corr";
+    seen[pane] = 0;
+    try { localStorage.setItem("room_pane", pane); } catch (_) {}
+    const chat = pane === "chat";
+    $("c-text").placeholder = chat ? "シアニンへのメッセージ（質問・連絡など）" : "添削してほしい文章を貼ってください";
+    $("c-send").textContent = chat ? "送る" : "出す";
+    render();
+    drawPaneBadges();
+  };
+  document.querySelectorAll("#tab-room [data-pane]").forEach((b) => b.addEventListener("click", () => showPane(b.dataset.pane)));
+
   const load = async (markRead) => {
     const r = await api("/api/room", { token });
     if (!r.ok) { $("room-list").innerHTML = `<div class="msg err">読めませんでした（${esc(r.error || r.status)}）</div>`; return; }
-    const sig = JSON.stringify(r.messages.map((m) => [m.id, m.replied, m.read_by_cyanin, m.read_by_student]));
+    const notices = r.notices || [];
+    const un = unreadOf(r.messages);
+    seen.corr = Math.max(seen.corr, un.corr); seen.chat = Math.max(seen.chat, un.chat);
+    // 初めて開くとき：新着がやり取りだけならやり取り、それ以外は前に見ていた枠（無ければ添削）
+    if (!pane) pane = un.chat > 0 && un.corr === 0 ? "chat" : "corr";
+    const sig = JSON.stringify([r.messages.map((m) => [m.id, m.replied, m.read_by_cyanin, m.read_by_student]), notices.map((n) => n.id)]);
     if (sig !== lastSig) {
-      render(r.messages);
+      last = { messages: r.messages, notices };
+      showPane(pane);
       if (opened && lastCount !== -1 && r.count > lastCount) $("room-list").lastElementChild?.scrollIntoView({ behavior: "smooth", block: "end" });
       lastSig = sig; lastCount = r.count;
     }
     $("c-pick-label").classList.toggle("hidden", !r.images_enabled);
+    drawPaneBadges();
     if (markRead && r.unread > 0) { await api("/api/room/read", { method: "POST", token }); setBadge(0); }
     else setBadge(markRead ? 0 : r.unread);
   };
@@ -352,14 +406,8 @@ function setupRoom(token, communityUrl, communityState) {
     drawThumbs();
   });
 
-  // 便 8f-3：出し方（添削を頼む／メッセージ）で、欄の案内とボタンの文字を替える
-  const kindOf = () => (document.querySelector('input[name="c-kind"]:checked') || {}).value === "chat" ? "chat" : "correction";
-  const showKind = () => {
-    const chat = kindOf() === "chat";
-    $("c-text").placeholder = chat ? "シアニンへのメッセージ（質問・連絡など）" : "添削してほしい文章を貼ってください";
-    $("c-send").textContent = chat ? "送る" : "出す";
-  };
-  document.querySelectorAll('input[name="c-kind"]').forEach((x) => x.addEventListener("change", showKind));
+  // 便 15b：出し方は今の枠で決まる（添削の枠＝添削を頼む、やり取りの枠＝メッセージ）
+  const kindOf = () => pane === "chat" ? "chat" : "correction";
 
   $("composer").addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -397,6 +445,7 @@ function setupRoom(token, communityUrl, communityState) {
   return {
     setBadge,
     open: () => { opened = true; load(true); },
+    setPane: (p) => { if (p === "chat" || p === "corr") { pane = p; seen[p] = 0; } },
   };
 }
 
