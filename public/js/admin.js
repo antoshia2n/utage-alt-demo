@@ -449,7 +449,7 @@ const pill = (t, kind = "") => `<span class="pill ${kind}">${esc(t)}</span>`;
 // ---------- 添削ルーム ----------
 let currentRoom = null;
 // 便 8c：左のメニュー。押した項目の画面だけを出し、上のナビにその名前を出す
-const VIEWS = ["home", "blueprint", "people", "rooms", "deals", "ai", "products", "deliver", "settings", "refer", "guide", "forms", "pages"];
+const VIEWS = ["home", "blueprint", "people", "rooms", "deals", "ai", "products", "deliver", "settings", "refer", "guide", "forms", "pages", "line"];
 // 便 20：コネクタだけの画面は無くした。"connect" は行き先の名前としてだけ残す。
 // メールを送るコネクタ（ステップ配信）は メール、送らないもの（自動の動き）は ファネル構築 のタブで開く。part を渡すとその 1 件を開く
 function openView(name, part) {
@@ -490,6 +490,7 @@ function setupViews() {
     if (b.dataset.view === "guide") loadGuide();
     if (b.dataset.view === "forms") loadForms();
     if (b.dataset.view === "pages") loadPages();
+    if (b.dataset.view === "line") loadLine();
   }));
   $("hm-guide").addEventListener("click", () => openView("guide"));
   $("cust-back").addEventListener("click", custList);
@@ -503,6 +504,87 @@ function setupViews() {
   setupGroups();
   setupTopbar();
   $("only-unreplied").addEventListener("change", loadRooms);
+  setupLine();
+}
+
+// ---------- 便 14c：LINE ----------
+let lineAccount = null, lineUser = null;
+async function loadLine() {
+  const r = await api("/api/admin/line", { token });
+  if (!r.ok) { $("line-sum").textContent = "読めませんでした（" + (r.error || r.status) + "）"; return; }
+  if (!r.account) { $("line-sum").textContent = "LINE のアカウントがまだつながっていません"; $("line-friends").innerHTML = ""; return; }
+  lineAccount = r.account;
+  const q = r.quota ? `今月の送信 ${r.quota.used == null ? "？" : r.quota.used} 通${r.quota.limit ? ` ／ 上限 ${r.quota.limit} 通` : ""}` : "今月の送信数は読めませんでした";
+  $("line-sum").innerHTML = `${esc(q)}・7 日に受けた知らせ ${r.received_7d} 件・UTAGE への転送の失敗 ${r.forward_failed_7d > 0 ? `<span class="pill warn">${r.forward_failed_7d} 件</span>` : "0 件"}`;
+  $("line-count").textContent = `友だち ${r.count} 人（メールを登録して結ばれた人 ${r.linked} 人）` + (r.all_followers ? "" : "・B が知らせを受けた人だけ（10/10 13:44 から）");
+  $("line-friends").innerHTML = r.friends.map((x) => `
+    <li data-user="${esc(x.user)}" ${x.user === lineUser ? 'aria-current="true"' : ""}>
+      <div style="min-width:0"><div>${esc(x.name || "（名前を読めない）")}</div><div class="sub ellip">${x.last_from === "me" ? "送った：" : ""}${esc(x.last_text || "")}</div></div>
+      <div style="text-align:right;flex-shrink:0">${x.blocked ? pill("ブロック", "gray") : x.excluded ? pill("除外", "gray") : x.linked ? pill("結ばれた") : pill("メールなし", "gray")}<div class="sub">${x.last_at ? fmtTime(x.last_at) : ""}</div></div>
+    </li>`).join("") || '<li class="note">まだいません。友だち追加かメッセージがあると出ます</li>';
+  document.querySelectorAll("#line-friends li[data-user]").forEach((li) => li.addEventListener("click", () => openLine(li.dataset.user)));
+}
+async function openLine(user) {
+  lineUser = user;
+  document.querySelectorAll("#line-friends li[data-user]").forEach((li) => li.toggleAttribute("aria-current", li.dataset.user === user));
+  const r = await api(`/api/admin/line/thread?account=${encodeURIComponent(lineAccount || "")}&user=${encodeURIComponent(user)}`, { token });
+  if (!r.ok) { $("line-detail").innerHTML = '<p class="note">読めませんでした（' + esc(r.error || r.status) + "）</p>"; return; }
+  setCrumbSub(r.name || "");
+  const item = (m) => m.kind === "notice"
+    ? `<div class="notice"><span class="n-d">${esc(m.text)}</span><time>${fmtTime(m.at)}</time></div>`
+    : m.from === "them"
+      ? `<div class="msg-them"><div class="bubble chat"><div class="pre">${esc(m.text)}</div></div><div class="meta"><time>${fmtTime(m.at)}</time></div></div>`
+      : `<div class="msg-me"><div class="bubble chat mine"><div class="pre">${esc(m.text)}</div></div><div class="meta"><time>${fmtTime(m.at)}</time>${m.ok === false ? '<span class="pill warn">送れなかった</span>' : ""}${m.by === "AI" ? '<span class="pill gray">AI から</span>' : ""}</div></div>`;
+  $("line-detail").innerHTML = `
+    <h2 style="margin-bottom:2px">${esc(r.name || "（名前を読めない）")}</h2>
+    <div class="note" style="margin-bottom:12px">${r.person ? `${esc(r.person.email)}・<button class="link" type="button" id="line-person">顧客管理で開く</button>` : "メールの登録はまだ（LINE だけの人）"}${r.blocked ? "・ブロックされている" : ""}</div>
+    <div class="room">${r.messages.map(item).join("") || '<p class="note">B が受けたやりとりはまだありません。</p>'}</div>
+    ${r.blocked ? '<p class="note">ブロックされているので送れません。</p>' : `<form id="line-reply" class="stack reply-form">
+      <label for="lr-text" class="sr">返す文</label><textarea id="lr-text" rows="3" maxlength="2000" placeholder="LINE で返す文（文字だけ・今月の送信数を 1 通使う）"></textarea>
+      <div style="display:flex;gap:8px;align-items:center"><button class="btn" type="submit" id="lr-send">送る</button><span class="note" id="lr-status"></span></div>
+    </form>`}`;
+  if ($("line-person")) $("line-person").addEventListener("click", () => { openView("people"); detail(r.person.id); });
+  if ($("line-reply")) $("line-reply").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const text = $("lr-text").value.trim();
+    if (!text) { $("lr-status").textContent = "文を入れてください"; return; }
+    $("lr-send").disabled = true; $("lr-status").textContent = "送っています…";
+    const res = await api("/api/admin/line/reply", { method: "POST", token, body: { account: lineAccount, user, text } });
+    if (!res.ok) { $("lr-send").disabled = false; $("lr-status").textContent = "送れませんでした（" + (res.error || res.status) + "）"; return; }
+    await openLine(user); loadLine();
+  });
+}
+function lineBcBody(dry) {
+  const mode = (document.querySelector('input[name="line-mode"]:checked') || {}).value || "all";
+  const filter = {};
+  const labels = splitList($("line-labels").value), notLabels = splitList($("line-nolabels").value);
+  if (labels.length) filter.labels = labels;
+  if (notLabels.length) filter.not_labels = notLabels;
+  if ($("line-member").value) filter.member = $("line-member").value === "true";
+  return { account: lineAccount, mode, filter, text: $("line-bc-text").value, dry };
+}
+const lineCountText = (r) => `送る相手 ${r.targets} 人（ブロック ${r.blocked}・除外 ${r.excluded}${r.not_linked ? `・メール未登録で LINE に送れない ${r.not_linked}` : ""}）`;
+function setupLine() {
+  $("line-bc-open").addEventListener("click", () => $("line-bc").classList.toggle("hidden"));
+  document.querySelectorAll('input[name="line-mode"]').forEach((x) => x.addEventListener("change", () => $("line-bc-filter").classList.toggle("hidden", x.value !== "filter" || !x.checked)));
+  $("line-bc-count").addEventListener("click", async () => {
+    const r = await api("/api/admin/line/broadcast", { method: "POST", token, body: lineBcBody(true) });
+    $("line-bc-status").textContent = r.ok ? lineCountText(r) : "数えられませんでした（" + (r.error || r.status) + "）";
+  });
+  $("line-bc").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!$("line-bc-text").value.trim()) { $("line-bc-status").textContent = "送る文を入れてください"; return; }
+    const pre = await api("/api/admin/line/broadcast", { method: "POST", token, body: lineBcBody(true) });
+    if (!pre.ok) { $("line-bc-status").textContent = "数えられませんでした（" + (pre.error || pre.status) + "）"; return; }
+    if (!pre.targets) { $("line-bc-status").textContent = "送る相手が 0 人です"; return; }
+    if (!confirm(`${lineCountText(pre)}\nLINE で送ります。今月の送信数を ${pre.targets} 通使います。送りますか？`)) return;
+    $("line-bc-send").disabled = true; $("line-bc-status").textContent = "送っています…";
+    const r = await api("/api/admin/line/broadcast", { method: "POST", token, body: lineBcBody(false) });
+    $("line-bc-send").disabled = false;
+    $("line-bc-status").textContent = r.ok ? `送りました：${r.sent} 人` : "送れませんでした（" + (r.error || r.status) + `・送れた ${r.sent || 0} 人）`;
+    if (r.ok) $("line-bc-text").value = "";
+    loadLine();
+  });
 }
 
 async function loadRooms() {

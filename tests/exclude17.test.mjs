@@ -140,5 +140,5 @@ test("道具：add_label・remove_label は person_ids・emails を受け、labe
     assert.match(part, /emails: \{ type: "array"/);
     assert.match(part, /required: \["label"\]/);
   }
-  assert.match(src, /const VERSION = "0\.41\.0-b17";/);
+  assert.match(src, /const VERSION = "0\.(4[1-9]|[5-9]\d)\.\d+-b[0-9a-z]+";/, "便 21 より後の版");
 });
