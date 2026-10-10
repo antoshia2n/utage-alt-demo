@@ -113,6 +113,12 @@ export function fmtTime(iso) {
   return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
+// 便 15b：部屋の「やり取り」の枠に出す 1 行の知らせ（生徒の画面と Lab OS で同じ形）
+export function noticeHtml(n) {
+  const bits = [n.detail, n.slot ? fmtTime(n.slot) : ""].filter(Boolean).map(esc).join("・");
+  return `<div class="notice"><span class="pill gray">${esc(n.title)}</span><span class="n-d">${bits}${n.test ? "（試し）" : ""}</span><time>${fmtTime(n.at)}</time></div>`;
+}
+
 export function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
