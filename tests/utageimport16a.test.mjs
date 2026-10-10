@@ -119,7 +119,7 @@ test("予約者：ic_persons の source=UTAGE を 1 人 1 回 consult_booked（v
 
 test("鍵が無ければ何もしない。UTAGE が誤りを返したら失敗として記録に残る", async () => {
   const a = setup({ accounts: [], readers: {} });
-  assert.equal((await a.imp.run({ B_STORE: true })).skipped, "no_key");
+  assert.equal((await a.imp.run({ B_STORE: true })).skipped, "no_source");
   const b = setup({ accounts: [{ id: "A1", name: "x" }], readers: {} });
   const bad = makeUtageImport({ db: b.s.db, addEvent: async () => {}, logInbound: async (e, c, q, r, st) => b.logs.push({ c, r, st }), register: async () => ({}), fetch: async () => new Response("no", { status: 401 }) });
   const o = await bad.run({ B_STORE: true, UTAGE_API_KEY: "k" });
@@ -142,4 +142,22 @@ test("ラベル：UTAGE のアカウント名が付き、最後に動いた日�
 
 test("権限：取り込みの様子を見る道具は自動", () => {
   assert.equal(DEFAULT_MODES.get_utage_import, "auto");
+});
+
+test("読み口：サービスの結び（shia2n-mcp の UtageReader）があればそちらで読み、鍵の直読みはしない", async () => {
+  const { s, imp, calls } = setup({ accounts: [], readers: {} });
+  const seen = [];
+  const UTAGE = {
+    accounts: async () => { seen.push("accounts"); return { ok: true, data: [{ id: "A1", name: "シアニン" }] }; },
+    readers: async (id, page, per) => { seen.push(`readers:${id}:${page}:${per}`); return { ok: true, data: [reader(1, "b@example.com")], meta: { total: 1 } }; },
+  };
+  const o = await imp.run({ B_STORE: true, UTAGE });
+  assert.equal(o.ok, true);
+  assert.deepEqual(seen, ["accounts", "readers:A1:1:100"]);
+  assert.equal(calls.length, 0, "直接の UTAGE には行かない");
+  assert.equal(s.table("customers").length, 1);
+  assert.equal((await imp.status({ B_STORE: true, UTAGE })).source, "binding");
+  const bad = await imp.run({ B_STORE: true, UTAGE: { accounts: async () => ({ ok: false, error: "no_key" }), readers: async () => ({}) } });
+  assert.equal(bad.ok, false);
+  assert.match(bad.error, /UTAGE no_key/);
 });

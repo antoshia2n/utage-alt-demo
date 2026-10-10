@@ -1462,7 +1462,7 @@ const TOOLS = [
     name: "get_utage_import",
     screen: "people",
     say: "UTAGE の読者と予約者の取り込みの様子を見る",
-    description: "UTAGE の読者と個別相談の予約者の取り込み（便 16a・毎時）の様子：UTAGE の鍵が入っているか key_set・どこまで読んだか cursor（a＝何番目のアカウント・p＝ページ・sweep＝全部を読み終えた回数）・取り込んだ人の数 people とアカウントごとの数 by_account・UTAGE で配信停止だったので B でも止めた人 unsubscribed_from_utage・UTAGE の予約者として入れた人 consults_from_utage・直近 10 回の結果 last_runs（読んだ行・新しく入れた人・失敗の理由）。取り込んだ人は出来事 utage_imported（登録した、とは別）で、登録のきっかけの自動の動きは動かない。",
+    description: "UTAGE の読者と個別相談の予約者の取り込み（便 16a・毎時）の様子：読み口 source（binding＝shia2n-mcp の UtageReader・key＝B の UTAGE_API_KEY・null＝無い）・どこまで読んだか cursor（a＝何番目のアカウント・p＝ページ・sweep＝全部を読み終えた回数）・取り込んだ人の数 people とアカウントごとの数 by_account・UTAGE で配信停止だったので B でも止めた人 unsubscribed_from_utage・UTAGE の予約者として入れた人 consults_from_utage・直近 10 回の結果 last_runs（読んだ行・新しく入れた人・失敗の理由）。取り込んだ人は出来事 utage_imported（登録した、とは別）で、登録のきっかけの自動の動きは動かない。",
     inputSchema: { type: "object", properties: {} },
   },
   {
