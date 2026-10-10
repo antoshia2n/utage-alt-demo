@@ -8,9 +8,15 @@
 // B の便 8e：ステップの表 b_steps を「コネクタ（トリガー → セレクタ → アクション）」に広げた。きっかけ・誰に・何をするかの一覧は src/connect.js。
 //   コネクタが動いた結果は、これまでどおり出来事の記録に step_id と trigger_id（きっかけの出来事の番号）付きで積む。
 //   宛先の条件（一斉配信とコネクタのセレクタ）に labels（全部持つ）・not_labels（どれも持たない）を足した。ラベルは出来事から計算する。
+// B の便 11b：配信の強化（2026-10-10 Naoki「進めて」）。表は増やさない。
+//   開いた … ステップと一斉配信のメールに見えない画像を 1 つ置き、読まれたら email_opened（kind・ref）を 1 人 1 通につき 1 回だけ積む。
+//            iPhone のメールは受け取っただけで画像を読むことがあるので、数は「目安」
+//   宛先の条件に opened・not_opened（"broadcast:番号" か "step:番号" の配列）を足した
+//   アクションに move_to（別の自動の動きへ移す・出来事 step_entered）と set_field（人の項目に値を書く・出来事 field_set）を足した
 
-import { TRIGGERS, ACTIONS, DONE_TYPES, FAIL_TYPES, LABEL_RE } from "./connect.js";
-import { normFieldConds, SLUG_RE } from "./forms.js";
+import { TRIGGERS, ACTIONS, DONE_TYPES, FAIL_TYPES, LABEL_RE, MOVE_DEPTH_MAX } from "./connect.js";
+import { normFieldConds, SLUG_RE, KEY_RE } from "./forms.js";
+import { PIXEL_GIF } from "./mailhtml.js";
 
 const NL = String.fromCharCode(10);
 const QUOTE = String.fromCharCode(34);
@@ -18,7 +24,9 @@ const WARM = [20, 40, 80, 150, 250, 400, 600, 1000];
 const WARM_AFTER = 2000;
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const UUID_RE = /^[0-9a-f-]{36}$/i;
-const URL_RE = new RegExp("https?://[^ <>" + QUOTE + "'" + NL + String.fromCharCode(13, 9) + "　]+", "g");
+// 便 11b：ボタンの書き方 [[文字|住所]] の閉じ括弧を住所に含めないため、] も止める
+const URL_RE = new RegExp("https?://[^ <>" + QUOTE + "'" + NL + String.fromCharCode(13, 9) + "　\\]]+", "g");
+const OPEN_RE = /^(broadcast:[0-9a-f-]{36}|step:\d{1,9})$/i;
 const MAX_PER_RUN = 100;
 
 export function makeDeliver(h) {
@@ -44,6 +52,36 @@ export function makeDeliver(h) {
     return r === 0;
   }
   const clickSig = async (env, token, cid) => (await hmacHex(env.MCP_SECRET, "click:" + token + ":" + cid)).slice(0, 16);
+  const openSig = async (env, kind, ref, cid) => (await hmacHex(env.MCP_SECRET, "open:" + kind + ":" + ref + ":" + cid)).slice(0, 16);
+
+  // ---------- 開いたかの計測（便 11b） ----------
+  async function openUrl(env, kind, ref, customerId) {
+    return `${origin(env)}/o/${kind}/${ref}?c=${customerId}&s=${await openSig(env, kind, String(ref), customerId)}`;
+  }
+
+  // 画像は印が合っても合わなくても返す（メールの見た目を崩さない）。記録は 1 人 1 通につき 1 回
+  async function handleOpen(env, url, kind, ref) {
+    const cid = url.searchParams.get("c") || "", sig = url.searchParams.get("s") || "";
+    if ((kind === "step" || kind === "broadcast") && UUID_RE.test(cid) && safeEqual(sig, await openSig(env, kind, String(ref), cid))) {
+      try {
+        const seen = await db(env, "GET", `events?select=id&customer_id=eq.${cid}&type=eq.email_opened&payload->>kind=eq.${kind}&payload->>ref=eq.${encodeURIComponent(ref)}&limit=1`);
+        if (!seen.length) await addEvent(env, cid, "email_opened", { kind, ref: String(ref), ...(kind === "step" ? { step_id: Number(ref) } : { broadcast_id: String(ref) }) }, "site");
+      } catch (_) { /* 記録の失敗で画像を止めない */ }
+    }
+    return new Response(PIXEL_GIF, { headers: { "content-type": "image/gif", "cache-control": "no-store, private", "content-length": String(PIXEL_GIF.length) } });
+  }
+
+  // 開いた人（kind:ref → 人の番号の集まり）
+  async function openedMap(env) {
+    const ev = await db(env, "GET", "events?select=customer_id,payload&type=eq.email_opened&limit=50000");
+    const m = new Map();
+    for (const e of ev) {
+      const k = `${e.payload && e.payload.kind}:${e.payload && e.payload.ref}`;
+      if (!m.has(k)) m.set(k, new Set());
+      m.get(k).add(e.customer_id);
+    }
+    return m;
+  }
 
   // 日本時間の今日の 0 時
   function jstMidnight(now = Date.now()) {
@@ -111,6 +149,8 @@ export function makeDeliver(h) {
     // 便 11a：人の項目の値で絞る [{ key, op, value }]
     const fc = normFieldConds(f.fields);
     if (fc.length) out.fields = fc;
+    // 便 11b：そのメールを開いた・開いていない（"broadcast:番号" か "step:番号"）
+    for (const k of ["opened", "not_opened"]) { const v = arr(f[k]).map((x) => x.trim()).filter((x) => OPEN_RE.test(x)); if (v.length) out[k] = [...new Set(v)].slice(0, 10); }
     return out;
   }
 
@@ -141,6 +181,12 @@ export function makeDeliver(h) {
       if (f.not_labels) list = list.filter((p) => { const s = has(p); return !f.not_labels.some((l) => s.has(l)); });
     }
     if (f.fields && h.forms) list = await h.forms.filterByFields(env, list, f.fields);
+    if (f.opened || f.not_opened) {
+      const om = await openedMap(env);
+      const did = (p, k) => !!(om.get(k) && om.get(k).has(p.id));
+      if (f.opened) list = list.filter((p) => f.opened.every((k) => did(p, k)));
+      if (f.not_opened) list = list.filter((p) => !f.not_opened.some((k) => did(p, k)));
+    }
     const unsub = await db(env, "GET", "events?select=customer_id&type=eq.email_unsubscribed&limit=10000");
     const off = new Set(unsub.map((e) => e.customer_id));
     return { filter: f, people: list, unsubscribed: list.filter((p) => off.has(p.id)).length };
@@ -162,7 +208,8 @@ export function makeDeliver(h) {
     if (!env.B_STORE) return { ok: true, store: "demo", count: 0, steps: [] };
     const steps = await db(env, "GET", "b_steps?select=*&order=sort.asc,id.asc");
     const ev = await db(env, "GET", "events?select=type,payload&type=in.(email_sent,email_clicked)&payload->>kind=eq.step&limit=10000");
-    const ran = await db(env, "GET", "events?select=type,payload&type=in.(admin_notified,admin_notify_failed,label_added,connector_skipped)&payload->>step_id=not.is.null&limit=10000");
+    const ran = await db(env, "GET", "events?select=type,payload&type=in.(admin_notified,admin_notify_failed,label_added,connector_skipped,step_entered,field_set)&payload->>step_id=not.is.null&limit=10000");
+    const om = await openedMap(env);
     for (const s of steps) {
       const mine = (t) => ran.filter((e) => e.type === t && String(e.payload.step_id) === String(s.id)).length;
       s.sent = ev.filter((e) => e.type === "email_sent" && String(e.payload.step_id) === String(s.id)).length;
@@ -170,6 +217,9 @@ export function makeDeliver(h) {
       s.notified = mine("admin_notified");
       s.labeled = mine("label_added");
       s.skipped = mine("connector_skipped");
+      s.moved = mine("step_entered");
+      s.fields_set = mine("field_set");
+      s.opened_people = (om.get(`step:${s.id}`) || new Set()).size;
       s.action = s.action || "send_email";
       s.trigger_label = TRIGGERS[s.trigger] ? TRIGGERS[s.trigger].label : s.trigger;
       s.action_label = ACTIONS[s.action] || s.action;
@@ -199,6 +249,10 @@ export function makeDeliver(h) {
     if ("action_args" in args) {
       const t = args.action_args || {}, out = {};
       if (t.label) { if (!LABEL_RE.test(String(t.label))) return { ok: false, error: "bad_action_label" }; out.label = String(t.label); }
+      // 便 11b：移す先の番号・書く項目と値
+      if (t.step_id != null && t.step_id !== "") { const n = Number(t.step_id); if (!Number.isInteger(n) || n < 1) return { ok: false, error: "bad_action_step" }; out.step_id = n; }
+      if (t.field) { if (!KEY_RE.test(String(t.field))) return { ok: false, error: "bad_action_field" }; out.field = String(t.field); }
+      if ("value" in t) out.value = String(t.value ?? "").slice(0, 200);
       patch.action_args = out;
     }
     if ("delay_hours" in args) { const d = Number(args.delay_hours); if (!Number.isInteger(d) || d < 0 || d > 24 * 365) return { ok: false, error: "bad_delay_hours" }; patch.delay_hours = d; }
@@ -220,6 +274,20 @@ export function makeDeliver(h) {
     if (next.action === "add_label" && !(next.action_args && next.action_args.label)) return { ok: false, error: "need_action_label" };
     if (next.trigger === "label_added" && !(next.trigger_args && next.trigger_args.label)) return { ok: false, error: "need_trigger_label" };
     if (next.trigger === "label_added" && next.action === "add_label" && next.trigger_args.label === next.action_args.label) return { ok: false, error: "same_label_loop" };
+    if (next.action === "move_to") {
+      const to = next.action_args && next.action_args.step_id;
+      if (!to) return { ok: false, error: "need_action_step" };
+      if (before && Number(to) === Number(before.id)) return { ok: false, error: "move_to_self" };
+      const [target] = await db(env, "GET", `b_steps?select=id,trigger&id=eq.${Number(to)}`);
+      if (!target) return { ok: false, error: "no_target_step" };
+      if (target.trigger !== "moved") return { ok: false, error: "target_not_moved_trigger", hint: "移す先の自動の動きのきっかけを「ほかの自動の動きから移された」にしてください" };
+    }
+    if (next.action === "set_field") {
+      const a = next.action_args || {};
+      if (!a.field || !("value" in a)) return { ok: false, error: "need_action_field" };
+      const [field] = await db(env, "GET", `b_fields?select=key,archived_at&key=eq.${a.field}`);
+      if (!field || field.archived_at) return { ok: false, error: "no_field" };
+    }
     let row;
     if (before) {
       // 止まっていたものを動かすとき、その時刻から後のきっかけだけを対象にする（昔の人へまとめて動かないため）
@@ -243,6 +311,8 @@ export function makeDeliver(h) {
     if (s.trigger === "form_submitted" && ta.form) q += `&payload->>slug=eq.${encodeURIComponent(ta.form)}`;
     if ((s.trigger === "page_viewed" || s.trigger === "page_clicked") && ta.page) q += `&payload->>slug=eq.${encodeURIComponent(ta.page)}`;
     if (s.trigger === "page_clicked" && ta.button) q += `&payload->>button=eq.${encodeURIComponent(ta.button)}`;
+    // 便 11b：この自動の動きへ移された人だけ
+    if (s.trigger === "moved") q += `&payload->>to=eq.${s.id}`;
     return q;
   }
 
@@ -253,12 +323,12 @@ export function makeDeliver(h) {
   }
 
   async function runSteps(env, left) {
-    const out = { checked: 0, sent: 0, blocked: 0, failed: 0, waiting_cap: 0, notified: 0, labeled: 0, skipped: 0 };
+    const out = { checked: 0, sent: 0, blocked: 0, failed: 0, waiting_cap: 0, notified: 0, labeled: 0, skipped: 0, moved: 0, fields_set: 0 };
     const steps = await db(env, "GET", "b_steps?select=*&active=eq.true&order=sort.asc,id.asc");
     for (const s of steps) {
       if (!TRIGGERS[s.trigger]) continue;
       const action = s.action || "send_email";
-      const due = new Date(Date.now() - s.delay_hours * 3600e3).toISOString();
+      const due = new Date(Date.now() - (Number(s.delay_hours) || 0) * 3600e3).toISOString();
       const triggers = await db(env, "GET", triggerQuery(s, due));
       if (!triggers.length) continue;
       const done = await db(env, "GET", `events?select=type,payload&type=in.(${DONE_TYPES.join(",")})&payload->>step_id=eq.${s.id}&limit=10000`);
@@ -303,6 +373,26 @@ export function makeDeliver(h) {
           else { await addEvent(env, c.id, "connector_skipped", { ...extra, reason: r.ok ? "already_labeled" : (r.error || "label_failed") }, "site"); out.skipped++; }
           continue;
         }
+        if (action === "move_to") {
+          // 移された人がさらに移すときは段を 1 つ深くする。5 段を超えたら止める（回り続けを防ぐ）
+          const depth = t.type === "step_entered" ? (Number(t.payload && t.payload.depth) || 1) + 1 : 1;
+          const to = Number(s.action_args && s.action_args.step_id);
+          if (!to || to === Number(s.id) || depth > MOVE_DEPTH_MAX) {
+            await addEvent(env, c.id, "connector_skipped", { ...extra, reason: !to ? "no_target" : to === Number(s.id) ? "move_to_self" : "chain_too_long" }, "site");
+            out.skipped++;
+            continue;
+          }
+          await addEvent(env, c.id, "step_entered", { ...extra, to, depth }, "site");
+          out.moved = (out.moved || 0) + 1;
+          continue;
+        }
+        if (action === "set_field") {
+          const a = s.action_args || {};
+          const r = h.forms && h.forms.setPersonValue ? await h.forms.setPersonValue(env, c.id, a.field, a.value) : { ok: false, error: "no_forms" };
+          if (r.ok) { await addEvent(env, c.id, "field_set", { ...extra, key: a.field, value: r.value, changed: r.changed }, "site"); out.fields_set = (out.fields_set || 0) + 1; }
+          else { await addEvent(env, c.id, "connector_skipped", { ...extra, reason: r.error || "field_failed" }, "site"); out.skipped++; }
+          continue;
+        }
         if (left.n <= 0) { out.waiting_cap++; continue; }
         const r = await sendOne(env, c, { kind: "step", ref: s.id, subject: s.subject, body: s.body, extra });
         if (r.result === "sent") left.n--;
@@ -316,7 +406,7 @@ export function makeDeliver(h) {
     const fill = (t) => String(t).split("{{name}}").join(customer.name || "");
     const text = await trackLinks(env, fill(body), kind, ref, customer.id);
     // 出来事の記録の actor は site・admin・mcp・webhook・seed のどれか（b_events の決まり）。定時の処理は site で積む
-    return await bin3.sendMail(env, customer, { kind, subject: fill(subject), text, actor: "site", extra });
+    return await bin3.sendMail(env, customer, { kind, subject: fill(subject), text, actor: "site", extra, openUrl: await openUrl(env, kind, ref, customer.id) });
   }
 
   // ---------- 一斉配信 ----------
@@ -326,6 +416,7 @@ export function makeDeliver(h) {
     const rows = await db(env, "GET", `b_broadcasts?select=*&order=created_at.desc&limit=${lim}`);
     if (rows.length) {
       const ev = await db(env, "GET", "events?select=type,customer_id,payload&type=in.(email_sent,email_blocked,email_failed,email_clicked)&payload->>kind=eq.broadcast&limit=10000");
+      const om = await openedMap(env);
       for (const b of rows) {
         const mine = ev.filter((e) => String(e.payload.broadcast_id || e.payload.ref) === b.id);
         b.sent = mine.filter((e) => e.type === "email_sent").length;
@@ -333,6 +424,7 @@ export function makeDeliver(h) {
         b.failed = mine.filter((e) => e.type === "email_failed").length;
         b.clicks = mine.filter((e) => e.type === "email_clicked").length;
         b.clicked_people = new Set(mine.filter((e) => e.type === "email_clicked").map((e) => e.customer_id)).size;
+        b.opened_people = (om.get(`broadcast:${b.id}`) || new Set()).size;
       }
     }
     return { ok: true, count: rows.length, broadcasts: rows, open_to_all: (await h.mailcfg.get(env)).scope === "all" };
@@ -492,5 +584,5 @@ export function makeDeliver(h) {
     }
   }
 
-  return { previewAudience, listSteps, setStep, listBroadcasts, draftBroadcast, queueBroadcast, cancelBroadcast, run, warmState, handleClick, handleAuthEmail, normFilter, triggerQuery };
+  return { previewAudience, listSteps, setStep, listBroadcasts, draftBroadcast, queueBroadcast, cancelBroadcast, run, warmState, handleClick, handleOpen, handleAuthEmail, normFilter, triggerQuery, audience };
 }
