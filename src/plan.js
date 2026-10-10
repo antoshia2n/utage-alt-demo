@@ -290,7 +290,7 @@ export function makePlan(h) {
     const since = new Date(Date.now() - 7 * 864e5).toISOString();
     const [products, steps, broadcasts, lessons, community, campaigns, owners, events, forms] = await Promise.all([
       db(env, "GET", "b_products?select=id,name,active,grants,sort,utage_product_id,thanks_page_slug&order=sort.asc"),
-      db(env, "GET", "b_steps?select=id,name,trigger,trigger_args,product_id,subject,active,action&order=sort.asc,id.asc"),
+      db(env, "GET", "b_steps?select=id,name,trigger,trigger_args,product_id,subject,active,action,action_args&order=sort.asc,id.asc"),
       db(env, "GET", "b_broadcasts?select=id,subject,status,filter,created_at&order=created_at.desc&limit=50"),
       db(env, "GET", "mn_lessons?select=lesson_id&limit=5000"),
       communityLink(env),

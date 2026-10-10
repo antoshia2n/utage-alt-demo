@@ -6,7 +6,8 @@ import { fakeStore } from "./fake-store.mjs";
 import { makeDeliver } from "../src/deliver.js";
 import { makeForms } from "../src/forms.js";
 import { mailHtml, mailText, PIXEL_GIF } from "../src/mailhtml.js";
-import { buildEdges, partKeyOf } from "../src/plan.js";
+import { buildEdges, buildParts, partKeyOf } from "../src/plan.js";
+import { readFileSync } from "node:fs";
 
 const env = { B_STORE: true, MCP_SECRET: "test-secret", PUBLIC_ORIGIN: "https://lab.shia2n.jp" };
 const A = "11111111-1111-4111-8111-111111111111";
@@ -155,4 +156,15 @@ test("保存の前の確かめ：移す先は「移された」のきっかけ�
   assert.equal((await st.deliver.setStep(env, { id: moved.step.id, action: "move_to", action_args: { step_id: moved.step.id } }, "test")).error, "move_to_self");
   assert.equal((await st.deliver.setStep(env, { name: "f", trigger: "registered", action: "set_field", action_args: { field: "no_such", value: "1" } }, "test")).error, "no_field");
   assert.equal((await st.deliver.setStep(env, { name: "f", trigger: "registered", action: "set_field", action_args: { field: "seminar_status" } }, "test")).error, "need_action_field");
+});
+
+test("設計図の読み込みは移す先（action_args）も読む。読まないと「移す」の線が引けない", () => {
+  const src = readFileSync(new URL("../src/plan.js", import.meta.url), "utf8");
+  const q = src.match(/"b_steps\?select=([^&"]+)/);
+  assert.ok(q && q[1].split(",").includes("action_args"), "plan.js の b_steps の読み込みに action_args が無い");
+  const parts = buildParts({ steps: [
+    { id: 11, name: "登録したら移す", trigger: "registered", action: "move_to", action_args: { step_id: 10 }, active: false },
+    { id: 10, name: "移されたらラベル", trigger: "moved", action: "add_label", action_args: { label: "x" }, active: false },
+  ] });
+  assert.ok(buildEdges(parts).some((e) => e.from === "step:11" && e.to === "step:10" && e.label === "移す"));
 });
