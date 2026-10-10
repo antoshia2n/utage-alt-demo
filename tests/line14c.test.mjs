@@ -119,5 +119,5 @@ test("画面：左のメニューに LINE があり、LINE の道具は LINE の
   assert.match(html, /id="view-line"/);
   const src = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
   for (const name of ["list_line_friends", "send_line", "get_line_quota", "list_line_inbound"]) assert.match(src, new RegExp(`name: "${name}",\\n    screen: "line",`));
-  assert.match(src, /const VERSION = "0\.42\.0-b14c";/);
+  assert.match(src, /const VERSION = "0\.(4[2-9]|[5-9]\d)\.\d+-b[0-9a-z]+";/, "便 14c より後の版");
 });

@@ -7,6 +7,8 @@
 // 台帳へ：メールで突き合わせ、いなければ関数 b_register で入れる（流入元は other）。1 回に新しく入れるのは NEW_PER_RUN 人まで。
 //   出来事は「登録した（registered）」ではなく utage_imported（アカウントごとに 1 人 1 回）。登録のきっかけの自動の動きは動かない。
 //   予約者は consult_booked（via utage・日時の枠 slot は持たない＝空き時間をふさがず、前日の知らせも出ない）を 1 人 1 回。
+//     出来事の時刻は UTAGE で予約した元の日（ic_persons.first_date の 0 時・日本時間）。取り込んだ時刻で積むと、先週 7 日で数える
+//     設計図の線・段階のボード・ホームの個別相談が膨らむため（便 16a の 2・2026-10-10 統括の確かめ）。前に今日の時刻で積んだ分も、毎回付け直す。
 //   UTAGE で配信停止かメールエラーの読者は、B でも email_unsubscribed（via utage）を積み、B から一斉配信もステップも届かない。
 // 表と SQL は増やさない。メールの無い読者（LINE だけ）は数えるだけで入れない。UTAGE には書き込まない。
 
@@ -85,12 +87,17 @@ export function makeUtageImport(h) {
   }
 
   // 1 人 1 回の出来事を、まだ無い人にだけ積む
-  async function eventsOnce(env, type, ids, payloadOf, matchKey, matchVal) {
+  async function eventsOnce(env, type, ids, payloadOf, matchKey, matchVal, atOf) {
     if (!ids.length) return 0;
     let q = `events?select=customer_id&type=eq.${type}&customer_id=in.${encodeURIComponent(inList(ids))}`;
     if (matchKey) q += `&payload->>${matchKey}=eq.${encodeURIComponent(matchVal)}`;
     const have = new Set((await db(env, "GET", q)).map((r) => r.customer_id));
-    const rows = ids.filter((id) => !have.has(id)).map((id) => ({ customer_id: id, type, payload: payloadOf(id), actor: ACTOR }));
+    const rows = ids.filter((id) => !have.has(id)).map((id) => {
+      const row = { customer_id: id, type, payload: payloadOf(id), actor: ACTOR };
+      const at = atOf ? atOf(id) : null;
+      if (at) row.occurred_at = at;
+      return row;
+    });
     if (rows.length) await db(env, "POST", "events", rows, "return=minimal");
     return rows.length;
   }
@@ -138,14 +145,29 @@ export function makeUtageImport(h) {
     out.created += created;
     if (full) { out.consult_waiting = true; return; }
     const byId = new Map([...people].map(([e, p]) => [ids.get(e), p]));
+    const dayOf = (d) => (/^\d{4}-\d{2}-\d{2}$/.test(String(d || "")) ? new Date(`${d}T00:00:00+09:00`).toISOString() : null);
     out.consults += await eventsOnce(env, "consult_booked", [...byId.keys()], (id) => {
       const p = byId.get(id);
-      return { via: "utage", ic_person_id: p.ic, date: p.date, utage_at: p.date ? new Date(`${p.date}T00:00:00+09:00`).toISOString() : null };
-    }, "via", "utage");
+      return { via: "utage", ic_person_id: p.ic, date: p.date, utage_at: dayOf(p.date) };
+    }, "via", "utage", (id) => dayOf(byId.get(id).date));
+    out.consult_restamped = await restampConsults(env);
+  }
+
+  // 前に取り込んだ時刻で積んだ予約を、予約した元の日へ付け直す（何度流しても同じ）
+  async function restampConsults(env) {
+    const rows = await db(env, "GET", "events?select=id,occurred_at,payload&type=eq.consult_booked&payload->>via=eq.utage&limit=5000");
+    let n = 0;
+    for (const r of rows || []) {
+      const at = r.payload && r.payload.utage_at;
+      if (!at || Date.parse(at) === Date.parse(r.occurred_at)) continue;
+      await db(env, "PATCH", `events?id=eq.${Number(r.id)}`, { occurred_at: at }, "return=minimal");
+      n++;
+    }
+    return n;
   }
 
   async function run(env) {
-    const out = { ok: true, readers: 0, pages: 0, created: 0, imported: 0, unsubscribed: 0, no_email: 0, consults: 0, consult_no_email: 0, consult_waiting: false, sweep_done: false };
+    const out = { ok: true, readers: 0, pages: 0, created: 0, imported: 0, unsubscribed: 0, no_email: 0, consults: 0, consult_no_email: 0, consult_waiting: false, consult_restamped: 0, sweep_done: false };
     if (!env.B_STORE) return { ok: true, skipped: "demo_store" };
     if (!sourceOf(env)) return { ok: true, skipped: "no_source" };
     const budget = { left: NEW_PER_RUN };

@@ -117,6 +117,28 @@ test("予約者：ic_persons の source=UTAGE を 1 人 1 回 consult_booked（v
   assert.equal(s.table("events").filter((e) => e.type === "consult_booked").length, 1);
 });
 
+test("予約者の出来事の時刻は、取り込んだ日ではなく UTAGE で予約した元の日（日本時間の 0 時）。前に今日の時刻で積んだ分も付け直す", async () => {
+  const { s, imp, env } = setup({ accounts: [], readers: {}, ic: [
+    { id: "ic1", name: "一丸 直樹", email: "i@example.com", first_date: "2026-03-22", source: "UTAGE" },
+    { id: "ic2", name: "日付なし", email: "n@example.com", first_date: null, source: "UTAGE" },
+  ] });
+  // 直す前の形で積まれていた 1 件（時刻は取り込んだ時刻）
+  s.table("customers").push({ id: "22222222-2222-4222-8222-222222222222", email: "old@example.com", name: "前の取り込み" });
+  s.table("ic_persons").push({ id: "ic9", name: "前の取り込み", email: "old@example.com", first_date: "2026-04-05", source: "UTAGE" });
+  s.table("events").push({ id: 900, customer_id: "22222222-2222-4222-8222-222222222222", type: "consult_booked", actor: "webhook",
+    occurred_at: "2026-10-10T06:08:24.000Z", payload: { via: "utage", ic_person_id: "ic9", date: "2026-04-05", utage_at: "2026-04-04T15:00:00.000Z" } });
+  const o = await imp.run(env);
+  const cb = s.table("events").filter((e) => e.type === "consult_booked");
+  const at = (email) => cb.find((e) => e.customer_id === s.table("customers").find((c) => c.email === email).id).occurred_at;
+  assert.equal(at("i@example.com"), "2026-03-21T15:00:00.000Z");
+  assert.equal(at("old@example.com"), "2026-04-04T15:00:00.000Z", "前の取り込みの分を付け直す");
+  assert.equal(o.consult_restamped, 1);
+  assert.ok(Date.parse(at("n@example.com")) > Date.parse("2026-10-01"), "元の日が無い人は取り込んだ時刻のまま");
+  const o2 = await imp.run(env);
+  assert.equal(o2.consult_restamped, 0, "流し直しても同じ");
+  assert.equal(s.table("events").filter((e) => e.type === "consult_booked").length, 3);
+});
+
 test("鍵が無ければ何もしない。UTAGE が誤りを返したら失敗として記録に残る", async () => {
   const a = setup({ accounts: [], readers: {} });
   assert.equal((await a.imp.run({ B_STORE: true })).skipped, "no_source");
