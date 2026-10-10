@@ -192,7 +192,7 @@ export function makePages(h) {
       checkout: `決済の枠：<div data-lab-part="checkout:商品の id"></div>。商品の名前・価格と「申し込む」ボタンが入り、押すと ${labOrigin(env)}/register?product= へ移る（決済はそこで行う）`,
       button: `ボタン：押したことを数えたい a や button に data-lab-button="名前" を付ける（英小文字・数字・ハイフン。例 cta-1）。押した数は Lab OS に出て、コネクタで「押したら〜する」をつなげる`,
       style: "差し込む枠は class lab-form・lab-checkout・lab-btn・lab-input・lab-note を持つ。ページの CSS で上書きして見た目をそろえる",
-      legal: `特商法 ${labOrigin(env)}/legal/tokushoho・プライバシーポリシー ${labOrigin(env)}/legal/privacy。ページの下に置く`,
+      legal: `特商法 ${labOrigin(env)}/legal/tokushoho・プライバシーポリシー ${labOrigin(env)}/legal/privacy・利用規約 ${labOrigin(env)}/legal/terms。ページの下に置く`,
       dont: "鍵・会員の個人情報・実在しない実績や数字を書かない。公開はしない（publish_page は Naoki が承認する）",
       booking: "予約の枠：<div data-lab-part=\"booking:予約の種類の住所の名前\"></div>。空き時間の一覧と、名前・メール・相談したいこと・同意の欄が入る。予約した人は台帳に入り、受付のメールが届く",
       thanks: "サンクスページ（目的 thanks）：申込の枠もボタンも要らない。申込を受け付けたこと・日時・参加の URL はメールで届くこと・迷惑メールの確かめ方を書く。セミナーの回に結ぶのは set_seminar の thanks_page_slug",
