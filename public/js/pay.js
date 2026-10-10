@@ -138,8 +138,11 @@ export async function mountInlineCard({ container, email, product, onStatus }) {
       let data;
       try { data = await window.UnivapayCheckout.submit(iframe); }
       catch (err) { throw new Error("決済が通りませんでした" + (err && err.message ? "：" + err.message : "")); }
-      const hidden = [...container.closest("form") ? container.closest("form").querySelectorAll("input[type=hidden]") : []].map((x) => x.value);
-      const id = findId(data, ["chargeId", "charge_id", "id"]) || hidden.find((v) => /^[0-9a-f-]{36}$/i.test(v));
+      // 便 12c の直し：決済の番号はフォームに足される univapayChargeId から取る（返ってくる値の id はカードのトークンの番号で、決済の番号ではない）
+      const form = container.closest("form");
+      const fromInput = form && form.querySelector('input[name="univapayChargeId"]');
+      const id = (fromInput && fromInput.value) || findId(data, ["chargeId", "charge_id"]);
+      if (!id) throw new Error("決済の番号を受け取れませんでした。UnivaPay からの確認のメールが届いているかをご確認ください");
       onStatus && onStatus("決済を確かめています…");
       const r = await api("/api/checkout/confirm", { method: "POST", body: { email, product_id: p.id, charge_id: id, raw: data } });
       if (r.ok) return r;
