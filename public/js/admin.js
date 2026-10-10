@@ -1946,14 +1946,14 @@ async function loadSubscriptions() {
   const r = await api("/api/admin/subscriptions" + (st ? "?status=" + st : ""), { token });
   if (!r.ok) { $("sub-count").textContent = "読めませんでした（" + (r.error || r.status) + "）"; return; }
   const c = r.counts || {};
-  $("sub-count").textContent = r.store === "demo" ? "デモの置き場では出しません" : `${r.count} 件・続いている ${c.active || 0}・失敗 ${c.failed || 0}・解約 ${c.canceled || 0}`;
-  const tone = { active: "", completed: "", failed: "warn", canceled: "gray", suspended: "gray" };
+  $("sub-count").textContent = r.store === "demo" ? "デモの置き場では出しません" : `${r.count} 件・続いている ${c.active || 0}・失敗 ${c.failed || 0}・解約 ${c.canceled || 0}${c.ending ? `・止めた（期限まで） ${c.ending}` : ""}`;
+  const tone = { active: "", completed: "", failed: "warn", canceled: "gray", suspended: "gray", ending: "warn" };
   table("subs", [
     { key: "name", label: "名前", sortVal: (s) => s.name || s.email, html: (s) => `<div class="c-name">${esc(s.name || s.email)}</div><div class="sub">${esc(s.email)}</div>` },
     { key: "product_name", label: "商品", cls: "c-src", html: (s) => `${esc(s.product_name)}${s.mode === "test" ? ' <span class="sub">（試し）</span>' : ""}` },
     { key: "payments", label: "入金", sortVal: (s) => s.payments, html: (s) => s.installments ? `${s.payments} / ${s.installments} 回` : `${s.payments} 回${s.failures ? `・失敗 ${s.failures}` : ""}` },
     { key: "last_at", label: "最後の動き", html: (s) => esc(fmtTime(s.last_at)) },
-    { key: "status", label: "状態", sortVal: (s) => s.status, html: (s) => pill(s.status_label, tone[s.status] || "") + (["active", "failed", "suspended"].includes(s.status) ? ` <button class="btn ghost small" type="button" data-cancel="${esc(s.subscription_id)}">解約</button>` : "") },
+    { key: "status", label: "状態", sortVal: (s) => s.status, html: (s) => pill(s.status_label, tone[s.status] || "") + (s.status === "ending" && s.keep_until ? ` <span class="sub">${esc(fmtTime(s.keep_until).slice(0, 10))} まで</span>` : "") + (["active", "failed", "suspended"].includes(s.status) ? ` <button class="btn ghost small" type="button" data-cancel="${esc(s.subscription_id)}">解約</button>` : "") },
   ], r.subscriptions, null, st ? "この状態の継続課金はありません" : "まだありません");
   $("subs").querySelectorAll("[data-cancel]").forEach((b) => b.addEventListener("click", async (ev) => {
     ev.stopPropagation();

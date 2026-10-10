@@ -27,6 +27,8 @@
     <button class="it" type="button" aria-selected="false" data-tab="review">振り返り</button>
     <div class="grp">相談</div>
     <button class="it" type="button" aria-selected="false" data-tab="booking">予約</button>
+    <div class="grp">契約</div>
+    <button class="it" type="button" aria-selected="false" data-tab="contract">ご契約</button>
   </nav>
   <div class="main">
   <div class="topnav">
@@ -89,6 +91,14 @@
       </div>
       <h3 style="margin:8px 0 0">セミナー</h3>
       <div id="bk-seminars" class="stack"></div>
+    </section>
+
+    <!-- 便 R3：自分の契約と、定期を止める -->
+    <section id="tab-contract" class="stack hidden">
+      <div class="card"><h3>ご契約</h3><p class="note" style="margin:0">続いている定期のお支払いと、分割のお支払いの残りが見られます。定期は、ここから止められます。止めたあとも、お支払い済みの期間の終わりまでお使いいただけます。</p></div>
+      <div id="ct-list" class="stack"></div>
+      <div id="ct-status" class="note" aria-live="polite"></div>
+      <p class="note" style="margin:0">分割のお支払いを途中で止めたいときや、ご不明な点は bestlifeconsulting.inc@gmail.com までご連絡ください。<a href="/legal/tokushoho">特定商取引法に基づく表記</a></p>
     </section>
 
     <section id="tab-room" class="hidden">
