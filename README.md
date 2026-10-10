@@ -150,3 +150,14 @@ UTAGE の代わりになるサイト兼アプリ（PWA）のデモ。架空の�
 - 継続課金：商品の画面の「継続課金」タブに、契約ごとの状態・入金の回数・失敗の回数。解約は UnivaPay の定期課金を消す（戻せない）。AI の道具 `list_subscriptions`（自動）・`cancel_subscription`（承認）
 - 課金が失敗した知らせが来たら、その人へメール（`kind=billing_failed`・同じ契約には 1 日 1 通まで）
 - 試験：`node --test tests/billing.test.mjs`
+
+## B の便 R1 で足したもの（公開の入口の守り）
+
+- ロボット判定（Cloudflare Turnstile）：lp のフォーム・予約、lab のフォーム・登録。表示用の鍵 `TURNSTILE_SITE_KEY`（wrangler.jsonc）と秘密の鍵 `TURNSTILE_SECRET_KEY`（Cloudflare の Secret）の両方がそろったときだけ判定する。判定はサーバーが Cloudflare に聞き直す（`src/shield.js`）。ページの申込の枠には `/_lab/embed.js` が自動で判定の欄を出す
+- 回数の上限：同じ接続元は Cloudflare の回数制限（`ratelimits` の `PUBLIC_LIMIT` 60 秒に 10 回・`HIT_LIMIT` 60 秒に 60 回）、同じ住所は受付の出来事（`registered`・`register_again`）で 10 分に 3 回・1 日に 10 回。止めた理由は `b_inbound_log` の `channel=shield`
+- 外から誰でも呼べる口のエラーは種類（`error`）だけ返し、中身（`detail`）は `channel=error_detail` に残す。`/api/admin/` と `/mcp` は中身も返す
+- AI の窓口の合言葉はヘッダー（`Authorization: Bearer`）だけ。住所の中の合言葉（`/mcp/合言葉`）と GET で道具を呼ぶ口（`?tool=`）は閉じた
+- ページの人の印（`?u=`）に 30 日の期限。期限切れと期限の無い前の形は「知らない人」
+- ログインのメール（Supabase の Send Email Hook）は、台帳にいる人とシアニンにだけ送る（`not_in_ledger`）
+- 状態は `/api/health` の `shield`
+- 試験：`node --test tests/shield.test.mjs`

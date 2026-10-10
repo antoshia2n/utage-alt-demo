@@ -578,6 +578,12 @@ export function makeDeliver(h) {
     if (bad) return await reply(401, { ok: false, error: bad });
     if (!to || !type) return await reply(400, { ok: false, error: "bad_body" });
     if (!(await bin3.mailAllowed(env, to, "auth"))) return await reply(400, { ok: false, error: "mail_not_open" });
+    // 便 R1：台帳にいない住所へは送らない（ログイン・登録のメールは、公開の口の守りを通って台帳に入った人と、シアニンにだけ届く）。
+    // Supabase のログインの口を機械が直接呼んでも、知らない人の住所へメールが出ないようにするため
+    if (env.B_STORE && !(await isAdmin(env, to))) {
+      const [c] = await db(env, "GET", `customers?select=id&email=eq.${encodeURIComponent(to)}`);
+      if (!c) return await reply(400, { ok: false, error: "not_in_ledger" });
+    }
     const cfg = await h.mailcfg.get(env);
     if (!env.EMAIL || !cfg.from) return await reply(500, { ok: false, error: "mail_not_configured" });
     // B の便 7c-1 の続き：リンクは B 自身の住所の /auth を通す（送り元とリンク先の住所をそろえる）。

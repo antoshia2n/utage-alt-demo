@@ -24,6 +24,7 @@
       <div><label for="email">メールアドレス<span class="note">（必須）</span></label><input id="email" type="email" autocomplete="email" required></div>
       <div id="items" class="stack"></div>
       <label class="check"><input id="consent" type="checkbox"> <span><a href="/legal/privacy" target="_blank">プライバシーポリシー</a>と<a href="/legal/tokushoho" target="_blank">特定商取引法に基づく表記</a>を確かめ、お知らせのメールを受け取ります（いつでも配信を止められます）。</span></label>
+      <div id="bot"></div>
       <button class="btn block" id="go" type="submit">送る</button>
       <div id="msg" class="msg hidden" role="status"></div>
     </form>
@@ -36,6 +37,7 @@
 </footer>
 <script type="module">
   import { rememberSource, currentSource } from "/js/common.js";
+  import { mountBotCheck, botWaitMessage, BOT_ERROR_MESSAGE } from "/js/botcheck.js";
   rememberSource();
   const $ = (id) => document.getElementById(id);
   const qs = new URLSearchParams(location.search);
@@ -45,7 +47,7 @@
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const show = (text, ok) => { const m = $("msg"); m.textContent = text; m.className = "msg " + (ok ? "ok" : "err"); };
   const WHY = { required: "答えてください", not_number: "数で入れてください", not_date: "日付を選んでください", not_option: "選択肢から選んでください", too_long: "長すぎます" };
-  let form = null;
+  let form = null, bot = null;
 
   function input(it) {
     const id = "a-" + it.key, req = it.required ? " required" : "";
@@ -66,6 +68,7 @@
     $("name-wrap").classList.toggle("hidden", !form.ask_name);
     $("items").innerHTML = form.items.map((it) => `<div><label for="a-${it.key}">${esc(it.label)}${it.required ? '<span class="note">（必須）</span>' : ""}</label>${input(it)}<div class="note err-text hidden" id="e-${it.key}"></div></div>`).join("");
     $("f").classList.remove("hidden");
+    bot = await mountBotCheck($("bot"), r.bot_site_key); // 便 R1：ロボット判定
   }
 
   $("f").addEventListener("submit", async (ev) => {
@@ -74,12 +77,16 @@
     const email = $("email").value.trim();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return show("メールアドレスを確かめてください", false);
     if (!$("consent").checked) return show("プライバシーポリシーと表記を確かめて、チェックを入れてください", false);
+    const wait = botWaitMessage(bot);
+    if (wait) return show(wait, false);
     const answers = {};
     for (const it of form.items) answers[it.key] = $("a-" + it.key).value;
     $("go").disabled = true;
     show("送っています…", true);
-    const r = await fetch("/api/forms/" + encodeURIComponent(slug), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, name: $("name").value.trim(), consent: true, answers, source: currentSource(), ref: refCode, route: routeName }) }).then((x) => x.json()).catch(() => ({ ok: false, error: "network" }));
+    const r = await fetch("/api/forms/" + encodeURIComponent(slug), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, name: $("name").value.trim(), consent: true, answers, source: currentSource(), ref: refCode, route: routeName, turnstile: bot ? bot.get() : "" }) }).then((x) => x.json()).catch(() => ({ ok: false, error: "network" }));
     $("go").disabled = false;
+    if (!r.ok && bot) bot.reset();
+    if (BOT_ERROR_MESSAGE[r.error]) return show(BOT_ERROR_MESSAGE[r.error], false);
     // 便 13：セミナーの回にサンクスページがあれば、そこへ移る
     if (r.ok && r.thanks_url && /^https:[/][/]/.test(r.thanks_url)) { location.href = r.thanks_url; return; }
     if (r.ok) {
