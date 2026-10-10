@@ -1,5 +1,6 @@
 // B の便 16a：UTAGE の読者と個別相談の予約者を、B の台帳へ流しっぱなしで取り込む（2026-10-10 Naoki「進めて」）。
-//   読者：UTAGE の REST（https://api.utage-system.com/v1・Cloudflare の秘密の値 UTAGE_API_KEY）を、アカウントごとに 100 件ずつ全ページ読む。
+//   読者：UTAGE の REST を、アカウントごとに 100 件ずつ全ページ読む。読み口は shia2n-mcp の UtageReader（サービスの結び env.UTAGE・
+//     鍵は shia2n-mcp がすでに持っているので B に増やさない）。結びが無いときだけ Cloudflare の秘密の値 UTAGE_API_KEY で直接読む。
 //     読む順はシナリオごとで新しい順ではないので、どこまで読んだか（しおり）を表 b_settings の 1 行（key=utage_import_cursor）に置き、
 //     毎時の処理で PAGES_PER_RUN ページずつ進める。最後まで読んだら頭に戻る（1 周で全員を見直す）。
 //   予約者：shia2n-mcp が毎朝 consult-manager の表 ic_persons に入れている UTAGE の予約者（source=UTAGE）を読む（UTAGE の鍵を増やさないため）。
@@ -48,7 +49,15 @@ export function makeUtageImport(h) {
     await db(env, "POST", "settings?on_conflict=key", [{ key: CURSOR_KEY, value: JSON.stringify(c).slice(0, 500), updated_at: new Date().toISOString(), updated_by: "utage_import" }], "resolution=merge-duplicates,return=minimal");
   }
 
+  const hasBinding = (env) => !!(env.UTAGE && typeof env.UTAGE.readers === "function");
+  const sourceOf = (env) => (hasBinding(env) ? "binding" : env.UTAGE_API_KEY ? "key" : null);
   async function utage(env, path, query = {}) {
+    if (hasBinding(env)) {
+      const m = path.match(/^[/]accounts[/]([^/]+)[/]readers$/);
+      const r = m ? await env.UTAGE.readers(decodeURIComponent(m[1]), query.page, query.per_page) : await env.UTAGE.accounts();
+      if (!r || r.ok === false) throw new Error(`UTAGE ${(r && r.error) || "no_answer"}${r && r.detail ? ": " + String(r.detail).slice(0, 150) : ""}`);
+      return r;
+    }
     const u = new URL(String(env.UTAGE_API_BASE || "https://api.utage-system.com/v1").replace(/\/$/, "") + path);
     for (const [k, v] of Object.entries(query)) u.searchParams.set(k, String(v));
     const r = await fx(u.toString(), { headers: { Authorization: `Bearer ${env.UTAGE_API_KEY}`, Accept: "application/json" } });
@@ -138,7 +147,7 @@ export function makeUtageImport(h) {
   async function run(env) {
     const out = { ok: true, readers: 0, pages: 0, created: 0, imported: 0, unsubscribed: 0, no_email: 0, consults: 0, consult_no_email: 0, consult_waiting: false, sweep_done: false };
     if (!env.B_STORE) return { ok: true, skipped: "demo_store" };
-    if (!env.UTAGE_API_KEY) return { ok: true, skipped: "no_key" };
+    if (!sourceOf(env)) return { ok: true, skipped: "no_source" };
     const budget = { left: NEW_PER_RUN };
     try {
       const accounts = ((await utage(env, "/accounts")).data || []).map((a) => ({ id: a.id, name: a.name })).sort((a, b) => String(a.id).localeCompare(String(b.id)));
@@ -179,7 +188,7 @@ export function makeUtageImport(h) {
     const byAcc = {};
     for (const e of imported) { const k = (e.payload && e.payload.account_name) || "?"; byAcc[k] = byAcc[k] || new Set(); byAcc[k].add(e.customer_id); }
     return {
-      ok: true, key_set: !!env.UTAGE_API_KEY, cursor: c,
+      ok: true, source: sourceOf(env), cursor: c,
       people: new Set(imported.map((e) => e.customer_id)).size,
       by_account: Object.fromEntries(Object.entries(byAcc).map(([k, s]) => [k, s.size])),
       unsubscribed_from_utage: new Set(unsub.map((e) => e.customer_id)).size,

@@ -35,7 +35,8 @@
   },
   // B の便 8f-2：タスクマスターの今日の分を shia2n-mcp から読む。サービスの結び（同じ Cloudflare のアカウントの Worker 同士）なので外からは呼べず、合言葉も要らない。
   // shia2n-mcp の版 1.3.0 以上（TaskmasterReader を出している）が先に出ている必要がある
-  "services": [{ "binding": "TASKMASTER", "service": "shia2n-mcp", "entrypoint": "TaskmasterReader" }],
+  // 便 16a：UTAGE の読者を shia2n-mcp の UtageReader から読む（同じ形。shia2n-mcp の版 1.4.0 以上が先に出ている必要がある）
+  "services": [{ "binding": "TASKMASTER", "service": "shia2n-mcp", "entrypoint": "TaskmasterReader" }, { "binding": "UTAGE", "service": "shia2n-mcp", "entrypoint": "UtageReader" }],
   // 便 3：1 時間ごとに、添削が返って読まれていない人へメールを 1 通
   "triggers": { "crons": ["7 * * * *"] },
   // ブランチとプルリクの試しの組み立て（npx wrangler preview）に要る。中身は空でよい
