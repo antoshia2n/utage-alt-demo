@@ -12,6 +12,8 @@
 //   リンクの先 /line-link?t=… でメールを入れると、台帳の人と LINE の番号が出来事 line_linked（account・user）で結ばれる。
 //   リンクの印は「アカウント:LINE の番号」をチャネルシークレットで署名したもの（ほかの人の番号をすり替えられない）。
 //   送る道具（send_line）は承認が要る。送ったら 1 人ずつ出来事 line_sent を積む。ブロックした人（最後が unfollow）には送らない。
+// 便 14c：LINE の画面。友だちの一覧（board）・1 人とのやりとり（thread）・返す（reply）・絞って送る（broadcast）。
+//   画面から送ったものは b_inbound_log に line_out として 1 人 1 行。友だち全員の番号は認証済みアカウントだけ LINE から取り出せる。
 
 export const ACCOUNT_RE = /^[a-z][a-z_]{1,19}$/;
 export const FORWARD_PREFIX = "line_forward_";
@@ -23,6 +25,7 @@ export const secretName = (account) => "LINE_SECRET_" + String(account).toUpperC
 export const tokenName = (account) => "LINE_TOKEN_" + String(account).toUpperCase();
 const LINE_API = "https://api.line.me/v2/bot";
 const TEXT_MAX = 2000;
+const MSG_KIND = { image: "画像", video: "動画", audio: "音声", file: "ファイル", location: "位置", sticker: "スタンプ" };
 const b64u = (s) => btoa(String.fromCharCode(...new TextEncoder().encode(s))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 const unb64u = (s) => { const b = atob(String(s).replace(/-/g, "+").replace(/_/g, "/")); return new TextDecoder().decode(Uint8Array.from(b, (c) => c.charCodeAt(0))); };
 
@@ -304,5 +307,157 @@ export function makeLine(h) {
     return { ok: true, account, type: q.data.type, limit: q.data.type === "limited" ? q.data.value : null, used: c.ok ? c.data.totalUsage : null };
   }
 
-  return { handleWebhook, settings, setForward, inbound, forwardUrl, link, friends, send, quota, sendLinkInvite };
+  // ---------- 便 14c：LINE の画面（シアニン用の画面から。Naoki 本人の操作なので承認は通さない） ----------
+  const USER_RE = /^U[0-9a-f]{32}$/;
+  // 友だち全員の番号は、LINE の認証済みアカウントだけが取り出せる。取り出せなければ null（B が受けた知らせから分かる人だけになる）
+  async function followerIds(env, account) {
+    const out = [];
+    let start = "";
+    for (let i = 0; i < 5; i++) {
+      const r = await api(env, account, "GET", "/followers/ids?limit=1000" + (start ? "&start=" + encodeURIComponent(start) : ""));
+      if (!r.ok) return i === 0 ? null : out;
+      out.push(...((r.data && r.data.userIds) || []));
+      start = r.data && r.data.next;
+      if (!start) break;
+    }
+    return out;
+  }
+  // LINE の名前（プロフィール）。友だちでなくなった人は取れないので空
+  async function profileNames(env, account, users) {
+    const m = new Map();
+    await Promise.all(users.slice(0, 60).map(async (u) => {
+      const r = await api(env, account, "GET", "/profile/" + u);
+      if (r.ok && r.data && r.data.displayName) m.set(u, String(r.data.displayName).slice(0, 60));
+    }));
+    return m;
+  }
+  // 画面から送ったもの（b_inbound_log の line_out。1 人 1 行）
+  async function outRows(env, account, user) {
+    let q = `inbound_log?select=request,response,at&channel=eq.line_out&request->>account=eq.${account}&order=id.asc&limit=20000`;
+    if (user) q += `&request->>user=eq.${user}`;
+    return await db(env, "GET", q);
+  }
+  // 届いたもの（受け口の記録の中から、その人の知らせ）
+  async function inRows(env, account) {
+    return await db(env, "GET", `inbound_log?select=request,at&channel=in.(line,line_forward_failed)&request->>account=eq.${account}&order=id.asc&limit=20000`);
+  }
+  const msgText = (e) => e.type === "message" ? (e.message && e.message.type === "text" ? e.message.text : `（${MSG_KIND[e.message && e.message.type] || "メッセージ"}）`)
+    : e.type === "follow" ? "（友だちに追加した）" : e.type === "unfollow" ? "（ブロックした）" : e.type === "postback" ? "（ボタンを押した）" : null;
+
+  // 一覧：友だち（B が知っている人＋取り出せたら全員）・今月の残り・転送の失敗
+  async function board(env, { account }) {
+    if (!env.B_STORE) return { ok: false, error: "demo_store" };
+    if (!ACCOUNT_RE.test(String(account || ""))) return { ok: false, error: "bad_account" };
+    const [st, { byUser }, ins, outs, fol, q, ib] = await Promise.all([friendState(env, account), links(env, account), inRows(env, account), outRows(env, account),
+      env[tokenName(account)] ? followerIds(env, account) : null, quota(env, { account }), inbound(env, { account, days: 7 })]);
+    const users = new Set([...st.keys(), ...byUser.keys(), ...(fol || [])]);
+    const last = new Map();
+    const put = (u, at, text, from) => { if (!text) return; const o = last.get(u); if (!o || String(at) >= String(o.at)) last.set(u, { at, text: String(text).slice(0, 80), from }); };
+    for (const r of ins) for (const e of (r.request && r.request.events) || []) { const u = e.source && e.source.user; if (u) put(u, e.at || r.at, msgText(e), "them"); }
+    for (const r of outs) { const u = r.request && r.request.user; if (u) { users.add(u); put(u, r.at, r.request.text, "me"); } }
+    const list = [...users].filter((u) => USER_RE.test(u));
+    const ids = [...new Set(list.map((u) => byUser.get(u)).filter(Boolean))];
+    const [people, names] = await Promise.all([ids.length ? db(env, "GET", `customers?select=id,name,email&id=in.(${ids.join(",")})`) : [], env[tokenName(account)] ? profileNames(env, account, list) : new Map()]);
+    const pm = new Map(people.map((x) => [x.id, x]));
+    const ex = h.excluded ? await h.excluded(env) : new Set();
+    const friendsOut = list.map((u) => {
+      const pid = byUser.get(u), pr = pid ? pm.get(pid) : null, s = st.get(u) || {}, l = last.get(u) || null;
+      return { user: u, name: names.get(u) || (pr && pr.name) || "", linked: !!pid, person_id: pid || null, email: pr ? pr.email : null, excluded: !!(pid && ex.has(pid)),
+        blocked: !!s.blocked, last_at: l ? l.at : s.last_at || null, last_text: l ? l.text : "", last_from: l ? l.from : null };
+    }).sort((a, b) => String(b.last_at || "").localeCompare(String(a.last_at || "")));
+    const acc = (ib.accounts || [])[0] || {};
+    return { ok: true, account, token_set: !!env[tokenName(account)], all_followers: !!fol, count: friendsOut.length, linked: friendsOut.filter((x) => x.linked).length,
+      quota: q.ok ? { limit: q.limit, used: q.used } : null, forward_failed_7d: acc.forward_failed || 0, received_7d: acc.received || 0, friends: friendsOut };
+  }
+
+  // 1 人とのやりとり（届いたもの・画面から送ったもの・AI の道具で送ったもの）
+  async function thread(env, { account, user }) {
+    if (!env.B_STORE) return { ok: false, error: "demo_store" };
+    if (!ACCOUNT_RE.test(String(account || ""))) return { ok: false, error: "bad_account" };
+    if (!USER_RE.test(String(user || ""))) return { ok: false, error: "bad_user" };
+    const [ins, outs, { byUser }, st] = await Promise.all([inRows(env, account), outRows(env, account, user), links(env, account), friendState(env, account)]);
+    const msgs = [];
+    for (const r of ins) for (const e of (r.request && r.request.events) || []) {
+      if (!e.source || e.source.user !== user) continue;
+      const t = msgText(e); if (t) msgs.push({ from: "them", kind: e.type === "message" ? "message" : "notice", text: t, at: e.at || r.at });
+    }
+    for (const r of outs) msgs.push({ from: "me", kind: "message", text: String(r.request.text || ""), at: r.at, ok: !!(r.response && r.response.ok), by: r.request.by || null });
+    const pid = byUser.get(user) || null;
+    let person = null;
+    if (pid) {
+      [person] = await db(env, "GET", `customers?select=id,name,email&id=eq.${pid}`);
+      const sent = await db(env, "GET", `events?select=payload,occurred_at,actor&customer_id=eq.${pid}&type=eq.line_sent&payload->>account=eq.${account}&order=id.asc&limit=500`);
+      for (const e of sent) if (!(e.payload && e.payload.screen)) msgs.push({ from: "me", kind: "message", text: String(e.payload && e.payload.text || ""), at: e.occurred_at, ok: !!(e.payload && e.payload.ok), by: e.actor === "mcp" ? "AI" : null });
+    }
+    msgs.sort((a, b) => String(a.at).localeCompare(String(b.at)));
+    const names = env[tokenName(account)] ? await profileNames(env, account, [user]) : new Map();
+    const s = st.get(user) || {};
+    return { ok: true, account, user, name: names.get(user) || (person && person.name) || "", linked: !!pid, person: person || null, blocked: !!s.blocked, count: msgs.length, messages: msgs.slice(-200) };
+  }
+
+  // 番号の並びへ送る（1 人なら push、2 人以上は 500 人ずつ multicast）。1 人 1 行を line_out に残し、結ばれた人には出来事 line_sent も積む
+  async function pushUsers(env, account, users, body, by) {
+    const { byUser } = await links(env, account);
+    let sent = 0, failed = 0, error = null;
+    for (let i = 0; i < users.length; i += 500) {
+      const part = users.slice(i, i + 500);
+      const r = part.length === 1
+        ? await api(env, account, "POST", "/message/push", { to: part[0], messages: [{ type: "text", text: body }] })
+        : await api(env, account, "POST", "/message/multicast", { to: part, messages: [{ type: "text", text: body }] });
+      if (r.ok) sent += part.length; else { failed += part.length; error = r.error; }
+      for (const u of part) await logInbound(env, "line_out", { account, user: u, text: body.slice(0, TEXT_KEEP), by: String(by || "").slice(0, 120) }, { ok: r.ok, ...(r.ok ? {} : { error: String(r.error).slice(0, 120) }) }, r.ok ? 200 : (r.status || 502));
+      const rows = part.filter((u) => byUser.has(u)).map((u) => ({ customer_id: byUser.get(u), type: "line_sent", payload: { account, text: body.slice(0, 200), ok: r.ok, screen: true }, actor: "admin" }));
+      if (rows.length) await db(env, "POST", "events", rows, "return=minimal");
+    }
+    return { sent, failed, error };
+  }
+  function checkText(text) {
+    const body = String(text || "").trim();
+    if (!body) return { error: "need_text" };
+    if (body.length > TEXT_MAX) return { error: "too_long", max: TEXT_MAX };
+    return { body };
+  }
+
+  // 1 人へ返す（やりとりの画面から）。ブロックした人には送らない
+  async function reply(env, { account, user, text }, by) {
+    if (!env.B_STORE) return { ok: false, error: "demo_store" };
+    if (!ACCOUNT_RE.test(String(account || ""))) return { ok: false, error: "bad_account" };
+    if (!USER_RE.test(String(user || ""))) return { ok: false, error: "bad_user" };
+    const t = checkText(text); if (t.error) return { ok: false, ...t };
+    if (!env[tokenName(account)]) return { ok: false, error: "no_token", need: tokenName(account) };
+    const st = await friendState(env, account);
+    if (st.get(user) && st.get(user).blocked) return { ok: false, error: "blocked" };
+    const r = await pushUsers(env, account, [user], t.body, by);
+    return { ok: r.failed === 0, ...r };
+  }
+
+  // 絞って送る。mode=all は友だち全員（ブロック・「除外」の人を除く）、mode=filter は宛先の条件（メールの一斉配信と同じ形）で結ばれた人。dry で数えるだけ
+  async function broadcast(env, { account, mode, filter, text, dry }, by) {
+    if (!env.B_STORE) return { ok: false, error: "demo_store" };
+    if (!ACCOUNT_RE.test(String(account || ""))) return { ok: false, error: "bad_account" };
+    const [st, { byUser, byPerson }] = await Promise.all([friendState(env, account), links(env, account)]);
+    const ex = h.excluded ? await h.excluded(env) : new Set();
+    let users = [], excluded = 0, notLinked = 0;
+    if (mode === "all") {
+      const fol = env[tokenName(account)] ? await followerIds(env, account) : null;
+      const all = new Set([...st.keys(), ...byUser.keys(), ...(fol || [])]);
+      for (const u of all) { if (!USER_RE.test(u)) continue; const pid = byUser.get(u); if (pid && ex.has(pid)) { excluded++; continue; } users.push(u); }
+    } else if (mode === "filter") {
+      const a = await h.audience(env, filter || {});
+      excluded = a.excluded || 0;
+      for (const p of a.people) { const u = byPerson.get(p.id); if (u) users.push(u); else notLinked++; }
+    } else return { ok: false, error: "bad_mode" };
+    const blocked = users.filter((u) => st.get(u) && st.get(u).blocked).length;
+    users = users.filter((u) => !(st.get(u) && st.get(u).blocked));
+    const counts = { targets: users.length, blocked, excluded, not_linked: notLinked };
+    if (dry) return { ok: true, dry: true, ...counts };
+    const t = checkText(text); if (t.error) return { ok: false, ...t };
+    if (!env[tokenName(account)]) return { ok: false, error: "no_token", need: tokenName(account) };
+    if (!users.length) return { ok: false, error: "no_targets", ...counts };
+    const r = await pushUsers(env, account, users, t.body, by);
+    await logInbound(env, "line_send", { account, targets: users.length, actor: "admin", mode }, { sent: r.sent, failed: r.failed, error: r.error }, r.failed ? 502 : 200);
+    return { ok: r.failed === 0, ...counts, ...r };
+  }
+
+  return { handleWebhook, settings, setForward, inbound, forwardUrl, link, friends, send, quota, sendLinkInvite, board, thread, reply, broadcast };
 }

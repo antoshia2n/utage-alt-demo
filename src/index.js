@@ -65,7 +65,7 @@ import { roomNotices } from "./roomview.js";
 import { makeLine } from "./line.js";
 import { makeUtageImport } from "./utageimport.js";
 
-const VERSION = "0.41.0-b17";
+const VERSION = "0.42.0-b14c";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -1163,6 +1163,19 @@ async function handleApi(request, env, url) {
       const r = await core.sendChat(env, { person_id: rmsg[1], text: body.text, reply_to: body.reply_to }, "admin");
       return json(r, r.ok === false ? 400 : 200);
     }
+    // 便 14c：LINE の画面。相手のアカウントは省くと、送る鍵の入った最初のもの（いまは college_ops）
+    if (path.startsWith("/api/admin/line")) {
+      const pick = async (v) => { if (v) return String(v); const st = await line.settings(env); const list = st.accounts || []; const x = list.find((y) => y.token_set) || list[0]; return x ? x.account : ""; };
+      const lb = method === "POST" ? await request.json().catch(() => ({})) : {};
+      const account = await pick(method === "POST" ? lb.account : url.searchParams.get("account"));
+      if (!account) return json({ ok: true, account: null, count: 0, friends: [] });
+      let r = null;
+      if (path === "/api/admin/line" && method === "GET") r = await line.board(env, { account });
+      else if (path === "/api/admin/line/thread" && method === "GET") r = await line.thread(env, { account, user: url.searchParams.get("user") });
+      else if (path === "/api/admin/line/reply" && method === "POST") r = await line.reply(env, { account, user: lb.user, text: lb.text }, a.email);
+      else if (path === "/api/admin/line/broadcast" && method === "POST") r = await line.broadcast(env, { account, mode: lb.mode, filter: lb.filter, text: lb.text, dry: lb.dry === true }, a.email);
+      if (r) return json(r, r.ok === false ? 400 : 200);
+    }
     // 便 8g-2：紹介（紹介者ごとの集計・払ったことの記録）
     if (path === "/api/admin/referrals" && method === "GET") { const r = await refer.list(env, { origin: url.origin }); return json(r, r.ok === false ? 400 : 200); }
     if (path === "/api/admin/referrals/paid" && method === "POST") {
@@ -1474,21 +1487,21 @@ const TOOLS = [
   },
   {
     name: "list_line_friends",
-    screen: "settings",
+    screen: "line",
     say: "LINE の友だちと、台帳の人と結ばれているかを見る",
     description: "LINE の友だち（便 14b）をアカウントごとに返す：受け口が受けた知らせから分かる友だち（LINE の番号の頭だけ）・台帳の人と結ばれているか linked と、その人の名前・メール・person_id・ブロック blocked・送ってきたメッセージの数・最初と最後の時刻。送る鍵（Cloudflare の LINE_TOKEN_<アカウント>）が入っているか token_set。結ぶのは、友だち追加のときに B が送る「メールを登録」のリンクから。",
     inputSchema: { type: "object", properties: { account: { type: "string", description: "例 college_ops" } }, required: ["account"] },
   },
   {
     name: "send_line",
-    screen: "settings",
+    screen: "line",
     say: "LINE でメッセージを送る（1 人へ、または絞った人たちへ）",
     description: "LINE で文字のメッセージを送る（便 14b）。person_id で 1 人、または filter（preview_audience と同じ形）で絞った人たち。台帳の人と LINE が結ばれていない人・ブロックした人・ラベル「除外」の人には送らず数だけ返す。text は 2000 文字まで。送った人ごとに出来事 line_sent が残る。LINE の無料の送信数を使う（get_line_quota で残りを見る）。承認が要る道具：呼ぶと承認待ちになり approval_url が返る。",
     inputSchema: { type: "object", properties: { account: { type: "string" }, person_id: { type: "string" }, filter: { type: "object" }, text: { type: "string" } }, required: ["account", "text"] },
   },
   {
     name: "get_line_quota",
-    screen: "settings",
+    screen: "line",
     say: "LINE の今月の送れる数と使った数を見る",
     description: "LINE の今月の送信の上限 limit（決まりが無ければ null）と使った数 used（LINE の公式の数）。",
     inputSchema: { type: "object", properties: { account: { type: "string" } }, required: ["account"] },
@@ -1509,7 +1522,7 @@ const TOOLS = [
   },
   {
     name: "list_line_inbound",
-    screen: "settings",
+    screen: "line",
     say: "LINE の受け口が受けた数と転送の失敗を数える",
     description: "LINE の受け口が days 日（既定 7・最大 90）に受けた知らせを、アカウントごとに数える：受けた回数 received・UTAGE へ転送できた forwarded・転送の失敗 forward_failed（直近 5 件の時刻と理由 failures）・署名が合わなかった bad_signature・知らせの数 events（友だち追加 follows・ブロック unfollows・メッセージ messages）・LINE の人の数 people・最後に受けた時刻。account で 1 つに絞れる。0 件は count: 0。",
     inputSchema: { type: "object", properties: { account: { type: "string" }, days: { type: "integer" } } },

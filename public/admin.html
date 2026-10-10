@@ -67,6 +67,7 @@
         <button class="it" type="button" data-view="people" aria-selected="false">顧客管理</button>
         <button class="it" type="button" data-view="rooms" aria-selected="false">添削ルーム<span class="badge hidden" id="rooms-badge"></span></button>
         <button class="it" type="button" data-view="refer" aria-selected="false">紹介</button>
+        <button class="it" type="button" data-view="line" aria-selected="false">LINE</button>
       </div>
     </div>
     <!-- 便 20：パーツ＝お客さんが見る・受け取る物。パーツの一覧は企画で絞れる -->
@@ -499,6 +500,32 @@
         <ul class="people" id="rooms"></ul>
       </div>
       <div class="card" id="room-detail"><p class="note">左から部屋を選ぶと、やりとりと返す欄が出ます。未返信のある部屋が上に来ます。</p></div>
+    </div>
+    <!-- 便 14c：LINE。上に今月の残り・転送の失敗・「絞って送る」、左に友だち（最後に動いた順）、右にやりとりと返す欄 -->
+    <div id="view-line" style="display:none">
+      <div class="card" style="margin-bottom:16px">
+        <div style="display:flex;gap:8px 12px;flex-wrap:wrap;align-items:center"><span class="note" id="line-sum" style="margin:0">読み込んでいます…</span><span style="flex:1"></span><button class="btn small" type="button" id="line-bc-open">絞って送る</button></div>
+        <form id="line-bc" class="stack hidden" style="margin-top:12px" novalidate>
+          <div role="radiogroup" aria-label="誰に送るか" style="display:flex;gap:10px 16px;flex-wrap:wrap">
+            <label class="check" style="margin:0"><input type="radio" name="line-mode" value="all" checked> <span>友だち全員（ブロックした人・ラベル「除外」の人は外れる）</span></label>
+            <label class="check" style="margin:0"><input type="radio" name="line-mode" value="filter"> <span>条件で絞る（メールを登録して結ばれた人だけ）</span></label>
+          </div>
+          <div id="line-bc-filter" class="stack hidden">
+            <div><label for="line-labels">このラベルを全部持つ人（カンマ区切り）</label><input id="line-labels" type="text" list="label-names" placeholder="例 購入者"></div>
+            <div><label for="line-nolabels">このラベルを持たない人（カンマ区切り）</label><input id="line-nolabels" type="text" list="label-names"></div>
+            <div><label for="line-member">会員か</label><select id="line-member" class="inline"><option value="">問わない</option><option value="true">会員だけ</option><option value="false">会員でない人だけ</option></select></div>
+          </div>
+          <div><label for="line-bc-text">送る文（2000 文字まで。文字だけ）</label><textarea id="line-bc-text" rows="4" maxlength="2000"></textarea></div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn ghost small" type="button" id="line-bc-count">人数を数える</button><button class="btn small" type="submit" id="line-bc-send">送る</button><span class="note" id="line-bc-status"></span></div>
+        </form>
+      </div>
+      <div class="admin-layout">
+        <div class="card">
+          <p class="note" id="line-count" style="margin:0"></p>
+          <ul class="people" id="line-friends"></ul>
+        </div>
+        <div class="card" id="line-detail"><p class="note">左から友だちを選ぶと、やりとりと返す欄が出ます。最後に動いた人が上に来ます。</p></div>
+      </div>
     </div>
     <!-- 便 17：顧客管理。一覧（表）で選ぶ → 1 人の詳細（上に要点・下にタブ）→ そこから操作。一覧と詳細は同じ場所で入れ替わる -->
     <div id="view-people" style="display:none">
