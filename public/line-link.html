@@ -1,1 +1,60 @@
-PENDING_REPLACE_1
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f5c4d">
+<link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css">
+<title>メールアドレスの登録｜シアラボ</title>
+</head>
+<body>
+<!-- 便 14b：LINE の友だち追加のときに B が送るリンクの先。/line-link?t=印 で開く。メールを入れると LINE と台帳の人が結ばれる -->
+<div class="wrap">
+  <header class="top"><a class="brand" href="/">シアラボ</a></header>
+  <main style="padding:24px 0 8px">
+    <h1 style="font-size:24px">メールアドレスの登録</h1>
+    <p class="note">LINE のお知らせに加えて、メールでも受け取れるようになります。</p>
+    <form id="f" class="card stack" novalidate>
+      <div><label for="name">お名前</label><input id="name" type="text" autocomplete="name" maxlength="60"></div>
+      <div><label for="email">メールアドレス<span class="note">（必須）</span></label><input id="email" type="email" autocomplete="email" required></div>
+      <label class="check"><input id="consent" type="checkbox"> <span><a href="/legal/privacy" target="_blank">プライバシーポリシー</a>と<a href="/legal/tokushoho" target="_blank">特定商取引法に基づく表記</a>を確かめ、お知らせのメールを受け取ります（いつでも配信を止められます）。</span></label>
+      <button class="btn block" id="go" type="submit">登録する</button>
+      <div id="msg" class="msg hidden" role="status"></div>
+    </form>
+    <div id="done" class="card hidden"><p style="margin:0">登録しました。ありがとうございます。LINE の画面に戻ってかまいません。</p></div>
+  </main>
+</div>
+<footer class="site wrap">
+  <a href="/legal/tokushoho">特定商取引法に基づく表記</a><a href="/legal/privacy">プライバシーポリシー</a>
+  <div style="margin-top:8px">© シアラボ（株式会社Best Life Consulting）</div>
+</footer>
+<script type="module">
+  const $ = (id) => document.getElementById(id);
+  const t = new URLSearchParams(location.search).get("t") || "";
+  const show = (text, ok) => { const m = $("msg"); m.textContent = text; m.className = "msg " + (ok ? "ok" : "err"); };
+  if (!/^[A-Za-z0-9_-]{8,200}[.][A-Za-z0-9_-]{22}$/.test(t)) {
+    $("f").classList.add("hidden");
+    show("このリンクは使えません。LINE に届いたリンクからもう一度開いてください。", false);
+    $("msg").classList.remove("hidden");
+    document.querySelector("main").appendChild($("msg"));
+  }
+  $("f").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const email = $("email").value.trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return show("メールアドレスを確かめてください", false);
+    if (!$("consent").checked) return show("プライバシーポリシーと表記を確かめて、チェックを入れてください", false);
+    $("go").disabled = true;
+    show("送っています…", true);
+    const r = await fetch("/api/line/link", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ t, email, name: $("name").value.trim(), consent: true }) }).then((x) => x.json()).catch(() => ({ ok: false, error: "network" }));
+    $("go").disabled = false;
+    if (r.ok) { $("f").classList.add("hidden"); $("done").classList.remove("hidden"); scrollTo(0, 0); return; }
+    show(r.error === "bad_link" ? "このリンクは使えません。LINE に届いたリンクからもう一度開いてください。" : r.error === "bad_email" ? "メールアドレスを確かめてください" : "送れませんでした。時間をおいてもう一度お試しください（" + (r.error || "") + "）", false);
+  });
+</script>
+</body>
+</html>
