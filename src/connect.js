@@ -45,7 +45,7 @@ const SOURCE_NAME = { x: "X", note: "note", youtube: "YouTube", direct: "直接"
 const ACTIVE_TYPES = new Set(["registered", "login", "lesson_viewed", "correction_submitted", "email_clicked", "purchase_completed", "seminar_registered", "consult_booked", "announcement_opened", "form_submitted", "page_viewed", "page_clicked"]);
 export const LABEL_EVENT_TYPES = ["registered", "login", "lesson_viewed", "correction_submitted", "email_clicked", "email_sent",
   "purchase_completed", "seminar_registered", "consult_booked", "announcement_opened", "label_added", "label_removed",
-  "referred", "referral_reward", "form_submitted", "page_viewed", "page_clicked"];
+  "referred", "referral_reward", "form_submitted", "page_viewed", "page_clicked", "utage_imported"];
 
 // 便 13：「セミナー:題名」（src/seminars.js の labelName と同じ形）
 export function seminarLabel(title) {
@@ -68,12 +68,17 @@ export function autoLabels({ person, events = [], member = false, ownerOf = {}, 
   out.add("流入元:" + (SOURCE_NAME[person.source] || person.source || "不明"));
   out.add(member ? "会員" : "会員でない");
   let last = person.created_at ? new Date(person.created_at).getTime() : 0;
+  // 便 16a：UTAGE から取り込んだ人は、台帳に入った日ではなく UTAGE で登録した日から数える（取り込んだ日を「動いた」にしない）
+  for (const e of events) {
+    const ua = e.payload && e.payload.via === "utage" && e.payload.utage_at ? new Date(e.payload.utage_at).getTime() : NaN;
+    if (e.type === "utage_imported" && Number.isFinite(ua)) last = Math.min(last || ua, ua);
+  }
   // 便 12a：経路。初めて登録したときの経路（registered の payload.route）
   const firstReg = [...events].filter((e) => e.type === "registered").sort(byTime)[0];
   if (firstReg && firstReg.payload && firstReg.payload.route) out.add("経路:" + String(firstReg.payload.route).slice(0, 37));
   for (const e of events) {
     const p = e.payload || {};
-    if (ACTIVE_TYPES.has(e.type)) last = Math.max(last, new Date(e.occurred_at).getTime());
+    if (ACTIVE_TYPES.has(e.type)) last = Math.max(last, new Date(p.via === "utage" && p.utage_at ? p.utage_at : e.occurred_at).getTime());
     // 便 8f-1：商品の中の番号ではなく外の名前で出す（統括 2026-10-09 13:18）。名前が引けないときだけ番号
     // 便 12e：試しの決済は「購入者」「買った:」に入れない（記録は残る）
     if (e.type === "purchase_completed" && p.product_id && !isTestPurchase(p)) { out.add("購入者"); out.add("買った:" + (productLabelName(productNames[p.product_id] || p.product_name) || p.product_id)); }
@@ -83,6 +88,8 @@ export function autoLabels({ person, events = [], member = false, ownerOf = {}, 
     // 便 13：どの回に申し込んだかも見分ける（あとからその回の申込者へ配信を足すため）。題名は申込のときのもの
     else if (e.type === "seminar_registered") { out.add("セミナーに申し込んだ"); if (p.title) out.add(seminarLabel(p.title)); }
     else if (e.type === "consult_booked") out.add("個別相談を予約した");
+    // 便 16a：UTAGE のどのアカウントの読者か
+    else if (e.type === "utage_imported" && p.account_name) out.add("UTAGE:" + productLabelName(p.account_name).slice(0, 30));
     // 便 8g-2：紹介で来た人と、紹介した人（紹介した人の印は、その人のリンクから誰かが登録したとき）
     else if (e.type === "referred") out.add("紹介で来た");
     else if (e.type === "referral_reward") out.add("紹介した");

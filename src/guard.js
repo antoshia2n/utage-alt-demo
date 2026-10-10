@@ -27,6 +27,8 @@ export const DEFAULT_MODES = {
   get_community_link: "auto", set_community_link: "approve",
   // 便 14a：LINE の受け口
   get_line_settings: "auto", list_line_inbound: "auto", set_line_forward: "approve",
+  // 便 16a：UTAGE の取り込みの様子
+  get_utage_import: "auto",
   list_campaigns: "auto", get_blueprint: "auto", create_campaign: "auto", set_part_campaign: "auto",
   archive_campaign: "approve",
   // 便 8g-3：一言の下書きは動かない下書きだけを作るので自動（動かすのは set_step の承認）

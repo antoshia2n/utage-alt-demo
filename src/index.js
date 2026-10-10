@@ -63,8 +63,9 @@ import { makePages, EMBED_JS, personToken, PURPOSES, ROUTE_RE as ROUTE_OK } from
 import { makeLessonQA, openLessonQuestions, QUESTION_MAX } from "./lessonqa.js";
 import { roomNotices } from "./roomview.js";
 import { makeLine } from "./line.js";
+import { makeUtageImport } from "./utageimport.js";
 
-const VERSION = "0.38.0-b14a";
+const VERSION = "0.39.0-b16a";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -112,6 +113,8 @@ export default {
         const bk = await booking.run(env); // 便 13b：個別相談の前日の知らせ
         const d = await deliver.run(env);
         await logInbound(env, "cron", { cron: event.cron }, { room: r, seminars: s, booking: bk, deliver: d }, 200);
+        // 便 16a：UTAGE の読者と予約者の取り込み（失敗しても上の処理には響かない。結果は utage_import の記録）
+        await utageImport.run(env);
       } catch (e) {
         await logInbound(env, "cron", { cron: event.cron }, { ok: false, error: String(e.message).slice(0, 200) }, 500);
       }
@@ -152,6 +155,11 @@ const plan = makePlan({ db, logInbound, communityLink, changes, pages, seminars,
 const blocks = makeBlocks({ db, logInbound, plan, deliver, draftFlow: (env, a, actor) => draftFlow(env, a, actor) });
 // B の便 14a：LINE の受け口（中身は src/line.js）
 const line = makeLine({ db, logInbound, changes });
+// B の便 16a：UTAGE の読者と予約者の取り込み（中身は src/utageimport.js）。新しい人は関数 b_register で入れる
+const utageImport = makeUtageImport({ db, addEvent, logInbound, register: async (env, email, name) => {
+  const r = await rawDb(env, "POST", "rpc/b_register", { p_email: email, p_name: name || "", p_source: "other" });
+  return { id: r.id, is_new: r.is_new };
+} });
 const today = makeToday({ db, logInbound, connect, bin4, guard, listRooms: (env, a) => core.listRooms(env, a) });
 
 // ---------- 共通 ----------
@@ -1451,6 +1459,13 @@ const TOOLS = [
     inputSchema: { type: "object", properties: { prefix: { type: "string" } } },
   },
   {
+    name: "get_utage_import",
+    screen: "people",
+    say: "UTAGE の読者と予約者の取り込みの様子を見る",
+    description: "UTAGE の読者と個別相談の予約者の取り込み（便 16a・毎時）の様子：読み口 source（binding＝shia2n-mcp の UtageReader・key＝B の UTAGE_API_KEY・null＝無い）・どこまで読んだか cursor（a＝何番目のアカウント・p＝ページ・sweep＝全部を読み終えた回数）・取り込んだ人の数 people とアカウントごとの数 by_account・UTAGE で配信停止だったので B でも止めた人 unsubscribed_from_utage・UTAGE の予約者として入れた人 consults_from_utage・直近 10 回の結果 last_runs（読んだ行・新しく入れた人・失敗の理由）。取り込んだ人は出来事 utage_imported（登録した、とは別）で、登録のきっかけの自動の動きは動かない。",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
     name: "get_line_settings",
     screen: "settings",
     say: "LINE の受け口の設定を見る",
@@ -2029,6 +2044,7 @@ async function runTool(env, name, args) {
   if (name === "list_lessons") return await learn.listLessons(env, args);
   if (name === "get_meetings") return await bridge.meetings(env, args);
   if (name === "list_tables") return await bridge.listTables(env, args);
+  if (name === "get_utage_import") return await utageImport.status(env);
   if (name === "get_line_settings") return await line.settings(env, { account: args.account });
   if (name === "set_line_forward") return await line.setForward(env, { account: args.account, url: args.url }, "mcp");
   if (name === "list_line_inbound") return await line.inbound(env, { account: args.account, days: args.days });
