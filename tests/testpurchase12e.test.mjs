@@ -68,7 +68,7 @@ test("配信の宛先：「買った」で絞ると試しの人は入らず、�
     db: st.db, addEvent, logInbound: async () => {}, bin3: { async sendMail() { return { result: "sent" }; } },
     forms: { valuesMap: async () => new Map() },
     sell: { entitlementMap: async () => ({}) }, mailcfg: { get: async () => ({ scope: "all" }) },
-    connect: { labelMap: async () => new Map(), notifyAdmins: async () => ({ sent: 0 }), addLabel: async () => ({ ok: true }) },
+    connect: { labelMap: async () => new Map(), excludedIds: async () => new Set(), notifyAdmins: async () => ({ sent: 0 }), addLabel: async () => ({ ok: true }) },
   });
   await addEvent(env, T, "purchase_completed", buy("test"));
   await addEvent(env, L, "purchase_completed", buy("live"));
