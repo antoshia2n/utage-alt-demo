@@ -27,6 +27,8 @@ export const DEFAULT_MODES = {
   get_community_link: "auto", set_community_link: "approve",
   // 便 14a：LINE の受け口
   get_line_settings: "auto", list_line_inbound: "auto", set_line_forward: "approve",
+  // 便 14b：LINE で送る
+  list_line_friends: "auto", get_line_quota: "auto", send_line: "approve",
   // 便 16a：UTAGE の取り込みの様子
   get_utage_import: "auto",
   list_campaigns: "auto", get_blueprint: "auto", create_campaign: "auto", set_part_campaign: "auto",

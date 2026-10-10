@@ -65,7 +65,7 @@ import { roomNotices } from "./roomview.js";
 import { makeLine } from "./line.js";
 import { makeUtageImport } from "./utageimport.js";
 
-const VERSION = "0.39.0-b16a";
+const VERSION = "0.40.0-b14b";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -154,7 +154,7 @@ const plan = makePlan({ db, logInbound, communityLink, changes, pages, seminars,
 // B の便 8g-4：ブロックとテンプレ。中身は src/blocks.js（draftFlow は下の関数）
 const blocks = makeBlocks({ db, logInbound, plan, deliver, draftFlow: (env, a, actor) => draftFlow(env, a, actor) });
 // B の便 14a：LINE の受け口（中身は src/line.js）
-const line = makeLine({ db, logInbound, changes });
+const line = makeLine({ db, logInbound, changes, addEvent, registerPerson: (env, a) => registerPerson(env, a), audience: (env, f) => deliver.audience(env, f) });
 // B の便 16a：UTAGE の読者と予約者の取り込み（中身は src/utageimport.js）。新しい人は関数 b_register で入れる
 const utageImport = makeUtageImport({ db, addEvent, logInbound, register: async (env, email, name) => {
   const r = await rawDb(env, "POST", "rpc/b_register", { p_email: email, p_name: name || "", p_source: "other" });
@@ -807,6 +807,13 @@ async function handleApi(request, env, url) {
     const body = await request.json().catch(() => ({}));
     const r = await registerPerson(env, body);
     return json(r.ok ? { ok: true, is_new: r.is_new } : r, r.ok ? 200 : 400);
+  }
+
+  // 便 14b：LINE の友だちが「メールを登録」のリンクの頁から送る（ログイン不要・リンクの印で確かめる）
+  if (path === "/api/line/link" && method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    const r = await line.link(env, body);
+    return json(r, r.ok ? 200 : 400);
   }
 
   // 便 11a：公開のフォーム（ログイン不要）。/form?f=slug の頁がここを読む・送る
@@ -1466,6 +1473,27 @@ const TOOLS = [
     inputSchema: { type: "object", properties: {} },
   },
   {
+    name: "list_line_friends",
+    screen: "settings",
+    say: "LINE の友だちと、台帳の人と結ばれているかを見る",
+    description: "LINE の友だち（便 14b）をアカウントごとに返す：受け口が受けた知らせから分かる友だち（LINE の番号の頭だけ）・台帳の人と結ばれているか linked と、その人の名前・メール・person_id・ブロック blocked・送ってきたメッセージの数・最初と最後の時刻。送る鍵（Cloudflare の LINE_TOKEN_<アカウント>）が入っているか token_set。結ぶのは、友だち追加のときに B が送る「メールを登録」のリンクから。",
+    inputSchema: { type: "object", properties: { account: { type: "string", description: "例 college_ops" } }, required: ["account"] },
+  },
+  {
+    name: "send_line",
+    screen: "settings",
+    say: "LINE でメッセージを送る（1 人へ、または絞った人たちへ）",
+    description: "LINE で文字のメッセージを送る（便 14b）。person_id で 1 人、または filter（preview_audience と同じ形）で絞った人たち。台帳の人と LINE が結ばれていない人・ブロックした人には送らず数だけ返す。text は 2000 文字まで。送った人ごとに出来事 line_sent が残る。LINE の無料の送信数を使う（get_line_quota で残りを見る）。承認が要る道具：呼ぶと承認待ちになり approval_url が返る。",
+    inputSchema: { type: "object", properties: { account: { type: "string" }, person_id: { type: "string" }, filter: { type: "object" }, text: { type: "string" } }, required: ["account", "text"] },
+  },
+  {
+    name: "get_line_quota",
+    screen: "settings",
+    say: "LINE の今月の送れる数と使った数を見る",
+    description: "LINE の今月の送信の上限 limit（決まりが無ければ null）と使った数 used（LINE の公式の数）。",
+    inputSchema: { type: "object", properties: { account: { type: "string" } }, required: ["account"] },
+  },
+  {
     name: "get_line_settings",
     screen: "settings",
     say: "LINE の受け口の設定を見る",
@@ -2046,6 +2074,9 @@ async function runTool(env, name, args) {
   if (name === "list_tables") return await bridge.listTables(env, args);
   if (name === "get_utage_import") return await utageImport.status(env);
   if (name === "get_line_settings") return await line.settings(env, { account: args.account });
+  if (name === "list_line_friends") return await line.friends(env, { account: args.account });
+  if (name === "send_line") return await line.send(env, { account: args.account, person_id: args.person_id, filter: args.filter, text: args.text }, "mcp");
+  if (name === "get_line_quota") return await line.quota(env, { account: args.account });
   if (name === "set_line_forward") return await line.setForward(env, { account: args.account, url: args.url }, "mcp");
   if (name === "list_line_inbound") return await line.inbound(env, { account: args.account, days: args.days });
   if (name === "get_community_link") return { ok: true, ...(await communityLink(env)) };
