@@ -272,8 +272,12 @@ export function makeLine(h) {
     if (body.length > TEXT_MAX) return { ok: false, error: "too_long", max: TEXT_MAX };
     if (!env[tokenName(account)]) return { ok: false, error: "no_token", need: tokenName(account) };
     let targets;
-    if (person_id) targets = [String(person_id)];
-    else if (filter && typeof filter === "object") targets = (await h.audience(env, filter)).people.map((x) => x.id);
+    let excluded = 0;
+    if (person_id) {
+      // 便 17：1 人を名指ししても「除外」の人には送らない（一斉の絞り込みは h.audience の中で外れる）
+      const ex = h.excluded ? await h.excluded(env) : new Set();
+      if (ex.has(String(person_id))) { targets = []; excluded = 1; } else targets = [String(person_id)];
+    } else if (filter && typeof filter === "object") { const a = await h.audience(env, filter); targets = a.people.map((x) => x.id); excluded = a.excluded || 0; }
     else return { ok: false, error: "need_person_or_filter" };
     const [{ byPerson }, st] = await Promise.all([links(env, account), friendState(env, account)]);
     const to = [], notLinked = [], blocked = [];
@@ -289,7 +293,7 @@ export function makeLine(h) {
       await db(env, "POST", "events", rows, "return=minimal");
     }
     await logInbound(env, "line_send", { account, targets: targets.length, actor }, { sent, failed, not_linked: notLinked.length, blocked: blocked.length, error }, failed ? 502 : 200);
-    return { ok: failed === 0, account, targets: targets.length, sent, failed, not_linked: notLinked.length, blocked: blocked.length, ...(error ? { error } : {}) };
+    return { ok: failed === 0, account, targets: targets.length, sent, failed, not_linked: notLinked.length, blocked: blocked.length, excluded, ...(error ? { error } : {}) };
   }
 
   // AI：今月の送れる数と使った数（LINE の公式の数）

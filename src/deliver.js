@@ -155,7 +155,8 @@ export function makeDeliver(h) {
     return out;
   }
 
-  async function audience(env, filter) {
+  // 便 17：「除外」のラベルの人は、条件に書かなくても必ず外す（keepExcluded はステップの中で送る以外の動きに使うときだけ）
+  async function audience(env, filter, { keepExcluded = false } = {}) {
     const f = normFilter(filter);
     const people = await db(env, "GET", "customer_summary?select=id,email,name,source,note_member,created_at&limit=10000");
     let list = people;
@@ -188,16 +189,23 @@ export function makeDeliver(h) {
       if (f.opened) list = list.filter((p) => f.opened.every((k) => did(p, k)));
       if (f.not_opened) list = list.filter((p) => !f.not_opened.some((k) => did(p, k)));
     }
+    let excluded = 0;
+    if (!keepExcluded) {
+      const ex = await connect.excludedIds(env);
+      const before = list.length;
+      list = list.filter((p) => !ex.has(p.id));
+      excluded = before - list.length;
+    }
     const unsub = await db(env, "GET", "events?select=customer_id&type=eq.email_unsubscribed&limit=10000");
     const off = new Set(unsub.map((e) => e.customer_id));
-    return { filter: f, people: list, unsubscribed: list.filter((p) => off.has(p.id)).length };
+    return { filter: f, people: list, unsubscribed: list.filter((p) => off.has(p.id)).length, excluded };
   }
 
   async function previewAudience(env, { filter } = {}) {
     if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const a = await audience(env, filter || {});
     return {
-      ok: true, filter: a.filter, count: a.people.length, unsubscribed: a.unsubscribed,
+      ok: true, filter: a.filter, count: a.people.length, unsubscribed: a.unsubscribed, excluded: a.excluded,
       will_send: a.people.length - a.unsubscribed,
       sample: a.people.slice(0, 5).map((p) => ({ id: p.id, name: p.name, source: p.source })),
       open_to_all: (await h.mailcfg.get(env)).scope === "all",
@@ -342,12 +350,19 @@ export function makeDeliver(h) {
       if (!todo.length) continue;
       // セレクタ：空なら全員。条件があれば、この回に 1 度だけ宛先を計算して当てる
       const sel = normFilter(s.selector || {});
-      const allowed = Object.keys(sel).length ? new Set((await audience(env, sel)).people.map((p) => p.id)) : null;
+      const allowed = Object.keys(sel).length ? new Set((await audience(env, sel, { keepExcluded: true })).people.map((p) => p.id)) : null;
+      // 便 17：メールを送る動きだけ「除外」の人を外す（ラベル・知らせ・移す・項目はそのまま動く）
+      const ex = action === "send_email" ? await connect.excludedIds(env) : null;
       for (const t of todo) {
         out.checked++;
         const extra = { step_id: s.id, trigger_id: t.id };
         if (allowed && !allowed.has(t.customer_id)) {
           await addEvent(env, t.customer_id, "connector_skipped", { ...extra, reason: "selector" }, "site");
+          out.skipped++;
+          continue;
+        }
+        if (ex && ex.has(t.customer_id)) {
+          await addEvent(env, t.customer_id, "connector_skipped", { ...extra, reason: "excluded" }, "site");
           out.skipped++;
           continue;
         }
@@ -447,7 +462,7 @@ export function makeDeliver(h) {
       out = await db(env, "POST", "b_broadcasts", [{ ...row, status: "draft", created_by: row.updated_by }], "return=representation");
     }
     const pv = await previewAudience(env, { filter });
-    return { ok: true, broadcast: out[0], audience: { count: pv.count, will_send: pv.will_send, unsubscribed: pv.unsubscribed } };
+    return { ok: true, broadcast: out[0], audience: { count: pv.count, will_send: pv.will_send, unsubscribed: pv.unsubscribed, excluded: pv.excluded } };
   }
 
   // 送る列に入れる。宛先の数はこの時点で数えて残す（実際に送るのは毎時の定時の処理。1 日の上限の中で少しずつ）

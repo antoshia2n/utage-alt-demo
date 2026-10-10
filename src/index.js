@@ -65,7 +65,7 @@ import { roomNotices } from "./roomview.js";
 import { makeLine } from "./line.js";
 import { makeUtageImport } from "./utageimport.js";
 
-const VERSION = "0.40.0-b14b";
+const VERSION = "0.41.0-b17";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -154,7 +154,7 @@ const plan = makePlan({ db, logInbound, communityLink, changes, pages, seminars,
 // B の便 8g-4：ブロックとテンプレ。中身は src/blocks.js（draftFlow は下の関数）
 const blocks = makeBlocks({ db, logInbound, plan, deliver, draftFlow: (env, a, actor) => draftFlow(env, a, actor) });
 // B の便 14a：LINE の受け口（中身は src/line.js）
-const line = makeLine({ db, logInbound, changes, addEvent, registerPerson: (env, a) => registerPerson(env, a), audience: (env, f) => deliver.audience(env, f) });
+const line = makeLine({ db, logInbound, changes, addEvent, registerPerson: (env, a) => registerPerson(env, a), audience: (env, f) => deliver.audience(env, f), excluded: (env) => connect.excludedIds(env) });
 // B の便 16a：UTAGE の読者と予約者の取り込み（中身は src/utageimport.js）。新しい人は関数 b_register で入れる
 const utageImport = makeUtageImport({ db, addEvent, logInbound, register: async (env, email, name) => {
   const r = await rawDb(env, "POST", "rpc/b_register", { p_email: email, p_name: name || "", p_source: "other" });
@@ -1483,7 +1483,7 @@ const TOOLS = [
     name: "send_line",
     screen: "settings",
     say: "LINE でメッセージを送る（1 人へ、または絞った人たちへ）",
-    description: "LINE で文字のメッセージを送る（便 14b）。person_id で 1 人、または filter（preview_audience と同じ形）で絞った人たち。台帳の人と LINE が結ばれていない人・ブロックした人には送らず数だけ返す。text は 2000 文字まで。送った人ごとに出来事 line_sent が残る。LINE の無料の送信数を使う（get_line_quota で残りを見る）。承認が要る道具：呼ぶと承認待ちになり approval_url が返る。",
+    description: "LINE で文字のメッセージを送る（便 14b）。person_id で 1 人、または filter（preview_audience と同じ形）で絞った人たち。台帳の人と LINE が結ばれていない人・ブロックした人・ラベル「除外」の人には送らず数だけ返す。text は 2000 文字まで。送った人ごとに出来事 line_sent が残る。LINE の無料の送信数を使う（get_line_quota で残りを見る）。承認が要る道具：呼ぶと承認待ちになり approval_url が返る。",
     inputSchema: { type: "object", properties: { account: { type: "string" }, person_id: { type: "string" }, filter: { type: "object" }, text: { type: "string" } }, required: ["account", "text"] },
   },
   {
@@ -1746,7 +1746,7 @@ const TOOLS = [
     name: "preview_audience",
     screen: "deliver",
     say: "一斉配信の宛先の人数を数える",
-    description: "一斉配信の宛先を、条件で絞って数える（送らない）。filter の欄：source（流入元の配列 x／note／youtube／direct／other）・purchased（買った商品の id の配列）・not_purchased（買っていない商品の id の配列）・member（会員か true／false）・note_member（true／false）・registered_after／registered_before（日時）・emails（メールの配列。試しに送るとき）・labels（このラベルを全部持つ人。get_labels の名前）・not_labels（このラベルをどれも持たない人）・fields（人の項目の値で絞る [{ key, op, value }]。op は eq 等しい／contains 含む／gte 以上／lte 以下／empty 空／not_empty 空でない）・opened（このメールを全部開いた人。「broadcast:一斉配信の番号」か「step:ステップの番号」の配列）・not_opened（どれも開いていない人。同じ形）。開いたかは目安（iPhone のメールは受け取っただけで開いたことになる場合がある）。配信を止めている人の数も返す。コネクタのセレクタも同じ形。",
+    description: "一斉配信の宛先を、条件で絞って数える（送らない）。filter の欄：source（流入元の配列 x／note／youtube／direct／other）・purchased（買った商品の id の配列）・not_purchased（買っていない商品の id の配列）・member（会員か true／false）・note_member（true／false）・registered_after／registered_before（日時）・emails（メールの配列。試しに送るとき）・labels（このラベルを全部持つ人。get_labels の名前）・not_labels（このラベルをどれも持たない人）・fields（人の項目の値で絞る [{ key, op, value }]。op は eq 等しい／contains 含む／gte 以上／lte 以下／empty 空／not_empty 空でない）・opened（このメールを全部開いた人。「broadcast:一斉配信の番号」か「step:ステップの番号」の配列）・not_opened（どれも開いていない人。同じ形）。開いたかは目安（iPhone のメールは受け取っただけで開いたことになる場合がある）。配信を止めている人の数も返す。ラベル「除外」の人は条件に書かなくても必ず外れ、その人数を excluded で返す（便 17）。コネクタのセレクタも同じ形。",
     inputSchema: { type: "object", properties: { filter: { type: "object" } } },
   },
   {
@@ -1832,15 +1832,15 @@ const TOOLS = [
     name: "add_label",
     screen: "people",
     say: "ラベルを手で付ける",
-    description: "1 人にラベルを手で付ける。承認が要る道具。ラベルは空白・カンマ・山かっこ・引用符を含まない 1〜40 文字。もう付いていれば何もしない。付けると「ラベルが付いた」のコネクタのきっかけになる。",
-    inputSchema: { type: "object", properties: { person_id: { type: "string" }, label: { type: "string" } }, required: ["person_id", "label"] },
+    description: "ラベルを手で付ける。承認が要る道具。person_id で 1 人、または person_ids（番号の並び）か emails（メールの並び）で何人でも 1 回で（500 人まで。台帳に無いメールは not_found_emails で返す）。ラベルは空白・カンマ・山かっこ・引用符を含まない 1〜40 文字。もう付いていれば何もしない。付けると「ラベルが付いた」のコネクタのきっかけになる。ラベル「除外」を付けた人は、条件を書かなくても一斉配信・ステップのメール・LINE の送信から必ず外れる（ログイン・購入・予約・申し込んだセミナーの知らせは届く）。",
+    inputSchema: { type: "object", properties: { person_id: { type: "string" }, person_ids: { type: "array", items: { type: "string" } }, emails: { type: "array", items: { type: "string" } }, label: { type: "string" } }, required: ["label"] },
   },
   {
     name: "remove_label",
     screen: "people",
     say: "手で付けたラベルを外す",
-    description: "手かコネクタで付けたラベルを 1 人から外す。承認が要る道具。自動で付いたラベルは外せない（出来事から毎回計算するため）。",
-    inputSchema: { type: "object", properties: { person_id: { type: "string" }, label: { type: "string" } }, required: ["person_id", "label"] },
+    description: "手かコネクタで付けたラベルを外す。承認が要る道具。person_id で 1 人、または person_ids か emails の並びで何人でも 1 回で（500 人まで）。自動で付いたラベルは外せない（出来事から毎回計算するため）。「除外」を外すと、その人はまた配信の宛先に入る。",
+    inputSchema: { type: "object", properties: { person_id: { type: "string" }, person_ids: { type: "array", items: { type: "string" } }, emails: { type: "array", items: { type: "string" } }, label: { type: "string" } }, required: ["label"] },
   },
   {
     name: "get_blueprint",

@@ -33,7 +33,7 @@ function setup() {
     db: s.db, addEvent, logInbound: async () => {}, bin3, forms,
     sell: { entitlementMap: async () => ({}) },
     mailcfg: { get: async () => ({ scope: "all" }) },
-    connect: { labelMap: async () => new Map(), notifyAdmins: async () => ({ sent: 1 }), addLabel: async () => ({ ok: true, changed: true }) },
+    connect: { labelMap: async () => new Map(), excludedIds: async () => new Set(), notifyAdmins: async () => ({ sent: 1 }), addLabel: async () => ({ ok: true, changed: true }) },
   });
   for (const [id, email, name] of [[A, "a@example.com", "A"], [B, "b@example.com", "B"]]) {
     s.table("customers").push({ id, email, name });

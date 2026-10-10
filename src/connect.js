@@ -39,13 +39,15 @@ export const FAIL_TYPES = ["email_failed", "admin_notify_failed"];
 
 // ラベルの名前：空白・カンマ・山かっこ・引用符を含まない 1〜40 文字
 export const LABEL_RE = /^[^\s,<>"'`]{1,40}$/u;
+// 便 17：このラベルが付いた人は、条件を何も書かなくても一斉配信・ステップのメール・LINE の送信から外れる（手続きのメールは届く）
+export const EXCLUDE_LABEL = "除外";
 
 const SOURCE_NAME = { x: "X", note: "note", youtube: "YouTube", direct: "直接", other: "その他" };
 // 「最後に動いた日」に数える、本人が動いた出来事
 const ACTIVE_TYPES = new Set(["registered", "login", "lesson_viewed", "correction_submitted", "email_clicked", "purchase_completed", "seminar_registered", "consult_booked", "announcement_opened", "form_submitted", "page_viewed", "page_clicked"]);
 export const LABEL_EVENT_TYPES = ["registered", "login", "lesson_viewed", "correction_submitted", "email_clicked", "email_sent",
   "purchase_completed", "seminar_registered", "consult_booked", "announcement_opened", "label_added", "label_removed",
-  "referred", "referral_reward", "form_submitted", "page_viewed", "page_clicked", "utage_imported"];
+  "referred", "referral_reward", "form_submitted", "page_viewed", "page_clicked", "utage_imported", "line_linked"];
 
 // 便 13：「セミナー:題名」（src/seminars.js の labelName と同じ形）
 export function seminarLabel(title) {
@@ -90,6 +92,8 @@ export function autoLabels({ person, events = [], member = false, ownerOf = {}, 
     else if (e.type === "consult_booked") out.add("個別相談を予約した");
     // 便 16a：UTAGE のどのアカウントの読者か
     else if (e.type === "utage_imported" && p.account_name) out.add("UTAGE:" + productLabelName(p.account_name).slice(0, 30));
+    // 便 17：LINE と結ばれた人（どのアカウントか）
+    else if (e.type === "line_linked" && p.account) out.add("LINE:" + String(p.account).slice(0, 30));
     // 便 8g-2：紹介で来た人と、紹介した人（紹介した人の印は、その人のリンクから誰かが登録したとき）
     else if (e.type === "referred") out.add("紹介で来た");
     else if (e.type === "referral_reward") out.add("紹介した");
@@ -197,8 +201,43 @@ export function makeConnect(h) {
     await addEvent(env, person_id, add ? "label_added" : "label_removed", { label: l, by: String(actor).slice(0, 120), ...extra }, eventActor(actor));
     return { ok: true, found: true, label: l, changed: true };
   }
-  const addLabel = (env, args, actor, extra) => changeLabel(env, args, actor, true, extra);
-  const removeLabel = (env, args, actor) => changeLabel(env, args, actor, false);
+  // 便 17：何人分でも 1 回で付け外しする。person_ids（番号の並び）か emails（メールの並び）。1 回 500 人まで
+  const BULK_MAX = 500;
+  async function changeLabels(env, args, actor, add, extra) {
+    const ids = Array.isArray(args.person_ids) ? args.person_ids.map(String) : [];
+    const emails = Array.isArray(args.emails) ? args.emails.map((e) => String(e).trim().toLowerCase()).filter(Boolean) : [];
+    if (!ids.length && !emails.length) return { ok: false, error: "need_person_ids_or_emails" };
+    if (ids.length + emails.length > BULK_MAX) return { ok: false, error: "too_many", max: BULK_MAX };
+    const l = String(args.label || "").trim();
+    if (!LABEL_RE.test(l)) return { ok: false, error: "bad_label", note: "空白・カンマ・山かっこ・引用符を含まない 1〜40 文字" };
+    const targets = new Set(ids);
+    const notFound = [];
+    if (emails.length) {
+      const people = await db(env, "GET", "customers?select=id,email&limit=20000");
+      const byEmail = new Map(people.map((p) => [String(p.email || "").toLowerCase(), p.id]));
+      for (const e of [...new Set(emails)]) { const id = byEmail.get(e); if (id) targets.add(id); else notFound.push(e); }
+    }
+    const out = { ok: true, label: l, targets: targets.size, changed: 0, unchanged: 0, not_found: notFound.length, not_found_emails: notFound.slice(0, 50), errors: 0 };
+    for (const id of targets) {
+      const r = await changeLabel(env, { person_id: id, label: l }, actor, add, extra);
+      if (!r.ok || r.found === false) out.errors++;
+      else if (r.changed) out.changed++; else out.unchanged++;
+    }
+    return out;
+  }
+  const bulk = (a) => a && (Array.isArray(a.person_ids) || Array.isArray(a.emails));
+  const addLabel = (env, args, actor, extra) => bulk(args) ? changeLabels(env, args, actor, true, extra) : changeLabel(env, args, actor, true, extra);
+  const removeLabel = (env, args, actor) => bulk(args) ? changeLabels(env, args, actor, false) : changeLabel(env, args, actor, false);
+
+  // 便 17：「除外」が付いている人の番号の集まり（付けた・外したの出来事だけを読む）
+  async function excludedIds(env) {
+    const evs = await db(env, "GET", `events?select=id,customer_id,type,payload,occurred_at&type=in.(label_added,label_removed)&payload->>label=eq.${encodeURIComponent(EXCLUDE_LABEL)}&order=id.asc&limit=50000`);
+    const byPerson = new Map();
+    for (const e of evs) { if (!byPerson.has(e.customer_id)) byPerson.set(e.customer_id, []); byPerson.get(e.customer_id).push(e); }
+    const out = new Set();
+    for (const [id, list] of byPerson) if (manualLabels(list).includes(EXCLUDE_LABEL)) out.add(id);
+    return out;
+  }
 
   // Naoki（b_admins の全員）へ知らせる。テスト宛ての制限は通さない（宛先がシアニンだけのため）
   async function notifyAdmins(env, { subject, text }) {
@@ -218,5 +257,5 @@ export function makeConnect(h) {
     return { sent, failed, error, pushed };
   }
 
-  return { labelMap, getLabels, addLabel, removeLabel, notifyAdmins };
+  return { labelMap, getLabels, addLabel, removeLabel, notifyAdmins, excludedIds };
 }
