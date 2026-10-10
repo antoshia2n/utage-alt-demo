@@ -60,8 +60,9 @@ import { LANES } from "./plan.js";
 import { makeSeminars } from "./seminars.js";
 import { makeBooking } from "./booking.js";
 import { makePages, EMBED_JS, personToken, PURPOSES, ROUTE_RE as ROUTE_OK } from "./pages.js";
+import { makeLessonQA, openLessonQuestions, QUESTION_MAX } from "./lessonqa.js";
 
-const VERSION = "0.34.1-b11b";
+const VERSION = "0.35.0-b15";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -135,6 +136,8 @@ const connect = makeConnect({ db, addEvent, logInbound, sell, mailcfg, push });
 const forms = makeForms({ db, addEvent, logInbound, registerPerson: (env, a) => registerPerson(env, a) });
 const deliver = makeDeliver({ db, addEvent, logInbound, bin3, sell, mailcfg, connect, forms, decorateClick: (env, u, cid) => pagesLinkFor(env, u, cid) });
 const learn = makeLearn({ db });
+// B の便 15：教材の質問とメモ（中身は src/lessonqa.js）
+const lessonqa = makeLessonQA({ db, addEvent, learn });
 const pages = makePages({ db, addEvent, logInbound, forms, sell });
 const seminars = makeSeminars({ db, addEvent, logInbound, bin3, pagesOrigin: (env) => pages.pagesOrigin(env) });
 forms.hooks.onSubmitted = (env, cid, slug) => seminars.onForm(env, cid, slug);
@@ -441,16 +444,24 @@ const core = {
   },
 
   // 便 8f-3：シアニンからチャットを 1 通（添削の 3 欄ではない、ふつうのやりとり）。生徒の画面の部屋に新着として出る
-  async sendChat(env, { person_id, text }, actor) {
+  // 便 15：reply_to に教材の質問の番号を渡すと、その質問への答えになる（教材の下にも出る）
+  async sendChat(env, { person_id, text, reply_to }, actor) {
     if (!UUID_RE.test(String(person_id || ""))) return { ok: false, error: "bad_person_id" };
     const t = String(text ?? "").trim();
     if (!t) return { ok: false, error: "empty" };
     if (t.length > TEXT_MAX) return { ok: false, error: "too_long", max: TEXT_MAX };
     const [person] = await db(env, "GET", `customers?select=id&id=eq.${person_id}`);
     if (!person) return { ok: true, found: false };
-    const ev = await addEvent(env, person_id, "room_chat", { from: "cyanin", text: t }, actor === "mcp" ? "mcp" : "admin");
+    const payload = { from: "cyanin", text: t };
+    if (reply_to != null && reply_to !== "") {
+      const [q] = await db(env, "GET", `events?select=id,payload&id=eq.${Number(reply_to)}&customer_id=eq.${person_id}&type=eq.room_chat`);
+      if (!q || !q.payload || q.payload.from !== "student" || !q.payload.lesson) return { ok: false, error: "bad_reply_to" };
+      payload.reply_to = q.id;
+      payload.lesson = q.payload.lesson;
+    }
+    const ev = await addEvent(env, person_id, "room_chat", payload, actor === "mcp" ? "mcp" : "admin");
     // 便 8g-1：生徒のスマホへ（端末が無ければ何もしない・失敗しても送ったことは取り消さない）
-    const pushed = await push.sendTo(env, person_id, { title: "シアニンからメッセージ", body: t.replace(/\s+/g, " ").slice(0, 120), url: "/app#room", tag: "room" });
+    const pushed = await push.sendTo(env, person_id, { title: payload.lesson ? "質問への答え：" + String(payload.lesson.title || "").slice(0, 40) : "シアニンからメッセージ", body: t.replace(/\s+/g, " ").slice(0, 120), url: "/app#room", tag: "room" });
     return { ok: true, found: true, id: ev.id, pushed: pushed.sent || 0 };
   },
 
@@ -506,6 +517,8 @@ const core = {
         unreplied: s.unreplied.length,
         oldest_unreplied_at: s.unreplied.length ? s.unreplied[0].occurred_at : null,
         unread_for_admin: s.unreadForAdmin,
+        // 便 15：まだ答えていない教材の質問の数
+        lesson_open: openLessonQuestions(byCustomer.get(id)).length,
         last_at: last ? last.occurred_at : null,
         last_from: last ? fromOf(last) : null,
         last_text: last ? snippet(last) : "",
@@ -660,6 +673,8 @@ function toMessage(e, s) {
     return {
       id: e.id, kind: "chat", from, at: e.occurred_at, actor: e.actor,
       text: p.text || "", images: Array.isArray(p.images) ? p.images : [],
+      // 便 15：教材の質問と、その答え
+      ...(p.lesson ? { lesson: { id: p.lesson.id, title: p.lesson.title || "" } } : {}), ...(p.reply_to != null ? { reply_to: p.reply_to } : {}),
       ...(from === "student" ? { read_by_cyanin: e.id <= s.adminReadUpto } : { read_by_student: e.id <= s.studentReadUpto }),
     };
   }
@@ -886,6 +901,23 @@ async function handleApi(request, env, url) {
     return json({ ok: false, error: "not_found" }, 404);
   }
 
+  // 生徒：教材の下の質問と答え・自分のメモ（便 15）
+  if (path === "/api/lesson/notes" || path === "/api/lesson/memo") {
+    const v = await verifyUser(request, env);
+    if (v.error) return json({ ok: false, error: v.error }, 401);
+    const customer = await customerByEmail(env, v.email);
+    if (!customer) return json({ ok: false, error: "not_registered" }, 404);
+    if (path === "/api/lesson/notes" && method === "GET") {
+      const r = await lessonqa.notes(env, customer, v.email, url.searchParams.get("lesson_id"), roomEvents);
+      return json(r, r.ok ? 200 : 404);
+    }
+    if (path === "/api/lesson/memo" && method === "POST") {
+      const r = await lessonqa.setMemo(env, customer, v.email, await request.json().catch(() => ({})));
+      return json(r, r.ok ? 200 : 400);
+    }
+    return json({ ok: false, error: "method_not_allowed" }, 405);
+  }
+
   // 生徒：添削ルーム（自分の部屋だけ）
   if (path.startsWith("/api/room")) {
     const v = await verifyUser(request, env);
@@ -909,11 +941,18 @@ async function handleApi(request, env, url) {
       if (images.length > 4) return json({ ok: false, error: "too_many_images", max: 4 }, 400);
       if (images.some((k) => imageOwner(k) !== customer.id)) return json({ ok: false, error: "bad_image" }, 400);
       // 便 8f-3：kind が chat なら添削の依頼ではなくメッセージ（未返信に数えない）。省くと今までどおり添削の依頼
-      const isChat = body.kind === "chat";
-      const ev = await addEvent(env, customer.id, isChat ? "room_chat" : "correction_submitted", isChat ? { from: "student", text, images } : { text, images }, "site");
+      // 便 15：lesson_id を付けると、その教材への質問（メッセージとして積み、どの教材かを残す）
+      let lesson = null;
+      if (body.lesson_id != null && body.lesson_id !== "") {
+        lesson = await lessonqa.lessonInfo(env, customer, v.email, body.lesson_id);
+        if (!lesson) return json({ ok: false, error: "lesson_not_found" }, 400);
+        if (text.length > QUESTION_MAX) return json({ ok: false, error: "too_long", max: QUESTION_MAX }, 400);
+      }
+      const isChat = body.kind === "chat" || !!lesson;
+      const ev = await addEvent(env, customer.id, isChat ? "room_chat" : "correction_submitted", isChat ? { from: "student", text, images, ...(lesson ? { lesson } : {}) } : { text, images }, "site");
       await logInbound(env, "room", { customer_id: customer.id, kind: isChat ? "chat" : "correction", chars: text.length, images: images.length }, { ok: true, id: ev.id }, 200);
       // 生徒からのメッセージはすぐ Naoki のスマホへ（添削の依頼はコネクタの知らせで届く）
-      if (isChat) await push.send(env, { title: `メッセージ：${customer.name || customer.email}`, body: text ? text.replace(/\s+/g, " ").slice(0, 120) : "（画像）", url: `/admin#room/${customer.id}`, tag: `room-${customer.id}` });
+      if (isChat) await push.send(env, { title: `${lesson ? "教材の質問" : "メッセージ"}：${customer.name || customer.email}`, body: (lesson ? `「${String(lesson.title).slice(0, 30)}」` : "") + (text ? text.replace(/\s+/g, " ").slice(0, 120) : "（画像）"), url: `/admin#room/${customer.id}`, tag: `room-${customer.id}` });
       return json({ ok: true, id: ev.id });
     }
 
@@ -1097,7 +1136,7 @@ async function handleApi(request, env, url) {
     const rmsg = path.match(/^[/]api[/]admin[/]rooms[/]([0-9a-f-]{36})[/]message$/i);
     if (rmsg && method === "POST") {
       const body = await request.json().catch(() => ({}));
-      const r = await core.sendChat(env, { person_id: rmsg[1], text: body.text }, "admin");
+      const r = await core.sendChat(env, { person_id: rmsg[1], text: body.text, reply_to: body.reply_to }, "admin");
       return json(r, r.ok === false ? 400 : 200);
     }
     // 便 8g-2：紹介（紹介者ごとの集計・払ったことの記録）
@@ -1311,7 +1350,7 @@ const TOOLS = [
     name: "list_rooms",
     screen: "rooms",
     say: "添削ルームの部屋の一覧を見る（未返信が上）",
-    description: "添削ルームの部屋の一覧。未返信のある部屋が上（待たせている時間が長い順）。unreplied は返していない投稿の数。0 件は count: 0。",
+    description: "添削ルームの部屋の一覧。未返信のある部屋が上（待たせている時間が長い順）。unreplied は返していない投稿の数。lesson_open はまだ答えていない教材の質問の数。0 件は count: 0。",
     inputSchema: {
       type: "object",
       properties: { only_unreplied: { type: "boolean", description: "真なら未返信のある部屋だけ" } },
@@ -1321,7 +1360,7 @@ const TOOLS = [
     name: "get_room",
     screen: "rooms",
     say: "1 人の添削ルームのやりとりを読む",
-    description: "1 人の添削ルームのやりとりを古い順に返す。kind が correction は添削（生徒の投稿は text・images・replied、返したものは original・corrected・comment）、chat はふつうのメッセージ（from：student／cyanin・text）。unreplied は添削の未返信の投稿の id（メッセージは数えない）。読んだ印は付けない。",
+    description: "1 人の添削ルームのやりとりを古い順に返す。kind が correction は添削（生徒の投稿は text・images・replied、返したものは original・corrected・comment）、chat はふつうのメッセージ（from：student／cyanin・text。教材の質問には lesson（id・title）、その答えには reply_to と lesson が付く）。unreplied は添削の未返信の投稿の id（メッセージは数えない）。読んだ印は付けない。",
     inputSchema: { type: "object", properties: { person_id: { type: "string" } }, required: ["person_id"] },
   },
   {
@@ -1350,8 +1389,8 @@ const TOOLS = [
     name: "send_chat",
     screen: "rooms",
     say: "生徒にメッセージを送る",
-    description: "シアニンとして 1 人にメッセージを送る（添削の 3 欄ではない、ふつうのやりとり）。生徒の画面の添削ルームに新着として出る。文字だけ・8000 文字まで。承認が要る道具：呼ぶと承認待ちになり approval_url が返る。",
-    inputSchema: { type: "object", properties: { person_id: { type: "string" }, text: { type: "string" } }, required: ["person_id", "text"] },
+    description: "シアニンとして 1 人にメッセージを送る（添削の 3 欄ではない、ふつうのやりとり）。生徒の画面の添削ルームに新着として出る。文字だけ・8000 文字まで。reply_to に教材の質問の番号（get_room の messages で lesson が付いた生徒のメッセージの id）を渡すと、その質問への答えになり、生徒の教材の下にも出る。承認が要る道具：呼ぶと承認待ちになり approval_url が返る。",
+    inputSchema: { type: "object", properties: { person_id: { type: "string" }, text: { type: "string" }, reply_to: { type: "integer" } }, required: ["person_id", "text"] },
   },
   {
     name: "notify_naoki",

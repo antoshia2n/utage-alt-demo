@@ -50,6 +50,20 @@
       <div class="player" id="l-player"></div>
       <p id="l-summary" class="pre"></p>
       <div id="l-mindmap"></div>
+      <!-- 便 15：教材の下の質問と自分のメモ -->
+      <section class="card stack hidden" id="l-qa">
+        <h3 style="margin:0">この教材について質問する</h3>
+        <p class="note" style="margin:0">シアニンに届きます。答えはここと「添削ルーム」に出ます。</p>
+        <div id="l-questions" class="stack"></div>
+        <label for="l-q" class="sr">質問</label><textarea id="l-q" rows="3" maxlength="4000" placeholder="わからなかったところ・試してみたこと"></textarea>
+        <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="button" id="l-ask">質問を送る</button><span class="note" id="l-q-status"></span></div>
+      </section>
+      <section class="card stack hidden" id="l-memo-box">
+        <h3 style="margin:0">自分のメモ</h3>
+        <p class="note" style="margin:0">あなただけが見られます。</p>
+        <label for="l-memo" class="sr">メモ</label><textarea id="l-memo" rows="4" maxlength="4000"></textarea>
+        <div style="display:flex;gap:8px;align-items:center"><button class="btn ghost small" type="button" id="l-memo-save">メモを保存</button><span class="note" id="l-memo-status"></span></div>
+      </section>
     </section>
 
     <section id="tab-review" class="hidden">

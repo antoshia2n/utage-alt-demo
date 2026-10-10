@@ -515,12 +515,14 @@ async function loadRooms() {
   $("rooms").innerHTML = r.rooms.map((x) => `
     <li data-id="${x.person_id}" ${x.person_id === currentRoom ? 'aria-current="true"' : ""}>
       <div style="min-width:0"><div>${esc(x.name || x.email)}</div><div class="sub ellip">${x.last_from === "cyanin" ? "返した：" : ""}${esc(x.last_text)}</div></div>
-      <div style="text-align:right;flex-shrink:0">${x.unreplied > 0 ? `<span class="pill warn">未返信 ${x.unreplied}</span>` : x.unread_for_admin > 0 ? `<span class="pill warn">未読 ${x.unread_for_admin}</span>` : '<span class="pill gray">読んだ</span>'}<div class="sub">${fmtTime(x.last_at)}</div></div>
+      <div style="text-align:right;flex-shrink:0">${x.lesson_open > 0 ? `<span class="pill warn">教材の質問 ${x.lesson_open}</span> ` : ""}${x.unreplied > 0 ? `<span class="pill warn">未返信 ${x.unreplied}</span>` : x.unread_for_admin > 0 ? `<span class="pill warn">未読 ${x.unread_for_admin}</span>` : x.lesson_open > 0 ? "" : '<span class="pill gray">読んだ</span>'}<div class="sub">${fmtTime(x.last_at)}</div></div>
     </li>`).join("");
   document.querySelectorAll("#rooms li").forEach((li) => li.addEventListener("click", () => openRoom(li.dataset.id)));
 }
 
-async function openRoom(id, focusId) {
+// 便 15：教材の質問に答えるときの、答える先の質問（部屋を開き直すと外れる）
+let answerTo = null;
+async function openRoom(id, focusId, answerId) {
   currentRoom = id;
   document.querySelectorAll("#rooms li").forEach((li) => li.toggleAttribute("aria-current", li.dataset.id === id));
   const r = await api("/api/admin/rooms/" + id, { token });
@@ -528,15 +530,19 @@ async function openRoom(id, focusId) {
   const subs = Object.fromEntries(r.messages.filter((m) => m.from === "student" && m.kind !== "chat").map((m) => [m.id, m]));
   const target = focusId && subs[focusId] && !subs[focusId].replied ? subs[focusId] : subs[r.unreplied[0]];
   const block = (label, text) => `<div class="rb"><div class="rb-l">${label}</div><div class="rb-t">${esc(text) || '<span class="note">（なし）</span>'}</div></div>`;
+  const answered = new Set(r.messages.filter((m) => m.from === "cyanin" && m.reply_to != null).map((m) => String(m.reply_to)));
+  answerTo = answerId ? r.messages.find((m) => m.id === answerId && m.lesson) || null : null;
   $("room-detail").innerHTML = `
     <h2 style="margin-bottom:2px">${esc(r.person.name || "（名前なし）")}</h2>
     <div class="note" style="margin-bottom:12px">${esc(r.person.email)}</div>
     <div class="room">${r.messages.map((m) => m.kind === "chat"
       ? (m.from === "student"
         ? `<div class="msg-them"><div class="bubble chat">${m.text ? `<div class="pre">${esc(m.text)}</div>` : ""}${m.images.length ? `<div class="imgs">${m.images.map((k) => `<img data-key="${esc(k)}" alt="生徒の画像">`).join("")}</div>` : ""}</div>
-          <div class="meta"><time>${fmtTime(m.at)}</time><span class="pill gray">メッセージ</span></div></div>`
+          <div class="meta"><time>${fmtTime(m.at)}</time>${m.lesson
+            ? `<span class="pill${answered.has(String(m.id)) ? " gray" : " warn"}">教材の質問：${esc(m.lesson.title)}</span>${answered.has(String(m.id)) ? '<span class="pill gray">答えた</span>' : `<button class="link" data-ans="${m.id}">${answerTo && answerTo.id === m.id ? "この質問に答える（選択中）" : "この質問に答える"}</button>`}`
+            : '<span class="pill gray">メッセージ</span>'}</div></div>`
         : `<div class="msg-me"><div class="bubble chat mine"><div class="pre">${esc(m.text)}</div></div>
-          <div class="meta"><time>${fmtTime(m.at)}</time>${m.actor === "mcp" ? '<span class="pill gray">AI から</span>' : ""}${m.read_by_student ? '<span class="pill gray">既読</span>' : ""}</div></div>`)
+          <div class="meta"><time>${fmtTime(m.at)}</time>${m.lesson ? `<span class="pill gray">「${esc(m.lesson.title)}」への答え</span>` : ""}${m.actor === "mcp" ? '<span class="pill gray">AI から</span>' : ""}${m.read_by_student ? '<span class="pill gray">既読</span>' : ""}</div></div>`)
       : m.from === "student"
       ? `<div class="msg-them"><div class="bubble">${m.text ? `<div class="pre">${esc(m.text)}</div>` : ""}${m.images.length ? `<div class="imgs">${m.images.map((k) => `<img data-key="${esc(k)}" alt="生徒の画像">`).join("")}</div>` : ""}</div>
           <div class="meta"><time>${fmtTime(m.at)}</time>${m.replied ? '<span class="pill gray">返信済み</span>' : `<button class="link" data-reply="${m.id}">${target && target.id === m.id ? "この投稿に返す（選択中）" : "この投稿に返す"}</button>`}</div></div>`
@@ -556,8 +562,9 @@ async function openRoom(id, focusId) {
       <div style="display:flex;gap:8px;align-items:center"><button class="btn" type="submit" id="r-send">返す</button><span class="note" id="r-status"></span></div>
     </form>` : '<p class="note" style="margin-top:12px">この部屋に添削の未返信はありません。</p>'}
     <form id="chat" class="stack reply-form">
-      <h3>メッセージを送る</h3>
-      <label for="ch-text" class="sr">メッセージ</label><textarea id="ch-text" rows="3" maxlength="8000" placeholder="添削以外のやりとり（質問への答え・連絡など）"></textarea>
+      <h3>${answerTo ? `教材の質問に答える：${esc(answerTo.lesson.title)}` : "メッセージを送る"}</h3>
+      ${answerTo ? `<div class="note">答えは部屋と、生徒の教材の下の両方に出ます。<button class="link" type="button" id="ch-unans">ふつうのメッセージに戻す</button></div>` : ""}
+      <label for="ch-text" class="sr">メッセージ</label><textarea id="ch-text" rows="3" maxlength="8000" placeholder="${answerTo ? "質問への答え" : "添削以外のやりとり（質問への答え・連絡など）"}"></textarea>
       <div style="display:flex;gap:8px;align-items:center"><button class="btn" type="submit" id="ch-send">送る</button><span class="note" id="ch-status"></span></div>
     </form>`;
   $("chat").addEventListener("submit", async (e) => {
@@ -565,7 +572,7 @@ async function openRoom(id, focusId) {
     const text = $("ch-text").value.trim();
     if (!text) { $("ch-status").textContent = "メッセージを入れてください"; return; }
     $("ch-send").disabled = true;
-    const res = await api(`/api/admin/rooms/${id}/message`, { method: "POST", token, body: { text } });
+    const res = await api(`/api/admin/rooms/${id}/message`, { method: "POST", token, body: { text, ...(answerTo ? { reply_to: answerTo.id } : {}) } });
     if (!res.ok) { $("ch-send").disabled = false; $("ch-status").textContent = "送れませんでした（" + (res.error || res.status) + "）"; return; }
     await openRoom(id); if (current === id) detail(id);
   });
@@ -574,6 +581,8 @@ async function openRoom(id, focusId) {
     catch (_) { img.alt = "画像を読めませんでした"; img.classList.add("broken"); }
   });
   $("room-detail").querySelectorAll("[data-reply]").forEach((b) => b.addEventListener("click", () => openRoom(id, Number(b.dataset.reply))));
+  $("room-detail").querySelectorAll("[data-ans]").forEach((b) => b.addEventListener("click", async () => { await openRoom(id, focusId, Number(b.dataset.ans)); $("ch-text").focus(); }));
+  if ($("ch-unans")) $("ch-unans").addEventListener("click", () => openRoom(id, focusId));
   wireNotes($("room-detail"));
   if (target) {
     // 便 6a：長文の指摘の行（引用・指摘・外す）
