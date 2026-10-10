@@ -66,7 +66,7 @@ import { makeLine } from "./line.js";
 import { makeUtageImport } from "./utageimport.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail } from "./shield.js";
 
-const VERSION = "0.43.0-br1";
+const VERSION = "0.44.0-br3";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -936,6 +936,22 @@ async function handleApi(request, env, url) {
     return json({ ok: false, error: "method_not_allowed" }, 405);
   }
 
+  // 便 R3：生徒が自分の契約を見て、定期を止める（自分の分だけ。分割は止めない）
+  if (path === "/api/me/subscriptions" || path === "/api/me/subscriptions/cancel") {
+    const v = await verifyUser(request, env);
+    if (v.error) return json({ ok: false, error: v.error }, 401);
+    const customer = await customerByEmail(env, v.email);
+    if (!customer) return json({ ok: false, error: "not_registered" }, 404);
+    if (path === "/api/me/subscriptions" && method === "GET") return json(await sell.mySubscriptions(env, customer));
+    if (path === "/api/me/subscriptions/cancel" && method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      const r = await sell.cancelOwnSubscription(env, customer, body);
+      await logInbound(env, "self_cancel", { customer_id: customer.id, subscription_id: body.subscription_id || null }, { ok: r.ok, error: r.error || null, keep_until: r.keep_until || null }, r.ok ? 200 : 400);
+      return json(r, r.ok ? 200 : 400);
+    }
+    return json({ ok: false, error: "method_not_allowed" }, 405);
+  }
+
   // 生徒：個別相談の予約とセミナー（便 4）
   if (path === "/api/booking" || path.startsWith("/api/booking/") || path.startsWith("/api/seminars/")) {
     const v = await verifyUser(request, env);
@@ -1784,8 +1800,8 @@ const TOOLS = [
     name: "list_subscriptions",
     screen: "products",
     say: "継続課金と分割の支払いの一覧を見る",
-    description: "定期課金と回数を決めた分割を、契約（UnivaPay の定期課金の番号）ごとに返す。誰の（名前・メール）・商品・状態 status（active 続いている／failed 失敗／canceled 解約／suspended 止まった／completed 回数どおり済み）・入金の回数 payments（分割は installments 回のうち）・失敗の回数・最後の動き・試しか mode。status で絞れる。件数は counts。",
-    inputSchema: { type: "object", properties: { status: { type: "string", enum: ["active", "failed", "canceled", "suspended", "completed"] } } },
+    description: "定期課金と回数を決めた分割を、契約（UnivaPay の定期課金の番号）ごとに返す。誰の（名前・メール）・商品・状態 status（active 続いている／failed 失敗／canceled 解約／ending 本人が止めて期限 keep_until まで使える／suspended 止まった／completed 回数どおり済み）・次の課金の時刻 paid_until・入金の回数 payments（分割は installments 回のうち）・失敗の回数・最後の動き・試しか mode。status で絞れる。件数は counts。",
+    inputSchema: { type: "object", properties: { status: { type: "string", enum: ["active", "failed", "canceled", "ending", "suspended", "completed"] } } },
   },
   {
     name: "cancel_subscription",

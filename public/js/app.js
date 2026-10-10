@@ -81,12 +81,13 @@ async function main() {
     $("rf-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText(rf.link); $("rf-copy").textContent = "写しました"; } catch (_) { $("rf-copy").textContent = "写せませんでした"; } });
   }
 
-  const sections = ["lessons", "lesson", "news", "room", "review", "booking"];
+  const sections = ["lessons", "lesson", "news", "room", "review", "booking", "contract"];
   const showTab = (name) => {
     sections.forEach((s) => $("tab-" + s).classList.toggle("hidden", s !== name));
     if (name === "room") room.open();
     if (name === "review") loadReview(token);
     if (name === "booking") loadBooking(token);
+    if (name === "contract") loadContract(token);
     // 便 8c：左のメニューの印と、上のナビの名前
     document.querySelectorAll(".side [data-tab]").forEach((b) => {
       const on = b.dataset.tab === name || (name === "lesson" && b.dataset.tab === "lessons");
@@ -161,11 +162,12 @@ async function main() {
   if (location.hash.startsWith("#room")) { room.setPane(location.hash.split("/")[1]); showTab("room"); }
   if (location.hash === "#review") showTab("review");
   if (location.hash === "#booking") showTab("booking");
+  if (location.hash === "#contract") showTab("contract");
   // 便 8g-1：通知を押して開いた画面がもう出ているとき、住所の # だけが変わるので、ここで部屋へ移る
   window.addEventListener("hashchange", () => {
     const [h, pane] = location.hash.slice(1).split("/");
     if (h === "room") room.setPane(pane);
-    if (["room", "review", "booking"].includes(h)) showTab(h);
+    if (["room", "review", "booking", "contract"].includes(h)) showTab(h);
   });
   setupStudentPush({ box: $("push-box"), status: $("push-status"), on: $("push-on"), off: $("push-off") }, token);
 
@@ -191,6 +193,42 @@ async function loadReview(token) {
     </details>`;
   }).join("") || '<div class="empty note card">まだ返ってきた添削はありません。添削ルームから文章を出すと、ここに積み上がります。</div>';
   wireNotes(box);
+}
+
+// ---------- 便 R3：ご契約（自分の定期と分割。定期は自分で止められる） ----------
+const day = (iso) => iso ? fmtTime(iso).slice(0, 10) : "";
+async function loadContract(token) {
+  const box = $("ct-list");
+  const r = await api("/api/me/subscriptions", { token });
+  if (!r.ok) { box.innerHTML = `<div class="msg err">読めませんでした（${esc(r.error || r.status)}）</div>`; return; }
+  box.innerHTML = r.subscriptions.map((s) => {
+    const lines = [esc(s.price)];
+    if (s.since) lines.push(day(s.since) + " から");
+    if (s.kind === "installment") lines.push(`全 ${s.installments} 回のうち ${s.payments} 回お支払い済み${s.remaining ? "・残り " + s.remaining + " 回" : ""}`);
+    if (s.next_charge_at) lines.push("次のお支払い " + day(s.next_charge_at));
+    if (s.status === "ending" && s.keep_until) lines.push(day(s.keep_until) + " までお使いいただけます");
+    return `<div class="card"><div class="member-row"><div><b>${esc(s.product_name)}</b>${s.test ? ' <span class="pill gray">試し</span>' : ""}
+        <div class="note">${lines.join("・")}</div></div>
+        <span class="pill${s.status === "active" ? "" : " gray"}">${esc(s.status_label)}</span></div>
+      ${s.can_cancel ? `<div class="ct-stop" style="margin-top:8px"><button class="btn ghost small" type="button" data-stop="${esc(s.subscription_id)}">この定期を止める</button></div>` : ""}
+    </div>`;
+  }).join("") || '<div class="card note">続いている契約はありません。</div>';
+  box.querySelectorAll("[data-stop]").forEach((b) => b.addEventListener("click", () => {
+    const s = r.subscriptions.find((x) => x.subscription_id === b.dataset.stop);
+    const wrap = b.parentElement;
+    // 押し間違いを防ぐため、確かめの 1 段を挟む
+    wrap.innerHTML = `<div class="msg"><b>${esc(s.product_name)} を止めますか？</b>
+      <div class="note">次のお支払い（${day(s.next_charge_at)}）から請求されなくなります。${day(s.next_charge_at)} まではこれまでどおりお使いいただけます。止めたあとに続けるときは、もう一度お申し込みください。</div>
+      <div style="display:flex;gap:8px;margin-top:8px"><button class="btn small" type="button" data-yes>止める</button><button class="btn ghost small" type="button" data-no>やめておく</button></div></div>`;
+    wrap.querySelector("[data-no]").addEventListener("click", () => loadContract(token));
+    wrap.querySelector("[data-yes]").addEventListener("click", async (e) => {
+      e.target.disabled = true;
+      const res = await api("/api/me/subscriptions/cancel", { method: "POST", token, body: { subscription_id: s.subscription_id } });
+      const why = { installment_not_cancelable: "分割のお支払いはここからは止められません", univapay_cancel_failed: "決済の会社で止められませんでした。時間をおいてもう一度お試しください", no_paid_until: "次のお支払いの日が分からないため止められませんでした。メールでご連絡ください" };
+      $("ct-status").textContent = res.ok ? `止めました。${res.keep_until ? day(res.keep_until) + " までお使いいただけます。" : ""}` : (why[res.error] || "止められませんでした（" + (res.error || res.status) + "）");
+      loadContract(token);
+    });
+  }));
 }
 
 // ---------- 予約とセミナー（便 4） ----------
