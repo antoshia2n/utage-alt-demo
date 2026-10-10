@@ -141,3 +141,12 @@ UTAGE の代わりになるサイト兼アプリ（PWA）のデモ。架空の�
 - 決済が通ると、登録の画面からそのページへ移る（公開中のときだけ）。商品の画面と AI の道具 `set_product` で選ぶ
 - 売るページ（目的 `sale`）と、商品から移る先のページは、ファネル構築のオファーの段に並ぶ。商品 → 移る先のページに「サンクス」の線
 - 試験：`node --test tests/sale.test.mjs`
+
+## B の便 12c で足したもの（商品管理の強化）
+
+- 商品の欄 3 つ（`card_installments`・`failed_mail_subject`・`failed_mail_body`）。`supabase/b12c_billing.sql` を SQL Editor で 1 回流す
+- カード会社の分割：単発の商品で「カードの分割払いを選べるようにする」をオンにすると、登録の画面の決済の欄がページに埋め込む形になり、回数（1・3・5・6・10・12・15・18・20・24・リボ）をお客さんが選ぶ。使える回数はカードによる
+- 回数を決めた分割：`kind=installment`（毎月 `amount` 円 × `installments` 回）。UnivaPay の「回数指定の定期課金」（合計で作り 1 回あたりの金額を決める）で作り、回数が済むと UnivaPay の側で止まる
+- 継続課金：商品の画面の「継続課金」タブに、契約ごとの状態・入金の回数・失敗の回数。解約は UnivaPay の定期課金を消す（戻せない）。AI の道具 `list_subscriptions`（自動）・`cancel_subscription`（承認）
+- 課金が失敗した知らせが来たら、その人へメール（`kind=billing_failed`・同じ契約には 1 日 1 通まで）
+- 試験：`node --test tests/billing.test.mjs`

@@ -429,9 +429,18 @@
     </div>
     <!-- 便 18：商品。一覧の表 → 1 件の詳細 -->
     <div id="view-products" style="display:none">
-      <div id="products-list" class="card">
-        <div class="list-bar"><p class="note" id="pr-count"></p><span data-camp-slot="products"></span></div>
-        <div id="products" class="table-wrap"></div>
+      <div id="products-list">
+        <div class="tabs view-tabs" data-vtabs><button type="button" data-vtab="items" aria-selected="true">商品</button><button type="button" data-vtab="subs" aria-selected="false">継続課金</button></div>
+        <div class="card" data-vpane="items">
+          <div class="list-bar"><p class="note" id="pr-count"></p><span data-camp-slot="products"></span></div>
+          <div id="products" class="table-wrap"></div>
+        </div>
+        <!-- 便 12c：継続課金と回数を決めた分割の一覧。解約は UnivaPay の課金を永久に止める（戻せない） -->
+        <div class="card hidden" data-vpane="subs">
+          <div class="list-bar"><p class="note" id="sub-count"></p><select id="sub-filter" class="inline"><option value="">すべて</option><option value="active">続いている</option><option value="failed">失敗</option><option value="canceled">解約</option><option value="suspended">止まった</option><option value="completed">回数どおり済み</option></select></div>
+          <div id="subs" class="table-wrap"></div>
+          <p class="note" style="margin:12px 0 0">課金が失敗すると、その人へ自動でメールが届きます（文は各商品の画面で直せます）。解約すると UnivaPay の課金は止まり、もとに戻せません</p>
+        </div>
       </div>
       <div id="products-detail" class="hidden"><button type="button" class="back-link" data-back="products">← 一覧へ</button><div id="product-detail"></div></div>
     </div>

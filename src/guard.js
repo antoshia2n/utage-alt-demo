@@ -18,6 +18,8 @@ export const DEFAULT_MODES = {
   send_email: "approve", return_correction: "approve", set_deal_stage: "approve",
   set_note_member: "approve", send_seminar_archive: "approve",
   list_products: "auto", set_product: "approve",
+  // 便 12c：継続課金の一覧は自動、解約は承認（UnivaPay の課金を永久に止めるため）
+  list_subscriptions: "auto", cancel_subscription: "approve",
   preview_audience: "auto", list_broadcasts: "auto", draft_broadcast: "auto", cancel_broadcast: "auto", list_steps: "auto",
   queue_broadcast: "approve", set_step: "approve",
   list_lessons: "auto", list_corrections: "auto",

@@ -1771,7 +1771,36 @@ async function loadProducts(focusId, msg) {
     campCol("product", (p) => p.id),
     { key: "active", label: "状態", sortVal: (p) => (p.active ? 2 : 0) + (p.public ? 1 : 0), html: (p) => (p.active ? pill("売る") : pill("売らない", "gray")) + (p.public ? " " + pill("サイト") : "") },
   ], prRows, (p) => productDetail(p.id), r.products.length ? "この企画の商品はありません" : "まだありません");
+  loadSubscriptions();
   if (focusId) productDetail(focusId, msg);
+}
+
+// ---------- 便 12c：継続課金（定期と回数を決めた分割）の一覧と解約 ----------
+let subsWired = false;
+async function loadSubscriptions() {
+  if (!subsWired) { subsWired = true; $("sub-filter").addEventListener("change", () => loadSubscriptions()); }
+  const st = $("sub-filter").value;
+  const r = await api("/api/admin/subscriptions" + (st ? "?status=" + st : ""), { token });
+  if (!r.ok) { $("sub-count").textContent = "読めませんでした（" + (r.error || r.status) + "）"; return; }
+  const c = r.counts || {};
+  $("sub-count").textContent = r.store === "demo" ? "デモの置き場では出しません" : `${r.count} 件・続いている ${c.active || 0}・失敗 ${c.failed || 0}・解約 ${c.canceled || 0}`;
+  const tone = { active: "", completed: "", failed: "warn", canceled: "gray", suspended: "gray" };
+  table("subs", [
+    { key: "name", label: "名前", sortVal: (s) => s.name || s.email, html: (s) => `<div class="c-name">${esc(s.name || s.email)}</div><div class="sub">${esc(s.email)}</div>` },
+    { key: "product_name", label: "商品", cls: "c-src", html: (s) => `${esc(s.product_name)}${s.mode === "test" ? ' <span class="sub">（試し）</span>' : ""}` },
+    { key: "payments", label: "入金", sortVal: (s) => s.payments, html: (s) => s.installments ? `${s.payments} / ${s.installments} 回` : `${s.payments} 回${s.failures ? `・失敗 ${s.failures}` : ""}` },
+    { key: "last_at", label: "最後の動き", html: (s) => esc(fmtTime(s.last_at)) },
+    { key: "status", label: "状態", sortVal: (s) => s.status, html: (s) => pill(s.status_label, tone[s.status] || "") + (["active", "failed", "suspended"].includes(s.status) ? ` <button class="btn ghost small" type="button" data-cancel="${esc(s.subscription_id)}">解約</button>` : "") },
+  ], r.subscriptions, null, st ? "この状態の継続課金はありません" : "まだありません");
+  $("subs").querySelectorAll("[data-cancel]").forEach((b) => b.addEventListener("click", async (ev) => {
+    ev.stopPropagation();
+    const s = r.subscriptions.find((x) => x.subscription_id === b.dataset.cancel);
+    if (!confirm(`${s.name || s.email} さんの「${s.product_name}」を解約します。UnivaPay の課金は止まり、もとに戻せません。よいですか`)) return;
+    b.disabled = true; b.textContent = "解約しています…";
+    const res = await api("/api/admin/subscriptions/cancel", { method: "POST", token, body: { subscription_id: s.subscription_id } });
+    if (!res.ok) { b.disabled = false; b.textContent = "解約"; alert("解約できませんでした（" + (res.error || res.status) + "）"); return; }
+    loadSubscriptions();
+  }));
 }
 function productDetail(id, msg) {
   const p = productsCache.find((x) => x.id === id);
@@ -1794,11 +1823,15 @@ function productDetail(id, msg) {
       <div><label for="pf-amount">金額（円）</label><input id="pf-amount" type="text" inputmode="numeric" value="${p.amount}"></div>
       ${p.kind === "subscription" ? `<div><label for="pf-period">周期</label><select id="pf-period" class="inline"><option value="monthly" ${p.period === "monthly" ? "selected" : ""}>毎月</option><option value="annually" ${p.period === "annually" ? "selected" : ""}>毎年</option></select></div>` : ""}
       ${p.kind === "one_time" ? `<div><label for="pf-days">権利の日数（空なら期限なし）</label><input id="pf-days" type="text" inputmode="numeric" value="${p.grant_days ?? ""}"></div>` : ""}
+      ${p.kind === "installment" ? `<div><label for="pf-inst">支払いの回数（毎月 1 回・2〜60）</label><input id="pf-inst" type="text" inputmode="numeric" value="${p.installments ?? ""}"></div>` : ""}
+      ${p.kind === "one_time" ? `<label class="check"><input type="checkbox" id="pf-card" ${p.card_installments ? "checked" : ""}> <span>カードの分割払いを選べるようにする（回数はお客さんが決済の画面で選ぶ・使える回数はカードによる）</span></label>` : ""}
       <div><label for="pf-limit">販売数の上限（空なら無し）</label><input id="pf-limit" type="text" inputmode="numeric" value="${p.sales_limit ?? ""}"></div>
       <div><label for="pf-rate">紹介の報酬（%・空なら払わない）</label><input id="pf-rate" type="text" inputmode="numeric" value="${p.affiliate_rate ?? ""}"></div>
       <div><label for="pf-grants">権利の印（カンマ区切り。例 shiarabo_basic）</label><input id="pf-grants" type="text" value="${esc((p.grants || []).join(","))}"></div>
       <div><label for="pf-desc">説明（生徒に見える）</label><textarea id="pf-desc" rows="2">${esc(p.description || "")}</textarea></div>
       <div><label for="pf-thanks">決済のあとに移るページ（公開中のときだけ移る）</label><select id="pf-thanks" class="inline"><option value="">（移さない・登録の画面に受付の文を出す）</option>${p.thanks_page_slug ? `<option value="${esc(p.thanks_page_slug)}" selected>${esc(p.thanks_page_slug)}</option>` : ""}</select></div>
+      ${p.kind !== "one_time" ? `<div><label for="pf-fsub">課金が失敗したときのメールの件名（空なら最初の文）</label><input id="pf-fsub" type="text" maxlength="200" placeholder="【シアラボ】お支払いが確認できませんでした：{{product}}" value="${esc(p.failed_mail_subject || "")}"></div>
+      <div><label for="pf-fbody">本文（{{name}}・{{product}}・{{amount}} が使える）</label><textarea id="pf-fbody" rows="4" maxlength="4000" placeholder="空なら最初の文（カードの期限や利用枠を確かめて返信してもらう文）">${esc(p.failed_mail_body || "")}</textarea></div>` : ""}
       <label class="check"><input type="checkbox" id="pf-multi" ${p.deny_multiple ? "checked" : ""}> <span>重ねて買えない</span></label>
       <label class="check"><input type="checkbox" id="pf-active" ${p.active ? "checked" : ""} ${ro}> <span>売る</span></label>
       <label class="check"><input type="checkbox" id="pf-public" ${p.public ? "checked" : ""} ${ro}> <span>サイトの一覧に出す（出さなくても、申し込みのリンクを渡した人は買える）</span></label>
@@ -1831,13 +1864,17 @@ function productDetail(id, msg) {
     if ($("pf-period")) body.period = $("pf-period").value;
     if ($("pf-days")) body.grant_days = num($("pf-days").value);
     if (($("pf-thanks").value || null) !== (p.thanks_page_slug || null)) body.thanks_page_slug = $("pf-thanks").value || null;
+    // 便 12c
+    if ($("pf-inst")) body.installments = num($("pf-inst").value);
+    if ($("pf-card") && $("pf-card").checked !== !!p.card_installments) body.card_installments = $("pf-card").checked;
+    if ($("pf-fsub")) { body.failed_mail_subject = $("pf-fsub").value; body.failed_mail_body = $("pf-fbody").value; }
     $("pf-status").textContent = "保存しています…";
     const r = await api("/api/admin/products", { method: "POST", token, body });
     if (!r.ok) { $("pf-status").textContent = "保存できませんでした（" + (r.error || r.status) + "）"; return; }
     await loadProducts(p.id, r.changed && Object.keys(r.changed).length ? "保存しました（変えたところ：" + Object.keys(r.changed).map((k) => PF_LABEL[k] || k).join("・") + "）" : "変わったところはありません");
   });
 }
-const PF_LABEL = { name: "名前", amount: "金額", period: "周期", grant_days: "権利の日数", sales_limit: "販売数の上限", affiliate_rate: "紹介の報酬", grants: "権利の印", description: "説明", deny_multiple: "重ねて買えない", active: "売る", public: "サイトに出す", thanks_page_slug: "決済のあとに移るページ" };
+const PF_LABEL = { name: "名前", amount: "金額", period: "周期", grant_days: "権利の日数", sales_limit: "販売数の上限", affiliate_rate: "紹介の報酬", grants: "権利の印", description: "説明", deny_multiple: "重ねて買えない", active: "売る", public: "サイトに出す", thanks_page_slug: "決済のあとに移るページ", installments: "支払いの回数", card_installments: "カードの分割払い", failed_mail_subject: "失敗のメールの件名", failed_mail_body: "失敗のメールの本文" };
 
 // 便 7a：オプチャの招待リンク。表 b_settings の 1 行を読み、差し替える（AI の set_community_link と同じ処理）
 function communityStatus(r) {

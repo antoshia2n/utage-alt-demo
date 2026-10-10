@@ -76,7 +76,8 @@ async function startProductCheckout({ email, product, onStatus }) {
   const pre = await api("/api/checkout/prepare", { method: "POST", body: { email, product_id: product } });
   if (!pre.ok) throw new Error(PREPARE_ERR[pre.error] || "買えませんでした（" + (pre.error || pre.status) + "）");
   const p = pre.product;
-  const isSub = p.kind === "subscription";
+  // 便 12c：回数を決めた分割（installment）も、UnivaPay では「回数指定の定期課金」なので定期の道を通る
+  const isSub = p.kind === "subscription" || p.kind === "installment";
   await loadWidget();
   return await new Promise((resolve, reject) => {
     let seen = null, settled = false;
@@ -106,14 +107,52 @@ async function startProductCheckout({ email, product, onStatus }) {
       onSuccess: (result) => { finish(result).catch(reject); },
       onError: (err) => { if (!settled) { settled = true; reject(new Error("決済が通りませんでした" + (err && err.message ? "：" + err.message : ""))); } },
     };
-    if (isSub) opts.subscriptionPeriod = p.period;
+    if (isSub) opts.subscriptionPeriod = p.period || "monthly";
+    // 便 12c：合計（1 回あたり × 回数）で作り、1 回あたりの金額を決める。回数が済むと UnivaPay の側で止まる
+    if (p.kind === "installment") {
+      opts.amount = p.amount * p.installments;
+      opts.subscriptionPlan = "fixed_cycle_amount";
+      opts.subscriptionQty = p.amount;
+    }
     window.UnivapayCheckout.create(opts).open();
   });
+}
+
+// 便 12c：カード会社の分割を選べる決済の枠（ページに埋め込む形）。UnivaPay の決まりで、分割の回数を選ぶ欄は埋め込む形でしか出ない。
+// 回数の選び肢は全部出し、使えるかどうかはお客さんのカード（ブランド）で決まる。返す pay() を押したときに決済する
+export async function mountInlineCard({ container, email, product, onStatus }) {
+  const pre = await api("/api/checkout/prepare", { method: "POST", body: { email, product_id: product } });
+  if (!pre.ok) throw new Error(PREPARE_ERR[pre.error] || "買えませんでした（" + (pre.error || pre.status) + "）");
+  const p = pre.product;
+  container.innerHTML = "";
+  const span = document.createElement("span");
+  const attrs = { "app-id": pre.app_id, checkout: "payment", amount: String(p.amount), currency: p.currency || "jpy", "token-type": "one_time", inline: "true", "allow-card-installments": "true" };
+  for (const [k, v] of Object.entries(attrs)) span.setAttribute("data-" + k, v);
+  container.appendChild(span);
+  await loadWidget();
+  return {
+    product: p,
+    async pay() {
+      const iframe = container.querySelector("iframe");
+      if (!iframe) throw new Error("決済の欄を読み込めませんでした。ページを開き直してください");
+      let data;
+      try { data = await window.UnivapayCheckout.submit(iframe); }
+      catch (err) { throw new Error("決済が通りませんでした" + (err && err.message ? "：" + err.message : "")); }
+      const hidden = [...container.closest("form") ? container.closest("form").querySelectorAll("input[type=hidden]") : []].map((x) => x.value);
+      const id = findId(data, ["chargeId", "charge_id", "id"]) || hidden.find((v) => /^[0-9a-f-]{36}$/i.test(v));
+      onStatus && onStatus("決済を確かめています…");
+      const r = await api("/api/checkout/confirm", { method: "POST", body: { email, product_id: p.id, charge_id: id, raw: data } });
+      if (r.ok) return r;
+      if (r.error === "charge_pending") throw new Error("決済の確認に時間がかかっています。確認できたらメールでお知らせします。");
+      throw new Error("決済を確かめられませんでした（" + (r.error || r.status) + "）");
+    },
+  };
 }
 
 // 値段の見せ方（画面どうしで同じにする）
 export function priceLabel(p) {
   const yen = Number(p.amount).toLocaleString() + " 円";
   if (p.kind === "subscription") return (p.period === "annually" ? "年 " : "月 ") + yen;
-  return yen + (p.grant_days ? "（" + p.grant_days + " 日）" : "");
+  if (p.kind === "installment") return "月 " + yen + " × " + p.installments + " 回（合計 " + (p.amount * p.installments).toLocaleString() + " 円）";
+  return yen + (p.grant_days ? "（" + p.grant_days + " 日）" : "") + (p.card_installments ? "・カードの分割払いを選べます" : "");
 }
