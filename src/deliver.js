@@ -17,6 +17,7 @@
 import { TRIGGERS, ACTIONS, DONE_TYPES, FAIL_TYPES, LABEL_RE, MOVE_DEPTH_MAX } from "./connect.js";
 import { normFieldConds, SLUG_RE, KEY_RE } from "./forms.js";
 import { PIXEL_GIF } from "./mailhtml.js";
+import { isTestPurchase } from "./purchase.js";
 
 const NL = String.fromCharCode(10);
 const QUOTE = String.fromCharCode(34);
@@ -166,7 +167,7 @@ export function makeDeliver(h) {
     if (f.purchased || f.not_purchased) {
       const ev = await db(env, "GET", "events?select=customer_id,payload&type=eq.purchase_completed&limit=10000");
       const bought = new Map();
-      for (const e of ev) { const pid = e.payload && e.payload.product_id; if (!bought.has(e.customer_id)) bought.set(e.customer_id, new Set()); bought.get(e.customer_id).add(pid); }
+      for (const e of ev) { if (isTestPurchase(e.payload)) continue; const pid = e.payload && e.payload.product_id; if (!bought.has(e.customer_id)) bought.set(e.customer_id, new Set()); bought.get(e.customer_id).add(pid); }
       if (f.purchased) list = list.filter((p) => f.purchased.some((x) => bought.get(p.id) && bought.get(p.id).has(x)));
       if (f.not_purchased) list = list.filter((p) => !f.not_purchased.some((x) => bought.get(p.id) && bought.get(p.id).has(x)));
     }

@@ -6,6 +6,8 @@
 // ラベルは出来事の記録から毎回計算する（流入元・会員かどうか・買った商品・押したリンク・参加した企画・最後に動いた日）。
 // 手で付けるラベルは例外で、出来事 label_added／label_removed に積む（コネクタの「ラベルを付ける」も同じ出来事）。
 
+import { isTestPurchase } from "./purchase.js";
+
 export const TRIGGERS = {
   registered:           { type: "registered",           label: "無料登録した" },
   purchase:             { type: "purchase_completed",   label: "買った" },
@@ -73,7 +75,8 @@ export function autoLabels({ person, events = [], member = false, ownerOf = {}, 
     const p = e.payload || {};
     if (ACTIVE_TYPES.has(e.type)) last = Math.max(last, new Date(e.occurred_at).getTime());
     // 便 8f-1：商品の中の番号ではなく外の名前で出す（統括 2026-10-09 13:18）。名前が引けないときだけ番号
-    if (e.type === "purchase_completed" && p.product_id) { out.add("購入者"); out.add("買った:" + (productLabelName(productNames[p.product_id] || p.product_name) || p.product_id)); }
+    // 便 12e：試しの決済は「購入者」「買った:」に入れない（記録は残る）
+    if (e.type === "purchase_completed" && p.product_id && !isTestPurchase(p)) { out.add("購入者"); out.add("買った:" + (productLabelName(productNames[p.product_id] || p.product_name) || p.product_id)); }
     else if (e.type === "email_clicked") out.add("リンクを押した");
     else if (e.type === "lesson_viewed") out.add("教材を見た");
     else if (e.type === "correction_submitted") out.add("添削を出した");

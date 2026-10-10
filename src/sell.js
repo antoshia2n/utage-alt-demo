@@ -26,6 +26,8 @@ export const FAILED_MAIL = {
 };
 const isRecurring = (p) => p && (p.kind === "subscription" || p.kind === "installment");
 
+import { isTestPurchase } from "./purchase.js";
+
 export function makeSell(h) {
   const { db, addEvent, bin3 } = h;
 
@@ -159,7 +161,8 @@ export function makeSell(h) {
   async function salesCount(env) {
     const rows = await db(env, "GET", "events?select=payload&type=eq.purchase_completed&limit=10000");
     const out = {};
-    for (const r of rows) { const id = r.payload && r.payload.product_id; if (id) out[id] = (out[id] || 0) + 1; }
+    // 便 12e：試しの決済は売れた数（と販売数の上限）に数えない
+    for (const r of rows) { const id = r.payload && r.payload.product_id; if (id && !isTestPurchase(r.payload)) out[id] = (out[id] || 0) + 1; }
     return out;
   }
 
