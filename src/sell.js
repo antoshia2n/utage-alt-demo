@@ -7,6 +7,9 @@
 // デモの置き場（B_STORE が無いとき）には商品の台帳が無いので、便 3 の見本のプラン 1 つだけを商品として見せる。
 // 権利（grants）は B の中の印。便 6b から門番の権利の表（member_entitlement）へも書く（中身は src/bridge.js）。
 // 会員かどうかは、B で買ったものに加えて門番の表の shiarabo_basic（shr-webhook が付ける本番の会員）でも決まる。
+// 便 12c：① カード会社の分割（card_installments の商品だけ、決済の枠をページに埋め込んで回数をお客さんが選ぶ）
+//   ② 回数を決めた分割（kind=installment。1 回あたり amount × installments 回。UnivaPay の「回数指定の定期課金」で作り、
+//      決めた回数が済むと UnivaPay の側で止まる）③ 継続課金の一覧と解約（UnivaPay の DELETE）④ 課金が失敗した人へのメール
 
 const KINDS = ["one_time", "subscription", "installment"];
 const PERIODS = ["monthly", "annually"];
@@ -15,7 +18,13 @@ const SUB_TYPES = ["subscription_started", "subscription_payment", "subscription
 const ID_RE = /^[a-z0-9-]{2,40}$/;
 const UUID_RE = /^[0-9a-f-]{36}$/i;
 const NL = String.fromCharCode(10);
-const EDITABLE = ["name", "amount", "period", "grant_days", "grants", "deny_multiple", "sales_limit", "list_price_of", "description", "active", "public", "sort", "note", "affiliate_rate", "thanks_page_slug"];
+const EDITABLE = ["name", "amount", "period", "installments", "grant_days", "grants", "deny_multiple", "sales_limit", "list_price_of", "description", "active", "public", "sort", "note", "affiliate_rate", "thanks_page_slug", "card_installments", "failed_mail_subject", "failed_mail_body"];
+// 便 12c：課金が失敗したときのメールの最初の文（商品ごとに直せる）。{{name}}・{{product}}・{{amount}}
+export const FAILED_MAIL = {
+  subject: "【シアラボ】お支払いが確認できませんでした：{{product}}",
+  body: "{{name}} さん\n\n{{product}}（{{amount}}）のお支払いが、カード会社で通りませんでした。\nカードの有効期限やご利用枠をご確認のうえ、このメールにご返信ください。\n\nシアラボ",
+};
+const isRecurring = (p) => p && (p.kind === "subscription" || p.kind === "installment");
 
 export function makeSell(h) {
   const { db, addEvent, bin3 } = h;
@@ -46,6 +55,7 @@ export function makeSell(h) {
     return {
       id: p.id, name: p.name, kind: p.kind, amount: p.amount, currency: p.currency, period: p.period,
       grant_days: p.grant_days, description: p.description, list_price_of: p.list_price_of,
+      installments: p.installments || null, card_installments: !!p.card_installments,
     };
   }
 
@@ -53,10 +63,10 @@ export function makeSell(h) {
   async function listForSite(env, id) {
     const list = await allProducts(env);
     if (id) {
-      const p = list.find((x) => x.id === id && x.active && x.kind !== "installment");
+      const p = list.find((x) => x.id === id && x.active);
       return { ok: true, count: p ? 1 : 0, products: p ? [publicShape(p)] : [] };
     }
-    const shown = list.filter((x) => x.active && x.public && x.kind !== "installment").map(publicShape);
+    const shown = list.filter((x) => x.active && x.public).map(publicShape);
     return { ok: true, count: shown.length, products: shown };
   }
 
@@ -108,7 +118,20 @@ export function makeSell(h) {
       if (!PERIODS.includes(period)) return "need_period";
       p.period = period;
     } else if ("period" in p && p.period) return "period_only_for_subscription";
-    if (kind === "installment" && !before) return "installment_not_supported";
+    // 便 12c：回数を決めた分割。毎月 1 回、installments 回（2〜60）
+    if (kind === "installment") {
+      const n = "installments" in p ? Number(p.installments) : before && before.installments;
+      if (!Number.isInteger(n) || n < 2 || n > 60) return "need_installments";
+      p.installments = n;
+    } else if ("installments" in p && p.installments != null) return "installments_only_for_installment";
+    if ("card_installments" in p) {
+      p.card_installments = p.card_installments === true || p.card_installments === "true";
+      if (p.card_installments && kind !== "one_time") return "card_installments_only_for_one_time";
+    }
+    for (const k of ["failed_mail_subject", "failed_mail_body"]) if (k in p) {
+      p[k] = String(p[k] || "").trim() || null;
+      if (p[k] && p[k].length > (k.endsWith("subject") ? 200 : 4000)) return "bad_" + k;
+    }
     if ("grant_days" in p && p.grant_days !== null) { p.grant_days = Number(p.grant_days); if (!Number.isInteger(p.grant_days) || p.grant_days < 1 || p.grant_days > 3650) return "bad_grant_days"; }
     if ("grants" in p) {
       if (!Array.isArray(p.grants) || p.grants.length > 20 || p.grants.some((g) => !/^[a-z0-9_]{2,60}$/.test(String(g)))) return "bad_grants";
@@ -154,7 +177,7 @@ export function makeSell(h) {
     for (const e of evs) {
       const p = e.payload || {};
       if (e.type === "purchase_completed") {
-        if (p.kind === "subscription") continue; // 定期は subscription_* の側で見る
+        if (p.kind === "subscription" || p.kind === "installment") continue; // 定期と回数を決めた分割は subscription_* の側で見る
         const active = !p.grant_until || new Date(p.grant_until).getTime() > Date.now();
         items.push({ product_id: p.product_id, name: (pmap[p.product_id] || {}).name || p.product_name || p.product_id, kind: p.kind,
           status: active ? "active" : "expired", since: e.occurred_at, until: p.grant_until || null, grants: p.grants || [], amount: p.amount });
@@ -164,13 +187,13 @@ export function makeSell(h) {
       if (!sid) continue;
       if (!subs.has(sid)) subs.set(sid, { since: null, product_id: null, last: null, amount: null });
       const s = subs.get(sid);
-      if (e.type === "subscription_started") { s.since = s.since || e.occurred_at; s.product_id = p.product_id || s.product_id; s.amount = p.amount ?? s.amount; }
+      if (e.type === "subscription_started") { s.since = s.since || e.occurred_at; s.product_id = p.product_id || s.product_id; s.amount = p.amount ?? s.amount; s.installments = p.installments || null; }
       s.last = e;
     }
     for (const [sid, s] of subs) {
       const prod = s.product_id ? pmap[s.product_id] : null;
       items.push({
-        product_id: s.product_id, subscription_id: sid, kind: "subscription",
+        product_id: s.product_id, subscription_id: sid, kind: s.installments ? "installment" : "subscription",
         name: prod ? prod.name : (s.product_id ? s.product_id : bin3.PLAN.name),
         status: SUB_ACTIVE.has(s.last.type) ? "active" : s.last.type.replace("subscription_", ""),
         since: s.since, until: null, grants: prod ? prod.grants : [], amount: s.amount, last_event_at: s.last.occurred_at,
@@ -178,7 +201,7 @@ export function makeSell(h) {
     }
     // 会員＝続いている定期が 1 つでもある、または期限付き・権利付きの単発が生きている
     const live = items.filter((x) => x.status === "active");
-    const memberItem = live.find((x) => x.kind === "subscription" || x.until || (x.grants && x.grants.length));
+    const memberItem = live.find((x) => x.kind === "subscription" || x.kind === "installment" || x.until || (x.grants && x.grants.length));
     const lastSub = [...subs.values()].pop();
     return {
       member: !!memberItem,
@@ -227,7 +250,6 @@ export function makeSell(h) {
   // ---------- 買う前の確かめ（窓を開く前） ----------
   async function canBuy(env, customer, p) {
     if (!p || !p.active) return "not_for_sale";
-    if (p.kind === "installment") return "installment_not_supported";
     if (p.sales_limit) {
       const sold = (await salesCount(env))[p.id] || 0;
       if (sold >= p.sales_limit) return "sold_out";
@@ -279,10 +301,11 @@ export function makeSell(h) {
       grants: p.grants || [], grant_until: grantUntil(p, now), list_price_of: p.list_price_of || null, via, ...extra,
     };
     const ev = await addEvent(env, customer.id, "purchase_completed", payload, via === "webhook" ? "webhook" : "site");
-    if (p.kind === "subscription") {
+    if (isRecurring(p)) {
       await addEvent(env, customer.id, "subscription_started", {
         subscription_id: extra.subscription_id, status: extra.status || null, amount: p.amount, currency: p.currency,
-        period: p.period, product_id: p.id, mode: extra.mode || null, via,
+        period: p.period || "monthly", product_id: p.id, mode: extra.mode || null, via,
+        ...(p.kind === "installment" ? { installments: p.installments } : {}),
       }, via === "webhook" ? "webhook" : "site");
     }
     await syncGrants(env, customer.id);
@@ -310,8 +333,8 @@ export function makeSell(h) {
     const [customer] = await db(env, "GET", `customers?select=id,email,name&email=eq.${encodeURIComponent(mail)}`);
     if (!customer) return { ok: false, error: "not_registered" };
     const p = await product(env, product_id);
-    if (!p || !p.active || p.kind === "installment") return { ok: false, error: "not_for_sale" };
-    const isSub = p.kind === "subscription";
+    if (!p || !p.active) return { ok: false, error: "not_for_sale" };
+    const isSub = isRecurring(p);
     const id = String((isSub ? subscription_id : charge_id) || "").trim();
     if (!UUID_RE.test(id)) return { ok: false, error: isSub ? "bad_subscription_id" : "bad_charge_id" };
     const key = isSub ? "subscription_id" : "charge_id";
@@ -353,9 +376,11 @@ export function makeSell(h) {
     // 定期は amount・currency、単発（charge）は requested_amount・requested_currency（通ったあとは charged_*）で返ってくる
     const amount = Number(d.amount ?? d.requested_amount ?? d.charged_amount);
     const currency = d.currency || d.requested_currency || d.charged_currency || "";
-    if (amount !== p.amount) return { amount: { expected: p.amount, got: amount } };
+    // 便 12c：回数を決めた分割は、合計（1 回あたり × 回数）で作るので、合計か 1 回あたりのどちらかで合えばよい
+    const okAmounts = p.kind === "installment" ? [p.amount, p.amount * p.installments] : [p.amount];
+    if (!okAmounts.includes(amount)) return { amount: { expected: okAmounts, got: amount } };
     if (String(currency).toLowerCase() !== String(p.currency || "jpy").toLowerCase()) return { currency: { expected: p.currency, got: currency } };
-    if (isSub && d.period && d.period !== p.period) return { period: { expected: p.period, got: d.period } };
+    if (isSub && d.period && d.period !== (p.period || "monthly")) return { period: { expected: p.period || "monthly", got: d.period } };
     const meta = d.metadata || {};
     if (meta.product_id && meta.product_id !== p.id) return { product_id: { expected: p.id, got: meta.product_id } };
     return null;
@@ -364,6 +389,7 @@ export function makeSell(h) {
   function priceText(p) {
     const yen = Number(p.amount).toLocaleString() + " 円";
     if (p.kind === "subscription") return (p.period === "annually" ? "年 " : "月 ") + yen;
+    if (p.kind === "installment") return `月 ${yen} × ${p.installments} 回（合計 ${(p.amount * p.installments).toLocaleString()} 円）`;
     return yen + (p.grant_days ? `・${p.grant_days} 日` : "");
   }
 
@@ -385,6 +411,88 @@ export function makeSell(h) {
     return { ok: true, recorded: true, type: "purchase_completed" };
   }
 
-  const api = { allProducts, product, listForSite, listProducts, setProduct, entitlement, entitlementMap, syncGrants, prepare, confirm, onCharge, priceText, onPurchased: null };
+  // ---------- 便 12c：継続課金の一覧・解約・失敗のメール ----------
+  const STATUS_LABEL = { active: "続いている", failed: "失敗", canceled: "解約", suspended: "止まった", completed: "回数どおり済み" };
+
+  // 定期課金の番号ごとに、誰の・何の・いまの状態・入金の回数をまとめる（出来事から計算する）
+  async function subscriptions(env) {
+    const evs = await db(env, "GET", `events?select=id,customer_id,type,payload,occurred_at&type=in.(${SUB_TYPES.join(",")})&order=id.asc&limit=20000`);
+    const pmap = Object.fromEntries((await allProducts(env)).map((p) => [p.id, p]));
+    const subs = new Map();
+    for (const e of evs) {
+      const p = e.payload || {};
+      const sid = p.subscription_id;
+      if (!sid) continue;
+      if (!subs.has(sid)) subs.set(sid, { subscription_id: sid, customer_id: e.customer_id, product_id: null, amount: null, installments: null, since: null, payments: 0, failures: 0, last_type: null, last_at: null, mode: null });
+      const s = subs.get(sid);
+      if (e.type === "subscription_started") { s.since = s.since || e.occurred_at; s.product_id = p.product_id || s.product_id; s.amount = p.amount ?? s.amount; s.installments = p.installments || s.installments; s.mode = p.mode || s.mode; s.payments += 1; }
+      // 1 回目の入金は始まりの記録で数える。UnivaPay が 1 回目にも入金の知らせを送ってきたとき（始まりから 10 分のうち）は数えない
+      if (e.type === "subscription_payment" && !(s.since && Date.parse(e.occurred_at) - Date.parse(s.since) < 600e3)) s.payments += 1;
+      if (e.type === "subscription_failed") s.failures += 1;
+      s.last_type = e.type; s.last_at = e.occurred_at;
+    }
+    return [...subs.values()].map((s) => {
+      const prod = s.product_id ? pmap[s.product_id] : null;
+      let status = SUB_ACTIVE.has(s.last_type) ? "active" : s.last_type.replace("subscription_", "");
+      if (s.installments && s.payments >= s.installments && status === "active") status = "completed";
+      return { ...s, product_name: prod ? prod.name : s.product_id || bin3.PLAN.name, kind: s.installments ? "installment" : "subscription", status, status_label: STATUS_LABEL[status] || status };
+    });
+  }
+
+  async function listSubscriptions(env, { status } = {}) {
+    if (!env.B_STORE) return { ok: true, store: "demo", count: 0, subscriptions: [] };
+    let list = await subscriptions(env);
+    if (status) list = list.filter((s) => s.status === status);
+    const ids = [...new Set(list.map((s) => s.customer_id))];
+    const people = ids.length ? new Map((await db(env, "GET", `customers?select=id,name,email&id=in.(${ids.join(",")})`)).map((x) => [x.id, x])) : new Map();
+    list = list.map((s) => ({ ...s, name: (people.get(s.customer_id) || {}).name || "", email: (people.get(s.customer_id) || {}).email || "" }))
+      .sort((a, b) => String(b.last_at).localeCompare(String(a.last_at)));
+    const counts = {};
+    for (const s of list) counts[s.status] = (counts[s.status] || 0) + 1;
+    return { ok: true, store: "production", count: list.length, counts, subscriptions: list.slice(0, 500) };
+  }
+
+  // 解約：UnivaPay の定期課金を消す（永久停止。戻せない）。消えたら出来事に積んで権利を合わせ直す
+  async function cancelSubscription(env, { subscription_id, reason } = {}, by = "admin") {
+    if (!env.B_STORE) return { ok: false, error: "demo_store" };
+    const sid = String(subscription_id || "");
+    if (!UUID_RE.test(sid)) return { ok: false, error: "bad_subscription_id" };
+    const s = (await subscriptions(env)).find((x) => x.subscription_id === sid);
+    if (!s) return { ok: false, error: "not_found" };
+    if (s.status === "canceled") return { ok: true, already: true, subscription: s };
+    const st = bin3.univapayState(env);
+    if (!st.configured || !st.store_id) return { ok: false, error: "univapay_not_configured" };
+    const r = await fetch(`https://api.univapay.com/stores/${st.store_id}/subscriptions/${sid}`, {
+      method: "DELETE", headers: { authorization: `Bearer ${env.UNIVAPAY_APP_SECRET}.${env.UNIVAPAY_APP_TOKEN}` },
+    });
+    const text = await r.text().catch(() => "");
+    if (h.logInbound) await h.logInbound(env, "univapay_cancel", { subscription_id: sid, by }, { ok: r.ok, status: r.status, body: text.slice(0, 300) }, r.status);
+    if (!r.ok) return { ok: false, error: "univapay_cancel_failed", status: r.status, detail: text.slice(0, 200) };
+    await addEvent(env, s.customer_id, "subscription_canceled", { subscription_id: sid, status: "canceled", via: "admin", by: String(by).slice(0, 120), reason: String(reason || "").slice(0, 200) }, by === "mcp" ? "mcp" : "admin");
+    await syncGrants(env, s.customer_id);
+    return { ok: true, canceled: true, subscription: { ...s, status: "canceled", status_label: STATUS_LABEL.canceled } };
+  }
+
+  // UnivaPay の知らせで課金が失敗したとき（bin3 から呼ばれる）。同じ番号の失敗には 1 日 1 通まで
+  async function onSubscriptionFailed(env, customerId, subscriptionId) {
+    const s = (await subscriptions(env)).find((x) => x.subscription_id === subscriptionId);
+    const p = s && s.product_id ? await product(env, s.product_id) : null;
+    const [customer] = await db(env, "GET", `customers?select=id,email,name&id=eq.${customerId}`);
+    if (!customer) return { mail: "no_customer" };
+    const since = new Date(Date.now() - 864e5).toISOString();
+    const sent = await db(env, "GET", `events?select=id&customer_id=eq.${customerId}&type=eq.email_sent&payload->>kind=eq.billing_failed&payload->>subscription_id=eq.${subscriptionId}&occurred_at=gte.${since}&limit=1`).catch(() => []);
+    if (sent.length) return { mail: "already_today" };
+    const map = { name: customer.name || "", product: p ? p.name : (s ? s.product_name : "ご契約"), amount: p ? priceText(p) : "" };
+    const fill = (t) => String(t || "").replace(/\{\{(\w+)\}\}/g, (all, k) => (k in map ? map[k] : all));
+    const r = await bin3.sendMail(env, customer, {
+      kind: "billing_failed",
+      subject: fill((p && p.failed_mail_subject) || FAILED_MAIL.subject),
+      text: fill((p && p.failed_mail_body) || FAILED_MAIL.body),
+      extra: { subscription_id: subscriptionId, product_id: p ? p.id : null },
+    });
+    return { mail: r.result };
+  }
+
+  const api = { allProducts, product, listForSite, listProducts, setProduct, entitlement, entitlementMap, syncGrants, prepare, confirm, onCharge, priceText, listSubscriptions, cancelSubscription, onSubscriptionFailed, onPurchased: null };
   return api;
 }

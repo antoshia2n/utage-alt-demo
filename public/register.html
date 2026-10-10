@@ -32,6 +32,7 @@
       <h2 style="margin:0">続けて申し込む</h2>
       <p class="note" style="margin:0" id="join-plan"></p>
       <p class="note hidden" style="margin:0" id="test-note">いまは試しの決済です（本当の請求はされません）。カード番号は 4000 0200 0000 0000、期限は未来の月、セキュリティコードは 3 桁なら何でも通ります。</p>
+      <form id="card-form" class="hidden" onsubmit="return false"><div id="card-inline" style="min-height:200px"></div></form>
       <button class="btn block" id="pay" type="button">入会する</button>
       <div id="paymsg" class="msg hidden" role="status"></div>
     </section>
@@ -72,11 +73,19 @@
     // B の便 7c-1：試しの決済のときだけ、試しのカードの案内を出す
     $("test-note").classList.toggle("hidden", cfg.univapayMode !== "test");
     $("join").classList.remove("hidden");
+    // 便 12c：カードの分割を選べる商品は、決済の欄をこの画面に埋め込み、回数をお客さんが選ぶ
+    let inline = null;
+    if (product && product.card_installments) {
+      $("card-form").classList.remove("hidden");
+      try { const { mountInlineCard } = await import("/js/pay.js"); inline = await mountInlineCard({ container: $("card-inline"), email, product: product.id, onStatus: (t) => payShow(t, true) }); }
+      catch (err) { payShow(err.message, false); return; }
+      $("pay").textContent = "この内容で支払う";
+    }
     $("pay").onclick = async () => {
       $("pay").disabled = true;
       try {
         const { startCheckout } = await import("/js/pay.js");
-        const res = await startCheckout({ email, product: product ? product.id : null, onStatus: (t) => payShow(t, true) });
+        const res = inline ? await inline.pay() : await startCheckout({ email, product: product ? product.id : null, onStatus: (t) => payShow(t, true) });
         // 便 12b：商品に決済のあとのページ（サンクス）が結んであれば、そこへ移る
         if (res && res.thanks_url && /^https:[/][/]/.test(res.thanks_url)) { location.href = res.thanks_url; return; }
         payShow("お申し込みを受け付けました。届いたメールのリンクからログインすると、教材と添削ルームが使えます。", true);

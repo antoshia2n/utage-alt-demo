@@ -190,7 +190,7 @@ export function makeBin3(h) {
           }, "webhook");
           result = { ok: true, recorded: true, type: map[event] };
           // 便 6b：定期が止まった・戻ったら、門番の表の B の権利を合わせ直す
-          if (h.onSubEvent) result.grants = await h.onSubEvent(env, customerId);
+          if (h.onSubEvent) result.grants = await h.onSubEvent(env, customerId, map[event], subId);
         } else result = { ok: true, recorded: false, duplicate: true };
       } else result = { ok: true, recorded: false, reason: "unknown_subscription" };
     } else result = { ok: true, recorded: false, reason: "not_tracked" };

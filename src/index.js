@@ -34,6 +34,8 @@
 //   開催の何分前の知らせ（定時の処理）・サンクスページへの移動が付く。申込者には自動のラベル「セミナー:題名」
 // B の便 12b：売るページ。商品に「決済のあとに移るページ」（b_products.thanks_page_slug）を持たせ、決済が通ったらそこへ移す。
 //   売るページ（目的 sale）と移る先のページはファネル構築のオファーの段に置く
+// B の便 12c：カード会社の分割（単発の商品で回数をお客さんが選ぶ・決済の枠を埋め込む形）、回数を決めた分割（UnivaPay の回数指定の定期課金）、
+//   継続課金の一覧と解約（UnivaPay の DELETE）、課金が失敗した人へのメール（kind=billing_failed）
 // B の便 13b：個別相談の予約。予約の種類は b_booking_types、予約は今までどおり出来事 consult_booked。中身は src/booking.js。
 //   空き時間は Naoki の Google カレンダーの予定を避けて出す。窓口はページの中の印 data-lab-part="booking:slug"（lp の住所・ログイン不要）
 
@@ -59,7 +61,7 @@ import { makeSeminars } from "./seminars.js";
 import { makeBooking } from "./booking.js";
 import { makePages, EMBED_JS, personToken, PURPOSES, ROUTE_RE as ROUTE_OK } from "./pages.js";
 
-const VERSION = "0.31.0-b12b";
+const VERSION = "0.32.0-b12c";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -110,7 +112,12 @@ export default {
 
 const changes = makeChanges({ db, logInbound });
 const mailcfg = makeMailCfg({ db, logInbound, changes });
-const bin3 = makeBin3({ db, addEvent, logInbound, json, mailcfg, onCharge: (env, event, data) => sell.onCharge(env, event, data), onSubEvent: (env, id) => sell.syncGrants(env, id) });
+const bin3 = makeBin3({ db, addEvent, logInbound, json, mailcfg, onCharge: (env, event, data) => sell.onCharge(env, event, data), onSubEvent: async (env, id, type, subId) => {
+  const g = (await sell.syncGrants(env, id)) || {};
+  // 便 12c：課金が失敗したら、その人へメール（1 日 1 通まで）
+  if (type === "subscription_failed") { try { g.failed_mail = (await sell.onSubscriptionFailed(env, id, subId)).mail; } catch (e) { g.failed_mail = "error"; } }
+  return g;
+} });
 const bin4 = makeBin4({ db, addEvent, bin3 });
 const guard = makeGuard({ db, logInbound });
 const explainApprovals = makeExplain({ db });
@@ -1244,6 +1251,13 @@ async function handleApi(request, env, url) {
       const r = await sell.setProduct(env, body, a.email);
       return json(r, r.ok === false ? 400 : 200);
     }
+    // 便 12c：継続課金の一覧と解約（シアニン用の画面からは承認なし。AI からは承認が要る）
+    if (path === "/api/admin/subscriptions" && method === "GET") return json(await sell.listSubscriptions(env, { status: url.searchParams.get("status") || "" }));
+    if (path === "/api/admin/subscriptions/cancel" && method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      const r = await sell.cancelSubscription(env, body, a.email);
+      return json(r, r.ok ? 200 : 400);
+    }
     if (path === "/api/admin/image" && method === "GET") {
       const key = url.searchParams.get("key") || "";
       if (!imageOwner(key)) return json({ ok: false, error: "not_found" }, 404);
@@ -1580,21 +1594,38 @@ const TOOLS = [
     name: "set_product",
     screen: "products",
     say: "商品の値段や、売る・売らないを変える",
-    description: "商品を 1 つ変える、または足す。承認が要る道具：呼ぶと承認待ちになり approval_url が返る。変えられる欄：name・amount（円）・period（monthly／annually・定期だけ）・grant_days（単発の権利の日数）・grants（権利の印の配列）・deny_multiple・sales_limit・list_price_of・description・active（売る）・public（サイトに出す）・sort・note・affiliate_rate（紹介の報酬の率 %・0〜100 の整数・null で払わない）・thanks_page_slug（決済のあとに移るページの住所の名前・公開中のときだけ移る・null で移さない）。新しく足すときは id・kind・name・amount が要る（分割 installment は足せない）。",
+    description: "商品を 1 つ変える、または足す。承認が要る道具：呼ぶと承認待ちになり approval_url が返る。変えられる欄：name・amount（円）・period（monthly／annually・定期だけ）・grant_days（単発の権利の日数）・grants（権利の印の配列）・deny_multiple・sales_limit・list_price_of・description・active（売る）・public（サイトに出す）・sort・note・affiliate_rate（紹介の報酬の率 %・0〜100 の整数・null で払わない）・thanks_page_slug（決済のあとに移るページの住所の名前・公開中のときだけ移る・null で移さない）・installments（回数を決めた分割の回数 2〜60。kind=installment だけ。amount は 1 回あたり・毎月）・card_installments（単発の商品で、カード会社の分割払いをお客さんが選べるようにする）・failed_mail_subject／failed_mail_body（定期と分割で課金が失敗したときのメール。{{name}}・{{product}}・{{amount}}。空なら最初の文）。新しく足すときは id・kind・name・amount が要る（installment は installments も）。",
     inputSchema: {
       type: "object",
       properties: {
         id: { type: "string", description: "商品の id（英小文字・数字・ハイフン）" },
-        kind: { type: "string", enum: ["one_time", "subscription"], description: "新しく足すときだけ" },
+        kind: { type: "string", enum: ["one_time", "subscription", "installment"], description: "新しく足すときだけ。installment は回数を決めた分割（毎月 amount 円 × installments 回）" },
         name: { type: "string" }, amount: { type: "integer" }, period: { type: "string", enum: ["monthly", "annually"] },
         grant_days: { type: ["integer", "null"] }, grants: { type: "array", items: { type: "string" } },
         deny_multiple: { type: "boolean" }, sales_limit: { type: ["integer", "null"] }, list_price_of: { type: ["string", "null"] },
         description: { type: "string" }, active: { type: "boolean" }, public: { type: "boolean" }, sort: { type: "integer" }, note: { type: "string" },
         affiliate_rate: { type: ["integer", "null"], description: "紹介の報酬の率（%）。null で払わない" },
         thanks_page_slug: { type: ["string", "null"], description: "決済のあとに移るページ（get_page の slug）。null で移さない" },
+        installments: { type: ["integer", "null"], description: "回数を決めた分割の回数（2〜60）" },
+        card_installments: { type: "boolean", description: "カード会社の分割払いを選べるようにする（単発だけ）" },
+        failed_mail_subject: { type: ["string", "null"] }, failed_mail_body: { type: ["string", "null"] },
       },
       required: ["id"],
     },
+  },
+  {
+    name: "list_subscriptions",
+    screen: "products",
+    say: "継続課金と分割の支払いの一覧を見る",
+    description: "定期課金と回数を決めた分割を、契約（UnivaPay の定期課金の番号）ごとに返す。誰の（名前・メール）・商品・状態 status（active 続いている／failed 失敗／canceled 解約／suspended 止まった／completed 回数どおり済み）・入金の回数 payments（分割は installments 回のうち）・失敗の回数・最後の動き・試しか mode。status で絞れる。件数は counts。",
+    inputSchema: { type: "object", properties: { status: { type: "string", enum: ["active", "failed", "canceled", "suspended", "completed"] } } },
+  },
+  {
+    name: "cancel_subscription",
+    screen: "products",
+    say: "継続課金を解約する",
+    description: "定期課金か回数を決めた分割を 1 つ解約する。承認が要る道具。UnivaPay の課金を永久に止め（戻せない）、出来事 subscription_canceled を積み、会員の権利を合わせ直す。subscription_id は list_subscriptions の番号。reason に理由を一言。",
+    inputSchema: { type: "object", properties: { subscription_id: { type: "string" }, reason: { type: "string" } }, required: ["subscription_id"] },
   },
   {
     name: "preview_audience",
@@ -1962,6 +1993,9 @@ async function runTool(env, name, args) {
   if (name === "get_approval") return await guard.getApproval(env, args);
   if (name === "list_permissions") return await guard.listPermissions(env);
   if (name === "list_products") return await sell.listProducts(env, args);
+  // 便 12c
+  if (name === "list_subscriptions") return await sell.listSubscriptions(env, args);
+  if (name === "cancel_subscription") return await sell.cancelSubscription(env, args, "mcp");
   if (name === "set_product") return await sell.setProduct(env, args, "mcp");
   if (name === "preview_audience") return await deliver.previewAudience(env, args);
   if (name === "list_broadcasts") return await deliver.listBroadcasts(env, args);
