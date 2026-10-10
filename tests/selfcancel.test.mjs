@@ -92,6 +92,22 @@ test("本人が止める：UnivaPay の課金は今止め、払った期間の�
   assert.equal(again.already, true, "2 回押しても UnivaPay へは 1 回");
 });
 
+test("本人が止めた直後に UnivaPay の「止まった」の知らせが続いても、期限まで会員のまま（10/11 の通しで見つけた）", async () => {
+  const { st, sell } = setup();
+  const keep = new Date(Date.now() + 20 * DAY).toISOString();
+  st.table("events").push(
+    { id: 9, customer_id: C1, type: "subscription_canceled", payload: { subscription_id: SUB, via: "self", keep_until: keep }, occurred_at: ago(0.001) },
+    { id: 10, customer_id: C1, type: "subscription_canceled", payload: { subscription_id: SUB, status: "canceled", webhook_key: "x" }, occurred_at: new Date().toISOString() },
+  );
+  const item = (await sell.entitlement(env, C1)).items.find((x) => x.subscription_id === SUB);
+  assert.equal(item.status, "active");
+  assert.equal(item.until, keep);
+  const s = (await sell.listSubscriptions(env, {})).subscriptions.find((x) => x.subscription_id === SUB);
+  assert.equal(s.status, "ending");
+  assert.equal(s.keep_until, keep);
+  assert.equal((await sell.cancelOwnSubscription(env, { id: C1 }, { subscription_id: SUB })).already, true);
+});
+
 test("期限を過ぎたら会員ではなくなる", async () => {
   const { st, sell } = setup();
   st.table("events").push({ id: 9, customer_id: C1, type: "subscription_canceled", payload: { subscription_id: SUB, via: "self", keep_until: ago(1) }, occurred_at: ago(30) });
