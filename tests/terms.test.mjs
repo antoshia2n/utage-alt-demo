@@ -21,3 +21,11 @@ test("下の欄に法定の頁が 3 つそろう", () => {
     }
   }
 });
+
+test("シアニン用の画面：入れないアドレスでログインしたままなら、ログアウトしてログインの欄を出す", () => {
+  const a = read("public/js/admin.js");
+  const i = a.indexOf("if (!who.ok) {");
+  const block = a.slice(i, a.indexOf("show(\"console\")", i));
+  assert.ok(block.includes("await sb.auth.signOut()"), "ログアウトしていない");
+  assert.ok(block.includes('show("step-login")'), "ログインの欄を出していない");
+});
