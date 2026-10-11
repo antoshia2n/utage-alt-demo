@@ -55,7 +55,7 @@ export async function startCheckout({ email, product, onStatus }) {
       currency: plan.currency,
       tokenType: "subscription",
       subscriptionPeriod: plan.period,
-      metadata: { email },
+      metadata: { email, source: "lab" },
       onSuccess: (result) => { finish(result).catch(reject); },
       onError: (err) => { if (!settled) { settled = true; reject(new Error("決済が通りませんでした" + (err && err.message ? "：" + err.message : ""))); } },
     });
@@ -103,7 +103,7 @@ async function startProductCheckout({ email, product, onStatus }) {
       amount: p.amount,
       currency: p.currency || "jpy",
       tokenType: isSub ? "subscription" : "one_time",
-      metadata: { email, product_id: p.id },
+      metadata: { email, product_id: p.id, source: "lab" },
       onSuccess: (result) => { finish(result).catch(reject); },
       onError: (err) => { if (!settled) { settled = true; reject(new Error("決済が通りませんでした" + (err && err.message ? "：" + err.message : ""))); } },
     };

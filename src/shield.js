@@ -8,6 +8,8 @@
 // 止めたときは受け付けず、メールも送らない。止めた理由は受け口の記録（channel=shield）に残す（接続元の番号は残さない）
 
 export const SITEVERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
+// 同じ接続元の回数の上限（wrangler.jsonc の ratelimits と同じ値。Worker からは結びの値を読めないので、ここに写して試験で突き合わせる）
+export const IP_LIMITS = { PUBLIC_LIMIT: { limit: 10, period: 60 }, HIT_LIMIT: { limit: 60, period: 60 } };
 export const EMAIL_LIMITS = [{ minutes: 10, max: 3 }, { minutes: 24 * 60, max: 10 }];
 // 1 回の受付で必ず 1 つ積まれる出来事（フォーム・予約・登録・LINE を結ぶは、どれも registerPerson を通る）
 export const ENTRY_EVENTS = ["registered", "register_again"];

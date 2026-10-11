@@ -64,9 +64,9 @@ import { makeLessonQA, openLessonQuestions, QUESTION_MAX } from "./lessonqa.js";
 import { roomNotices } from "./roomview.js";
 import { makeLine } from "./line.js";
 import { makeUtageImport } from "./utageimport.js";
-import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail } from "./shield.js";
+import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.44.2-br3c";
+const VERSION = "0.45.0-blab";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -1506,6 +1506,13 @@ const TOOLS = [
     inputSchema: { type: "object", properties: { referrer_id: { type: "string" }, amount: { type: "integer" }, note: { type: "string" } }, required: ["referrer_id", "amount"] },
   },
   {
+    name: "get_health",
+    screen: "ai_only",
+    say: "版と入口の守りの設定を見る",
+    description: "B の版・置き場（production／demo）・ロボット判定の入切（両方の鍵がそろったときだけ on）・同じ接続元の回数の上限（60 秒あたり）・同じ住所の受付の上限・決済の mode を返す。/api/health の一部と同じ中身で、鍵の値そのものは返さない。",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
     name: "get_push_status",
     screen: "settings",
     say: "スマホの知らせを受け取る端末を見る",
@@ -2136,6 +2143,15 @@ async function runTool(env, name, args) {
   }
   if (name === "list_referrals") return await refer.list(env, { referrer_id: args.referrer_id, origin: env.PUBLIC_ORIGIN || "https://lab.shia2n.jp" });
   if (name === "mark_referral_paid") return await refer.markPaid(env, args, "mcp");
+  if (name === "get_health") {
+    const pay = bin3.univapayState(env);
+    return {
+      ok: true, version: VERSION, store: env.B_STORE ? "production" : "demo",
+      shield: { bot_check: botCheckOn(env), site_key: !!env.TURNSTILE_SITE_KEY, secret_key: !!env.TURNSTILE_SECRET_KEY, ip_limit: !!(env.PUBLIC_LIMIT && env.HIT_LIMIT) },
+      limits: { ip: IP_LIMITS, email: EMAIL_LIMITS },
+      univapay: { configured: pay.configured, mode: pay.mode },
+    };
+  }
   if (name === "get_push_status") { const r = await push.status(env); if (r.ok) delete r.public_key; return r; }
   if (name === "list_lessons") return await learn.listLessons(env, args);
   if (name === "get_meetings") return await bridge.meetings(env, args);
