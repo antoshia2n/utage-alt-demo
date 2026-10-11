@@ -56,7 +56,14 @@ async function openConsole() {
   token = data.session.access_token;
   const who = await api("/api/admin/whoami", { token });
   if (!who.ok) {
-    return fail(who.error === "not_admin" ? "このメールアドレスはシアニン用の画面に入れません。" : "入れませんでした（" + (who.error || who.status) + "）");
+    // 2026-10-11：同じ住所の生徒の画面（/app）でログインしたままだと、ここで止まってログインの欄が出なかった。
+    // 入れないときはログアウトしてログインの欄を出す（生徒の画面のログインも外れる）
+    const em = (data.session.user && data.session.user.email) || "";
+    await sb.auth.signOut();
+    show("step-login");
+    return fail(who.error === "not_admin"
+      ? (em ? em + " は" : "このメールアドレスは") + "シアニン用の画面に入れません。ログアウトしたので、シアニン用のアドレスでログイン用のリンクを送ってください。"
+      : "入れませんでした（" + (who.error || who.status) + "）。ログアウトしたので、もう一度ログイン用のリンクを送ってください。");
   }
   show("console");
   $("who-admin").textContent = who.email;
