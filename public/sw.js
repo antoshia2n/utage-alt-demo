@@ -16,12 +16,14 @@ self.addEventListener("fetch", (e) => {
   }).catch(() => caches.match(e.request).then((m) => m || caches.match("/app"))));
 });
 
+// マーケくん便 1：シアニン用の画面（/admin）への知らせはマーケくんの絵、生徒への知らせはシアラボの絵
+const noticeIcon = (u) => (typeof u === "string" && u.startsWith("/admin") ? "/icons/marke/apple-touch-icon.png" : "/icons/icon-192.png");
 // 便 8f-3：スマホへの通知（Web Push）。中身は Worker が暗号にして送る { title, body, url, tag }
 self.addEventListener("push", (e) => {
   let d = {};
   try { d = e.data ? e.data.json() : {}; } catch (_) { d = { body: e.data ? e.data.text() : "" }; }
-  e.waitUntil(self.registration.showNotification(d.title || "Lab OS", {
-    body: d.body || "", tag: d.tag || undefined, renotify: !!d.tag, icon: "/icons/icon-192.png", badge: "/icons/icon-192.png",
+  e.waitUntil(self.registration.showNotification(d.title || "マーケくん", {
+    body: d.body || "", tag: d.tag || undefined, renotify: !!d.tag, icon: noticeIcon(d.url), badge: noticeIcon(d.url),
     data: { url: typeof d.url === "string" && d.url.startsWith("/") ? d.url : "/admin" },
   }));
 });

@@ -3,22 +3,24 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#1f5c4d">
+<meta name="theme-color" content="#f5f0eb">
 <link rel="manifest" href="/admin.webmanifest">
-<link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<link rel="icon" href="/icons/marke/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/icons/marke/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/icons/marke/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="robots" content="noindex">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=DM+Mono&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono&family=Geist:wght@400;500;600;700;800&family=Noto+Sans+JP:wght@400;500;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/css/style.css">
-<title>Lab OS｜シアラボ</title>
+<link rel="stylesheet" href="/css/marke.css">
+<title>マーケくん｜シアラボ</title>
 </head>
 <body>
 <div id="auth-wrap" class="wrap wide">
   <header class="top">
-    <a class="brand" href="/admin">Lab OS<small>シアニン用</small></a>
+    <a class="brand" href="/admin"><img src="/icons/marke/favicon.svg" alt="" width="24" height="24">マーケくん<small>シアニン用</small></a>
   </header>
   <div id="err" class="msg err hidden" style="margin-bottom:12px"></div>
   <section id="step-login" class="card stack hidden" style="max-width:480px">
@@ -26,9 +28,9 @@
     <div><label for="email">メールアドレス</label><input id="email" type="email" autocomplete="email"></div>
     <button class="btn block" id="send">ログイン用のリンクを送る</button>
     <div id="sent" class="msg ok hidden"></div>
-    <!-- 便 8f-3：ホーム画面に足した Lab OS ではメールのリンクが別のブラウザで開くので、メールの確認コードでも入れる -->
+    <!-- 便 8f-3：ホーム画面に足したマーケくんではメールのリンクが別のブラウザで開くので、メールの確認コードでも入れる -->
     <div id="code-box" class="stack hidden">
-      <div><label for="otp">メールの確認コード（ホーム画面の Lab OS から入るとき）</label><input id="otp" inputmode="numeric" autocomplete="one-time-code" maxlength="10"></div>
+      <div><label for="otp">メールの確認コード（ホーム画面のマーケくんから入るとき）</label><input id="otp" inputmode="numeric" autocomplete="one-time-code" maxlength="10"></div>
       <button class="btn block ghost" id="otp-go">確認コードで入る</button>
     </div>
   </section>
@@ -52,7 +54,7 @@
 
 <section id="console" class="shell hidden">
   <nav class="side" aria-label="メニュー">
-    <a class="side-logo" href="/admin">Lab OS</a>
+    <a class="side-logo" href="/admin"><img src="/icons/marke/favicon.svg" alt="" width="22" height="22">マーケくん</a>
     <!-- 便 17：まとまりごとに開閉できる（開いた・閉じたはこのブラウザに覚える）。いま開いている画面のまとまりは閉じない -->
     <div class="grp-box" data-grp="all">
       <button class="grp" type="button" aria-expanded="true">全体</button>
@@ -135,7 +137,7 @@
 
         <section class="card guide-sec" id="gd-can">
           <h2 class="home-h">できること</h2>
-          <p class="note" style="margin-top:0">メニューはパソコンでは左、スマホでは上に並んでいます。画面ごとに、できることと、AI に頼んだときに承認が要るかを並べています。Naoki が画面で自分で操作するときは、承認は要りません。画面の名前を押すと中が開きます。この一覧は Lab OS が増えるたびに自動で更新されます。</p>
+          <p class="note" style="margin-top:0">メニューはパソコンでは左、スマホでは上に並んでいます。画面ごとに、できることと、AI に頼んだときに承認が要るかを並べています。Naoki が画面で自分で操作するときは、承認は要りません。画面の名前を押すと中が開きます。この一覧はマーケくんが増えるたびに自動で更新されます。</p>
           <div id="gd-list"><p class="note">読み込んでいます…</p></div>
         </section>
 
@@ -311,7 +313,7 @@
     </details>
     <details class="setup card" id="push-box" open><summary>スマホの通知（Naoki への知らせ・生徒からのメッセージ・承認待ち）</summary>
       <div class="stack" style="margin-top:8px">
-        <p class="note" style="margin:0" id="push-howto">知らせを受け取りたい端末でこの画面を開き、「この端末で受け取る」を押して、出てきた確認で「許可」を選ぶ。iPhone はホーム画面に追加した Lab OS から開いたときだけ押せる</p>
+        <p class="note" style="margin:0" id="push-howto">知らせを受け取りたい端末でこの画面を開き、「この端末で受け取る」を押して、出てきた確認で「許可」を選ぶ。iPhone はホーム画面に追加したマーケくんから開いたときだけ押せる</p>
         <div><button class="btn" id="push-on">この端末で受け取る</button> <button class="btn ghost" id="push-test">試しに送る</button> <button class="btn ghost" id="push-off">この端末で受け取らない</button></div>
         <div id="push-status" class="note">読み込んでいます…</div>
       </div>

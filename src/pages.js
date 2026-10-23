@@ -96,13 +96,13 @@ export async function readPreviewToken(env, pageId, tok) {
 export function buildPrompt(req, { origin = "", pageSlug = "", baseVersion = null } = {}) {
   const lines = [];
   if (req.kind === "fix") {
-    lines.push(`シアラボの Lab OS のページ「${req.title}」を直してください（依頼番号 ${req.id}）。`);
+    lines.push(`シアラボのマーケくんのページ「${req.title}」を直してください（依頼番号 ${req.id}）。`);
     lines.push("");
     lines.push(`直すもと：版 ${baseVersion ?? req.base_version ?? "（最新）"}${pageSlug ? `（住所 ${origin}/${pageSlug}）` : ""}`);
     lines.push("直してほしいところ：");
     lines.push(req.comment || "（なし）");
   } else {
-    lines.push(`シアラボの Lab OS で、新しいページを作ってください（依頼番号 ${req.id}）。`);
+    lines.push(`シアラボのマーケくんで、新しいページを作ってください（依頼番号 ${req.id}）。`);
     lines.push("");
     lines.push(`目的：${PURPOSES[req.purpose] || req.purpose}`);
     lines.push(`ページの名前：${req.title}`);
@@ -116,7 +116,7 @@ export function buildPrompt(req, { origin = "", pageSlug = "", baseVersion = nul
   if (req.kind === "fix") lines.push("2. get_page で直すもとの版の HTML を読む");
   else lines.push("2. 参考と材料を読む（UTAGE のページなら UTAGE の道具 funnel_page_get、Google ドライブなら Drive の道具）");
   lines.push(`3. HTML を 1 枚書き、save_page_draft で下書きとして置く（request_id: ${req.id} を必ず渡す）`);
-  lines.push("4. 公開はしない（Naoki が Lab OS で見てから公開する）。置いたら、版の番号と、どう作ったかを 3 行で返す");
+  lines.push("4. 公開はしない（Naoki がマーケくんで見てから公開する）。置いたら、版の番号と、どう作ったかを 3 行で返す");
   return lines.join("\n");
 }
 
@@ -190,7 +190,7 @@ export function makePages(h) {
       embed: "B が公開のときに /_lab/embed.js を自分で足す。HTML に書かない",
       form: `申込の枠：<div data-lab-part="form:住所の名前"></div>。メールアドレス・名前・同意の欄と、フォームの項目が中に入る。答えた人は台帳に入る。公開中のフォームだけ使える`,
       checkout: `決済の枠：<div data-lab-part="checkout:商品の id"></div>。商品の名前・価格と「申し込む」ボタンが入り、押すと ${labOrigin(env)}/register?product= へ移る（決済はそこで行う）`,
-      button: `ボタン：押したことを数えたい a や button に data-lab-button="名前" を付ける（英小文字・数字・ハイフン。例 cta-1）。押した数は Lab OS に出て、コネクタで「押したら〜する」をつなげる`,
+      button: `ボタン：押したことを数えたい a や button に data-lab-button="名前" を付ける（英小文字・数字・ハイフン。例 cta-1）。押した数はマーケくんに出て、コネクタで「押したら〜する」をつなげる`,
       style: "差し込む枠は class lab-form・lab-checkout・lab-btn・lab-input・lab-note を持つ。ページの CSS で上書きして見た目をそろえる",
       legal: `特商法 ${labOrigin(env)}/legal/tokushoho・プライバシーポリシー ${labOrigin(env)}/legal/privacy・利用規約 ${labOrigin(env)}/legal/terms。ページの下に置く`,
       dont: "鍵・会員の個人情報・実在しない実績や数字を書かない。公開はしない（publish_page は Naoki が承認する）",
@@ -275,7 +275,7 @@ export function makePages(h) {
     for (const c of parts.checkouts) if (!ids.has(c)) warnings.push(`商品 ${c} は売っていない（枠は出ない）`);
     for (const b of parts.bad) warnings.push(`読めない印：${b}`);
     if (/<script[^>]+_lab[/]embed[.]js/i.test(html)) warnings.push("/_lab/embed.js は B が足すので書かなくてよい（公開のときに外す）");
-    return { ok: true, page_id: page.id, slug: page.slug, version: next, parts, warnings, preview_in_lab_os: `${labOrigin(env)}/admin#page/${page.id}`, note: "下書きとして置いた。公開は Naoki が Lab OS で行う" };
+    return { ok: true, page_id: page.id, slug: page.slug, version: next, parts, warnings, preview_in_lab_os: `${labOrigin(env)}/admin#page/${page.id}`, note: "下書きとして置いた。公開は Naoki がマーケくんで行う" };
   }
 
   // ---------- 一覧・1 枚 ----------
