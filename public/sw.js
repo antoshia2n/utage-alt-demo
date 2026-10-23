@@ -17,7 +17,7 @@ self.addEventListener("fetch", (e) => {
 });
 
 // マーケくん便 1：シアニン用の画面（/admin）への知らせはマーケくんの絵、生徒への知らせはシアラボの絵
-const noticeIcon = (u) => (typeof u === "string" && u.startsWith("/admin") ? "/icons/marke/icon-192.png" : "/icons/icon-192.png");
+const noticeIcon = (u) => (typeof u === "string" && u.startsWith("/admin") ? "/icons/marke/apple-touch-icon.png" : "/icons/icon-192.png");
 // 便 8f-3：スマホへの通知（Web Push）。中身は Worker が暗号にして送る { title, body, url, tag }
 self.addEventListener("push", (e) => {
   let d = {};
