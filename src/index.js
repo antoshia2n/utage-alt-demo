@@ -66,7 +66,7 @@ import { makeLine } from "./line.js";
 import { makeUtageImport } from "./utageimport.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.45.2-bkey";
+const VERSION = "0.46.0-bmarke1";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -1250,7 +1250,7 @@ async function handleApi(request, env, url) {
       return json(await push.unsubscribe(env, a.email, body));
     }
     if (path === "/api/admin/push/test" && method === "POST") {
-      const r = await push.send(env, { title: "Lab OS の通知の試し", body: "この知らせが見えたら、スマホへの通知は届いています", url: "/admin", tag: "test" });
+      const r = await push.send(env, { title: "マーケくんの通知の試し", body: "この知らせが見えたら、スマホへの通知は届いています", url: "/admin", tag: "test" });
       return json(r, r.ok === false ? 400 : 200);
     }
     const rr = path.match(/^\/api\/admin\/rooms\/([0-9a-f-]{36})\/reply$/i);
@@ -2071,7 +2071,7 @@ const TOOLS = [
     name: "list_page_requests",
     screen: "pages",
     say: "ページの依頼を見る",
-    description: "Lab OS の「ページ」で書かれた依頼（新しく作る／直す）を新しい順に返す。open: true でまだ下書きが届いていないものだけ。page_id でそのページの依頼だけ。中身と書き方の決まりは get_page_request で読む。",
+    description: "マーケくんの「ページ」で書かれた依頼（新しく作る／直す）を新しい順に返す。open: true でまだ下書きが届いていないものだけ。page_id でそのページの依頼だけ。中身と書き方の決まりは get_page_request で読む。",
     inputSchema: { type: "object", properties: { open: { type: "boolean" }, page_id: { type: "string" } } },
   },
   {

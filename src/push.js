@@ -221,7 +221,7 @@ export function makePush(h) {
   }
 
   const clip = (msg, home) => ({
-    title: String(msg.title || (home === "/app" ? "シアラボ" : "Lab OS")).slice(0, 120),
+    title: String(msg.title || (home === "/app" ? "シアラボ" : "マーケくん")).slice(0, 120),
     body: String(msg.body || "").slice(0, 300),
     url: String(msg.url || "").startsWith(home) ? String(msg.url) : home,
     tag: String(msg.tag || "").slice(0, 60),

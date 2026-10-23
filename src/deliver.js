@@ -372,7 +372,7 @@ export function makeDeliver(h) {
           const what = TRIGGERS[s.trigger].label;
           // 便 8f-1：名前が空の人は、知らせの中ではメールで呼ぶ（件名に空白が出たため）
           const who = { ...c, name: c.name || c.email };
-          const subject = fillText(s.subject, who, t) || `【Lab OS】${what}：${who.name}`;
+          const subject = fillText(s.subject, who, t) || `【マーケくん】${what}：${who.name}`;
           // 便 12a：ページのきっかけは、どのページのどのボタンかも書く
           const tp = t.payload || {};
           const where = tp.title && String(s.trigger).startsWith("page_") ? `（ページ「${tp.title}」${tp.button ? `・ボタン ${tp.button}` : ""}）` : "";

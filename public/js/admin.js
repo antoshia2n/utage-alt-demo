@@ -2208,9 +2208,9 @@ async function loadPush() {
     }
     pushReady = ps ? { reg: ps.reg, key: keyBytes(r.public_key) } : null;
     const on = sub && r.devices.some((d) => sub.endpoint.endsWith(d.endpoint_tail));
-    here = !ps ? "この端末では通知の準備ができませんでした（画面を開き直すと直ることがあります）" : on ? "この端末は受け取っています" : Notification.permission === "denied" ? "この端末は通知を止めています（端末の設定 → 通知 → Lab OS で許可にすると押せます）" : "この端末はまだ受け取っていません";
+    here = !ps ? "この端末では通知の準備ができませんでした（画面を開き直すと直ることがあります）" : on ? "この端末は受け取っています" : Notification.permission === "denied" ? "この端末は通知を止めています（端末の設定 → 通知 → マーケくんで許可にすると押せます）" : "この端末はまだ受け取っていません";
   } else if (/iphone|ipad|ipod/i.test(navigator.userAgent) && !navigator.standalone) {
-    here = "iPhone は、共有ボタン →「ホーム画面に追加」で Lab OS を足し、そこから開くと押せます";
+    here = "iPhone は、共有ボタン →「ホーム画面に追加」でマーケくんを足し、そこから開くと押せます";
   }
   st.innerHTML = `${esc(here)}<br>受け取る端末 ${r.count} 台${r.devices.length ? "：" + r.devices.map((d) => esc(d.device || d.service)).join("・") : ""}`;
   return r;
@@ -2234,7 +2234,7 @@ function setupPush() {
       await loadPush();
     }).catch((e) => {
       st.textContent = Notification.permission === "denied"
-        ? "許可されなかったので受け取れません（端末の設定 → 通知 → Lab OS で許可にすると押せます）"
+        ? "許可されなかったので受け取れません（端末の設定 → 通知 → マーケくんで許可にすると押せます）"
         : "受け取りの登録ができませんでした（" + String(e && (e.name || e.message) || e) + "）";
     });
   });
@@ -2301,7 +2301,7 @@ $("send").addEventListener("click", async () => {
   $("sent").classList.remove("hidden");
   $("code-box").classList.remove("hidden");
 });
-// 便 8f-3：確認コードで入る（ホーム画面に足した Lab OS では、メールのリンクがこの画面ではなくブラウザで開くため）
+// 便 8f-3：確認コードで入る（ホーム画面に足したマーケくんでは、メールのリンクがこの画面ではなくブラウザで開くため）
 $("otp-go").addEventListener("click", async () => {
   clearErr();
   const email = $("email").value.trim(), token = $("otp").value.replace(/\s/g, "");

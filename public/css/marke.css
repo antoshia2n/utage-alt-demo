@@ -1,0 +1,33 @@
+/* マーケくん便 1（2026-10-24）：シアニン用の画面（/admin）だけの見た目の値。
+   生徒の画面（シアラボ）は style.css のまま。このファイルは admin.html だけが読む。
+   値はスワイプくん・思考整理くん・コンテンツくんと同じ（正本は content-os の CK_CSS・プロジェクト資料 claude/app-design-rules.md の 5 節）。 */
+:root {
+  --bg: #f5f0eb;
+  --surface: #ffffff;
+  --ink: #1a1a1a;
+  --muted: #6b6259;
+  --line: #e6dfd6;
+  --accent: #b45309;
+  --accent-ink: #ffffff;
+  --accent-soft: #fef3c7;
+  --warn: #b91c1c;
+  --warn-soft: #fdecec;
+  --radius: 12px;
+  --shadow: 0 1px 2px rgba(60,40,20,.05), 0 8px 24px rgba(60,40,20,.09);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1b1916; --surface: #24211d; --ink: #f1ece6; --muted: #b0a69b; --line: #38332c;
+    --accent: #fbbf24; --accent-ink: #1b1916; --accent-soft: rgba(251,191,36,.14); --warn: #f87171; --warn-soft: rgba(248,113,113,.12);
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.4); color-scheme: dark;
+  }
+}
+body { font-family: "Geist", "Noto Sans JP", "Hiragino Sans", "Hiragino Kaku Gothic ProN", system-ui, sans-serif; }
+.btn { border-radius: 8px; }
+.brand { display: inline-flex; align-items: center; gap: 8px; letter-spacing: -.01em; font-weight: 800; }
+.brand img, .side-logo img { flex: none; }
+/* スマホでは style.css が .side-logo を隠すので、並べ方はパソコンの幅のときだけ変える */
+@media (min-width: 861px) {
+  .side-logo { display: flex; align-items: center; gap: 8px; letter-spacing: -.01em; font-weight: 800; }
+}
