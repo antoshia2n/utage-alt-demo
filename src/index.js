@@ -66,7 +66,7 @@ import { makeLine } from "./line.js";
 import { makeUtageImport } from "./utageimport.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.46.0-bmarke1";
+const VERSION = "0.47.0-bmarke2";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -453,9 +453,11 @@ const core = {
     const people = await db(env, "GET", q);
     const ent = await sell.entitlementMap(env);
     const dm = await bin4.dealMap(env);
+    const gate = await bridge.gateAll(env); // マーケくん便 2：一覧の「権利」と「期限」の列
     for (const p of people) {
       p.member = !!(ent[p.id] && ent[p.id].member);
       p.deal_stage = dm[p.id] ? dm[p.id].stage : "none";
+      p.gate = (gate[p.id] || []).map((r) => ({ id: r.id, key: r.key, source: r.source, reason: r.reason, granted_at: r.granted_at, expires_at: r.expires_at }));
     }
     return { ok: true, count: people.length, people };
   },
@@ -479,6 +481,7 @@ const core = {
       person: { ...person, entitlement: await sell.entitlement(env, person_id), deal, contract: bin4.contractOf(person.email) },
       stage: { id: lane, label: (LANES.find((l) => l.id === lane) || {}).label || lane },
       labels,
+      entitlements: await bridge.gateFull(env, person_id), // マーケくん便 2：「権利」のタブ
       purchases,
       room: { messages: rs.lastMessageId ? true : false, unread_for_admin: rs.unreadForAdmin, unreplied: rs.unreplied.length, unread_for_student: rs.unreadForStudent },
       events,
@@ -1149,6 +1152,20 @@ async function handleApi(request, env, url) {
     if (m && method === "PATCH") {
       const body = await request.json().catch(() => ({}));
       return json(await core.setNoteMember(env, { person_id: m[1], value: body.note_member }, "admin"));
+    }
+    // マーケくん便 2：権利を手で付ける・外す（source=manual の行だけ。理由は必須。出来事に残す）
+    if (path === "/api/admin/entitlement-keys" && method === "GET") return json(await bridge.entitlementKeys(env));
+    const eg = path.match(/^\/api\/admin\/people\/([0-9a-f-]{36})\/entitlements$/i);
+    if (eg && method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      const r = await bridge.grantManual(env, { person_id: eg[1], key: body.key, reason: body.reason, expires_at: body.expires_at }, "admin");
+      return json(r, r.ok === false ? 400 : 200);
+    }
+    const er = path.match(/^\/api\/admin\/people\/([0-9a-f-]{36})\/entitlements\/([0-9a-z-]{1,40})\/revoke$/i);
+    if (er && method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      const r = await bridge.revokeManual(env, { person_id: er[1], entitlement_id: er[2], reason: body.reason }, "admin");
+      return json(r, r.ok === false ? 400 : 200);
     }
     if (path === "/api/admin/stats") return json(await core.stats(env));
     if (path === "/api/admin/setup" && method === "GET") {

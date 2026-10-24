@@ -15,6 +15,40 @@ const MEETING_PREFIX = "ic_";
 const MEETING_SKIP = new Set(["ic_status_logs"]); // 動きの記録（控えでも外している履歴の表）
 const MEETING_ROWS_MAX = 2000;
 
+// マーケくん便 2（2026-10-24）：顧客管理の画面から手で権利を付け外しする。
+//  ・付けるのは source=manual の行だけ。理由は必ず書く（表の側にも決まりがある）。支払いの行（source=payment）は画面からは触らない
+//  ・外せるのは source=manual の行だけ。外す理由も必ず書き、付けた・外したを出来事（b_events）に残す
+//  ・付けられる権利の名前は、門番の表にもうある名前と、下の決めた名前だけ（打ち間違いで新しい名前を作らない）
+export const KNOWN_KEYS = ["shiarabo_basic", "shiarabo_office_hour", "consult_single", "consult_followup", "seminar_recording", "workbook_ai_30day", "textbook_60day", "vip_status", "shiarabo_trial", "note_membership"];
+const KEY_RE = /^[a-z0-9_]{2,60}$/;
+const REASON_MAX = 200;
+
+// 期限の入力を確かめる。日付だけ（2026-11-15）なら日本時間のその日の終わり。空なら期限なし。過去は受けない
+export function parseUntil(v, now = Date.now()) {
+  const s = String(v ?? "").trim();
+  if (!s) return { ok: true, value: null };
+  let d;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) d = new Date(s + "T23:59:59+09:00");
+  else d = new Date(s);
+  if (Number.isNaN(d.getTime())) return { ok: false, error: "bad_expires_at" };
+  if (d.getTime() <= now) return { ok: false, error: "expires_in_past" };
+  return { ok: true, value: d.toISOString() };
+}
+
+// 付ける前の確かめ（表に書く前に全部ここで止める）
+export function checkGrant({ key, reason, expires_at } = {}, allowed, existing, now = Date.now()) {
+  const k = String(key ?? "").trim();
+  if (!KEY_RE.test(k)) return { ok: false, error: "bad_key" };
+  if (!allowed.includes(k)) return { ok: false, error: "unknown_key", allowed };
+  const why = String(reason ?? "").trim();
+  if (!why) return { ok: false, error: "reason_required" };
+  if (why.length > REASON_MAX) return { ok: false, error: "reason_too_long", max: REASON_MAX };
+  const u = parseUntil(expires_at, now);
+  if (!u.ok) return u;
+  if (existing.some((r) => r.key === k && r.source === "manual")) return { ok: false, error: "already_manual" };
+  return { ok: true, row: { key: k, source: "manual", reason: why, expires_at: u.value } };
+}
+
 const live = (r, now = Date.now()) => !r.expires_at || new Date(r.expires_at).getTime() > now;
 
 // 出来事から計算した B の権利（sell.entitlement の返り）から、門番の表に置くべき行を出す。key ごとに一番遅い期限（無期限が勝つ）
@@ -168,5 +202,59 @@ export function makeBridge(h) {
     return { ok: true, found: true, count: records.length, looked, records };
   }
 
-  return { withGate, gateMembers, syncGrants, listTables, meetings };
+  // ---------- マーケくん便 2：権利の一覧と手での付け外し ----------
+  const ENT_COLS = "id,member_id,key,source,reason,granted_at,expires_at";
+
+  // 付けられる権利の名前：門番の表にもうある名前＋決めた名前
+  async function entitlementKeys(env) {
+    if (!env.B_STORE) return { ok: true, store: "demo", keys: [...KNOWN_KEYS] };
+    const rows = await db(env, "GET", "member_entitlement?select=key&limit=10000");
+    const keys = [...new Set([...KNOWN_KEYS, ...rows.map((r) => r.key)])];
+    return { ok: true, keys };
+  }
+
+  // 一覧用：全員の権利の行（人の番号ごと）。期限切れも返し、画面で見分ける
+  async function gateAll(env) {
+    if (!env.B_STORE) return {};
+    const rows = await db(env, "GET", `member_entitlement?select=${ENT_COLS}&order=granted_at.asc&limit=10000`);
+    const out = {};
+    for (const r of rows) (out[r.member_id] = out[r.member_id] || []).push(r);
+    return out;
+  }
+
+  // 1 人分の権利の行（詳細の「権利」のタブ）
+  async function gateFull(env, memberId) {
+    if (!env.B_STORE) return [];
+    return await db(env, "GET", `member_entitlement?select=${ENT_COLS}&member_id=eq.${memberId}&order=granted_at.asc`);
+  }
+
+  async function grantManual(env, { person_id, key, reason, expires_at } = {}, actor = "admin") {
+    if (!/^[0-9a-f-]{36}$/i.test(String(person_id || ""))) return { ok: false, error: "bad_person_id" };
+    if (!env.B_STORE) return { ok: false, error: "demo_store" };
+    const [m] = await db(env, "GET", `member?select=id&id=eq.${person_id}`);
+    if (!m) return { ok: true, found: false };
+    const existing = await gateFull(env, person_id);
+    const c = checkGrant({ key, reason, expires_at }, (await entitlementKeys(env)).keys, existing);
+    if (!c.ok) return c;
+    const [row] = await db(env, "POST", "member_entitlement", [{ member_id: person_id, ...c.row }], "return=representation");
+    await addEvent(env, person_id, "entitlement_granted", { key: c.row.key, reason: c.row.reason, expires_at: c.row.expires_at, entitlement_id: row && row.id }, actor);
+    return { ok: true, found: true, entitlement: row || null, entitlements: await gateFull(env, person_id) };
+  }
+
+  async function revokeManual(env, { person_id, entitlement_id, reason } = {}, actor = "admin") {
+    if (!/^[0-9a-f-]{36}$/i.test(String(person_id || ""))) return { ok: false, error: "bad_person_id" };
+    if (!/^[0-9a-z-]{1,40}$/i.test(String(entitlement_id ?? ""))) return { ok: false, error: "bad_entitlement_id" };
+    if (!env.B_STORE) return { ok: false, error: "demo_store" };
+    const why = String(reason ?? "").trim();
+    if (!why) return { ok: false, error: "reason_required" };
+    if (why.length > REASON_MAX) return { ok: false, error: "reason_too_long", max: REASON_MAX };
+    const [r] = await db(env, "GET", `member_entitlement?select=${ENT_COLS}&id=eq.${entitlement_id}&member_id=eq.${person_id}`);
+    if (!r) return { ok: true, found: false };
+    if (r.source !== "manual") return { ok: false, error: "not_manual" };
+    await db(env, "DELETE", `member_entitlement?id=eq.${r.id}&member_id=eq.${person_id}&source=eq.manual`, undefined, "return=minimal");
+    await addEvent(env, person_id, "entitlement_revoked", { key: r.key, reason: why, granted_reason: r.reason, granted_at: r.granted_at, expires_at: r.expires_at }, actor);
+    return { ok: true, found: true, removed: { id: r.id, key: r.key }, entitlements: await gateFull(env, person_id) };
+  }
+
+  return { withGate, gateMembers, syncGrants, listTables, meetings, entitlementKeys, gateAll, gateFull, grantManual, revokeManual };
 }

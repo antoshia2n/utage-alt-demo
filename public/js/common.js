@@ -78,6 +78,8 @@ export const EVENT_LABEL = {
   page_viewed: "ページを見た",
   page_clicked: "ページのボタンを押した",
   grants_synced: "権利を合わせた",
+  entitlement_granted: "権利を付けた",
+  entitlement_revoked: "権利を外した",
 };
 
 // ログインが要る画像を読み、画面に出せる住所に変える（img の src に鍵を付けられないため）

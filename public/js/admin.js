@@ -119,6 +119,29 @@ function ago(iso) {
 }
 const stageText = (p) => (p.member ? "会員" : p.stage || "");
 
+// ---------- マーケくん便 2：権利（門番の表 member_entitlement の行） ----------
+// 出どころは 3 つ：支払い（shr-webhook が付けた）・手で付けた・マーケくんで購入（支払いの行で理由が「B で購入」で始まる）
+const KEY_LABEL = {
+  shiarabo_basic: "しあらぼの基本（教材・Q&A・コミュニティ）", shiarabo_office_hour: "オフィスアワー",
+  consult_single: "単発の個別相談", consult_followup: "フォローアップ相談", seminar_recording: "セミナー録画",
+  workbook_ai_30day: "30日AIワークブック", textbook_60day: "60日教材", vip_status: "VIP",
+  shiarabo_trial: "しあらぼ体験", note_membership: "note メンシプ",
+};
+const entSrc = (r) => (r.source === "manual" ? "manual" : String(r.reason || "").startsWith("B で購入") ? "lab" : "payment");
+const ENT_SRC_LABEL = { payment: "支払い", manual: "手で付けた", lab: "マーケくんで購入" };
+const entLive = (r) => !r.expires_at || new Date(r.expires_at).getTime() > Date.now();
+const entSoon = (r) => r.expires_at && entLive(r) && new Date(r.expires_at).getTime() - Date.now() <= 7 * 864e5;
+const entDay = (iso) => { const d = new Date(iso); return `${d.getMonth() + 1}/${d.getDate()}`; };
+// 一覧の「期限」：生きている行のうち一番早い期限（期限なしだけなら空）
+const entUntil = (p) => (p.gate || []).filter((r) => entLive(r) && r.expires_at).map((r) => r.expires_at).sort()[0] || "";
+const entChip = (r) => `<span class="ent ent-${entSrc(r)}${entLive(r) ? "" : " ent-off"}" title="${esc(ENT_SRC_LABEL[entSrc(r)])}${r.reason ? "・" + esc(r.reason) : ""}${entLive(r) ? "" : "・期限切れ"}"><i></i>${esc(r.key)}</span>`;
+const MEM_FILTER = {
+  "1": (p) => p.member, "0": (p) => !p.member,
+  manual: (p) => (p.gate || []).some((r) => r.source === "manual" && entLive(r)),
+  soon: (p) => (p.gate || []).some(entSoon),
+  none: (p) => !(p.gate || []).some(entLive),
+};
+
 function custList() {
   current = null;
   $("cust-list").classList.remove("hidden");
@@ -137,9 +160,9 @@ async function search() {
 
 function renderCustomers() {
   const mem = $("mem").value;
-  let rows = custRows.filter((p) => mem === "" || String(p.member ? 1 : 0) === mem);
+  let rows = custRows.filter((p) => mem === "" || (MEM_FILTER[mem] ? MEM_FILTER[mem](p) : true));
   const { key, dir } = custSort;
-  const val = (p) => key === "stage" ? stageText(p) : key === "source" ? (SOURCE_LABEL[p.source] || p.source || "") : (p[key] || "");
+  const val = (p) => key === "stage" ? stageText(p) : key === "source" ? (SOURCE_LABEL[p.source] || p.source || "") : key === "until" ? (entUntil(p) || "9999") : (p[key] || "");
   rows = rows.slice().sort((a, b) => (val(a) > val(b) ? 1 : val(a) < val(b) ? -1 : 0) * dir);
   $("count").textContent = rows.length === 0 ? "当てはまる顧客は 0 人です" : `${rows.length} 人${custRows.length >= 200 ? "（新しく動いた順に 200 人まで。名前かメールで探すと全員から探します）" : ""}`;
   document.querySelectorAll(".cust-table [data-sort]").forEach((b) => b.dataset.dir = b.dataset.sort === key ? (dir > 0 ? "asc" : "desc") : "");
@@ -147,6 +170,8 @@ function renderCustomers() {
     <tr data-id="${p.id}" tabindex="0">
       <td><div class="c-name">${esc(p.name || "（名前なし）")}</div><div class="sub">${esc(p.email)}</div></td>
       <td><span class="pill ${p.member ? "" : "gray"}">${esc(stageText(p))}</span>${p.deal_stage && p.deal_stage !== "none" ? ` <span class="pill warn">${esc(STAGE[p.deal_stage])}</span>` : ""}</td>
+      <td class="c-ent"><div class="ents">${(p.gate || []).filter(entLive).map(entChip).join("")}</div></td>
+      <td class="c-exp">${entUntil(p) ? `<span class="${(p.gate || []).some(entSoon) ? "ent-soon" : ""}">${esc(entDay(entUntil(p)))} まで</span>` : ""}</td>
       <td class="c-src">${esc(SOURCE_LABEL[p.source] || p.source || "")}${p.note_member ? "・note" : ""}</td>
       <td>${esc(ago(p.last_event_at))}</td>
       <td class="c-reg">${esc(dayOf(p.created_at))}</td>
@@ -157,9 +182,71 @@ function renderCustomers() {
   });
 }
 
-const CUST_TABS = [["overview", "概要"], ["values", "項目と回答"], ["events", "出来事"], ["deal", "商談と面談"], ["mail", "メール"]];
+const CUST_TABS = [["overview", "概要"], ["ent", "権利"], ["values", "項目と回答"], ["events", "出来事"], ["deal", "商談と面談"], ["mail", "メール"]];
+let entKeys = null, entRm = null, entAddOpen = false;
+async function loadEntKeys() {
+  if (entKeys) return entKeys;
+  const r = await api("/api/admin/entitlement-keys", { token });
+  entKeys = r.ok ? r.keys : Object.keys(KEY_LABEL);
+  return entKeys;
+}
+const ENT_ERR = {
+  reason_required: "理由を書いてください", already_manual: "この権利はもう手で付けてあります。外してから付け直してください",
+  unknown_key: "その名前の権利はありません", expires_in_past: "期限が今より前です", bad_expires_at: "期限の日付が読めません",
+  not_manual: "支払いから付いた権利は、ここでは外せません", demo_store: "デモの置き場では付け外しできません", reason_too_long: "理由は 200 字までです",
+};
+// 「権利」のタブの中身（付ける窓と、手で付けた行の外す確かめを含む）
+function entPane(rows, keys) {
+  const has = new Set(rows.filter((r) => r.source === "manual").map((r) => r.key));
+  return `${rows.length ? rows.map((r) => {
+    const s = entSrc(r);
+    return `<div class="er${entLive(r) ? "" : " er-off"}">
+      <div style="min-width:0"><div class="k">${esc(r.key)}</div><div class="d">${esc(KEY_LABEL[r.key] || "")}</div></div>
+      <span class="ent-src ent-${s}">${esc(ENT_SRC_LABEL[s])}</span>
+      <div class="why">理由：${esc(r.reason || "（なし）")}　·　${r.granted_at ? esc(entDay(r.granted_at)) + " から" : ""}${r.expires_at ? `　·　<b class="${entSoon(r) ? "ent-soon" : ""}">${esc(entDay(r.expires_at))} まで${entLive(r) ? "" : "（期限切れ）"}</b>` : "　·　期限なし"}</div>
+      <div class="er-act">${s === "manual"
+        ? (entRm === String(r.id) ? "" : `<button class="btn ghost small" type="button" data-entrm="${esc(r.id)}">外す</button>`)
+        : `<span class="note">${s === "payment" ? "解約で自動で外れます" : "返金・解約で自動で外れます"}</span>`}</div>
+      ${entRm === String(r.id) ? `<div class="conf"><span>外す理由</span><input id="ent-rm-why" type="text" maxlength="200" placeholder="例：退会の申し出（10/24）" aria-label="外す理由"><button class="btn ghost small" type="button" data-entrmcancel>やめる</button><button class="btn small danger" type="button" data-entrmgo="${esc(r.id)}">外す</button></div>` : ""}
+    </div>`;
+  }).join("") : '<p class="note">権利はありません</p>'}
+  <div class="addbox${entAddOpen ? " open" : ""}">${entAddOpen ? `
+    <div class="f"><label for="ent-key">付ける権利</label><select id="ent-key" class="inline">${keys.map((k) => `<option value="${esc(k)}" ${has.has(k) ? "disabled" : ""}>${esc(k)}${KEY_LABEL[k] ? "　" + esc(KEY_LABEL[k]) : ""}${has.has(k) ? "（もう手で付けてある）" : ""}</option>`).join("")}</select></div>
+    <div class="f"><label for="ent-why">理由（必須）</label><input id="ent-why" type="text" maxlength="200" placeholder="例：銀行振込（10/24 入金を確認）"><small>あとで「なぜこの人が入れるのか」を辿れるように残します</small></div>
+    <div class="row2"><div class="f"><label for="ent-until">期限（空なら期限なし）</label><input id="ent-until" type="date"></div>
+    <div class="f"><label>&nbsp;</label><div class="er-act"><button class="btn ghost small" type="button" data-entaddcancel>やめる</button><button class="btn small" type="button" data-entaddgo>付ける</button></div></div></div>
+    <p class="note" id="ent-status"></p>`
+    : `<button class="btn ghost small" type="button" data-entaddopen>＋ 権利を付ける</button><p class="note" id="ent-status"></p>`}</div>`;
+}
+function wireEnt(id, rows, keys) {
+  const box = $("ent-box");
+  const redraw = () => { box.innerHTML = entPane(rows, keys); wireEnt(id, rows, keys); };
+  const say = (t) => { const s = $("ent-status"); if (s) s.textContent = t; };
+  box.querySelectorAll("[data-entaddopen]").forEach((b) => b.addEventListener("click", () => { entAddOpen = true; entRm = null; redraw(); $("ent-why").focus(); }));
+  box.querySelectorAll("[data-entaddcancel]").forEach((b) => b.addEventListener("click", () => { entAddOpen = false; redraw(); }));
+  box.querySelectorAll("[data-entrm]").forEach((b) => b.addEventListener("click", () => { entRm = b.dataset.entrm; entAddOpen = false; redraw(); $("ent-rm-why").focus(); }));
+  box.querySelectorAll("[data-entrmcancel]").forEach((b) => b.addEventListener("click", () => { entRm = null; redraw(); }));
+  box.querySelectorAll("[data-entaddgo]").forEach((b) => b.addEventListener("click", async () => {
+    const reason = $("ent-why").value.trim();
+    if (!reason) { $("ent-why").focus(); return say("理由を書いてください"); }
+    b.disabled = true; say("付けています…");
+    const r = await api(`/api/admin/people/${id}/entitlements`, { method: "POST", token, body: { key: $("ent-key").value, reason, expires_at: $("ent-until").value || null } });
+    b.disabled = false;
+    if (!r.ok || !r.found) return say("付けられませんでした（" + (ENT_ERR[r.error] || r.error || r.status || "見つかりません") + "）");
+    entAddOpen = false; custTab = "ent"; await detail(id); search();
+  }));
+  box.querySelectorAll("[data-entrmgo]").forEach((b) => b.addEventListener("click", async () => {
+    const reason = $("ent-rm-why").value.trim();
+    if (!reason) { $("ent-rm-why").focus(); return; }
+    b.disabled = true;
+    const r = await api(`/api/admin/people/${id}/entitlements/${encodeURIComponent(b.dataset.entrmgo)}/revoke`, { method: "POST", token, body: { reason } });
+    b.disabled = false;
+    if (!r.ok || !r.found) { return fail("外せませんでした（" + (ENT_ERR[r.error] || r.error || r.status || "見つかりません") + "）"); }
+    entRm = null; custTab = "ent"; await detail(id); search();
+  }));
+}
 async function detail(id) {
-  if (current !== id) custTab = "overview";
+  if (current !== id) { custTab = "overview"; entRm = null; entAddOpen = false; }
   current = id;
   $("cust-list").classList.add("hidden");
   $("cust-detail").classList.remove("hidden");
@@ -192,14 +279,15 @@ async function detail(id) {
         <form id="lb" class="lb-inline"><input id="lb-name" type="text" maxlength="40" placeholder="＋ ラベル" list="label-names" aria-label="ラベルを手で付ける"><button class="btn ghost small" type="submit">付ける</button><span class="note" id="lb-status"></span></form>
       </div>
     </div>
-    <div class="tabs cust-tabs" role="tablist">${CUST_TABS.map(([k, v]) => `<button type="button" role="tab" data-tab="${k}" aria-selected="${k === custTab}">${v}${k === "events" ? ` <span class="note">${p.event_count}</span>` : ""}</button>`).join("")}</div>
+    <div class="tabs cust-tabs" role="tablist">${CUST_TABS.map(([k, v]) => `<button type="button" role="tab" data-tab="${k}" aria-selected="${k === custTab}">${v}${k === "events" ? ` <span class="note">${p.event_count}</span>` : k === "ent" ? ` <span class="note">${(r.entitlements || []).filter(entLive).length}</span>` : ""}</button>`).join("")}</div>
+    <section class="card" data-pane="ent"><div id="ent-box" class="ent-box"></div></section>
     <section class="card" data-pane="overview">
       <dl class="kv">
         <dt>登録した日</dt><dd>${esc(dayOf(p.created_at))}・流入元 ${esc(SOURCE_LABEL[p.source] || p.source)}</dd>
         <dt>最後に動いた</dt><dd>${esc(ago(p.last_event_at))}</dd>
         <dt>ログイン</dt><dd>${p.login_count || 0} 回・教材を開いた ${p.lesson_view_count || 0} 回</dd>
         <dt>チャット</dt><dd>${r.room && r.room.messages ? `シアニンが読んでいない ${r.room.unread_for_admin}・添削の未返信 ${r.room.unreplied}・相手が読んでいない ${r.room.unread_for_student}` : "まだやりとりはありません"}</dd>
-        ${p.entitlement && (p.entitlement.gate_keys || []).length ? `<dt>門番の権利</dt><dd>${p.entitlement.gate_keys.map(esc).join("・")}</dd>` : ""}
+        ${(r.entitlements || []).some(entLive) ? `<dt>権利</dt><dd><div class="ents">${r.entitlements.filter(entLive).map(entChip).join("")}</div></dd>` : ""}
         <dt>買ったもの</dt><dd>${r.purchases && r.purchases.length ? `<ul class="plain" style="margin:0;padding-left:18px">${r.purchases.map((x) => `<li>${esc(x.name)}${x.amount != null ? "・" + Number(x.amount).toLocaleString() + " 円" : ""}${x.mode === "test" ? "（テスト）" : ""} <span class="note">${fmtTime(x.at)}</span></li>`).join("")}</ul>` : "まだ無し"}</dd>
       </dl>
       <label class="check" style="margin-top:12px"><input type="checkbox" id="nm" ${p.note_member ? "checked" : ""}> <span>note のメンバー（手で付ける印）</span></label>
@@ -246,6 +334,11 @@ async function detail(id) {
   document.querySelectorAll(".cust-tabs [data-tab]").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
   document.querySelectorAll("[data-tabgo]").forEach((b) => b.addEventListener("click", () => { showTab(b.dataset.tabgo); $("m-sub").focus(); }));
   showTab(custTab);
+  // マーケくん便 2：権利のタブ（付けられる名前は 1 回だけ読む）
+  const entRows = r.entitlements || [];
+  $("ent-box").innerHTML = entPane(entRows, entKeys || Object.keys(KEY_LABEL));
+  wireEnt(id, entRows, entKeys || Object.keys(KEY_LABEL));
+  if (!entKeys) loadEntKeys().then((keys) => { if (current === id && !entAddOpen) { $("ent-box").innerHTML = entPane(entRows, keys); wireEnt(id, entRows, keys); } });
   loadPersonValues(id);
   loadLabelNames();
   // 便 8f-3：人の 1 枚からその人の部屋へ
@@ -2283,6 +2376,7 @@ function detailText(e) {
   if (e.type === "referral_reward") return `<span class="note">（${esc(p.product_name || p.product_id || "")}・${Number(p.amount || 0).toLocaleString()} 円の ${esc(p.rate)}%＝${Number(p.reward || 0).toLocaleString()} 円）</span>`;
   if (e.type === "referral_paid") return `<span class="note">（${Number(p.amount || 0).toLocaleString()} 円${p.note ? "・" + esc(p.note) : ""}）</span>`;
   if (e.type === "room_read") return `<span class="note">（${p.by === "admin" ? "シアニン" : "生徒"}）</span>`;
+  if (e.type === "entitlement_granted" || e.type === "entitlement_revoked") return `<span class="note">（${esc(p.key || "")}・${esc(String(p.reason || "").slice(0, 40))}${p.expires_at && e.type === "entitlement_granted" ? "・" + esc(fmtTime(p.expires_at).slice(0, 10)) + " まで" : ""}）</span>`;
   if (e.type === "label_added" || e.type === "label_removed") return `<span class="note">（${esc(p.label || "")}${p.step_id != null ? "・コネクタ " + esc(p.step_id) : ""}）</span>`;
   if (e.type === "admin_notified" || e.type === "admin_notify_failed" || e.type === "connector_skipped") return `<span class="note">（コネクタ ${esc(p.step_id)}${p.reason ? "・" + esc(p.reason) : ""}${p.error ? "・" + esc(p.error) : ""}）</span>`;
   if (p.lesson_id) return `<span class="note">（${esc(p.lesson_id)}）</span>`;
