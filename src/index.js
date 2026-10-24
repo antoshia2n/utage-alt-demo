@@ -66,7 +66,7 @@ import { makeLine } from "./line.js";
 import { makeUtageImport } from "./utageimport.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.47.0-bmarke2";
+const VERSION = "0.48.0-bmarke3";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -444,8 +444,9 @@ async function requireAdmin(request, env) {
 // ---------- 芯（シアニン用の画面と MCP が同じものを呼ぶ） ----------
 
 const core = {
-  async findPeople(env, { query = "", source = "", limit = 50 } = {}) {
-    const lim = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 200);
+  // マーケくん便 3：画面の一覧は全員を読む（上限 2000）。AI の道具（find_person）は今までどおり 200 まで
+  async findPeople(env, { query = "", source = "", limit = 50 } = {}, { max = 200 } = {}) {
+    const lim = Math.min(Math.max(parseInt(limit, 10) || 50, 1), max);
     let q = `customer_summary?select=*&order=last_event_at.desc.nullslast&limit=${lim}`;
     const s = String(query).trim().replace(/[(),*]/g, " ").trim();
     if (s) q += `&or=(name.ilike.*${encodeURIComponent(s)}*,email.ilike.*${encodeURIComponent(s)}*)`;
@@ -1142,7 +1143,7 @@ async function handleApi(request, env, url) {
     const pv = path.match(/^[/]api[/]admin[/]people[/]([0-9a-f-]{36})[/]values$/i);
     if (pv && method === "GET") return json(await forms.personValues(env, pv[1]));
     if (path === "/api/admin/people" && method === "GET") {
-      return json(await core.findPeople(env, { query: url.searchParams.get("q") || "", source: url.searchParams.get("source") || "", limit: url.searchParams.get("limit") || 50 }));
+      return json(await core.findPeople(env, { query: url.searchParams.get("q") || "", source: url.searchParams.get("source") || "", limit: url.searchParams.get("limit") || 50 }, { max: 2000 }));
     }
     const m = path.match(/^\/api\/admin\/people\/([0-9a-f-]{36})$/i);
     if (m && method === "GET") return json(await core.getTimeline(env, { person_id: m[1] }));

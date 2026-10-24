@@ -142,17 +142,29 @@ const MEM_FILTER = {
   none: (p) => !(p.gate || []).some(entLive),
 };
 
+// マーケくん便 3：広い画面では、一覧を残したまま右に詳細を開く。狭い画面は今までどおり詳細だけ
+const WIDE = window.matchMedia("(min-width: 1180px)");
+function layoutPeople() {
+  const open = !!current, split = open && WIDE.matches;
+  $("view-people").classList.toggle("split", split);
+  $("cust-list").classList.toggle("hidden", open && !split);
+  $("cust-detail").classList.toggle("hidden", !open);
+  $("view-people-wrap").style.display = $("view-people").style.display === "none" ? "none" : (open && !split ? "none" : "");
+  $("cust-back").textContent = split ? "閉じる" : "← 顧客の一覧へ";
+  document.querySelectorAll("#people tr").forEach((tr) => tr.classList.toggle("sel", tr.dataset.id === current));
+}
+WIDE.addEventListener("change", () => { if ($("view-people").style.display !== "none") layoutPeople(); });
+document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && current && WIDE.matches && !ev.target.closest("input, textarea, select")) custList(); });
+
 function custList() {
   current = null;
-  $("cust-list").classList.remove("hidden");
-  $("cust-detail").classList.add("hidden");
-  $("view-people-wrap").style.display = "";
+  layoutPeople();
   setCrumbSub("");
 }
 
 async function search() {
   const q = encodeURIComponent($("q").value.trim());
-  const r = await api(`/api/admin/people?q=${q}&source=${$("src").value}&limit=200`, { token });
+  const r = await api(`/api/admin/people?q=${q}&source=${$("src").value}&limit=2000`, { token });
   if (!r.ok) { $("count").textContent = "読めませんでした（" + (r.error || r.status) + "）"; $("people").innerHTML = ""; return; }
   custRows = r.people;
   renderCustomers();
@@ -164,10 +176,10 @@ function renderCustomers() {
   const { key, dir } = custSort;
   const val = (p) => key === "stage" ? stageText(p) : key === "source" ? (SOURCE_LABEL[p.source] || p.source || "") : key === "until" ? (entUntil(p) || "9999") : (p[key] || "");
   rows = rows.slice().sort((a, b) => (val(a) > val(b) ? 1 : val(a) < val(b) ? -1 : 0) * dir);
-  $("count").textContent = rows.length === 0 ? "当てはまる顧客は 0 人です" : `${rows.length} 人${custRows.length >= 200 ? "（新しく動いた順に 200 人まで。名前かメールで探すと全員から探します）" : ""}`;
+  $("count").textContent = rows.length === 0 ? "当てはまる顧客は 0 人です" : `${rows.length} 人${custRows.length >= 2000 ? "（新しく動いた順に 2000 人まで。名前かメールで探すと全員から探します）" : ""}`;
   document.querySelectorAll(".cust-table [data-sort]").forEach((b) => b.dataset.dir = b.dataset.sort === key ? (dir > 0 ? "asc" : "desc") : "");
   $("people").innerHTML = rows.map((p) => `
-    <tr data-id="${p.id}" tabindex="0">
+    <tr data-id="${p.id}" tabindex="0"${p.id === current ? ' class="sel"' : ""}>
       <td><div class="c-name">${esc(p.name || "（名前なし）")}</div><div class="sub">${esc(p.email)}</div></td>
       <td><span class="pill ${p.member ? "" : "gray"}">${esc(stageText(p))}</span>${p.deal_stage && p.deal_stage !== "none" ? ` <span class="pill warn">${esc(STAGE[p.deal_stage])}</span>` : ""}</td>
       <td class="c-ent"><div class="ents">${(p.gate || []).filter(entLive).map(entChip).join("")}</div></td>
@@ -248,9 +260,7 @@ function wireEnt(id, rows, keys) {
 async function detail(id) {
   if (current !== id) { custTab = "overview"; entRm = null; entAddOpen = false; }
   current = id;
-  $("cust-list").classList.add("hidden");
-  $("cust-detail").classList.remove("hidden");
-  $("view-people-wrap").style.display = "none";
+  layoutPeople();
   const r = await api("/api/admin/people/" + id, { token });
   if (current !== id) return;
   if (!r.ok || !r.found) { $("detail").innerHTML = '<p class="note">読めませんでした。</p>'; return; }
@@ -393,6 +403,32 @@ async function detail(id) {
 const ACTOR_LABEL = { site: "サイト", admin: "画面", mcp: "AI", system: "自動", cron: "定時", connector: "コネクタ", student: "本人", univapay: "決済" };
 
 // 上の帯：いまの場所の続き（顧客の名前など）
+// マーケくん便 3：上の帯で機能を選ぶと、左にはその機能の項目だけが出る。項目が 1 つの機能（ファネル構築）は左を畳んで広く使う
+const FUNCS = [], lastView = {};
+function setupFuncBar() {
+  document.querySelectorAll(".side .grp-box, .side .grp-solo").forEach((box) => {
+    const solo = box.classList.contains("grp-solo");
+    FUNCS.push({ key: box.dataset.grp || "funnel", label: (solo ? box.querySelector("[data-view]") : box.querySelector(".grp")).textContent.trim(), box });
+  });
+  $("fbar").innerHTML = FUNCS.map((f) => `<button type="button" role="tab" data-func="${f.key}" aria-selected="false">${esc(f.label)}</button>`).join("");
+  $("fbar").querySelectorAll("[data-func]").forEach((b) => b.addEventListener("click", () => {
+    const f = FUNCS.find((x) => x.key === b.dataset.func);
+    (f.box.querySelector(`[data-view="${lastView[f.key]}"]`) || f.box.querySelector("[data-view]")).click();
+  }));
+  document.querySelectorAll(".side [data-view]").forEach((b) => b.addEventListener("click", () => setFunc(b)));
+  const cur = document.querySelector('.side [data-view][aria-selected="true"]') || document.querySelector(".side [data-view]");
+  if (cur) setFunc(cur);
+}
+function setFunc(item) {
+  const f = FUNCS.find((x) => x.box === item.closest(".grp-box, .grp-solo"));
+  if (!f) return;
+  lastView[f.key] = item.dataset.view;
+  FUNCS.forEach((x) => x.box.classList.toggle("on", x === f));
+  $("fbar").querySelectorAll("[data-func]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.func === f.key)));
+  $("side-title").textContent = f.label;
+  $("console").classList.toggle("no-side", f.box.querySelectorAll("[data-view]").length < 2);
+}
+
 function setCrumbSub(t) { $("crumb-sub").textContent = t ? " › " + t : ""; }
 
 // 便 17：左のメニューのまとまりを開閉する。開閉はこのブラウザに覚える（読めなくても全部開いた形で動く）
@@ -592,6 +628,7 @@ function setupViews() {
     if (b.dataset.view === "pages") loadPages();
     if (b.dataset.view === "line") loadLine();
   }));
+  setupFuncBar();
   $("hm-guide").addEventListener("click", () => openView("guide"));
   $("cust-back").addEventListener("click", custList);
   document.querySelectorAll("[data-back]").forEach((b) => b.addEventListener("click", () => showPane(b.dataset.back, "list")));

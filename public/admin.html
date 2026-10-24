@@ -55,6 +55,8 @@
 <section id="console" class="shell hidden">
   <nav class="side" aria-label="メニュー">
     <a class="side-logo" href="/admin"><img src="/icons/marke/favicon.svg" alt="" width="22" height="22">マーケくん</a>
+    <!-- マーケくん便 3：左には、上の帯で選んだ機能の項目だけを出す -->
+    <div class="side-title" id="side-title"></div>
     <!-- 便 17：まとまりごとに開閉できる（開いた・閉じたはこのブラウザに覚える）。いま開いている画面のまとまりは閉じない -->
     <div class="grp-box" data-grp="all">
       <button class="grp" type="button" aria-expanded="true">全体</button>
@@ -98,7 +100,9 @@
   <div class="main">
     <!-- 便 17：上の帯。いまの場所・顧客の検索・待っているもの（承認・未返信）に 1 回で届く -->
     <div class="topnav">
-      <span class="crumb"><span id="crumb">ホーム</span><span id="crumb-sub" class="crumb-sub"></span></span>
+      <!-- マーケくん便 3：上の帯＝機能の切り替え（全体・顧客・パーツ・ファネル構築・設定） -->
+      <a class="top-logo" href="/admin"><img src="/icons/marke/favicon.svg" alt="" width="22" height="22"><span>マーケくん</span></a>
+      <div class="fbar" id="fbar" role="tablist" aria-label="機能"></div>
       <span class="grow"></span>
       <form id="gsearch" class="gsearch" role="search"><input id="gq" type="search" placeholder="顧客を探す（名前・メール）" aria-label="顧客を探す"></form>
       <button type="button" class="chip hidden" id="chip-ai">承認待ち <b id="chip-ai-n"></b></button>
@@ -107,6 +111,7 @@
       <a href="#" id="logout" class="note">ログアウト</a>
     </div>
     <div class="content">
+      <h1 class="page-h"><span id="crumb">ホーム</span><span id="crumb-sub" class="crumb-sub"></span></h1>
       <div id="err2" class="msg err hidden" style="margin-bottom:12px"></div>
       <div id="view-home">
         <!-- 便 9：ホームから 1 回で「使い方」を開く -->
