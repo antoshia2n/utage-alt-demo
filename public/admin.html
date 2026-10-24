@@ -537,8 +537,9 @@
           <select id="src" class="inline" aria-label="流入元">
             <option value="">流入元：全部</option><option value="x">X</option><option value="note">note</option><option value="youtube">YouTube</option><option value="direct">直接</option><option value="other">その他</option>
           </select>
-          <select id="mem" class="inline" aria-label="会員">
-            <option value="">会員：全部</option><option value="1">会員だけ</option><option value="0">会員でない人</option>
+          <select id="mem" class="inline" aria-label="会員と権利">
+            <option value="">会員・権利：全部</option><option value="1">会員だけ</option><option value="0">会員でない人</option>
+            <option value="manual">手で付けた権利がある</option><option value="soon">期限が 7 日以内</option><option value="none">権利なし</option>
           </select>
         </div>
         <p class="note" id="count" style="margin:10px 0 6px"></p>
@@ -547,6 +548,8 @@
             <thead><tr>
               <th><button type="button" data-sort="name">名前</button></th>
               <th><button type="button" data-sort="stage">段階</button></th>
+              <th class="c-ent">権利</th>
+              <th class="c-exp"><button type="button" data-sort="until">期限</button></th>
               <th class="c-src"><button type="button" data-sort="source">流入元</button></th>
               <th><button type="button" data-sort="last_event_at">最後に動いた</button></th>
               <th class="c-reg"><button type="button" data-sort="created_at">登録した日</button></th>

@@ -31,3 +31,43 @@ body { font-family: "Geist", "Noto Sans JP", "Hiragino Sans", "Hiragino Kaku Got
 @media (min-width: 861px) {
   .side-logo { display: flex; align-items: center; gap: 8px; letter-spacing: -.01em; font-weight: 800; }
 }
+
+/* マーケくん便 2（2026-10-24）：権利の列・タブ。出どころの色は 3 つ（支払い＝青・手で付けた＝紫・マーケくんで購入＝青緑） */
+:root { --ent-pay: #2563eb; --ent-pay-bg: #dbeafe; --ent-man: #a21caf; --ent-man-bg: #fae8ff; --ent-lab: #0f766e; --ent-lab-bg: #ccfbf1; }
+@media (prefers-color-scheme: dark) {
+  :root { --ent-pay: #60a5fa; --ent-pay-bg: rgba(96,165,250,.14); --ent-man: #e879f9; --ent-man-bg: rgba(232,121,249,.14); --ent-lab: #2dd4bf; --ent-lab-bg: rgba(45,212,191,.14); }
+}
+.ents { display: flex; gap: 4px; flex-wrap: wrap; }
+.ent, .ent-src { --c: var(--ent-pay); --cb: var(--ent-pay-bg); color: var(--c); background: var(--cb); white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
+.ent { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 6px; }
+.ent i { width: 6px; height: 6px; border-radius: 50%; background: var(--c); }
+.ent-manual { --c: var(--ent-man); --cb: var(--ent-man-bg); }
+.ent-lab { --c: var(--ent-lab); --cb: var(--ent-lab-bg); }
+.ent-off { opacity: .5; text-decoration: line-through; }
+.ent-soon { color: var(--warn); font-weight: 700; }
+.ent-src { font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 99px; }
+.cust-table .c-exp { white-space: nowrap; font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ent-box { display: flex; flex-direction: column; gap: 10px; }
+.er { border: 1px solid var(--line); border-radius: 12px; padding: 11px 12px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 10px; align-items: center; }
+.er-off { opacity: .6; }
+.er .k { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; font-weight: 700; }
+.er .d { font-size: 12px; color: var(--muted); }
+.er .why { grid-column: 1 / -1; font-size: 12px; color: var(--muted); line-height: 1.6; }
+.er-act { grid-column: 1 / -1; display: flex; gap: 6px; justify-content: flex-end; align-items: center; }
+.conf { grid-column: 1 / -1; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; background: var(--warn-soft); border-radius: 9px; padding: 8px 10px; font-size: 12.5px; }
+.conf input { flex: 1; min-width: 140px; min-height: 34px; }
+.btn.danger { background: var(--warn); border-color: var(--warn); color: var(--surface); }
+.addbox { border: 1.5px dashed var(--line); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+.addbox.open { border-style: solid; border-color: var(--accent); align-items: stretch; }
+.addbox .f { display: flex; flex-direction: column; gap: 5px; }
+.addbox .f label { font-size: 11.5px; font-weight: 700; color: var(--muted); }
+.addbox .f small { font-size: 11.5px; color: var(--muted); }
+.addbox .row2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.addbox .er-act { grid-column: auto; }
+.addbox select.inline { width: 100%; }
+.addbox input[type=date] { width: 100%; min-height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 0 10px; font: inherit; }
+#ent-status:empty { display: none; }
+@media (max-width: 640px) {
+  .cust-table .c-exp { display: none; }
+  .addbox .row2 { grid-template-columns: minmax(0, 1fr); }
+}
