@@ -1,9 +1,13 @@
 // B の便 8c：企画と設計図。
 // 設計図は別の表に描かない。部品（ページ・ステップ・一斉配信・セミナー・予約・商品・教材・添削・オプチャ）と、
 // 部品どうしのつながり（ステップのきっかけ・商品の権利・一斉配信の宛先の条件）から毎回組み立てる。
-// 企画は b_campaigns、部品の持ち主は b_campaign_parts（部品 1 つに持ち主は 1 つ）。「常設」は 1 つだけ。
+// 企画は b_campaigns、部品の入り先は b_campaign_parts。「常設」は 1 つだけ。
 // 名前は 2 つ：外の名前（生徒に見える・各部品の名前や件名そのまま）と、中の名前（シアニン用・「企画名｜種類｜役目」で自動）。
-// 企画をしまえるのは、持ち主の部品が 1 つも動いていないときだけ。部品を消す道は作らない。
+// 部品を消す道は作らない。
+// マーケくん便 4（2026-10-25 Naoki「OK」）：画面の名前は「シナリオ」（表と道具の名前は campaign のまま）。データはフォルダ（src/folders.js）に 1 か所、
+//   シナリオはデータを何本でも束ねる。1 つの部品を何本のシナリオにも入れられる（b_campaign_parts の行が部品 × シナリオごとに 1 行）。
+//   配信とステップは「そのシナリオのもの」、ほかのデータ（商品・ページ・フォーム・セミナー・予約など）は「借りているもの」。
+//   しまえないのは、そのシナリオだけに入っていて動いている配信・ステップがあるときだけ（借りているデータは止めない）。
 
 import { SEMINARS } from "./bin4.js";
 import { MEMBER_KEYS } from "./bridge.js";
@@ -42,6 +46,23 @@ export const PART_TYPES = {
 };
 
 const UUID_RE = /^[0-9a-f-]{36}$/i;
+// マーケくん便 4：そのシナリオのもの（複製で写す・しまうときに止まっているか見る）。ほかは借りているもの
+export const OWN_TYPES = ["step", "broadcast"];
+
+// マーケくん便 4：部品 × シナリオの 1 行を置く・外す。on_conflict を使わず「消してから入れる」にした
+// （表の主キーを部品だけから部品 × シナリオへ変える SQL の前と後のどちらでも動くように）
+export async function putMember(db, env, row) {
+  const q = `b_campaign_parts?campaign_id=eq.${row.campaign_id}&part_type=eq.${row.part_type}&part_id=eq.${encodeURIComponent(String(row.part_id))}`;
+  await db(env, "DELETE", q, undefined, "return=minimal");
+  await db(env, "POST", "b_campaign_parts", [row], "return=minimal");
+}
+// 主キーがまだ部品だけ（SQL の前）のときに、2 本目のシナリオへ入れようとした
+export const keyConflict = (e) => /\b409\b|23505|duplicate key/i.test(String((e && e.message) || e));
+export async function dropMember(db, env, { campaign_id, part_type, part_id }) {
+  let q = `b_campaign_parts?part_type=eq.${part_type}&part_id=eq.${encodeURIComponent(String(part_id))}`;
+  if (campaign_id) q += `&campaign_id=eq.${campaign_id}`;
+  await db(env, "DELETE", q, undefined, "return=minimal");
+}
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MONTH_PREFIX_RE = /^\d{4}-\d{2}\s/;
 const WEEK_TYPES = ["registered", "purchase_completed", "email_sent", "consult_booked", "lesson_viewed", "correction_submitted", "seminar_registered", "form_submitted", "page_viewed", "step_entered"];
@@ -222,20 +243,32 @@ export function pageEdgeWeek(edges, recent) {
   return out;
 }
 
-// 部品・線・企画・持ち主を合わせて、設計図 1 枚の形にする。view は all／unassigned／企画の番号
+// 部品・線・企画・入り先を合わせて、設計図 1 枚の形にする。view は all／unassigned／企画の番号
+// マーケくん便 4：部品 1 つが何本のシナリオに入っていてもよい。campaigns に入り先の全部（しまったものも印つき）。
+//   view が企画の番号のときは、その企画の行の役目・ブロックを campaign_id・role・block_name に入れる。
+//   all のときは、しまっていない入り先のうち常設より企画を先にした 1 つ目を代表にする（中の名前もそれで作る）
 export function assemble({ parts, edges, campaigns, owners, week, edgeWeek = {} }, view = "all") {
   const cmap = Object.fromEntries(campaigns.map((c) => [c.id, c]));
-  const omap = Object.fromEntries(owners.map((o) => [`${o.part_type}:${o.part_id}`, o]));
   const archived = new Set(campaigns.filter((c) => c.archived_at).map((c) => c.id));
+  const rank = (o) => ((cmap[o.campaign_id] || {}).kind === "standing" ? 1 : 0) + (archived.has(o.campaign_id) ? 2 : 0);
+  const omap = new Map();
+  for (const o of owners) {
+    if (!cmap[o.campaign_id]) continue;
+    const k = `${o.part_type}:${o.part_id}`;
+    if (!omap.has(k)) omap.set(k, []);
+    omap.get(k).push(o);
+  }
+  for (const list of omap.values()) list.sort((a, b) => rank(a) - rank(b) || String((cmap[a.campaign_id] || {}).name).localeCompare(String((cmap[b.campaign_id] || {}).name), "ja"));
   const linked = new Map(parts.map((p) => [p.key, new Set()]));
   for (const e of edges) { linked.get(e.from).add(e.to); linked.get(e.to).add(e.from); }
-  const full = parts.map((p) => {
-    const o = omap[p.key];
+  const shape = (p, o) => {
     const c = o ? cmap[o.campaign_id] : null;
+    const rows = omap.get(p.key) || [];
     return {
       ...p,
       campaign_id: c ? c.id : null,
       campaign_name: c ? c.name : null,
+      campaigns: rows.map((r) => ({ id: r.campaign_id, name: cmap[r.campaign_id].name, role: r.role || "", block_name: r.block_name || "", archived: archived.has(r.campaign_id) })),
       role: o ? o.role : "",
       // 便 8g-4：企画の中のブロック（空ならブロックに入っていない）と、作った元のテンプレ
       block_name: o ? (o.block_name || "") : "",
@@ -245,17 +278,25 @@ export function assemble({ parts, edges, campaigns, owners, week, edgeWeek = {} 
       week: week[p.key] || 0,
       isolated: linked.get(p.key).size === 0,
     };
-  });
+  };
+  const full = parts.map((p) => { const rows = omap.get(p.key) || []; return shape(p, rows.find((r) => !archived.has(r.campaign_id)) || rows[0] || null); });
   const byKey = Object.fromEntries(full.map((p) => [p.key, p]));
   for (const p of full) {
+    const mine = new Set(p.campaigns.map((c) => c.id));
     const used = new Set();
-    for (const k of linked.get(p.key)) { const q = byKey[k]; if (q.campaign_id && q.campaign_id !== p.campaign_id) used.add(q.campaign_id); }
+    for (const k of linked.get(p.key)) for (const c of byKey[k].campaigns) if (!mine.has(c.id) && !c.archived) used.add(c.id);
     p.used_by = [...used].map((id) => ({ id, name: cmap[id].name }));
   }
   let shown;
-  if (view === "all") shown = full.filter((p) => !(p.campaign_id && archived.has(p.campaign_id)));
+  // しまったシナリオにだけ入っている部品は「シナリオに入っていない」と同じに数える（一覧の画面と同じ）。動いている部品は全部の表示から外さない
+  const loose = (p) => !p.campaigns.some((c) => !c.archived);
+  if (view === "all") shown = full.filter((p) => !p.campaigns.length || !loose(p) || p.state === "running");
   else {
-    const own = view === "unassigned" ? full.filter((p) => !p.campaign_id) : full.filter((p) => p.campaign_id === view);
+    const own = view === "unassigned" ? full.filter(loose)
+      : full.filter((p) => p.campaigns.some((c) => c.id === view)).map((p) => {
+        const o = (omap.get(p.key) || []).find((r) => r.campaign_id === view);
+        return { ...shape(parts.find((x) => x.key === p.key), o), used_by: p.used_by };
+      });
     const keys = new Set(own.map((p) => p.key));
     const near = new Set();
     for (const k of keys) for (const n of linked.get(k)) if (!keys.has(n)) near.add(n);
@@ -272,16 +313,27 @@ export function assemble({ parts, edges, campaigns, owners, week, edgeWeek = {} 
     if (incoming[e.to] === 1) return { ...e, week: (byKey[e.to] && byKey[e.to].week) || 0, counted: "target" };
     return { ...e, week: 0, counted: "none" };
   });
-  const counts = {};
-  for (const p of full) { const k = p.campaign_id || "unassigned"; counts[k] = (counts[k] || 0) + 1; }
+  const counts = { unassigned: 0 };
+  for (const p of full) {
+    if (loose(p)) counts.unassigned++;
+    for (const c of p.campaigns) counts[c.id] = (counts[c.id] || 0) + 1;
+  }
   return {
     lanes: LANES,
     view,
     parts: shown,
     edges: sEdges,
-    unassigned_count: counts.unassigned || 0,
+    unassigned_count: counts.unassigned,
     campaigns: campaigns.map((c) => ({ id: c.id, name: c.name, kind: c.kind, starts_on: c.starts_on, archived_at: c.archived_at, parts: counts[c.id] || 0 })),
   };
+}
+
+// マーケくん便 4：シナリオをしまう前の確かめ。そのシナリオに入っていて、しまっていないほかのシナリオに入っていない、動いている配信・ステップ
+export function runningOwnParts({ parts, campaigns, owners }, campaignId) {
+  const live = new Set(campaigns.filter((c) => !c.archived_at && c.id !== campaignId).map((c) => c.id));
+  const elsewhere = new Set(owners.filter((o) => live.has(o.campaign_id)).map((o) => `${o.part_type}:${o.part_id}`));
+  const mine = new Set(owners.filter((o) => o.campaign_id === campaignId && OWN_TYPES.includes(o.part_type)).map((o) => `${o.part_type}:${o.part_id}`));
+  return parts.filter((p) => mine.has(p.key) && !elsewhere.has(p.key) && p.state === "running").map((p) => ({ key: p.key, name: p.name }));
 }
 
 export function makePlan(h) {
@@ -332,14 +384,16 @@ export function makePlan(h) {
     return { ok: true, ...assemble(all, view), stopped_products_hidden: all.hiddenProducts };
   }
 
-  // 便 19：一覧の「企画」の列と絞り込みに使う軽い一覧（部品ごとの持ち主の企画）。出来事は読まない
+  // 便 19：一覧の「シナリオ」の列と絞り込みに使う軽い一覧（部品ごとの入り先のシナリオ）。出来事は読まない
   async function owners(env) {
     if (!env.B_STORE) return { ok: true, store: "demo", campaigns: [], owners: [] };
-    const [campaigns, rows] = await Promise.all([
+    const [campaigns, rows, f] = await Promise.all([
       db(env, "GET", "b_campaigns?select=id,name,kind,archived_at&order=kind.desc,created_at.asc"),
-      db(env, "GET", "b_campaign_parts?select=part_type,part_id,campaign_id,block_name"),
+      db(env, "GET", "b_campaign_parts?select=part_type,part_id,campaign_id,block_name,role"),
+      // マーケくん便 4：画面の左のフォルダも同じ 1 回で返す（表がまだ無いときは空・note need_sql）
+      h.folders ? h.folders.read(env) : Promise.resolve({ ok: true, folders: [], items: [] }),
     ]);
-    return { ok: true, campaigns, owners: rows };
+    return { ok: true, campaigns, owners: rows, folders: f.folders, folder_items: f.items, ...(f.ok ? {} : { folders_note: f.error }) };
   }
 
   async function listCampaigns(env, { include_archived = false } = {}) {
@@ -366,40 +420,59 @@ export function makePlan(h) {
     return { ok: true, campaign: row };
   }
 
-  // 部品の持ち主と役目を変える。campaign_id を空にすると「企画に入っていない」に戻す
-  async function setPartCampaign(env, { part_type, part_id, campaign_id = null, role = "", block_name }, actor) {
+  // マーケくん便 4：部品をシナリオに入れる（ほかのシナリオからは外さない）・役目とブロックを変える。
+  //   remove が真ならそのシナリオから外す。campaign_id を空にすると全部のシナリオから外す（前の「企画から外す」と同じ）
+  async function setPartCampaign(env, { part_type, part_id, campaign_id = null, role, block_name, remove = false }, actor) {
     if (!env.B_STORE) return { ok: false, error: "demo_store" };
     if (!PART_TYPES[part_type]) return { ok: false, error: "bad_part_type", types: Object.keys(PART_TYPES) };
-    const r = String(role || "").trim();
-    if (r.length > 60) return { ok: false, error: "role_too_long", max: 60 };
+    const r = role === undefined ? undefined : String(role || "").trim();
+    if (r !== undefined && r.length > 60) return { ok: false, error: "role_too_long", max: 60 };
     const all = await loadAll(env);
     const key = `${part_type}:${String(part_id)}`;
     if (!all.parts.some((p) => p.key === key)) return { ok: false, error: "part_not_found", key };
-    const prev = all.owners.find((o) => o.part_type === part_type && String(o.part_id) === String(part_id));
-    const before = prev ? { campaign_id: prev.campaign_id, role: prev.role || "" } : null;
+    const rows = all.owners.filter((o) => o.part_type === part_type && String(o.part_id) === String(part_id));
     const outerName = (all.parts.find((p) => p.key === key) || {}).name || key;
+    const cname = (id) => (all.campaigns.find((c) => c.id === id) || {}).name || "";
+    const removeOne = async (o) => {
+      await dropMember(db, env, { campaign_id: o.campaign_id, part_type, part_id });
+      if (changes) await changes.record(env, { kind: "part", target: key, before: { campaign_id: o.campaign_id, role: o.role || "", block_name: o.block_name || "", template_id: o.template_id || null, template_version: o.template_version || null }, after: null, summary: `${outerName} をシナリオ「${cname(o.campaign_id)}」から外した`, actor });
+    };
     if (!campaign_id) {
-      await db(env, "DELETE", `b_campaign_parts?part_type=eq.${part_type}&part_id=eq.${encodeURIComponent(String(part_id))}`, undefined, "return=minimal");
+      for (const o of rows) await removeOne(o);
       await logInbound(env, "campaign", { action: "unassign", key, by: actor }, { ok: true }, 200);
-      if (changes) await changes.record(env, { kind: "part", target: key, before, after: null, summary: `${outerName} を企画から外した`, actor });
-      return { ok: true, key, campaign_id: null };
+      return { ok: true, key, campaign_id: null, removed: rows.length, campaigns: [] };
     }
     if (!UUID_RE.test(String(campaign_id))) return { ok: false, error: "bad_campaign_id" };
     const c = all.campaigns.find((x) => x.id === campaign_id);
     if (!c) return { ok: false, error: "campaign_not_found" };
+    const prev = rows.find((o) => o.campaign_id === campaign_id) || null;
+    if (remove === true || remove === "true") {
+      if (prev) await removeOne(prev);
+      await logInbound(env, "campaign", { action: "remove", key, campaign_id, by: actor }, { ok: true }, 200);
+      return { ok: true, key, campaign_id, removed: prev ? 1 : 0, campaigns: rows.filter((o) => o !== prev).map((o) => ({ id: o.campaign_id, name: cname(o.campaign_id) })) };
+    }
     if (c.archived_at) return { ok: false, error: "campaign_archived" };
-    // 便 8g-4：ブロック名。渡されたらその名前、企画が変わるときは空に戻す（前の企画のブロックを引きずらないため）
-    const row = { part_type, part_id: String(part_id), campaign_id, role: r, updated_at: new Date().toISOString(), updated_by: String(actor).slice(0, 200) };
+    const row = {
+      part_type, part_id: String(part_id), campaign_id,
+      role: r !== undefined ? r : prev ? prev.role || "" : "",
+      block_name: prev ? prev.block_name || "" : "",
+      template_id: prev ? prev.template_id || null : null, template_version: prev ? prev.template_version || null : null,
+      updated_at: new Date().toISOString(), updated_by: String(actor).slice(0, 200),
+    };
+    // 便 8g-4：ブロック名。渡されたらその名前（そのシナリオの中だけのもの）
     if (block_name !== undefined) {
       const bn = String(block_name || "").trim();
       if (bn.length > 60) return { ok: false, error: "block_name_too_long", max: 60 };
       row.block_name = bn;
-    } else if (prev && prev.campaign_id !== campaign_id) row.block_name = "";
-    await db(env, "POST", "b_campaign_parts?on_conflict=part_type,part_id", [row], "resolution=merge-duplicates,return=minimal");
-    await logInbound(env, "campaign", { action: "assign", key, campaign_id, role: r, by: actor }, { ok: true }, 200);
-    if (changes) await changes.record(env, { kind: "part", target: key, before, after: { campaign_id, role: r }, summary: `${outerName} を企画「${c.name}」へ`, actor });
-    const outer = (all.parts.find((p) => p.key === key) || {}).name;
-    return { ok: true, key, campaign_id, campaign_name: c.name, role: r, block_name: row.block_name ?? (prev ? prev.block_name || "" : ""), inner_name: innerName(c.name, part_type, r, outer) };
+    }
+    try { await putMember(db, env, row); }
+    catch (e) { if (keyConflict(e)) return { ok: false, error: "need_sql", note: "2 本目のシナリオに入れるには marke4_folders_scenarios.sql が要る" }; throw e; }
+    await logInbound(env, "campaign", { action: "assign", key, campaign_id, role: row.role, by: actor }, { ok: true }, 200);
+    const before = prev ? { campaign_id, role: prev.role || "", block_name: prev.block_name || "", template_id: prev.template_id || null, template_version: prev.template_version || null } : null;
+    if (changes) await changes.record(env, { kind: "part", target: key, before, after: { campaign_id, role: row.role, block_name: row.block_name }, summary: prev ? `${outerName} のシナリオ「${c.name}」での役目を変えた` : `${outerName} をシナリオ「${c.name}」へ入れた`, actor });
+    const after = [...rows.filter((o) => o.campaign_id !== campaign_id), row];
+    return { ok: true, key, campaign_id, campaign_name: c.name, role: row.role, block_name: row.block_name, inner_name: innerName(c.name, part_type, row.role, outerName),
+      campaigns: after.map((o) => ({ id: o.campaign_id, name: cname(o.campaign_id) })) };
   }
 
   // しまう（restore が真なら戻す）。常設はしまえない。持ち主の部品が 1 つでも動いていたらしまわずに並べて返す
@@ -415,9 +488,9 @@ export function makePlan(h) {
       const dup = all.campaigns.find((x) => x.id !== c.id && !x.archived_at && x.name === c.name);
       if (dup) return { ok: false, error: "name_taken", name: c.name };
     } else {
-      const mine = new Set(all.owners.filter((o) => o.campaign_id === c.id).map((o) => `${o.part_type}:${o.part_id}`));
-      const running = all.parts.filter((p) => mine.has(p.key) && p.state === "running").map((p) => ({ key: p.key, name: p.name }));
-      if (running.length) return { ok: false, error: "running_parts", running, note: "動いている部品がある間はしまえない。止めるか、別の企画へ移してから" };
+      // マーケくん便 4：止めるのは、このシナリオだけに入っていて動いている配信・ステップがあるときだけ。借りているデータ（商品・ページなど）は止めない
+      const running = runningOwnParts(all, c.id);
+      if (running.length) return { ok: false, error: "running_parts", running, note: "このシナリオだけの配信・ステップが動いている間はしまえない。止めるか、ほかのシナリオにも入れてから" };
     }
     const now = new Date().toISOString();
     await db(env, "PATCH", `b_campaigns?id=eq.${c.id}`, { archived_at: back ? null : now, updated_at: now, updated_by: String(actor).slice(0, 200) }, "return=minimal");
@@ -432,7 +505,7 @@ export function makePlan(h) {
     const all = await loadAll(env);
     const a = assemble(all, "all");
     const standing = all.campaigns.find((c) => c.kind === "standing");
-    const loose = a.parts.filter((p) => !p.campaign_id);
+    const loose = a.parts.filter((p) => !p.campaigns.some((c) => !c.archived));
     const assignments = loose.map((p) => ({
       part_type: p.type, part_id: p.id, name: p.name,
       campaign_id: standing ? standing.id : null, campaign_name: standing ? standing.name : null,

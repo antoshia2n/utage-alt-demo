@@ -14,6 +14,7 @@
 // 経路：ページの住所の後ろの ?r=名前。初めて登録したときの経路をその人の経路にする（registered の payload.route）。
 
 import { SLUG_RE } from "./forms.js";
+import { putMember } from "./plan.js";
 import { isTestPurchase } from "./purchase.js";
 
 export const PURPOSES = { signup: "無料登録", seminar: "セミナーの申込", sale: "販売", news: "お知らせ", thanks: "サンクス" };
@@ -253,7 +254,7 @@ export function makePages(h) {
       const purpose = PURPOSES[args.purpose] ? args.purpose : (req && req.purpose) || "signup";
       [page] = await db(env, "POST", "b_pages", [{ slug, title, purpose, status: "draft", latest_version: 0, updated_by: String(by).slice(0, 200) }], "return=representation");
       if (req && req.campaign_id) {
-        try { await db(env, "POST", "b_campaign_parts?on_conflict=part_type,part_id", [{ part_type: "page", part_id: page.id, campaign_id: req.campaign_id, role: PURPOSES[purpose], updated_at: now(), updated_by: String(by).slice(0, 200) }], "resolution=ignore-duplicates,return=minimal"); }
+        try { await putMember(db, env, { part_type: "page", part_id: page.id, campaign_id: req.campaign_id, role: PURPOSES[purpose], updated_at: now(), updated_by: String(by).slice(0, 200) }); }
         catch (_) { /* 企画が無くても下書きは置く */ }
       }
     } else if (args.title) {

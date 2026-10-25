@@ -11,6 +11,7 @@
 // 定時の処理（毎時 7 分）で送るので、送る時刻は最大 1 時間遅れる。
 
 import { seminarLabel, eventActor } from "./connect.js";
+import { putMember } from "./plan.js";
 
 export const NOTICE_KEY_RE = /^[a-z0-9][a-z0-9-]{0,29}$/;
 const UUID_RE = /^[0-9a-f-]{36}$/i;
@@ -212,7 +213,7 @@ export function makeSeminars(h) {
       [out] = await db(env, "POST", "b_seminars", [{ minutes: 60, capacity: null, zoom_url: "", archive_url: "", ...row }], "return=representation");
       await db(env, "POST", "b_seminar_notices", DEFAULT_NOTICES.map((n) => ({ ...n, seminar_id: out.id, active: true, updated_by: String(by).slice(0, 200) })), "return=minimal");
       if (UUID_RE.test(String(args.campaign_id || ""))) {
-        try { await db(env, "POST", "b_campaign_parts?on_conflict=part_type,part_id", [{ part_type: "seminar", part_id: out.id, campaign_id: args.campaign_id, role: "セミナー", updated_at: now(), updated_by: String(by).slice(0, 200) }], "resolution=merge-duplicates,return=minimal"); }
+        try { await putMember(db, env, { part_type: "seminar", part_id: out.id, campaign_id: args.campaign_id, role: "セミナー", updated_at: now(), updated_by: String(by).slice(0, 200) }); }
         catch (_) { /* 企画が無くても回は作る */ }
       }
     }
