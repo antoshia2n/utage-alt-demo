@@ -3,8 +3,12 @@
 //   テンプレ … b_templates。kind block（ブロック 1 つ）／campaign（企画まるごと）。中身 body はコネクタの設定の写し（draft_flow と同じ形）
 //               同じ名前で保存し直すと版 version を 1 つ上げる。テンプレを直しても、作った部品は変わらない（作った元と版だけを部品に残す）
 //   複製・テンプレから作る … 必ず下書き（動かない）。元に開催日があれば、新しい開催日が無いと作らない
+//   マーケくん便 4：複製で写すのは「そのシナリオのもの」（ステップと一斉配信）だけ。ほかのデータ（商品・ページ・フォーム・セミナー・予約など）は
+//          写さずに、新しいシナリオにも同じものを入れる（役目とブロックはそのまま）
 //   まとめて動かす（publish_block）… 承認が要る。頼んだ時点でブロックの中の下書きの番号と、部品の一覧（種類・名前・宛先の人数）を
 //               承認の中身に書き込む。承認されたら、その番号の下書きだけを動かす（頼んだあとに足されたものは動かさない）
+
+import { putMember, OWN_TYPES } from "./plan.js";
 
 const UUID_RE = /^[0-9a-f-]{36}$/i;
 const NAME_MAX = 80;
@@ -104,7 +108,7 @@ export function makeBlocks(h) {
       if (!r.ok) return { ok: false, error: r.error, block_name: b.block_name, index: r.index, created: [...out.created, ...(r.created || [])], campaign_id: cid || r.campaign_id || null };
       cid = r.campaign_id; cname = r.campaign_name;
       for (const id of r.step_ids) {
-        await db(env, "PATCH", `b_campaign_parts?part_type=eq.step&part_id=eq.${id}`, {
+        await db(env, "PATCH", `b_campaign_parts?part_type=eq.step&part_id=eq.${id}&campaign_id=eq.${cid}`, {
           block_name: String(b.block_name || "").slice(0, BLOCK_MAX),
           template_id: origin ? origin.id : null, template_version: origin ? origin.version : null,
         }, "return=minimal");
@@ -141,8 +145,11 @@ export function makeBlocks(h) {
     if (!String(title || "").trim()) return { ok: false, error: "need_title" };
     if (c.starts_on && !starts_on) return { ok: false, error: "need_starts_on", note: "元の企画に開催日があるので、新しい開催日が要る" };
     const steps = await stepsOfCampaign(env, c.id);
-    if (!steps.length) return { ok: false, error: "nothing_to_copy" };
-    const owned = await db(env, "GET", `b_campaign_parts?select=part_id,template_id,template_version&part_type=eq.step&campaign_id=eq.${c.id}`);
+    const members = await db(env, "GET", `b_campaign_parts?select=part_type,part_id,role,block_name,template_id,template_version&campaign_id=eq.${c.id}`);
+    const borrowed = members.filter((m) => !OWN_TYPES.includes(m.part_type));
+    const bcRows = members.filter((m) => m.part_type === "broadcast");
+    if (!steps.length && !borrowed.length && !bcRows.length) return { ok: false, error: "nothing_to_copy" };
+    const owned = members.filter((m) => m.part_type === "step");
     const originOf = Object.fromEntries(owned.map((o) => [String(o.part_id), o]));
     const groups = new Map();
     for (const s of steps) { const k = s.block_name || ""; if (!groups.has(k)) groups.set(k, []); groups.get(k).push({ ...copyOf(s), role: s.role }); }
@@ -151,9 +158,35 @@ export function makeBlocks(h) {
     const origins = [...new Set(steps.map((s) => (originOf[String(s.id)] || {}).template_id).filter(Boolean))];
     let origin = null;
     if (origins.length === 1) { const o = owned.find((x) => x.template_id === origins[0]); origin = { id: origins[0], version: o.template_version }; }
-    const r = await makeDrafts(env, { campaign_title: title, starts_on, blocks, origin }, actor);
+    let r;
+    if (blocks.length) r = await makeDrafts(env, { campaign_title: title, starts_on, blocks, origin }, actor);
+    else {
+      const nc = await plan.createCampaign(env, { title, starts_on }, actor);
+      if (!nc.ok) return nc;
+      r = { ok: true, campaign_id: nc.campaign.id, campaign_name: nc.campaign.name, created: 0, step_ids: [], blocks: [] };
+    }
     if (!r.ok) return r;
-    return { ...r, from: { id: c.id, name: c.name }, note: "すべて下書き（動いていない）。動かすのは publish_block（承認）" };
+    const now = new Date().toISOString(), by = actorOf(actor);
+    // 一斉配信は下書きで写す（件名・本文・宛先の条件）
+    const broadcast_ids = [];
+    if (bcRows.length && deliver && deliver.draftBroadcast) {
+      const src = await db(env, "GET", `b_broadcasts?select=id,subject,body,filter&id=in.(${bcRows.map((m) => m.part_id).filter((x) => UUID_RE.test(x)).join(",")})`);
+      for (const b of src) {
+        const d = await deliver.draftBroadcast(env, { subject: b.subject, body: b.body, filter: b.filter || {} }, by);
+        if (!d.ok) continue;
+        const m = bcRows.find((x) => x.part_id === b.id) || {};
+        await putMember(db, env, { part_type: "broadcast", part_id: d.broadcast.id, campaign_id: r.campaign_id, role: m.role || "", block_name: m.block_name || "", updated_at: now, updated_by: by });
+        broadcast_ids.push(d.broadcast.id);
+      }
+    }
+    // 借りているデータは写さず、新しいシナリオにも入れる
+    // （主キーを変える SQL の前は 2 本目に入れられないので、入れられなかった数を返して止めない）
+    let shared = 0, shared_failed = 0;
+    for (const m of borrowed) {
+      try { await putMember(db, env, { part_type: m.part_type, part_id: m.part_id, campaign_id: r.campaign_id, role: m.role || "", block_name: m.block_name || "", updated_at: now, updated_by: by }); shared++; }
+      catch (e) { shared_failed++; }
+    }
+    return { ...r, broadcast_ids, shared, ...(shared_failed ? { shared_failed, shared_note: "商品・ページなどを新しいシナリオに入れられなかった（marke4_folders_scenarios.sql の前）。SQL のあとに足し直す" } : {}), from: { id: c.id, name: c.name }, note: "ステップと一斉配信は下書き（動いていない）。商品・ページなどは写さずに同じものを入れた。動かすのは publish_block（承認）" };
   }
 
   // ---------- まとめて動かす ----------
@@ -211,10 +244,15 @@ export function makeBlocks(h) {
     if (!bp.ok) return bp;
     const groups = new Map();
     for (const p of bp.parts) {
-      if (!p.block_name || p.outside) continue;
-      const k = `${p.campaign_id}|${p.block_name}`;
-      if (!groups.has(k)) groups.set(k, { campaign_id: p.campaign_id, campaign_name: p.campaign_name, block_name: p.block_name, members: [] });
-      groups.get(k).members.push(p);
+      if (p.outside) continue;
+      // マーケくん便 4：1 つの部品が何本のシナリオに入っていてもよいので、入り先ごとのブロックで束ねる（1 本に絞ったときはそのシナリオだけ）
+      const rows = campaign_id && campaign_id !== "all" ? [{ id: p.campaign_id, name: p.campaign_name, block_name: p.block_name }] : (p.campaigns || []).filter((c) => !c.archived);
+      for (const c of rows) {
+        if (!c.block_name) continue;
+        const k = `${c.id}|${c.block_name}`;
+        if (!groups.has(k)) groups.set(k, { campaign_id: c.id, campaign_name: c.name, block_name: c.block_name, members: [] });
+        groups.get(k).members.push(p);
+      }
     }
     const blocks = [...groups.values()].map((g) => {
       const ports = blockPorts(g.members.map((m) => m.key), bp.edges);

@@ -40,6 +40,8 @@ export const DEFAULT_MODES = {
   // 便 8g-4：読む・テンプレの保存・下書きを作るのは自動（何も動かない）。ブロックをまとめて動かすのは承認
   list_blocks: "auto", list_templates: "auto", save_template: "auto", use_template: "auto", copy_campaign: "auto", publish_block: "approve",
   get_mail_settings: "auto", set_mail_settings: "approve",
+  // マーケくん便 4：フォルダは置き場だけ（何も動かない）なので自動
+  list_folders: "auto", save_folder: "auto", set_folder: "auto",
   get_tidy_plan: "auto", apply_tidy: "approve", list_changes: "auto", undo_change: "approve",
   // 便 8e：ラベルを読むのは自動、人の行を変える手のラベルは承認（B の原則 3 の最初の値に合わせる）
   get_labels: "auto", add_label: "approve", remove_label: "approve",

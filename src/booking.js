@@ -11,6 +11,7 @@
 
 import { fmtJst, parseStart } from "./seminars.js";
 import { eventActor } from "./connect.js";
+import { putMember } from "./plan.js";
 
 export const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,40}$/;
 const UUID_RE = /^[0-9a-f-]{36}$/i;
@@ -212,7 +213,7 @@ export function makeBooking(h) {
     else {
       [out] = await db(env, "POST", "b_booking_types", [{ zoom_url: "", remind_minutes: 1440, avoid_calendar: true, active: true, ...DEFAULT_TEXTS, ...row }], "return=representation");
       if (UUID_RE.test(String(args.campaign_id || ""))) {
-        try { await db(env, "POST", "b_campaign_parts?on_conflict=part_type,part_id", [{ part_type: "booking", part_id: out.id, campaign_id: args.campaign_id, role: "個別相談", updated_at: now(), updated_by: String(by).slice(0, 200) }], "resolution=merge-duplicates,return=minimal"); }
+        try { await putMember(db, env, { part_type: "booking", part_id: out.id, campaign_id: args.campaign_id, role: "個別相談", updated_at: now(), updated_by: String(by).slice(0, 200) }); }
         catch (_) { /* 企画が無くても種類は作る */ }
       }
     }

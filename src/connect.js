@@ -99,7 +99,8 @@ export function autoLabels({ person, events = [], member = false, ownerOf = {}, 
     else if (e.type === "referral_reward") out.add("紹介した");
     else if (e.type === "email_sent") {
       const key = p.kind === "step" && p.step_id != null ? `step:${p.step_id}` : p.kind === "broadcast" && p.broadcast_id ? `broadcast:${p.broadcast_id}` : null;
-      if (key && ownerOf[key]) out.add("企画:" + ownerOf[key]);
+      // マーケくん便 4：ラベルの名前は「企画:」のまま（宛先の条件に書いた名前を変えないため）
+      if (key && ownerOf[key]) for (const n of [].concat(ownerOf[key])) out.add("企画:" + n);
     }
   }
   const days = last ? (now - last) / 864e5 : Infinity;
@@ -141,7 +142,8 @@ export function makeConnect(h) {
     ]);
     const cname = Object.fromEntries(campaigns.filter((c) => c.kind !== "standing").map((c) => [c.id, c.name]));
     const out = {};
-    for (const o of owners) if (cname[o.campaign_id]) out[`${o.part_type}:${o.part_id}`] = cname[o.campaign_id];
+    // マーケくん便 4：1 つの部品が何本のシナリオに入っていてもよいので、名前の並び
+    for (const o of owners) if (cname[o.campaign_id]) (out[`${o.part_type}:${o.part_id}`] = out[`${o.part_type}:${o.part_id}`] || []).push(cname[o.campaign_id]);
     return out;
   }
 

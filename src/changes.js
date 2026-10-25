@@ -4,6 +4,8 @@
 // 同じ設定・同じ部品に、あとから別の変更が入っていたら戻さない（新しい変更を黙って消さないため）。先に新しいほうを戻す。
 // 表は増やさない（記録は b_inbound_log、戻す先はもとの表）。
 
+import { putMember, dropMember, keyConflict } from "./plan.js";
+
 export const CHANGE_KINDS = ["setting", "part"];
 const PART_RE = /^([a-z]{2,20}):(.{1,80})$/;
 
@@ -58,12 +60,20 @@ export function makeChanges(h) {
       const m = String(c.target).match(PART_RE);
       if (!m) return { ok: false, error: "bad_target" };
       const [, type, pid] = m;
-      if (!c.before || !c.before.campaign_id) {
-        await db(env, "DELETE", `b_campaign_parts?part_type=eq.${type}&part_id=eq.${encodeURIComponent(pid)}`, undefined, "return=minimal");
-      } else {
-        await db(env, "POST", "b_campaign_parts?on_conflict=part_type,part_id",
-          [{ part_type: type, part_id: pid, campaign_id: c.before.campaign_id, role: c.before.role || "", updated_at: now, updated_by: by }],
-          "resolution=merge-duplicates,return=minimal");
+      // マーケくん便 4：部品は何本のシナリオにも入れる。戻すときは「あとの入り先を外す → 前の入り先を戻す」
+      // （前の 1 部品 1 企画の記録も、同じ書き方で戻せる：移した先を外して、元の企画に戻す）
+      // 記録に無い欄（ブロック・作った元のテンプレ。前の形の記録には無い）は、いまの行の値を残す
+      const [cur] = c.before && c.before.campaign_id
+        ? await db(env, "GET", `b_campaign_parts?select=*&campaign_id=eq.${c.before.campaign_id}&part_type=eq.${type}&part_id=eq.${encodeURIComponent(pid)}`)
+        : [null];
+      const keep = (k) => (c.before && c.before[k] !== undefined ? c.before[k] : cur ? cur[k] ?? null : null);
+      if (c.after && c.after.campaign_id) await dropMember(db, env, { campaign_id: c.after.campaign_id, part_type: type, part_id: pid });
+      if (c.before && c.before.campaign_id) {
+        try {
+          await putMember(db, env, { part_type: type, part_id: pid, campaign_id: c.before.campaign_id, role: c.before.role || "", block_name: keep("block_name") || "", template_id: keep("template_id"), template_version: keep("template_version"), updated_at: now, updated_by: by });
+        } catch (e) { if (keyConflict(e)) return { ok: false, error: "need_sql" }; throw e; }
+      } else if (!c.after || !c.after.campaign_id) {
+        await dropMember(db, env, { part_type: type, part_id: pid });
       }
     }
     await logInbound(env, "change_undone", { of: n, kind: c.kind, target: c.target, restored: c.before, by }, { ok: true }, 200);
