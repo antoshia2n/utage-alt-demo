@@ -192,9 +192,13 @@ export function makeBin3(h) {
           }, "webhook");
           result = { ok: true, recorded: true, type: map[event] };
           // 便 6b：定期が止まった・戻ったら、門番の表の B の権利を合わせ直す
-          if (h.onSubEvent) result.grants = await h.onSubEvent(env, customerId, map[event], subId);
+          if (h.onSubEvent) result.grants = await h.onSubEvent(env, customerId, map[event], subId, data);
         } else result = { ok: true, recorded: false, duplicate: true };
-      } else result = { ok: true, recorded: false, reason: "unknown_subscription" };
+      } else {
+        result = { ok: true, recorded: false, reason: "unknown_subscription" };
+        // 決済受け口 便 1：B が知らない定期の入金は、売上に入らないまま埋もれないよう Naoki へ知らせる
+        if (event === "subscription_payment" && h.onUnknownPayment) { try { result.notified = await h.onUnknownPayment(env, subId, data); } catch (_) { result.notified = false; } }
+      }
     } else result = { ok: true, recorded: false, reason: "not_tracked" };
     await logInbound(env, "univapay", reqLog, result, 200);
     return json(result);

@@ -20,6 +20,8 @@ export const DEFAULT_MODES = {
   list_products: "auto", set_product: "approve",
   // 便 12c：継続課金の一覧は自動、解約は承認（UnivaPay の課金を永久に止めるため）
   list_subscriptions: "auto", cancel_subscription: "approve",
+  // 決済受け口 便 1：今の定期の引き継ぎは承認（売上管理を書き、権利を合わせ直すため）
+  takeover_subscriptions: "approve",
   preview_audience: "auto", list_broadcasts: "auto", draft_broadcast: "auto", cancel_broadcast: "auto", list_steps: "auto",
   queue_broadcast: "approve", set_step: "approve",
   list_lessons: "auto", list_corrections: "auto",

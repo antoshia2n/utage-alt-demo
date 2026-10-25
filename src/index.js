@@ -64,9 +64,10 @@ import { makeLessonQA, openLessonQuestions, QUESTION_MAX } from "./lessonqa.js";
 import { roomNotices } from "./roomview.js";
 import { makeLine } from "./line.js";
 import { makeUtageImport } from "./utageimport.js";
+import { makeSalesMark } from "./salesmark.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.48.0-bmarke3";
+const VERSION = "0.49.0-bpay1";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -145,11 +146,18 @@ async function guardPublic(request, env, mouth, opts) {
   return stop ? json(stop.body, stop.status) : null;
 }
 const mailcfg = makeMailCfg({ db, logInbound, changes });
-const bin3 = makeBin3({ db, addEvent, logInbound, json, mailcfg, onCharge: (env, event, data) => sell.onCharge(env, event, data), onSubEvent: async (env, id, type, subId) => {
+// 決済受け口 便 1：今の定期の引き継ぎと、課金が通った月を売上管理で入金済みにする（中身は src/salesmark.js）
+const salesmark = makeSalesMark({ db, addEvent, logInbound, notify: (env, m) => push.send(env, m), syncGrants: (env, id) => sell.syncGrants(env, id) });
+const bin3 = makeBin3({ db, addEvent, logInbound, json, mailcfg, onCharge: (env, event, data) => sell.onCharge(env, event, data), onSubEvent: async (env, id, type, subId, data) => {
   const g = (await sell.syncGrants(env, id)) || {};
   // 便 12c：課金が失敗したら、その人へメール（1 日 1 通まで）
   if (type === "subscription_failed") { try { g.failed_mail = (await sell.onSubscriptionFailed(env, id, subId)).mail; } catch (e) { g.failed_mail = "error"; } }
+  // 決済受け口 便 1：入金が通ったら、結んだ売上管理の契約のその月を入金済みにする
+  if (type === "subscription_payment") { try { g.sales = await salesmark.markMonth(env, id, subId, { at: new Date().toISOString(), amount: data && data.amount }); } catch (e) { g.sales = { ok: false, error: String((e && e.message) || e).slice(0, 120) }; } }
   return g;
+}, onUnknownPayment: async (env, subId, data) => {
+  const r = await push.send(env, { title: "定期の入金：B が知らない定期", body: `${data && data.amount != null ? Number(data.amount).toLocaleString() + " 円の" : ""}定期の入金の知らせが届きましたが、B に始まりの記録がありません。売上管理に入っていない可能性があります。定期の番号 ${String(subId).slice(0, 8)}…`, url: "/admin", tag: "sales" });
+  return !!(r && r.ok);
 } });
 const bin4 = makeBin4({ db, addEvent, bin3 });
 const guard = makeGuard({ db, logInbound });
@@ -1836,6 +1844,13 @@ const TOOLS = [
     inputSchema: { type: "object", properties: { subscription_id: { type: "string" }, reason: { type: "string" } }, required: ["subscription_id"] },
   },
   {
+    name: "takeover_subscriptions",
+    screen: "products",
+    say: "今の定期を B に引き継ぐ",
+    description: "shr-webhook が受けてきた本番の定期を、B の定期として引き継ぐ（決済受け口 便 1）。承認が要る道具。items は [{ subscription_id（UnivaPay の定期の番号）, customer_id（find_person の id）, product_id（list_products の定期の商品）, sales_contract_id（売上管理の契約の番号。結ばないなら空） }]（10 件まで）。決済の記録（shr_billing_logs）にその定期の入金があり、その人のもので、金額が商品と同じときだけ積む（UnivaPay には聞き直さない）。始まりの時刻は記録の最後の入金の時刻。積んだら権利を合わせ直し、結んだ契約の最後の入金の月を売上管理で入金済みにする。そのあとの入金の知らせでも、課金の日の月を入金済みにする。もう引き継いだ定期は already で返す。",
+    inputSchema: { type: "object", properties: { items: { type: "array", items: { type: "object", properties: { subscription_id: { type: "string" }, customer_id: { type: "string" }, product_id: { type: "string" }, sales_contract_id: { type: "string" } }, required: ["subscription_id", "customer_id", "product_id"] } } }, required: ["items"] },
+  },
+  {
     name: "preview_audience",
     screen: "deliver",
     say: "一斉配信の宛先の人数を数える",
@@ -2219,6 +2234,7 @@ async function runTool(env, name, args) {
   if (name === "list_products") return await sell.listProducts(env, args);
   // 便 12c
   if (name === "list_subscriptions") return await sell.listSubscriptions(env, args);
+  if (name === "takeover_subscriptions") return await salesmark.takeover(env, args, "mcp");
   if (name === "cancel_subscription") return await sell.cancelSubscription(env, args, "mcp");
   if (name === "set_product") return await sell.setProduct(env, args, "mcp");
   if (name === "preview_audience") return await deliver.previewAudience(env, args);
