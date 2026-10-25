@@ -502,54 +502,151 @@ function headHtml({ title, sub = "", pills = [], actions = "", foot = "" }) {
   return `<div class="card cust-head"><div class="cust-head-top"><div style="min-width:0"><h2 style="margin:0 0 2px">${esc(title)}</h2>${sub ? `<div class="note">${sub}</div>` : ""}</div><div class="cust-actions">${actions}</div></div>${pills.filter(Boolean).length ? `<div class="pill-row">${pills.filter(Boolean).join("")}</div>` : ""}${foot}</div>`;
 }
 
-// ---------- 便 19：企画（フォルダの代わり）。パーツの一覧を企画で絞り、詳細の上の帯で企画を変えられる ----------
-// 企画を作る・しまうのは設計図の画面。ここでは選ぶだけ
-let campData = { campaigns: [], owners: [] }, campAt = 0;
-const campFilterVal = {};
+// ---------- 便 19 → マーケくん便 4：データはフォルダ、まとまりはシナリオ（旧企画） ----------
+//  ・フォルダ：一覧の左の列。種類ごとの 1 段で、1 つのデータは 1 つのフォルダに入る。押すとそのフォルダの中だけになる
+//  ・シナリオ：一覧の上の「シナリオで絞る」と表の列。1 つのデータを何本のシナリオにも入れられる。詳細の上の帯で足す・外す
+//  シナリオを作る・しまうのは設計図の画面
+let campData = { campaigns: [], owners: [], folders: [], items: [], note: "" }, campAt = 0;
+const campFilterVal = {}, folderVal = {}, folderEdit = {};
 async function loadCampaigns(force) {
   if (!force && Date.now() - campAt < 20e3) return campData;
   const r = await api("/api/admin/campaigns/owners", { token });
-  if (r.ok) { campData = { campaigns: r.campaigns || [], owners: r.owners || [] }; campAt = Date.now(); }
+  if (r.ok) { campData = { campaigns: r.campaigns || [], owners: r.owners || [], folders: r.folders || [], items: r.folder_items || [], note: r.folders_note || "" }; campAt = Date.now(); }
   return campData;
 }
-function campOf(type, id) {
-  const o = campData.owners.find((x) => x.part_type === type && String(x.part_id) === String(id));
-  return o ? campData.campaigns.find((c) => c.id === o.campaign_id) || null : null;
+// 入っているシナリオの全部（しまっていないものだけ・名前の順）
+function campsOf(type, id) {
+  const ids = new Set(campData.owners.filter((x) => x.part_type === type && String(x.part_id) === String(id)).map((x) => x.campaign_id));
+  return campData.campaigns.filter((c) => ids.has(c.id) && !c.archived_at);
 }
+const campOf = (type, id) => campsOf(type, id)[0] || null;
 const liveCamps = () => campData.campaigns.filter((c) => !c.archived_at);
-// 一覧の上の「企画で絞る」を置き、選んだ企画の行だけを返す。選び直すと rerender を呼ぶ
+const foldersOf = (type) => campData.folders.filter((f) => f.part_type === type);
+function folderOf(type, id) {
+  const it = campData.items.find((x) => x.part_type === type && String(x.part_id) === String(id));
+  return it ? campData.folders.find((f) => f.id === it.folder_id) || null : null;
+}
+// 表の左にフォルダの列を置く場所を作る（初めの 1 回だけ。表を右の欄へ移す）
+function foldSide(slot, key) {
+  const card = slot && slot.closest(".card");
+  if (!card) return null;
+  let side = card.querySelector(`.fold-side[data-fold="${key}"]`);
+  if (side) return side;
+  const wrap = card.querySelector(".table-wrap");
+  if (!wrap) return null;
+  const lay = document.createElement("div"); lay.className = "fold-layout";
+  side = document.createElement("nav"); side.className = "fold-side"; side.dataset.fold = key; side.setAttribute("aria-label", "フォルダ");
+  const main = document.createElement("div"); main.className = "fold-main";
+  wrap.parentNode.insertBefore(lay, wrap); lay.appendChild(side); lay.appendChild(main); main.appendChild(wrap);
+  return side;
+}
+const FOLDER_ERR = { name_taken: "同じ名前のフォルダがあります", bad_name: "名前は 1〜40 文字", need_sql: "フォルダの表がまだありません（SQL を流すと使えます）" };
+function renderFolderSide(side, key, type, rows, idOf, rerender) {
+  const v = folderVal[key] || "";
+  const count = (fid) => rows.filter((r) => { const f = folderOf(type, idOf(r)); return fid === "none" ? !f : f && f.id === fid; }).length;
+  const btn = (val, label, n) => `<button type="button" class="fold-btn" data-fold-val="${esc(val)}" aria-pressed="${v === val}"><span class="fold-name">${esc(label)}</span><span class="fold-n">${n}</span></button>`;
+  const cur = foldersOf(type).find((f) => f.id === v);
+  side.innerHTML = `<div class="fold-title">フォルダ</div>
+    ${btn("", "すべて", rows.length)}
+    ${foldersOf(type).map((f) => btn(f.id, f.name, count(f.id))).join("")}
+    ${btn("none", "フォルダに入っていない", count("none"))}
+    ${cur && folderEdit[key] ? `<form class="fold-form" data-fold-rename><input type="text" maxlength="40" value="${esc(cur.name)}" aria-label="フォルダの名前"><div class="fold-row"><button class="btn small" type="submit">名前を保存</button><button class="btn ghost small" type="button" data-fold-remove>消す</button></div><p class="note" style="margin:0">消しても中のデータは消えず、「フォルダに入っていない」に戻ります</p></form>`
+      : cur ? `<button type="button" class="link-btn" data-fold-editopen>このフォルダの名前を変える・消す</button>` : ""}
+    <form class="fold-form" data-fold-new><input type="text" maxlength="40" placeholder="新しいフォルダの名前" aria-label="新しいフォルダの名前"><button class="btn ghost small" type="submit">＋ フォルダを作る</button></form>
+    <p class="note fold-status" style="margin:0">${campData.note === "need_sql" ? esc(FOLDER_ERR.need_sql) : ""}</p>`;
+  const status = (t) => { side.querySelector(".fold-status").textContent = t; };
+  side.querySelectorAll("[data-fold-val]").forEach((b) => b.addEventListener("click", () => { folderVal[key] = b.dataset.foldVal; folderEdit[key] = false; rerender(); }));
+  const open = side.querySelector("[data-fold-editopen]");
+  if (open) open.addEventListener("click", () => { folderEdit[key] = true; rerender(); });
+  side.querySelector("[data-fold-new]").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const name = ev.target.querySelector("input").value.trim();
+    if (!name) return;
+    status("作っています…");
+    const r = await api("/api/admin/folders", { method: "POST", token, body: { part_type: type, name } });
+    if (!r.ok) { status("作れませんでした（" + (FOLDER_ERR[r.error] || r.error || r.status) + "）"); return; }
+    await loadCampaigns(true); folderVal[key] = r.folder.id; rerender();
+  });
+  const ren = side.querySelector("[data-fold-rename]");
+  if (ren) {
+    ren.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      status("保存しています…");
+      const r = await api("/api/admin/folders", { method: "POST", token, body: { id: cur.id, name: ren.querySelector("input").value.trim() } });
+      if (!r.ok) { status("保存できませんでした（" + (FOLDER_ERR[r.error] || r.error || r.status) + "）"); return; }
+      await loadCampaigns(true); folderEdit[key] = false; rerender();
+    });
+    ren.querySelector("[data-fold-remove]").addEventListener("click", async () => {
+      status("消しています…");
+      const r = await api("/api/admin/folders", { method: "POST", token, body: { id: cur.id, remove: true } });
+      if (!r.ok) { status("消せませんでした（" + (FOLDER_ERR[r.error] || r.error || r.status) + "）"); return; }
+      await loadCampaigns(true); folderVal[key] = ""; folderEdit[key] = false; rerender();
+    });
+  }
+}
+// 一覧の左の「フォルダ」と、上の「シナリオで絞る」を置き、選んだ行だけを返す。選び直すと rerender を呼ぶ
 function campRows(key, type, rows, idOf, rerender) {
   const slot = document.querySelector(`[data-camp-slot="${key}"]`);
   const v = campFilterVal[key] || "";
   if (slot) {
-    slot.innerHTML = `<select class="inline camp-filter" aria-label="企画で絞る"><option value="">企画：すべて</option><option value="none" ${v === "none" ? "selected" : ""}>企画に入っていない</option>${liveCamps().map((c) => `<option value="${c.id}" ${v === c.id ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select>`;
+    slot.innerHTML = `<select class="inline camp-filter" aria-label="シナリオで絞る"><option value="">シナリオ：すべて</option><option value="none" ${v === "none" ? "selected" : ""}>シナリオに入っていない</option>${liveCamps().map((c) => `<option value="${c.id}" ${v === c.id ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select>`;
     slot.querySelector("select").addEventListener("change", (ev) => { campFilterVal[key] = ev.target.value; rerender(); });
+    const side = foldSide(slot, key);
+    if (side) renderFolderSide(side, key, type, rows, idOf, rerender);
   }
-  if (!v) return rows;
-  return rows.filter((r) => { const c = campOf(type, idOf(r)); return v === "none" ? !c : c && c.id === v; });
+  const fv = folderVal[key] || "";
+  let out = rows;
+  if (fv) out = out.filter((r) => { const f = folderOf(type, idOf(r)); return fv === "none" ? !f : f && f.id === fv; });
+  if (v) out = out.filter((r) => { const cs = campsOf(type, idOf(r)); return v === "none" ? !cs.length : cs.some((c) => c.id === v); });
+  return out;
 }
-// 表の「企画」の列
-const campCol = (type, idOf) => ({ key: "_camp", label: "企画", cls: "c-src", sortVal: (r) => (campOf(type, idOf(r)) || {}).name || "", html: (r) => { const c = campOf(type, idOf(r)); return c ? esc(c.name) : '<span class="sub">—</span>'; } });
-// 詳細の上の帯の下に置く「企画」の選び直し
+// 表の「シナリオ」の列（入っているシナリオを全部）
+const campCol = (type, idOf) => ({ key: "_camp", label: "シナリオ", cls: "c-src", sortVal: (r) => campsOf(type, idOf(r)).map((c) => c.name).join("・"),
+  html: (r) => { const cs = campsOf(type, idOf(r)); return cs.length ? cs.map((c) => esc(c.name)).join("<br>") : '<span class="sub">—</span>'; } });
+// 詳細の上の帯の下に置く「フォルダ」と「シナリオ」（シナリオは足す・外す）
 function campPicker(type, id) {
-  const cur = campOf(type, id);
-  return `<div class="camp-pick"><label>企画<select class="inline camp-set" data-part="${esc(type)}|${esc(String(id))}"><option value="">（企画に入っていない）</option>${liveCamps().map((c) => `<option value="${c.id}" ${cur && cur.id === c.id ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select></label><span class="note camp-status"></span></div>`;
+  const f = folderOf(type, id), cs = campsOf(type, id);
+  const rest = liveCamps().filter((c) => !cs.some((x) => x.id === c.id));
+  return `<div class="camp-pick" data-part="${esc(type)}|${esc(String(id))}">
+    <label>フォルダ<select class="inline fold-set"><option value="">（フォルダに入っていない）</option>${foldersOf(type).map((x) => `<option value="${x.id}" ${f && f.id === x.id ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select></label>
+    <span class="camp-label">シナリオ</span>${cs.map((c) => `<span class="pill camp-chip">${esc(c.name)}<button type="button" class="chip-x" data-camp-remove="${c.id}" aria-label="${esc(c.name)} から外す">×</button></span>`).join("") || '<span class="sub">入っていない</span>'}
+    ${rest.length ? `<select class="inline camp-add" aria-label="シナリオに足す"><option value="">＋ シナリオに足す</option>${rest.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select>` : ""}
+    <span class="note camp-status"></span></div>`;
 }
 function wireCampPicker(root, after) {
-  const sel = root.querySelector(".camp-set"), st = root.querySelector(".camp-status");
-  if (!sel) return;
-  sel.addEventListener("change", async () => {
-    const [part_type, part_id] = sel.dataset.part.split("|");
-    st.textContent = "変えています…";
-    const r = await api("/api/admin/campaigns/assign", { method: "POST", token, body: { part_type, part_id, campaign_id: sel.value || null } });
+  const box = root.querySelector(".camp-pick");
+  if (!box) return;
+  const [part_type, part_id] = box.dataset.part.split("|");
+  const st = box.querySelector(".camp-status");
+  const done = async (r, okText) => {
     if (!r.ok) {
-      st.textContent = r.error === "part_not_found" ? "設計図に出ていない物（止めている商品など）は企画に入れられません" : "変えられませんでした（" + (r.error || r.status) + "）";
+      st.textContent = r.error === "part_not_found" ? "設計図に出ていない物（止めている商品など）はシナリオに入れられません"
+        : r.error === "need_sql" ? FOLDER_ERR.need_sql : "変えられませんでした（" + (r.error || r.status) + "）";
       return;
     }
     await loadCampaigns(true);
-    st.textContent = sel.value ? "企画を変えました" : "企画から外しました";
+    // 詳細の帯も入れ直す（足したシナリオの札が出て、足す欄から消える）
+    box.outerHTML = campPicker(part_type, part_id);
+    wireCampPicker(root, after);
+    const ns = root.querySelector(".camp-pick .camp-status");
+    if (ns) ns.textContent = okText;
     if (after) after();
+  };
+  const fs = box.querySelector(".fold-set");
+  fs.addEventListener("change", async () => {
+    st.textContent = "変えています…";
+    await done(await api("/api/admin/folders/assign", { method: "POST", token, body: { part_type, part_id, folder_id: fs.value || null } }), fs.value ? "フォルダを変えました" : "フォルダから出しました");
   });
+  const add = box.querySelector(".camp-add");
+  if (add) add.addEventListener("change", async () => {
+    if (!add.value) return;
+    st.textContent = "足しています…";
+    await done(await api("/api/admin/campaigns/assign", { method: "POST", token, body: { part_type, part_id, campaign_id: add.value } }), "シナリオに足しました");
+  });
+  box.querySelectorAll("[data-camp-remove]").forEach((b) => b.addEventListener("click", async () => {
+    st.textContent = "外しています…";
+    await done(await api("/api/admin/campaigns/assign", { method: "POST", token, body: { part_type, part_id, campaign_id: b.dataset.campRemove, remove: true } }), "シナリオから外しました");
+  }));
 }
 function tabsHtml(tabs, cur) {
   return `<div class="tabs cust-tabs" role="tablist">${tabs.map(([k, v]) => `<button type="button" role="tab" data-tab="${k}" aria-selected="${k === cur}">${v}</button>`).join("")}</div>`;
@@ -903,7 +1000,7 @@ async function loadDeals(focusId, msg) {
     { key: "registrants", label: "申込", html: (x) => `${x.registrants} 人` + (x.capacity ? `<div class="sub">定員 ${x.capacity}</div>` : "") },
     campCol("seminar", (x) => x.id),
     { key: "past", label: "状態", sortVal: (x) => (x.past ? 1 : 0), html: (x) => x.past ? pill("終了", "gray") : pill("これから") },
-  ], smRows, (x) => (semStore ? openSeminar(x.id) : seminarDetail(x.id)), s.seminars.length ? "この企画のセミナーはありません" : (semStore ? "まだありません。「新しく作る」から回を作ります" : "セミナーはまだありません"));
+  ], smRows, (x) => (semStore ? openSeminar(x.id) : seminarDetail(x.id)), s.seminars.length ? "ここに当たるセミナーはありません" : (semStore ? "まだありません。「新しく作る」から回を作ります" : "セミナーはまだありません"));
   if (focusId) (semStore ? openSeminar(focusId, { msg }) : seminarDetail(focusId, msg));
 }
 // デモの置き場（架空の 2 回）
@@ -956,7 +1053,7 @@ async function loadBookingTypes() {
     { key: "weekdays", label: "受け付ける時間", nosort: true, cls: "c-src", html: (t) => `<span class="sub">${esc((t.weekdays || []).map((w) => WD_LABEL[w]).join("・"))}　${esc(t.times)}</span>` },
     { key: "upcoming", label: "これからの予約", html: (t) => `${t.upcoming} 件` },
     { key: "active", label: "状態", sortVal: (t) => (t.active ? 1 : 0), html: (t) => t.active ? pill("受付中") : pill("止めている", "gray") },
-  ], rows, (t) => openBookingType(t.id), btCache.length ? "この企画の予約の種類はありません" : "まだありません。「新しく作る」から作ります");
+  ], rows, (t) => openBookingType(t.id), btCache.length ? "ここに当たる予約の種類はありません" : "まだありません。「新しく作る」から作ります");
 }
 async function openBookingType(id, opts = {}) {
   currentBt = id;
@@ -1026,7 +1123,7 @@ function bookingTypeForm(t) {
       <label class="check"><input type="checkbox" id="bt-avoid" ${!t || t.avoid_calendar ? "checked" : ""}> <span>Google カレンダーの予定と重なる時間は出さない</span></label>
       <div><label for="bt-zoom">参加の URL（Zoom）</label><input id="bt-zoom" type="url" inputmode="url" maxlength="500" placeholder="https://zoom.us/j/..." value="${esc(t ? t.zoom_url : "")}"></div>
       <div><label for="bt-thanks">サンクスページ（予約のあとに移るページ。公開中のときだけ移る）</label><select id="bt-thanks" class="inline"><option value="">（移さない・枠の中に受付の文を出す）</option>${thanksOpts}</select></div>
-      ${t ? "" : `<div><label for="bt-camp">企画</label><select id="bt-camp" class="inline"><option value="">（あとで決める）</option>${liveCamps().map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select></div>`}
+      ${t ? "" : `<div><label for="bt-camp">シナリオ</label><select id="bt-camp" class="inline"><option value="">（あとで決める）</option>${liveCamps().map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select></div>`}
       <label class="check"><input type="checkbox" id="bt-active" ${!t || t.active ? "checked" : ""}> <span>受け付ける（外すと枠に「受け付けていません」と出る）</span></label>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn small" type="submit">${t ? "保存" : "作る"}</button><span class="note" id="bt-status"></span></div>
       ${t ? "" : '<p class="note" style="margin:0">作ると、受付のメールと前日の知らせ（1 日前）の文が入ります。あとで直せます。</p>'}
@@ -1140,7 +1237,7 @@ function seminarForm(x) {
       <div><label for="se-form">申込のフォーム（答えた人がこの回の申込者になる）</label><select id="se-form" class="inline"><option value="">（まだ結ばない）</option>${formOpts}</select></div>
       <div><label for="se-thanks">サンクスページ（答えたあとに移るページ。公開中のときだけ移る）</label><select id="se-thanks" class="inline"><option value="">（移さない・フォームの「送ったあとに出す文」を出す）</option>${thanksOpts}</select></div>
       <div><label for="se-arc">アーカイブの URL（開催のあとの知らせで使う）</label><input id="se-arc" type="url" inputmode="url" maxlength="500" placeholder="https://www.youtube.com/watch?v=..." value="${esc(x ? x.archive_url : "")}"></div>
-      ${x ? "" : `<div><label for="se-camp">企画</label><select id="se-camp" class="inline"><option value="">（あとで決める）</option>${liveCamps().map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select></div>`}
+      ${x ? "" : `<div><label for="se-camp">シナリオ</label><select id="se-camp" class="inline"><option value="">（あとで決める）</option>${liveCamps().map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select></div>`}
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn small" type="submit">${x ? "保存" : "作る"}</button>${x ? `<button class="btn ghost small" type="button" id="se-arch">${x.archived ? "戻す" : "しまう"}</button>` : ""}<span class="note" id="se-status"></span></div>
       ${x ? "" : '<p class="note" style="margin:0">作ると、知らせ 3 本（申込の直後・前日・1 時間前）が入ります。あとで直す・足すことができます。</p>'}
     </form>`;
@@ -1484,7 +1581,7 @@ async function loadDeliver() {
     { key: "clicked_people", label: "押した人", cls: "c-src", sortVal: (b) => b.clicked_people || 0, html: (b) => String(b.clicked_people || 0) },
     campCol("broadcast", (b) => b.id),
     { key: "created_at", label: "作った日", cls: "c-reg", html: (b) => esc(dayOf(b.created_at)) },
-  ], bcRows, (b) => openBroadcast(b), r.broadcasts.length ? "この企画のメールはありません" : "まだありません。「新しく作る」から作ります");
+  ], bcRows, (b) => openBroadcast(b), r.broadcasts.length ? "ここに当たるメールはありません" : "まだありません。「新しく作る」から作ります");
   stepsCache = r.steps;
   fillActionOptions(r);
   if (r.triggers && !$("sf-trigger").options.length) {
@@ -1500,13 +1597,13 @@ async function loadDeliver() {
     { key: "delay_hours", label: "何時間後", cls: "c-src", sortVal: (s) => s.delay_hours || 0, html: (s) => String(s.delay_hours || 0) },
     { key: "sent", label: "送った", sortVal: (s) => s.sent || 0, html: (s) => `${s.sent || 0} <span class="sub">開いた ${s.opened_people || 0}・押した ${s.clicks || 0}</span>` },
     campCol("step", (s) => s.id),
-  ], msRows, (s) => openConnector(s), mailSteps.length ? "この企画のステップ配信はありません" : "まだありません。「新しく作る」から作ります");
+  ], msRows, (s) => openConnector(s), mailSteps.length ? "ここに当たるステップ配信はありません" : "まだありません。「新しく作る」から作ります");
   table("steps", [
     { key: "name", label: "名前", html: (s) => { const c = connectorText(s); return `<div class="c-name">${esc(s.name)}</div><div class="sub">${esc(c.when)} → ${esc(c.who)} → ${esc(c.what)}</div>`; } },
     { key: "active", label: "状態", sortVal: (s) => (s.active ? 1 : 0), html: (s) => s.active ? pill("動いている") : pill("止めている", "gray") },
     campCol("step", (s) => s.id),
     { key: "result", label: "結果", nosort: true, cls: "c-reg", html: (s) => esc(stepResult(s)) },
-  ], stRows, (s) => openConnector(s), autoSteps.length ? "この企画の自動の動きはありません" : "まだありません。「新しく作る」から作ります");
+  ], stRows, (s) => openConnector(s), autoSteps.length ? "ここに当たる自動の動きはありません" : "まだありません。「新しく作る」から作ります");
 }
 const isMailStep = (s) => !s.action || s.action === "send_email";
 async function openStepById(id) {
@@ -1656,7 +1753,7 @@ async function loadForms() {
     { key: "answers", label: "回答", html: (f) => String(f.answers) },
     campCol("form", (f) => f.id),
     { key: "last_answer_at", label: "最後の回答", cls: "c-reg", html: (f) => esc(f.last_answer_at ? ago(f.last_answer_at) : "—") },
-  ], fmRows, (f) => formEditor(f), fo.forms.length ? "この企画のフォームはありません" : "まだありません。「新しく作る」から作ります");
+  ], fmRows, (f) => formEditor(f), fo.forms.length ? "ここに当たるフォームはありません" : "まだありません。「新しく作る」から作ります");
   table("fields-table", [
     { key: "label", label: "項目の名前", html: (f) => `<div class="c-name">${esc(f.label)}</div>${f.type === "select" ? `<div class="sub">${esc((f.options || []).join("・"))}</div>` : ""}` },
     { key: "type", label: "型", html: (f) => esc(TYPE_LABEL[f.type] || f.type) },
@@ -1802,7 +1899,7 @@ async function loadPages() {
     { key: "week_viewers", label: "先週見た人", html: (p) => String(p.week_viewers) },
     { key: "latest_version", label: "版", html: (p) => `最新 ${p.latest_version}${p.published_version ? `<div class="sub">公開 ${p.published_version}</div>` : ""}` },
     campCol("page", (p) => p.id),
-  ], rows, (p) => openPage(p.id), r.pages.length ? "この企画のページはありません" : "まだありません。「新しく作る」から依頼文を出します");
+  ], rows, (p) => openPage(p.id), r.pages.length ? "ここに当たるページはありません" : "まだありません。「新しく作る」から依頼文を出します");
   $("rt-page").innerHTML = r.pages.map((p) => `<option value="${esc(p.slug)}">${esc(p.title)}</option>`).join("") || '<option value="">（ページがまだありません）</option>';
   loadRoutes();
 }
@@ -1834,7 +1931,7 @@ function newPageRequest() {
     + `<section class="card" style="margin-top:16px"><form id="pr" class="stack">
       <div><label for="pr-purpose">目的</label><select id="pr-purpose" class="inline">${Object.entries(PAGE_PURPOSE).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select></div>
       <div><label for="pr-title">ページの名前（お客さんに見える名前）</label><input id="pr-title" type="text" maxlength="80" placeholder="例 図解セミナー 11 月の申込"></div>
-      <div><label for="pr-camp">企画</label><select id="pr-camp" class="inline"><option value="">（あとで決める）</option>${liveCamps().map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select></div>
+      <div><label for="pr-camp">シナリオ</label><select id="pr-camp" class="inline"><option value="">（あとで決める）</option>${liveCamps().map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select></div>
       <div><label for="pr-ref">参考にする構成（ページの住所や、どのページの作りを真似るか）</label><textarea id="pr-ref" rows="2" placeholder="例 UTAGE の「シアラボ4~2ヶ月LPファネル」のページ"></textarea></div>
       <div><label for="pr-mat">材料（Google ドライブのファイル名・フォルダ名・中身のメモ）</label><textarea id="pr-mat" rows="3" placeholder="例 ドライブの「図解セミナー 構成メモ」と「受講者の声 2026」"></textarea></div>
       <div><label for="pr-com">ほかに伝えたいこと</label><textarea id="pr-com" rows="3" placeholder="例 申込の枠は図解セミナーのフォームを使う。ボタンを押したら知らせてほしい"></textarea></div>
@@ -1857,7 +1954,7 @@ async function openPage(id, opts = {}) {
   showPane("pages", "detail", "読んでいます…", "ページの一覧へ");
   $("page-detail").innerHTML = '<p class="note">読んでいます…</p>';
   if (!pagesOrigin) { const l = await api("/api/admin/pages", { token }); if (l.ok) { pagesOrigin = l.pages_origin || ""; pagesCache = l.pages; } }
-  // Claude が下書きを置いたときに依頼の企画へ入れるので、企画の持ち主は毎回読み直す
+  // Claude が下書きを置いたときに依頼のシナリオへ入れるので、入り先は毎回読み直す
   await loadCampaigns(true);
   const r = await api("/api/admin/pages/" + id, { token });
   if (currentPage !== id) return;
@@ -2055,6 +2152,7 @@ function priceOf(p) {
   if (p.kind === "installment") return yen + " × " + p.installments + " 回";
   return yen + (p.grant_days ? "（" + p.grant_days + " 日）" : "");
 }
+let productsShowOff = false;
 async function loadProducts(focusId, msg) {
   const r = await api("/api/admin/products", { token });
   if (!r.ok) { $("pr-count").textContent = "読めませんでした（" + (r.error || r.status) + "）"; return; }
@@ -2062,7 +2160,15 @@ async function loadProducts(focusId, msg) {
   const sellable = r.products.filter((p) => p.active).length, shown = r.products.filter((p) => p.public).length;
   $("pr-count").textContent = `${r.count} 件・売っている ${sellable}・サイトに出している ${shown}${r.store === "demo" ? "（デモの置き場：見本だけ）" : ""}`;
   await loadCampaigns();
-  const prRows = campRows("products", "product", r.products, (p) => p.id, () => loadProducts());
+  // マーケくん便 4：売っていない商品は普段は出さない（左の列の下で出せる）
+  const off = r.products.filter((p) => !p.active).length;
+  const base = productsShowOff ? r.products : r.products.filter((p) => p.active);
+  const prRows = campRows("products", "product", base, (p) => p.id, () => loadProducts());
+  const side = document.querySelector('.fold-side[data-fold="products"]');
+  if (side && off) {
+    side.insertAdjacentHTML("beforeend", `<label class="check fold-off"><input type="checkbox" ${productsShowOff ? "checked" : ""}> <span>売っていない商品も出す（${off}）</span></label>`);
+    side.querySelector(".fold-off input").addEventListener("change", (ev) => { productsShowOff = ev.target.checked; loadProducts(); });
+  }
   table("products", [
     { key: "name", label: "名前", html: (p) => `<div class="c-name">${esc(p.name)}</div>${p.list_price_of ? `<div class="sub">紹介用の価格</div>` : ""}` },
     { key: "kind", label: "種類", cls: "c-src", sortVal: (p) => KIND_LABEL[p.kind] || p.kind, html: (p) => esc(KIND_LABEL[p.kind] || p.kind) },
@@ -2070,7 +2176,7 @@ async function loadProducts(focusId, msg) {
     { key: "sold", label: "売れた", sortVal: (p) => p.sold || 0, html: (p) => String(p.sold) },
     campCol("product", (p) => p.id),
     { key: "active", label: "状態", sortVal: (p) => (p.active ? 2 : 0) + (p.public ? 1 : 0), html: (p) => (p.active ? pill("売る") : pill("売らない", "gray")) + (p.public ? " " + pill("サイト") : "") },
-  ], prRows, (p) => productDetail(p.id), r.products.length ? "この企画の商品はありません" : "まだありません");
+  ], prRows, (p) => productDetail(p.id), r.products.length ? "ここに当たる商品はありません" : "まだありません");
   loadSubscriptions();
   if (focusId) productDetail(focusId, msg);
 }

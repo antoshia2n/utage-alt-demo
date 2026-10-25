@@ -1,8 +1,8 @@
-// B の便 8c：設計図（見る）と企画。
+// B の便 8c：設計図（見る）とシナリオ。
 // 部品を集客 → リストイン → アプローチ → 個別相談 → オファー → 受講 → 紹介の段に並べ（便 8d で 7 つ・便 13b で名前を直し、上から下へ降りる並びにした）、実際の設定から引いた線を引く。線の数字は先週 7 日の数。
 // 便 8d：商品は UTAGE の商品ごとのまとまり 1 箱にたたむ（押すと売り方が開く）。片付け案（承認 1 回で当てる）と、変えた記録・元に戻す。
-// 箱を押すと右の欄に中の名前・外の名前・入口と出口・持ち主の企画が出る。持ち主と役目はここで変える。
-// 線を引き直す・一言で下書きするのは 8e・8g。ここでは見ることと、企画の整理だけ。
+// 箱を押すと右の欄に中の名前・外の名前・入口と出口・持ち主のシナリオが出る。持ち主と役目はここで変える。
+// 線を引き直す・一言で下書きするのは 8e・8g。ここでは見ることと、シナリオの整理だけ。
 
 const TYPE_LABEL = { page: "ページ", step: "ステップ", broadcast: "一斉配信", seminar: "セミナー", booking: "予約", product: "商品", course: "教材", room: "添削", community: "オプチャ", form: "フォーム" };
 const STATE_LABEL = { running: "動いている", draft: "下書き", stopped: "止まっている" };
@@ -16,13 +16,19 @@ export function makeBlueprint({ $, api, esc, getToken, fail, openView }) {
   let mode = "flow"; // 便 8g-3：flow（レーンと線）／list（一覧の表）
   let query = "";
   let data = null;
-  // 便 8g-4：ブロック（企画の中の部品のまとまり）。既定はたたんで 1 箱。開いたものだけ中の部品を並べる
+  // 便 8g-4：ブロック（シナリオの中の部品のまとまり）。既定はたたんで 1 箱。開いたものだけ中の部品を並べる
   const openBlocks = new Set();
   let selectedBlock = null;
-  const blockIdOf = (p) => (p.block_name && !p.outside && p.campaign_id ? `${p.campaign_id}|${p.block_name}` : null);
+  // マーケくん便 4：1 つの部品が何本のシナリオに入っていてもよい。全部を見るときは入り先ごとのブロックに入れる（描くのは 1 つ目の箱）
+  const blockRefsOf = (p) => {
+    if (p.outside) return [];
+    if (view === "all") return (p.campaigns || []).filter((c) => !c.archived && c.block_name).map((c) => ({ id: `${c.id}|${c.block_name}`, campaign_id: c.id, campaign_name: c.name, block_name: c.block_name }));
+    return p.block_name && p.campaign_id ? [{ id: `${p.campaign_id}|${p.block_name}`, campaign_id: p.campaign_id, campaign_name: p.campaign_name, block_name: p.block_name }] : [];
+  };
+  const blockIdOf = (p) => { const r = blockRefsOf(p)[0]; return r ? r.id : null; };
   function blockGroups() {
     const g = new Map();
-    for (const p of data.parts) { const id = blockIdOf(p); if (!id) continue; if (!g.has(id)) g.set(id, { id, campaign_id: p.campaign_id, campaign_name: p.campaign_name, block_name: p.block_name, members: [] }); g.get(id).members.push(p); }
+    for (const p of data.parts) for (const r of blockRefsOf(p)) { if (!g.has(r.id)) g.set(r.id, { ...r, members: [] }); g.get(r.id).members.push(p); }
     for (const b of g.values()) {
       const inside = new Set(b.members.map((m) => m.key));
       b.ins = data.edges.filter((e) => inside.has(e.to) && !inside.has(e.from));
@@ -55,12 +61,12 @@ export function makeBlueprint({ $, api, esc, getToken, fail, openView }) {
     const list = campaigns.filter((c) => showArchived || !c.archived_at);
     $("bp-chips").innerHTML = chip("all", "すべて", null)
       + list.map((c) => chip(c.id, c.name + (c.archived_at ? "（しまった）" : ""), c.parts, c.archived_at ? " archived" : c.kind === "standing" ? " standing" : "")).join("")
-      + chip("unassigned", "企画に入っていない", data.unassigned_count, data.unassigned_count ? " warn" : "");
+      + chip("unassigned", "シナリオに入っていない", data.unassigned_count, data.unassigned_count ? " warn" : "");
     document.querySelectorAll("#bp-chips .chip").forEach((b) => b.addEventListener("click", () => { view = b.dataset.c; selected = null; load(); }));
     const cur = campaigns.find((c) => c.id === view);
     const arch = $("bp-archive");
     arch.classList.toggle("hidden", !cur || cur.kind === "standing");
-    if (cur) arch.textContent = cur.archived_at ? "この企画を戻す" : "この企画をしまう";
+    if (cur) arch.textContent = cur.archived_at ? "このシナリオを戻す" : "このシナリオをしまう";
   }
 
   // 便 8g-3：一覧の見方。部品を段階の順に 1 行ずつ。入る線・出る線と、それぞれの先週の人数
@@ -76,13 +82,13 @@ export function makeBlueprint({ $, api, esc, getToken, fail, openView }) {
       ? list.map((e) => `<div>${esc(nm(side === "in" ? e.from : e.to))}${e.counted === "none" ? "" : ` <b class="num">${e.week}</b>`}</div>`).join("")
       : '<span class="note">なし</span>';
     $("bp-canvas").innerHTML = `
-      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px"><input id="bp-q" type="search" placeholder="名前・企画で絞る" value="${esc(query)}" style="max-width:280px"><span class="note">${rows.length} 個</span></div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px"><input id="bp-q" type="search" placeholder="名前・シナリオで絞る" value="${esc(query)}" style="max-width:280px"><span class="note">${rows.length} 個</span></div>
       <div class="bp-table-wrap"><table class="bp-table">
-        <thead><tr><th>段階</th><th>種類</th><th>外の名前／中の名前</th><th>企画</th><th>状態</th><th class="r">先週</th><th>入る線（人数）</th><th>出る線（人数）</th></tr></thead>
+        <thead><tr><th>段階</th><th>種類</th><th>外の名前／中の名前</th><th>シナリオ</th><th>状態</th><th class="r">先週</th><th>入る線（人数）</th><th>出る線（人数）</th></tr></thead>
         <tbody>${rows.map((p) => `<tr data-key="${esc(p.key)}" class="${selected === p.key ? "sel" : ""}${p.isolated ? " iso" : ""}">
           <td>${esc(laneName[p.lane] || p.lane)}</td><td>${esc(TYPE_LABEL[p.type] || p.type)}</td>
           <td><div>${esc(p.name)}</div><div class="note">${esc(p.inner_name)}</div></td>
-          <td>${esc(p.campaign_name || "（企画に入っていない）")}${p.outside ? '<div class="note">別の企画</div>' : ""}</td>
+          <td>${(p.campaigns || []).length ? p.campaigns.filter((c) => !c.archived).map((c) => esc(c.name)).join("<br>") : "（シナリオに入っていない）"}${p.outside ? '<div class="note">別のシナリオ</div>' : ""}</td>
           <td><span class="pill ${p.state === "running" ? "" : "gray"}">${esc(STATE_LABEL[p.state] || p.state)}</span></td>
           <td class="r num">${p.week}</td>
           <td>${lineCell(data.edges.filter((e) => e.to === p.key), "in")}</td>
@@ -119,7 +125,7 @@ export function makeBlueprint({ $, api, esc, getToken, fail, openView }) {
         <span class="n">部品 ${b.members.length}${drafts ? `（下書き ${drafts}）` : ""}・入口 ${b.ins.length}・出口 ${b.outs.length}</span>${wk ? `<span class="wk">先週 ${wk}</span>` : ""}</button>`;
     };
     const node = (p) => `<button type="button" class="bp-node ${p.state}${p.isolated ? " iso" : ""}${p.outside ? " outside" : ""}${selected === p.key ? " sel" : ""}" data-key="${esc(p.key)}">
-        <span class="t">${esc(TYPE_LABEL[p.type] || p.type)}${p.outside ? " ・別の企画" : ""}</span>
+        <span class="t">${esc(TYPE_LABEL[p.type] || p.type)}${p.outside ? " ・別のシナリオ" : ""}</span>
         <span class="nm">${esc(p.name)}</span>
         <span class="in">${esc(p.inner_name)}</span>
         ${p.week ? `<span class="wk">先週 ${p.week}</span>` : ""}
@@ -147,8 +153,8 @@ export function makeBlueprint({ $, api, esc, getToken, fail, openView }) {
         <svg class="bp-lines" id="bp-lines" aria-hidden="true"></svg>
         ${lanes.map((l) => `<div class="bp-lane"><h4>${esc(l.label)}</h4><div class="bp-row">${((blockBoxes[l.id] || []).map(blockNode).join("") + laneHtml(byLane[l.id] || [])) || `<p class="note bp-empty">${l.id === "refer" ? "紹介は左のメニュー「紹介」で見ます" : "まだ部品がありません"}</p>`}</div></div>`).join("")}
       </div>
-      ${data.parts.length === 0 ? '<p class="note">この企画にはまだ部品がありません。「企画に入っていない」から部品を選び、右の欄で持ち主をこの企画にしてください。</p>' : ""}
-      ${data.stopped_products_hidden ? `<p class="note" style="margin:8px 0 0">売っていない商品 ${data.stopped_products_hidden} 本は出していません（企画に入れたものは出ます）。</p>` : ""}`;
+      ${data.parts.length === 0 ? '<p class="note">このシナリオにはまだ部品がありません。「シナリオに入っていない」から部品を選び、右の欄で持ち主をこのシナリオにしてください。</p>' : ""}
+      ${data.stopped_products_hidden ? `<p class="note" style="margin:8px 0 0">売っていない商品 ${data.stopped_products_hidden} 本は出していません（シナリオに入れたものは出ます）。</p>` : ""}`;
     document.querySelectorAll("#bp-canvas button.bp-node[data-key]").forEach((b) => b.addEventListener("click", () => { selected = b.dataset.key; selectedBlock = null; renderCanvas(); renderPanel(); }));
     document.querySelectorAll("#bp-canvas button.bp-node[data-block]").forEach((b) => b.addEventListener("click", () => { selectedBlock = b.dataset.block; selected = null; renderCanvas(); renderPanel(); }));
     document.querySelectorAll("#bp-canvas details.bp-group").forEach((d) => d.addEventListener("toggle", () => {
@@ -261,13 +267,13 @@ export function makeBlueprint({ $, api, esc, getToken, fail, openView }) {
     if (!p) {
       const cur = campaigns.find((c) => c.id === view);
       $("bp-panel").innerHTML = cur
-        ? `<h3>${esc(cur.name)}</h3><p class="note">部品 ${cur.parts} 個${cur.starts_on ? `・開催日 ${esc(cur.starts_on)}` : ""}${cur.kind === "standing" ? "・長く使うものの置き場（しまえない）" : ""}</p><p class="note">点線の外の箱は、線でつながる別の企画の部品です。</p>
+        ? `<h3>${esc(cur.name)}</h3><p class="note">部品 ${cur.parts} 個${cur.starts_on ? `・開催日 ${esc(cur.starts_on)}` : ""}${cur.kind === "standing" ? "・長く使うものの置き場（しまえない）" : ""}</p><p class="note">点線の外の箱は、線でつながる別のシナリオの部品です。</p>
           ${cur.kind === "standing" ? "" : `<form id="bp-copy" class="stack" style="margin-top:12px">
-            <div><label for="bp-copy-title">この企画を下書きで複製（新しい名前・年月は頭に自動）</label><input id="bp-copy-title" type="text" maxlength="60" placeholder="例 図解セミナー"></div>
+            <div><label for="bp-copy-title">このシナリオを下書きで複製（新しい名前・年月は頭に自動）</label><input id="bp-copy-title" type="text" maxlength="60" placeholder="例 図解セミナー"></div>
             <div><label for="bp-copy-date">開催日${cur.starts_on ? "（元に開催日があるので要る）" : "（任意）"}</label><input id="bp-copy-date" type="text" inputmode="numeric" placeholder="2026-12-12"></div>
             <div style="display:flex;gap:8px;align-items:center"><button class="btn ghost small" type="submit">複製する</button><span class="note" id="bp-copy-status"></span></div>
           </form>`}`
-        : '<p class="note">箱を押すと、中の名前・外の名前・入口と出口・先週の数が出ます。持ち主の企画と役目もここで変えます。</p>';
+        : '<p class="note">箱を押すと、中の名前・外の名前・入口と出口・先週の数が出ます。持ち主のシナリオと役目もここで変えます。</p>';
       const cf = $("bp-copy");
       if (cf) cf.addEventListener("submit", async (ev) => {
         ev.preventDefault();
@@ -287,27 +293,36 @@ export function makeBlueprint({ $, api, esc, getToken, fail, openView }) {
       <dl class="bp-dl">
         <dt>外の名前（生徒に見える）</dt><dd>${esc(p.name)}</dd>
         <dt>中の名前（シアニンだけに見える・自動）</dt><dd>${esc(p.inner_name)}</dd>
-        <dt>持ち主の企画</dt><dd>${esc(p.campaign_name || "企画に入っていない")}</dd>
-        <dt>線でつながる別の企画</dt><dd>${p.used_by.length ? p.used_by.map((c) => esc(c.name)).join("・") : "なし"}</dd>
+        <dt>入っているシナリオ</dt><dd>${(p.campaigns || []).length ? p.campaigns.map((c) => esc(c.name) + (c.archived ? "（しまった）" : "")).join("・") : "シナリオに入っていない"}</dd>
+        <dt>線でつながる別のシナリオ</dt><dd>${p.used_by.length ? p.used_by.map((c) => esc(c.name)).join("・") : "なし"}</dd>
         <dt>入口</dt><dd>${ins.length ? ins.map((e) => `${esc(name(e.from))}（${esc(e.label)}${e.counted === "none" ? "" : `・先週 ${e.week} 人`}）`).join("<br>") : "なし"}</dd>
         <dt>出口</dt><dd>${outs.length ? outs.map((e) => `${esc(name(e.to))}（${esc(e.label)}${e.counted === "none" ? "" : `・先週 ${e.week} 人`}）`).join("<br>") : "なし"}</dd>
         <dt>先週 7 日</dt><dd>${p.week}</dd>
       </dl>
       <form id="bp-assign" class="stack" style="margin-top:12px">
-        <div><label for="bp-camp">持ち主の企画を変える</label><select id="bp-camp" class="inline" style="width:100%">
-          <option value="">企画から外す</option>
-          ${live.map((c) => `<option value="${esc(c.id)}"${c.id === p.campaign_id ? " selected" : ""}>${esc(c.name)}</option>`).join("")}
+        <div><label for="bp-camp">どのシナリオでの役目とブロックか（ほかのシナリオからは外さない）</label><select id="bp-camp" class="inline" style="width:100%">
+          ${live.map((c) => `<option value="${esc(c.id)}"${c.id === (p.campaign_id || view) ? " selected" : ""}>${esc(c.name)}${(p.campaigns || []).some((x) => x.id === c.id) ? "（入っている）" : ""}</option>`).join("")}
         </select></div>
         <div><label for="bp-role">役目（中の名前の最後に入る・空なら外の名前）</label><input id="bp-role" type="text" maxlength="60" value="${esc(p.role || "")}" placeholder="例 申込者フォロー"></div>
         <div><label for="bp-block">ブロック（同じ名前の部品が 1 箱にまとまる・空ならブロックに入れない）</label><input id="bp-block" type="text" maxlength="60" value="${esc(p.block_name || "")}" placeholder="例 申込から当日まで"></div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <button class="btn small" type="submit">保存</button>
+          <button class="btn small" type="submit">このシナリオに入れて保存</button>
+          ${(p.campaigns || []).length ? '<button class="btn ghost small" type="button" id="bp-remove">このシナリオから外す</button>' : ""}
           ${editView(p) ? '<button class="btn ghost small" type="button" id="bp-open">開いて直す</button>' : ""}
           ${p.url ? `<a class="btn ghost small" href="${esc(p.url)}" target="_blank" rel="noopener">ページを見る</a>` : ""}
           <span class="note" id="bp-assign-status"></span>
         </div>
         ${p.type === "course" ? '<p class="note" style="margin:0">教材の中身は学ぶくんで直します。</p>' : ""}
       </form>`;
+    // マーケくん便 4：選んだシナリオでの役目とブロックを入れ直す（そのシナリオに入っていなければ空）。入っていないシナリオは「外す」を押せない
+    const fillFor = () => {
+      const m = (p.campaigns || []).find((c) => c.id === $("bp-camp").value);
+      $("bp-role").value = m ? m.role || "" : "";
+      $("bp-block").value = m ? m.block_name || "" : "";
+      const rmb = $("bp-remove"); if (rmb) rmb.disabled = !m;
+    };
+    $("bp-camp").addEventListener("change", fillFor);
+    fillFor();
     $("bp-assign").addEventListener("submit", async (ev) => {
       ev.preventDefault();
       $("bp-assign-status").textContent = "保存しています…";
@@ -316,19 +331,28 @@ export function makeBlueprint({ $, api, esc, getToken, fail, openView }) {
       await load();
       const s = $("bp-assign-status"); if (s) s.textContent = "保存しました";
     });
+    // マーケくん便 4：選んだシナリオからだけ外す（ほかのシナリオには残る）
+    const rm = $("bp-remove");
+    if (rm) rm.addEventListener("click", async () => {
+      $("bp-assign-status").textContent = "外しています…";
+      const r = await api("/api/admin/campaigns/assign", { method: "POST", token: getToken(), body: { part_type: p.type, part_id: p.id, campaign_id: $("bp-camp").value, remove: true } });
+      if (!r.ok) { $("bp-assign-status").textContent = "外せませんでした（" + (r.error || r.status) + "）"; return; }
+      await load();
+      const s = $("bp-assign-status"); if (s) s.textContent = r.removed ? "外しました" : "このシナリオには入っていませんでした";
+    });
     const open = $("bp-open");
     if (open) open.addEventListener("click", () => openView(editView(p), p));
   }
 
-  // 便 8d：片付け案（企画に入っていない部品を常設へ入れる案。当てると 1 件ずつ変えた記録に残り、元に戻せる）
+  // 便 8d：片付け案（シナリオに入っていない部品を常設へ入れる案。当てると 1 件ずつ変えた記録に残り、元に戻せる）
   async function showTidy() {
     selected = null;
     $("bp-panel").innerHTML = '<p class="note">片付け案を作っています…</p>';
     const r = await api("/api/admin/tidy", { token: getToken() });
     if (!r.ok) { $("bp-panel").innerHTML = `<p class="note">作れませんでした（${esc(r.error || r.status)}）</p>`; return; }
-    if (!r.count) { $("bp-panel").innerHTML = '<h3>片付け案</h3><p class="note">企画に入っていない部品はありません。</p>'; return; }
+    if (!r.count) { $("bp-panel").innerHTML = '<h3>片付け案</h3><p class="note">シナリオに入っていない部品はありません。</p>'; return; }
     $("bp-panel").innerHTML = `<h3>片付け案</h3>
-      <p class="note">企画に入っていない部品 ${r.count} 個を、下の役目で「${esc(r.assignments[0].campaign_name || "常設")}」に入れます。あとから「変えた記録」で 1 件ずつ元に戻せます。企画へ入れたいものは、当てたあとに箱を押して持ち主を変えてください。</p>
+      <p class="note">シナリオに入っていない部品 ${r.count} 個を、下の役目で「${esc(r.assignments[0].campaign_name || "常設")}」に入れます。あとから「変えた記録」で 1 件ずつ元に戻せます。シナリオへ入れたいものは、当てたあとに箱を押して持ち主を変えてください。</p>
       <ul class="bp-list">${r.assignments.map((x) => `<li><span>${esc(x.name)}<br><span class="sub">役目：${esc(x.role || "（外の名前）")}</span></span></li>`).join("")}</ul>
       <div style="display:flex;gap:8px;align-items:center;margin-top:12px"><button class="btn small" type="button" id="bp-tidy-apply">この案で当てる</button><span class="note" id="bp-tidy-status"></span></div>`;
     $("bp-tidy-apply").addEventListener("click", async () => {
@@ -380,7 +404,7 @@ export function makeBlueprint({ $, api, esc, getToken, fail, openView }) {
       const date = $("bp-date").value.trim();
       const r = await api("/api/admin/campaigns", { method: "POST", token: getToken(), body: { title: $("bp-title").value, starts_on: date || null } });
       if (!r.ok) {
-        const why = { name_taken: "同じ名前の企画があります", bad_title: "名前は 1〜60 文字です", bad_starts_on: "開催日は 2026-11-28 の形で入れてください" };
+        const why = { name_taken: "同じ名前のシナリオがあります", bad_title: "名前は 1〜60 文字です", bad_starts_on: "開催日は 2026-11-28 の形で入れてください" };
         $("bp-new-status").textContent = (why[r.error] || "つくれませんでした") + "（" + (r.error || r.status) + "）";
         return;
       }
@@ -395,7 +419,7 @@ export function makeBlueprint({ $, api, esc, getToken, fail, openView }) {
       const restore = !!cur.archived_at;
       const r = await api("/api/admin/campaigns/archive", { method: "POST", token: getToken(), body: { campaign_id: cur.id, restore } });
       if (!r.ok) {
-        if (r.error === "running_parts") return fail("動いている部品があるのでしまえません：" + r.running.map((x) => x.name).join("・") + "。止めるか、別の企画へ移してからしまってください。");
+        if (r.error === "running_parts") return fail("動いている部品があるのでしまえません：" + r.running.map((x) => x.name).join("・") + "。止めるか、別のシナリオへ移してからしまってください。");
         return fail("できませんでした（" + (r.error || r.status) + "）");
       }
       if (!restore) { view = "all"; }
