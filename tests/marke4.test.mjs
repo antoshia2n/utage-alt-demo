@@ -43,7 +43,7 @@ test("1 つの商品が 2 本のシナリオに入る：どちらのシナリオ
   assert.deepEqual(assemble(base, "unassigned").parts.map((p) => p.key), ["step:9"]);
 });
 
-test("代表の 1 つ：しまっていないシナリオを先に、常設より企画を先に。しまったシナリオだけの止まった部品は全部の表示から外れ、動いている部品は残って「入っていない」に数える", () => {
+test("代表の 1 つ：しまっていないシナリオを先に、常設より企画を先に。しまったシナリオだけの止まった部品は全部の表示からも「入っていない」からも外れ、動いている部品は残って「入っていない」に数える", () => {
   const parts = [part("product", "a"), part("page", "old", "stopped"), part("product", "selling")];
   const owners = [
     { part_type: "product", part_id: "a", campaign_id: STAND },
@@ -57,8 +57,8 @@ test("代表の 1 つ：しまっていないシナリオを先に、常設よ�
   assert.equal(all.parts.find((p) => p.key === "product:a").campaign_name, "2026-12 ローンチ");
   assert.equal(all.parts.some((p) => p.key === "page:old"), false);
   assert.equal(all.parts.some((p) => p.key === "product:selling"), true, "売っている商品はしまったシナリオだけでも消さない");
-  assert.equal(all.unassigned_count, 2);
-  assert.deepEqual(assemble(base, "unassigned").parts.map((p) => p.key).sort(), ["page:old", "product:selling"]);
+  assert.equal(all.unassigned_count, 1, "しまったシナリオだけの止まった部品は数えない（売っている商品だけ）");
+  assert.deepEqual(assemble(base, "unassigned").parts.map((p) => p.key), ["product:selling"]);
 });
 
 test("しまえるか：そのシナリオだけに入って動いている配信・ステップだけが止める。借りている商品・ページは止めない", () => {

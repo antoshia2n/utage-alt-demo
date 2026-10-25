@@ -288,9 +288,11 @@ export function assemble({ parts, edges, campaigns, owners, week, edgeWeek = {} 
     p.used_by = [...used].map((id) => ({ id, name: cmap[id].name }));
   }
   let shown;
-  // しまったシナリオにだけ入っている部品は「シナリオに入っていない」と同じに数える（一覧の画面と同じ）。動いている部品は全部の表示から外さない
-  const loose = (p) => !p.campaigns.some((c) => !c.archived);
-  if (view === "all") shown = full.filter((p) => !p.campaigns.length || !loose(p) || p.state === "running");
+  // 「シナリオに入っていない」：どこにも入っていない部品と、しまったシナリオにだけ入っていて動いている部品（一覧の画面と同じ）。
+  // しまったシナリオにだけ入っている止まった部品は、しまったものとして数えない・出さない
+  const loose = (p) => !p.campaigns.length || (!p.campaigns.some((c) => !c.archived) && p.state === "running");
+  const putAway = (p) => p.campaigns.length && !p.campaigns.some((c) => !c.archived) && p.state !== "running";
+  if (view === "all") shown = full.filter((p) => !putAway(p));
   else {
     const own = view === "unassigned" ? full.filter(loose)
       : full.filter((p) => p.campaigns.some((c) => c.id === view)).map((p) => {
@@ -505,7 +507,7 @@ export function makePlan(h) {
     const all = await loadAll(env);
     const a = assemble(all, "all");
     const standing = all.campaigns.find((c) => c.kind === "standing");
-    const loose = a.parts.filter((p) => !p.campaigns.some((c) => !c.archived));
+    const loose = a.parts.filter((p) => !p.campaigns.length || (!p.campaigns.some((c) => !c.archived) && p.state === "running"));
     const assignments = loose.map((p) => ({
       part_type: p.type, part_id: p.id, name: p.name,
       campaign_id: standing ? standing.id : null, campaign_name: standing ? standing.name : null,
