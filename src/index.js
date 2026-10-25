@@ -65,9 +65,10 @@ import { roomNotices } from "./roomview.js";
 import { makeLine } from "./line.js";
 import { makeUtageImport } from "./utageimport.js";
 import { makeSalesMark } from "./salesmark.js";
+import { makeFolders } from "./folders.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.49.0-bpay1";
+const VERSION = "0.50.0-bmarke4";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -179,7 +180,9 @@ const pages = makePages({ db, addEvent, logInbound, forms, sell });
 const seminars = makeSeminars({ db, addEvent, logInbound, bin3, pagesOrigin: (env) => pages.pagesOrigin(env) });
 forms.hooks.onSubmitted = (env, cid, slug) => seminars.onForm(env, cid, slug);
 const booking = makeBooking({ db, addEvent, logInbound, bin3, registerPerson: (env, a) => registerPerson(env, a), busyBetween: (env, a, b) => today.busyBetween(env, a, b), pagesOrigin: (env) => pages.pagesOrigin(env) });
-const plan = makePlan({ db, logInbound, communityLink, changes, pages, seminars, booking });
+// マーケくん便 4：データのフォルダ（中身は src/folders.js）。シナリオ（旧企画）の一覧と同じ 1 回で画面へ返す
+const folders = makeFolders({ db, logInbound });
+const plan = makePlan({ db, logInbound, communityLink, changes, pages, seminars, booking, folders });
 // B の便 8g-4：ブロックとテンプレ。中身は src/blocks.js（draftFlow は下の関数）
 const blocks = makeBlocks({ db, logInbound, plan, deliver, draftFlow: (env, a, actor) => draftFlow(env, a, actor) });
 // B の便 14a：LINE の受け口（中身は src/line.js）
@@ -1323,6 +1326,10 @@ async function handleApi(request, env, url) {
       const r = await plan.createCampaign(env, body, a.email);
       return json(r, r.ok === false ? 400 : 200);
     }
+    // マーケくん便 4：データのフォルダ（作る・名前を変える・消す・入れる）
+    if (path === "/api/admin/folders" && method === "GET") return json(await folders.list(env, { part_type: url.searchParams.get("type") || undefined }));
+    if (path === "/api/admin/folders" && method === "POST") { const body = await request.json().catch(() => ({})); const r = await folders.save(env, body, a.email); return json(r, r.ok === false ? 400 : 200); }
+    if (path === "/api/admin/folders/assign" && method === "POST") { const body = await request.json().catch(() => ({})); const r = await folders.assign(env, body, a.email); return json(r, r.ok === false ? 400 : 200); }
     if (path === "/api/admin/campaigns/assign" && method === "POST") {
       const body = await request.json().catch(() => ({}));
       const r = await plan.setPartCampaign(env, body, a.email);
@@ -1726,7 +1733,7 @@ const TOOLS = [
     name: "set_booking_type",
     screen: "deals",
     say: "個別相談の予約の種類を作る・直す",
-    description: "予約の種類を作る・直す。承認が要る道具。作るときは title と slug が要る。ほかに minutes（長さ・既定 30）・weekdays（0＝日〜6＝土の配列・既定 月〜金）・times（例 10:00-12:00,20:00-22:00・日本時間）・days_ahead（何日先まで・既定 14）・min_notice_hours（何時間前まで・既定 12）・zoom_url・thanks_page_slug（予約のあとに移るページ）・avoid_calendar（Google カレンダーの予定を避けるか・既定 true）・remind_minutes（前日の知らせを何分前に・既定 1440・空で送らない）・confirm_subject・confirm_body・remind_subject・remind_body（{{name}}・{{title}}・{{date}}・{{minutes}}・{{zoom}}・{{topic}}）・active・archived・campaign_id（作るときの企画）。id を渡すと直す。ページに埋め込む印は <div data-lab-part=\"booking:slug\"></div>。",
+    description: "予約の種類を作る・直す。承認が要る道具。作るときは title と slug が要る。ほかに minutes（長さ・既定 30）・weekdays（0＝日〜6＝土の配列・既定 月〜金）・times（例 10:00-12:00,20:00-22:00・日本時間）・days_ahead（何日先まで・既定 14）・min_notice_hours（何時間前まで・既定 12）・zoom_url・thanks_page_slug（予約のあとに移るページ）・avoid_calendar（Google カレンダーの予定を避けるか・既定 true）・remind_minutes（前日の知らせを何分前に・既定 1440・空で送らない）・confirm_subject・confirm_body・remind_subject・remind_body（{{name}}・{{title}}・{{date}}・{{minutes}}・{{zoom}}・{{topic}}）・active・archived・campaign_id（作るときのシナリオ）。id を渡すと直す。ページに埋め込む印は <div data-lab-part=\"booking:slug\"></div>。",
     inputSchema: { type: "object", properties: { id: { type: "string" }, title: { type: "string" }, slug: { type: "string" }, minutes: { type: "integer" }, weekdays: { type: "array", items: { type: "integer" } }, times: { type: "string" }, days_ahead: { type: "integer" }, min_notice_hours: { type: "integer" }, zoom_url: { type: "string" }, thanks_page_slug: { type: "string" }, avoid_calendar: { type: "boolean" }, remind_minutes: { type: ["integer", "null"] }, confirm_subject: { type: "string" }, confirm_body: { type: "string" }, remind_subject: { type: "string" }, remind_body: { type: "string" }, active: { type: "boolean" }, archived: { type: "boolean" }, campaign_id: { type: "string" } } },
   },
   {
@@ -1740,7 +1747,7 @@ const TOOLS = [
     name: "set_seminar",
     screen: "deals",
     say: "セミナーの回を作る・直す",
-    description: "セミナーの回を作る・直す。承認が要る道具。作るときは title と starts_at（例 2026-11-01 21:00・日本時間）が要る。ほかに minutes（長さ・分）・capacity（定員・空で無制限）・zoom_url・archive_url・form_slug（申込のフォームの住所の名前。そのフォームに答えた人がこの回の申込者になる）・thanks_page_slug（答えたあとに移るページ。公開中のときだけ移る）・campaign_id（作るときに入れる企画）・archived（しまう）。id を渡すと直す。作ると知らせ 3 本（申込の直後・前日・1 時間前）が入る。",
+    description: "セミナーの回を作る・直す。承認が要る道具。作るときは title と starts_at（例 2026-11-01 21:00・日本時間）が要る。ほかに minutes（長さ・分）・capacity（定員・空で無制限）・zoom_url・archive_url・form_slug（申込のフォームの住所の名前。そのフォームに答えた人がこの回の申込者になる）・thanks_page_slug（答えたあとに移るページ。公開中のときだけ移る）・campaign_id（作るときに入れるシナリオ）・archived（しまう）。id を渡すと直す。作ると知らせ 3 本（申込の直後・前日・1 時間前）が入る。",
     inputSchema: { type: "object", properties: { id: { type: "string" }, title: { type: "string" }, starts_at: { type: "string" }, minutes: { type: "integer" }, capacity: { type: ["integer", "null"] }, zoom_url: { type: "string" }, archive_url: { type: "string" }, form_slug: { type: "string" }, thanks_page_slug: { type: "string" }, campaign_id: { type: "string" }, archived: { type: "boolean" } } },
   },
   {
@@ -1954,56 +1961,56 @@ const TOOLS = [
     name: "get_blueprint",
     screen: "blueprint",
     say: "設計図（部品と線）を見る",
-    description: "設計図を返す。部品（page・step・broadcast・seminar・booking・product・course・room・community）を集める・育てる・売る・届ける・紹介のレーンに並べ、実際の設定から引いたつながり（線）と、部品ごとの先週 7 日の数を返す。部品ごとに外の名前（name・生徒に見える）・中の名前（inner_name・企画名｜種類｜役目）・持ち主の企画・線でつながる別の企画（used_by）・どこともつながっていないか（isolated）が付く。campaign_id：all（しまった企画を除く全部）／unassigned（企画に入っていない部品）／企画の番号（その企画の部品と、線でつながる外の部品 outside）。",
+    description: "設計図を返す。部品（page・step・broadcast・seminar・booking・product・course・room・community）を集める・育てる・売る・届ける・紹介のレーンに並べ、実際の設定から引いたつながり（線）と、部品ごとの先週 7 日の数を返す。部品ごとに外の名前（name・生徒に見える）・中の名前（inner_name・シナリオ名｜種類｜役目）・入り先のシナリオ（campaigns に全部・campaign_id は代表の 1 つ）・線でつながる別のシナリオ（used_by）・どこともつながっていないか（isolated）が付く。campaign_id：all（しまったシナリオを除く全部）／unassigned（シナリオに入っていない部品）／シナリオの番号（そのシナリオの部品と、線でつながる外の部品 outside）。",
     inputSchema: { type: "object", properties: { campaign_id: { type: "string" } } },
   },
   {
     name: "list_blocks",
     screen: "blueprint",
     say: "ブロックの中身と入口・出口を見る",
-    description: "ブロックの一覧。企画の中の部品のひとまとまり（ブロック名で束ねたもの）ごとに、部品・入口の線・出口の線（それぞれ先週の人数つき）を返す。入口か出口が 4 本を超えるものは too_many。campaign_id で 1 企画に絞れる（省くと全部）。",
+    description: "ブロックの一覧。シナリオの中の部品のひとまとまり（ブロック名で束ねたもの）ごとに、部品・入口の線・出口の線（それぞれ先週の人数つき）を返す。入口か出口が 4 本を超えるものは too_many。campaign_id で 1 シナリオに絞れる（省くと全部）。",
     inputSchema: { type: "object", properties: { campaign_id: { type: "string" } } },
   },
   {
     name: "list_templates",
     screen: "ai_only",
     say: "テンプレの一覧を見る",
-    description: "テンプレの一覧。kind（block＝ブロック 1 つ／campaign＝企画まるごと）・版 version・中のブロックとコネクタの数・元の企画に開催日があったか has_date。kind で絞れる。",
+    description: "テンプレの一覧。kind（block＝ブロック 1 つ／campaign＝シナリオまるごと）・版 version・中のブロックとコネクタの数・元のシナリオに開催日があったか has_date。kind で絞れる。",
     inputSchema: { type: "object", properties: { kind: { type: "string", enum: ["block", "campaign"] }, include_archived: { type: "boolean" } } },
   },
   {
     name: "save_template",
     screen: "blueprint",
-    say: "ブロックや企画をテンプレとして保存する",
-    description: "企画のブロック 1 つ（kind block・block_name が要る）か、企画まるごと（kind campaign）をテンプレとして保存する。中身はコネクタの設定の写し。同じ名前で保存し直すと版が 1 つ上がる。保存しても何も動かない。テンプレを直しても、前に作った部品は変わらない。",
+    say: "ブロックやシナリオをテンプレとして保存する",
+    description: "シナリオのブロック 1 つ（kind block・block_name が要る）か、シナリオまるごと（kind campaign）をテンプレとして保存する。中身はコネクタの設定の写し。同じ名前で保存し直すと版が 1 つ上がる。保存しても何も動かない。テンプレを直しても、前に作った部品は変わらない。",
     inputSchema: { type: "object", properties: { name: { type: "string" }, kind: { type: "string", enum: ["block", "campaign"] }, campaign_id: { type: "string" }, block_name: { type: "string" }, note: { type: "string" } }, required: ["name", "kind", "campaign_id"] },
   },
   {
     name: "use_template",
     screen: "ai_only",
     say: "テンプレから下書きを作る",
-    description: "テンプレから下書きを作る（動かない）。入れる先は campaign_id（いまある企画）か campaign_title（新しく作る・年月は頭に自動）と starts_on。企画まるごとのテンプレで元に開催日があったときは、新しく作るなら starts_on が要る。ブロックのテンプレは block_name で名前を変えて入れられる。作った部品に、どのテンプレのどの版から作ったかが残る。動かすのは publish_block（承認）。",
+    description: "テンプレから下書きを作る（動かない）。入れる先は campaign_id（いまあるシナリオ）か campaign_title（新しく作る・年月は頭に自動）と starts_on。シナリオまるごとのテンプレで元に開催日があったときは、新しく作るなら starts_on が要る。ブロックのテンプレは block_name で名前を変えて入れられる。作った部品に、どのテンプレのどの版から作ったかが残る。動かすのは publish_block（承認）。",
     inputSchema: { type: "object", properties: { template_id: { type: "string" }, campaign_id: { type: "string" }, campaign_title: { type: "string" }, starts_on: { type: "string" }, block_name: { type: "string" } }, required: ["template_id"] },
   },
   {
     name: "copy_campaign",
     screen: "blueprint",
-    say: "企画を下書きで複製する",
-    description: "企画を下書きで複製する。新しい企画名 title と開催日 starts_on だけを入れる（元に開催日があれば starts_on が要る）。コネクタはブロックと役目ごと写り、すべて動かない下書きになる。常設は複製できない。動かすのは publish_block（承認）。",
+    say: "シナリオを下書きで複製する",
+    description: "シナリオを下書きで複製する。新しいシナリオ名 title と開催日 starts_on だけを入れる（元に開催日があれば starts_on が要る）。そのシナリオのもの（コネクタと一斉配信）はブロックと役目ごと写り、すべて動かない下書きになる。商品・ページ・フォーム・セミナー・予約などは写さず、同じものを新しいシナリオにも入れる（shared に数）。常設は複製できない。動かすのは publish_block（承認）。",
     inputSchema: { type: "object", properties: { campaign_id: { type: "string" }, title: { type: "string" }, starts_on: { type: "string" } }, required: ["campaign_id", "title"] },
   },
   {
     name: "publish_block",
     screen: "blueprint",
     say: "ブロックの下書きをまとめて動かす",
-    description: "ブロックの中の下書きを、1 回の承認でまとめて動かす。承認が要る道具：呼ぶと、動かす下書きの番号と部品の一覧（種類・名前・宛先の人数）を中身に書き込んで承認待ちになり approval_url が返る。承認されたら、頼んだ時点の下書きだけが動く（あとから足したものは動かない）。複製やテンプレから作った企画で、元に開催日があるのに開催日が空なら need_starts_on で止まる。",
+    description: "ブロックの中の下書きを、1 回の承認でまとめて動かす。承認が要る道具：呼ぶと、動かす下書きの番号と部品の一覧（種類・名前・宛先の人数）を中身に書き込んで承認待ちになり approval_url が返る。承認されたら、頼んだ時点の下書きだけが動く（あとから足したものは動かない）。複製やテンプレから作ったシナリオで、元に開催日があるのに開催日が空なら need_starts_on で止まる。",
     inputSchema: { type: "object", properties: { campaign_id: { type: "string" }, block_name: { type: "string" } }, required: ["campaign_id", "block_name"] },
   },
   {
     name: "draft_flow",
     screen: "ai_only",
     say: "一言で流れの下書きを作る",
-    description: "一言の下書き。コネクタ（トリガー → セレクタ → アクション）を 1〜10 本、動かさない下書きのまま 1 回で作り、企画に入れる。connectors の 1 本の欄は set_step と同じ（name・trigger・trigger_args・product_id・delay_hours・selector・action・action_args・subject・body）に、企画の中の役目 role を足したもの。active は渡しても下書きになる。企画は campaign_id（いまある企画）か campaign_title（新しく作る・年月は頭に自動）と starts_on。返事に、作ったコネクタの番号と、その企画の設計図（部品と線）が付く。動かすのは set_step で active true（承認）。途中で形が合わなければ止め、それまでに作った番号 created と止まった位置 index を返す。",
+    description: "一言の下書き。コネクタ（トリガー → セレクタ → アクション）を 1〜10 本、動かさない下書きのまま 1 回で作り、シナリオに入れる。connectors の 1 本の欄は set_step と同じ（name・trigger・trigger_args・product_id・delay_hours・selector・action・action_args・subject・body）に、シナリオの中の役目 role を足したもの。active は渡しても下書きになる。シナリオは campaign_id（いまあるシナリオ）か campaign_title（新しく作る・年月は頭に自動）と starts_on。返事に、作ったコネクタの番号と、そのシナリオの設計図（部品と線）が付く。動かすのは set_step で active true（承認）。途中で形が合わなければ止め、それまでに作った番号 created と止まった位置 index を返す。",
     inputSchema: {
       type: "object",
       properties: {
@@ -2016,29 +2023,51 @@ const TOOLS = [
   {
     name: "list_campaigns",
     screen: "blueprint",
-    say: "企画の一覧を見る",
-    description: "企画の一覧（名前・常設か・開催日・しまったか・持ち主の部品の数）と、企画に入っていない部品の数。include_archived が真ならしまった企画も返す。",
+    say: "シナリオの一覧を見る",
+    description: "シナリオの一覧（名前・常設か・開催日・しまったか・持ち主の部品の数）と、シナリオに入っていない部品の数。include_archived が真ならしまったシナリオも返す。",
     inputSchema: { type: "object", properties: { include_archived: { type: "boolean" } } },
   },
   {
     name: "create_campaign",
     screen: "blueprint",
-    say: "企画をつくる",
-    description: "企画を作る（部品は動かない）。title は 1〜60 文字。名前の頭に年月が自動で付く（starts_on＝開催日 YYYY-MM-DD があればその月、無ければ今月）。しまっていない企画と同じ名前は作れない。",
+    say: "シナリオをつくる",
+    description: "シナリオを作る（部品は動かない）。title は 1〜60 文字。名前の頭に年月が自動で付く（starts_on＝開催日 YYYY-MM-DD があればその月、無ければ今月）。しまっていないシナリオと同じ名前は作れない。",
     inputSchema: { type: "object", properties: { title: { type: "string" }, starts_on: { type: "string" } }, required: ["title"] },
   },
   {
     name: "set_part_campaign",
     screen: "blueprint",
-    say: "部品の企画と役目を変える",
-    description: "部品の持ち主の企画と役目を変える（部品は動かない）。part_type・part_id は get_blueprint の type と id。role は 60 文字まで（中の名前の最後に入る。空なら外の名前）。campaign_id を空にすると企画から外す。しまった企画には入れられない。",
-    inputSchema: { type: "object", properties: { part_type: { type: "string" }, part_id: { type: "string" }, campaign_id: { type: ["string", "null"] }, role: { type: "string" } }, required: ["part_type", "part_id"] },
+    say: "部品のシナリオと役目を変える",
+    description: "部品をシナリオに入れる・役目とブロックを変える（部品は動かない）。1 つの部品を何本のシナリオにも入れられる（ほかのシナリオからは外さない）。part_type・part_id は get_blueprint の type と id。role は 60 文字まで（中の名前の最後に入る。空なら外の名前・省くと今のまま）。block_name はそのシナリオの中のブロック。remove が真ならそのシナリオから外す。campaign_id を空にすると全部のシナリオから外す。しまったシナリオには入れられない。返り値の campaigns に今の入り先の全部。",
+    inputSchema: { type: "object", properties: { part_type: { type: "string" }, part_id: { type: "string" }, campaign_id: { type: ["string", "null"] }, role: { type: "string" }, block_name: { type: "string" }, remove: { type: "boolean" } }, required: ["part_type", "part_id"] },
+  },
+  // マーケくん便 4：データのフォルダ（置き場だけ。何も動かない）
+  {
+    name: "list_folders",
+    screen: "blueprint",
+    say: "フォルダの一覧を見る",
+    description: "データのフォルダの一覧。フォルダは種類ごとの 1 段（page・form・product・seminar・booking・broadcast・step など）。part_type を渡すとその種類のフォルダ（名前と中の数）と、データの番号 → フォルダの番号 items。省くと種類ごと。フォルダは置き場で、1 つのデータは 1 つのフォルダに入る（まとまりはシナリオ＝set_part_campaign）。",
+    inputSchema: { type: "object", properties: { part_type: { type: "string" } } },
+  },
+  {
+    name: "save_folder",
+    screen: "blueprint",
+    say: "フォルダを作る・名前を変える・消す",
+    description: "フォルダを作る（part_type と name）・名前を変える（id と name）・消す（id と remove true）。名前は 40 文字まで・同じ種類で同じ名前は作れない。消すと中のデータは「フォルダに入っていない」に戻る（データは消えない）。",
+    inputSchema: { type: "object", properties: { id: { type: "string" }, part_type: { type: "string" }, name: { type: "string" }, remove: { type: "boolean" } } },
+  },
+  {
+    name: "set_folder",
+    screen: "blueprint",
+    say: "データをフォルダに入れる",
+    description: "データをフォルダに入れる（ほかのフォルダからは出る）。part_type と part_id（か part_ids の並び・200 件まで）と folder_id。folder_id を空にすると「フォルダに入っていない」に戻す。フォルダと同じ種類のデータだけ入れられる。",
+    inputSchema: { type: "object", properties: { part_type: { type: "string" }, part_id: { type: "string" }, part_ids: { type: "array", items: { type: "string" } }, folder_id: { type: ["string", "null"] } }, required: ["part_type"] },
   },
   {
     name: "archive_campaign",
     screen: "blueprint",
-    say: "企画をしまう・戻す",
-    description: "企画をしまう（restore が真なら戻す）。承認が要る道具。常設はしまえない。持ち主の部品が 1 つでも動いていたら（動いているステップ・送る列の一斉配信・売っている商品・これからのセミナーなど）しまわずに running で並べて返す。しまうと一覧と設計図から消えるが、部品と数字は残る。",
+    say: "シナリオをしまう・戻す",
+    description: "シナリオをしまう（restore が真なら戻す）。承認が要る道具。常設はしまえない。このシナリオだけに入っている配信・ステップが動いていたら、しまわずに running で並べて返す。商品・ページ・フォーム・セミナー・予約などの借りているデータは止めない。しまうと一覧と設計図から消えるが、部品と数字は残る（ほかのシナリオにも入っている部品は、そちらで見える）。",
     inputSchema: { type: "object", properties: { campaign_id: { type: "string" }, restore: { type: "boolean" } }, required: ["campaign_id"] },
   },
   // 便 8d：片付けと元に戻す
@@ -2046,14 +2075,14 @@ const TOOLS = [
     name: "get_tidy_plan",
     screen: "blueprint",
     say: "片付け案を見る",
-    description: "片付け案を返す（何も変えない）。企画に入っていない部品ごとに、入れる先の企画と役目の案（既定は常設・商品はまとまりの名前）と、部品が 1 つも無い企画をしまう案（archives）。別の企画へ入れたいものは campaign_id を変えて apply_tidy に渡す。",
+    description: "片付け案を返す（何も変えない）。シナリオに入っていない部品ごとに、入れる先のシナリオと役目の案（既定は常設・商品はまとまりの名前）と、部品が 1 つも無いシナリオをしまう案（archives）。別のシナリオへ入れたいものは campaign_id を変えて apply_tidy に渡す。",
     inputSchema: { type: "object", properties: {} },
   },
   {
     name: "apply_tidy",
     screen: "blueprint",
     say: "片付け案を当てる",
-    description: "片付け案を当てる。承認が要る道具。assignments（part_type・part_id・campaign_id・role の並び・200 件まで）と archives（しまう企画の campaign_id の並び）を渡すとそのとおり、どちらも渡さなければ get_tidy_plan の案のまま。部品の振り分けは 1 件ずつ変えた記録に残り、list_changes の番号で undo_change すると戻せる。しまった企画は archive_campaign（restore true）で戻す。",
+    description: "片付け案を当てる。承認が要る道具。assignments（part_type・part_id・campaign_id・role の並び・200 件まで）と archives（しまうシナリオの campaign_id の並び）を渡すとそのとおり、どちらも渡さなければ get_tidy_plan の案のまま。部品の振り分けは 1 件ずつ変えた記録に残り、list_changes の番号で undo_change すると戻せる。しまったシナリオは archive_campaign（restore true）で戻す。",
     inputSchema: { type: "object", properties: { assignments: { type: "array", items: { type: "object" } }, archives: { type: "array", items: { type: "string" } } } },
   },
   {
@@ -2262,6 +2291,9 @@ async function runTool(env, name, args) {
   if (name === "create_campaign") return await plan.createCampaign(env, args, "mcp");
   if (name === "set_part_campaign") return await plan.setPartCampaign(env, args, "mcp");
   if (name === "archive_campaign") return await plan.archiveCampaign(env, args, "mcp");
+  if (name === "list_folders") return await folders.list(env, args);
+  if (name === "save_folder") return await folders.save(env, args, "mcp");
+  if (name === "set_folder") return await folders.assign(env, args, "mcp");
   if (name === "get_tidy_plan") return await plan.tidyPlan(env);
   if (name === "apply_tidy") return await plan.applyTidy(env, args, "mcp");
   if (name === "list_changes") return await changes.list(env, args);
