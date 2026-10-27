@@ -12,7 +12,7 @@ function setup() {
   st.table("member_access").push(
     { entitlement_key: "shiarabo_basic", target: "portal", created_at: "2026-10-27T00:00:00Z" },
     { entitlement_key: "x_tester", target: "x-koryaku", created_at: "2026-10-27T09:00:00Z" },
-    { entitlement_key: PILOT_KEY, target: "content-os", created_at: "2026-10-27T09:00:00Z" },
+    { entitlement_key: PILOT_KEY, target: "haaku", created_at: "2026-10-27T09:00:00Z" },
   );
   st.table("member_entitlement").push(
     { id: 1, member_id: "m1", key: PILOT_KEY, source: "manual", expires_at: null },
@@ -28,8 +28,8 @@ test("先行で試すの名前は、人に付けられる名前の一覧に入�
   assert.ok(KNOWN_KEYS.includes(PILOT_KEY));
 });
 
-test("公開できるアプリは関門 1〜7 が全部 ○ の 4 本だけ（名前は各アプリが門番の apps で探す名前）", () => {
-  assert.deepEqual(PUBLISH_APPS.map((a) => a.target), ["x-koryaku", "note-koryaku", "swipe-file", "mindmap"]);
+test("公開できるアプリは関門 1〜7 が全部 ○ の 5 本だけ（名前は各アプリが門番の apps で探す名前）", () => {
+  assert.deepEqual(PUBLISH_APPS.map((a) => a.target), ["x-koryaku", "note-koryaku", "swipe-file", "mindmap", "content-os"]);
 });
 
 test("一覧：3 本とも閉じている・ほかの権利の行は見るだけで出る・人数は期限内の人だけ", async () => {
@@ -37,9 +37,9 @@ test("一覧：3 本とも閉じている・ほかの権利の行は見るだけ
   const r = await bridge.accessList(env);
   assert.equal(r.ok, true);
   assert.equal(r.holders, 1);
-  assert.deepEqual(r.apps.map((a) => [a.target, a.on]), [["x-koryaku", false], ["note-koryaku", false], ["swipe-file", false], ["mindmap", false]]);
+  assert.deepEqual(r.apps.map((a) => [a.target, a.on]), [["x-koryaku", false], ["note-koryaku", false], ["swipe-file", false], ["mindmap", false], ["content-os", false]]);
   assert.deepEqual(r.apps.find((a) => a.target === "x-koryaku").others, ["x_tester"]);
-  assert.equal(r.apps.some((a) => a.target === "content-os" || a.target === "portal"), false);
+  assert.equal(r.apps.some((a) => a.target === "haaku" || a.target === "portal"), false);
 });
 
 test("オンにすると先行で試すの行が 1 つ入り、もう一度オンにしても増えない", async () => {
@@ -60,13 +60,13 @@ test("オフにすると先行で試すの行だけが消え、ほかの権利�
   assert.equal(r.ok, true);
   assert.equal(r.apps.find((a) => a.target === "x-koryaku").on, false);
   const left = st.table("member_access").map((x) => x.entitlement_key + "×" + x.target).sort();
-  assert.deepEqual(left, ["shiarabo_basic×portal", "shiarabo_pilot×content-os", "x_tester×x-koryaku"]);
+  assert.deepEqual(left, ["shiarabo_basic×portal", "shiarabo_pilot×haaku", "x_tester×x-koryaku"]);
 });
 
 test("関門を通っていないアプリ・おかしな指定は書かない。デモの置き場では動かない", async () => {
   const { st, bridge, env } = setup();
   const before = st.table("member_access").length;
-  assert.equal((await bridge.setAccess(env, { target: "content-os", on: true })).error, "unknown_app");
+  assert.equal((await bridge.setAccess(env, { target: "haaku", on: true })).error, "unknown_app");
   assert.equal((await bridge.setAccess(env, { target: "portal", on: false })).error, "unknown_app");
   assert.equal((await bridge.setAccess(env, { target: "x-koryaku", on: "yes" })).error, "bad_on");
   assert.equal((await bridge.setAccess(env, { target: "x-koryaku,portal", on: true })).error, "unknown_app");
