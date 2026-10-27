@@ -94,6 +94,7 @@
       <div class="grp-items">
         <button class="it" type="button" data-view="ai" aria-selected="false">AI と承認<span class="badge hidden" id="ai-badge"></span></button>
         <button class="it" type="button" data-view="settings" aria-selected="false">決済・メール・オプチャ</button>
+        <button class="it" type="button" data-view="access" aria-selected="false">アプリの公開</button>
       </div>
     </div>
   </nav>
@@ -345,6 +346,17 @@
         <div id="cm-status" class="note">読み込んでいます…</div>
       </div>
     </details>
+      </div>
+      <!-- マーケくん便 5：アプリの公開スイッチ（先行で試すの権利 × 関門を通ったアプリ） -->
+      <div id="view-access" style="display:none">
+        <section class="card acc-card">
+          <h2 class="acc-h">先行で試す人に、アプリを開く</h2>
+          <p class="note">オンにすると、「先行で試す」の権利を持つ人がそのアプリに入れます。オフにすると、次に開いたときから入れません（裏の出入り口は 1 分以内に閉じます）。人に権利を付けるのは、顧客管理のその人の「権利」タブです。</p>
+          <p class="note" id="acc-holders"></p>
+          <div class="ent-box" id="acc-list"><p class="note">読み込んでいます…</p></div>
+          <p class="note" id="acc-status" role="status"></p>
+          <p class="note acc-foot">ここに出るのは、会員公開の 7 つの関門が全部通ったアプリだけです。</p>
+        </section>
       </div>
       <div id="view-people-wrap" style="display:none">
         <div class="stats" id="stats" style="margin-bottom:12px"></div>

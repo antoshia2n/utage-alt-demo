@@ -19,7 +19,18 @@ const MEETING_ROWS_MAX = 2000;
 //  ・付けるのは source=manual の行だけ。理由は必ず書く（表の側にも決まりがある）。支払いの行（source=payment）は画面からは触らない
 //  ・外せるのは source=manual の行だけ。外す理由も必ず書き、付けた・外したを出来事（b_events）に残す
 //  ・付けられる権利の名前は、門番の表にもうある名前と、下の決めた名前だけ（打ち間違いで新しい名前を作らない）
-export const KNOWN_KEYS = ["shiarabo_basic", "shiarabo_office_hour", "consult_single", "consult_followup", "seminar_recording", "workbook_ai_30day", "textbook_60day", "vip_status", "shiarabo_trial", "note_membership"];
+export const KNOWN_KEYS = ["shiarabo_basic", "shiarabo_office_hour", "consult_single", "consult_followup", "seminar_recording", "workbook_ai_30day", "textbook_60day", "vip_status", "shiarabo_trial", "note_membership", "shiarabo_pilot"];
+
+// マーケくん便 5（2026-10-27）：アプリの公開スイッチ。権利 × 開くものの表（member_access）の行を画面から入れる・外す。
+//  ・入れる・外すのは「先行で試す」の権利（shiarabo_pilot・2026-10-27 21:20 Naoki「OK」）の行だけ。basic の生徒から Naoki が名前で選んだ人に付ける
+//  ・アプリは会員公開の関門 1〜7 が全部 ○ のものだけ（事業の設計図 表 E）。○ になったアプリはここに 1 行足す
+//  ・ほかの権利の行は見るだけ。門番（shia2n-mcp の /gate/resolve）はこの表でその人の apps を決め、各アプリは apps に自分の名前があるときだけ通す
+export const PILOT_KEY = "shiarabo_pilot";
+export const PUBLISH_APPS = [
+  { target: "x-koryaku", name: "X攻略くん" },
+  { target: "note-koryaku", name: "note攻略くん" },
+  { target: "swipe-file", name: "スワイプくん" },
+];
 const KEY_RE = /^[a-z0-9_]{2,60}$/;
 const REASON_MAX = 200;
 
@@ -256,5 +267,39 @@ export function makeBridge(h) {
     return { ok: true, found: true, removed: { id: r.id, key: r.key }, entitlements: await gateFull(env, person_id) };
   }
 
-  return { withGate, gateMembers, syncGrants, listTables, meetings, entitlementKeys, gateAll, gateFull, grantManual, revokeManual };
+  // ---------- マーケくん便 5：アプリの公開スイッチ ----------
+  // 画面に出す形：関門を通ったアプリごとに、先行で試すがオンか・ほかに開いている権利（見るだけ）・その権利を持つ人数
+  async function accessList(env) {
+    if (!env.B_STORE) return { ok: false, error: "demo_store" };
+    const targets = PUBLISH_APPS.map((a) => a.target);
+    const rows = await db(env, "GET", `member_access?select=entitlement_key,target,created_at&target=in.(${targets.join(",")})&limit=1000`);
+    const now = Date.now();
+    const holders = (await db(env, "GET", `member_entitlement?select=member_id,expires_at&key=eq.${PILOT_KEY}&limit=10000`)).filter((r) => live(r, now));
+    const apps = PUBLISH_APPS.map((a) => {
+      const mine = rows.filter((r) => r.target === a.target);
+      const pilot = mine.find((r) => r.entitlement_key === PILOT_KEY);
+      return {
+        target: a.target, name: a.name,
+        on: !!pilot, since: pilot ? pilot.created_at || null : null,
+        others: mine.filter((r) => r.entitlement_key !== PILOT_KEY).map((r) => r.entitlement_key).sort(),
+      };
+    });
+    return { ok: true, key: PILOT_KEY, holders: new Set(holders.map((r) => r.member_id)).size, apps };
+  }
+
+  async function setAccess(env, { target, on } = {}) {
+    if (!env.B_STORE) return { ok: false, error: "demo_store" };
+    const app = PUBLISH_APPS.find((a) => a.target === String(target ?? ""));
+    if (!app) return { ok: false, error: "unknown_app" };
+    if (typeof on !== "boolean") return { ok: false, error: "bad_on" };
+    const where = `entitlement_key=eq.${PILOT_KEY}&target=eq.${app.target}`;
+    const [have] = await db(env, "GET", `member_access?select=entitlement_key&${where}`);
+    if (on && !have) await db(env, "POST", "member_access", [{ entitlement_key: PILOT_KEY, target: app.target }], "return=minimal");
+    if (!on && have) await db(env, "DELETE", `member_access?${where}`, undefined, "return=minimal");
+    const [after] = await db(env, "GET", `member_access?select=entitlement_key&${where}`);
+    if (!!after !== on) return { ok: false, error: "not_applied" };
+    return { ok: true, changed: !!have !== on, ...(await accessList(env)) };
+  }
+
+  return { withGate, gateMembers, syncGrants, listTables, meetings, entitlementKeys, gateAll, gateFull, grantManual, revokeManual, accessList, setAccess };
 }

@@ -1179,6 +1179,13 @@ async function handleApi(request, env, url) {
       const r = await bridge.revokeManual(env, { person_id: er[1], entitlement_id: er[2], reason: body.reason }, "admin");
       return json(r, r.ok === false ? 400 : 200);
     }
+    // マーケくん便 5：アプリの公開スイッチ（先行で試すの権利 × 関門を通ったアプリの行だけ入れる・外す）
+    if (path === "/api/admin/access" && method === "GET") return json(await bridge.accessList(env));
+    if (path === "/api/admin/access" && method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      const r = await bridge.setAccess(env, { target: body.target, on: body.on });
+      return json(r, r.ok === false ? 400 : 200);
+    }
     if (path === "/api/admin/stats") return json(await core.stats(env));
     if (path === "/api/admin/setup" && method === "GET") {
       const pay = bin3.univapayState(env);

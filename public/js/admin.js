@@ -125,7 +125,8 @@ const KEY_LABEL = {
   shiarabo_basic: "しあらぼの基本（教材・Q&A・コミュニティ）", shiarabo_office_hour: "オフィスアワー",
   consult_single: "単発の個別相談", consult_followup: "フォローアップ相談", seminar_recording: "セミナー録画",
   workbook_ai_30day: "30日AIワークブック", textbook_60day: "60日教材", vip_status: "VIP",
-  shiarabo_trial: "しあらぼ体験", note_membership: "note メンシプ",
+  shiarabo_trial: "しあらぼ体験", note_membership: "note メンシプ", shiarabo_pilot: "先行で試す（アプリを先に開く生徒）",
+  shiarabo_monitor: "モニター", x_tester: "開発の試し", note_tester: "開発の試し", swipe_tester: "開発の試し",
 };
 const entSrc = (r) => (r.source === "manual" ? "manual" : String(r.reason || "").startsWith("B で購入") ? "lab" : "payment");
 const ENT_SRC_LABEL = { payment: "支払い", manual: "手で付けた", lab: "マーケくんで購入" };
@@ -682,7 +683,7 @@ const pill = (t, kind = "") => `<span class="pill ${kind}">${esc(t)}</span>`;
 // ---------- 添削ルーム ----------
 let currentRoom = null;
 // 便 8c：左のメニュー。押した項目の画面だけを出し、上のナビにその名前を出す
-const VIEWS = ["home", "blueprint", "people", "rooms", "deals", "ai", "products", "deliver", "settings", "refer", "guide", "forms", "pages", "line"];
+const VIEWS = ["home", "blueprint", "people", "rooms", "deals", "ai", "products", "deliver", "settings", "refer", "guide", "forms", "pages", "line", "access"];
 // 便 20：コネクタだけの画面は無くした。"connect" は行き先の名前としてだけ残す。
 // メールを送るコネクタ（ステップ配信）は メール、送らないもの（自動の動き）は ファネル構築 のタブで開く。part を渡すとその 1 件を開く
 function openView(name, part) {
@@ -717,6 +718,7 @@ function setupViews() {
     if (b.dataset.view === "blueprint") bp.load();
     if (b.dataset.view === "deliver" || b.dataset.view === "blueprint") loadDeliver();
     if (b.dataset.view === "products") loadProducts();
+    if (b.dataset.view === "access") loadAccess();
     if (b.dataset.view === "deals") loadDeals();
     if (b.dataset.view === "ai") loadAi();
     if (b.dataset.view === "refer") loadReferrals();
@@ -2582,4 +2584,48 @@ async function loadGuide() {
       <tbody>${rows.map((x) => `<tr><td>${esc(x.say)}</td><td class="gd-ai"><span class="pill ${AI_SAY[x.ai][1]}">${esc(AI_SAY[x.ai][0])}</span></td></tr>`).join("")}</tbody></table>
     </details>`).join("");
   document.querySelectorAll("[data-gd-open]").forEach((b) => b.addEventListener("click", () => openView(b.dataset.gdOpen)));
+}
+
+// ---------- マーケくん便 5：アプリの公開スイッチ ----------
+// 先行で試すの権利 × 関門を通ったアプリの行を入れる・外す。切り替える前に 1 回確かめる
+let accData = null, accAsk = null;
+const ACC_ERR = { unknown_app: "このアプリはまだ公開の関門を通っていません", bad_on: "切り替えの指定が読めません", not_applied: "表に入りませんでした。開き直してもう一度試してください", demo_store: "デモの置き場では切り替えられません" };
+function accPane(d) {
+  return d.apps.map((a) => {
+    const asking = accAsk === a.target;
+    return `<div class="er acc-row">
+      <div style="min-width:0"><div class="k">${esc(a.name)}</div><div class="d">${a.on ? (a.since ? esc(entDay(a.since)) + " から開いている" : "開いている") : "閉じている"}</div></div>
+      <span class="acc-state${a.on ? " on" : ""}">${a.on ? "オン" : "オフ"}</span>
+      <div class="why">ほかに開いている権利：${a.others.length ? a.others.map((k) => esc(KEY_LABEL[k] || k)).join("、") : "なし"}（ここでは変えません）</div>
+      <div class="er-act">${asking ? "" : `<button class="btn ${a.on ? "ghost " : ""}small" type="button" data-accask="${esc(a.target)}" aria-label="${esc(a.name)}を${a.on ? "オフ" : "オン"}にする">${a.on ? "オフにする" : "オンにする"}</button>`}</div>
+      ${asking ? `<div class="conf"><span>${a.on ? `先行で試す人は ${esc(a.name)} に入れなくなります。` : `先行で試す ${d.holders} 人が ${esc(a.name)} に入れるようになります。`}よいですか</span><button class="btn ghost small" type="button" data-acccancel>やめる</button><button class="btn small${a.on ? " danger" : ""}" type="button" data-accgo="${esc(a.target)}" data-accon="${a.on ? "0" : "1"}" aria-label="${esc(a.name)}を${a.on ? "オフ" : "オン"}にする（確定）">${a.on ? "オフにする" : "オンにする"}</button></div>` : ""}
+    </div>`;
+  }).join("");
+}
+function drawAccess(focusTarget) {
+  const box = $("acc-list");
+  if (!accData) return;
+  $("acc-holders").textContent = `いま「先行で試す」の権利を持つ人：${accData.holders} 人`;
+  box.innerHTML = accPane(accData);
+  // 描き直しても押した所へ戻す（確かめを開いたら確定のボタン、閉じたら元のボタン）
+  if (focusTarget) (box.querySelector(`[data-accgo="${focusTarget}"]`) || box.querySelector(`[data-accask="${focusTarget}"]`))?.focus();
+  box.querySelectorAll("[data-accask]").forEach((b) => b.addEventListener("click", () => { accAsk = b.dataset.accask; drawAccess(accAsk); }));
+  box.querySelectorAll("[data-acccancel]").forEach((b) => b.addEventListener("click", () => { const t = accAsk; accAsk = null; drawAccess(t); }));
+  box.querySelectorAll(".conf").forEach((c) => c.addEventListener("keydown", (e) => { if (e.key === "Escape") { const t = accAsk; accAsk = null; drawAccess(t); } }));
+  box.querySelectorAll("[data-accgo]").forEach((b) => b.addEventListener("click", async () => {
+    b.disabled = true; $("acc-status").textContent = "切り替えています…";
+    const r = await api("/api/admin/access", { method: "POST", token, body: { target: b.dataset.accgo, on: b.dataset.accon === "1" } });
+    b.disabled = false;
+    if (!r.ok) { $("acc-status").textContent = "切り替えられませんでした（" + (ACC_ERR[r.error] || r.error || r.status || "") + "）"; return; }
+    accAsk = null; accData = r;
+    const a = r.apps.find((x) => x.target === b.dataset.accgo);
+    $("acc-status").textContent = a ? `${a.name} を${a.on ? "オン" : "オフ"}にしました` : "";
+    drawAccess(b.dataset.accgo);
+  }));
+}
+async function loadAccess() {
+  accAsk = null; $("acc-status").textContent = "";
+  const r = await api("/api/admin/access", { token });
+  if (!r.ok) { $("acc-list").innerHTML = `<p class="note">読めませんでした（${esc(ACC_ERR[r.error] || r.error || r.status || "")}）</p>`; return; }
+  accData = r; drawAccess();
 }
