@@ -66,6 +66,7 @@ import { makeLine } from "./line.js";
 import { makeUtageImport } from "./utageimport.js";
 import { makeSalesMark } from "./salesmark.js";
 import { makeFolders } from "./folders.js";
+import { makeStudents, applyNames } from "./students.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
 const VERSION = "0.50.1-bmarke4";
@@ -182,6 +183,8 @@ forms.hooks.onSubmitted = (env, cid, slug) => seminars.onForm(env, cid, slug);
 const booking = makeBooking({ db, addEvent, logInbound, bin3, registerPerson: (env, a) => registerPerson(env, a), busyBetween: (env, a, b) => today.busyBetween(env, a, b), pagesOrigin: (env) => pages.pagesOrigin(env) });
 // マーケくん便 4：データのフォルダ（中身は src/folders.js）。シナリオ（旧企画）の一覧と同じ 1 回で画面へ返す
 const folders = makeFolders({ db, logInbound });
+// マーケくん便 6：しあらぼ管理の呼び名を顧客管理に出す（中身は src/students.js・読むだけ）
+const students = makeStudents({ db });
 const plan = makePlan({ db, logInbound, communityLink, changes, pages, seminars, booking, folders });
 // B の便 8g-4：ブロックとテンプレ。中身は src/blocks.js（draftFlow は下の関数）
 const blocks = makeBlocks({ db, logInbound, plan, deliver, draftFlow: (env, a, actor) => draftFlow(env, a, actor) });
@@ -461,8 +464,20 @@ const core = {
     let q = `customer_summary?select=*&order=last_event_at.desc.nullslast&limit=${lim}`;
     const s = String(query).trim().replace(/[(),*]/g, " ").trim();
     if (s) q += `&or=(name.ilike.*${encodeURIComponent(s)}*,email.ilike.*${encodeURIComponent(s)}*)`;
-    if (source && SOURCES.includes(source)) q += `&source=eq.${source}`;
-    const people = await db(env, "GET", q);
+    const srcQ = source && SOURCES.includes(source) ? `&source=eq.${source}` : "";
+    q += srcQ;
+    let people = await db(env, "GET", q);
+    // マーケくん便 6：しあらぼ管理の呼び名でも探す（呼び名に含む生徒のメールで、もう 1 回引いて足す）
+    const st = await students.load(env);
+    const stEmails = s ? students.emailsForQuery(st, s) : [];
+    if (stEmails.length) {
+      const seen = new Set(people.map((p) => p.id));
+      const more = await db(env, "GET", `customer_summary?select=*&email=in.(${stEmails.map((e) => encodeURIComponent(e)).join(",")})${srcQ}&limit=${lim}`);
+      people = people.concat(more.filter((p) => !seen.has(p.id)))
+        .sort((a, b) => (b.last_event_at ? Date.parse(b.last_event_at) : 0) - (a.last_event_at ? Date.parse(a.last_event_at) : 0))
+        .slice(0, lim);
+    }
+    applyNames(people, st.byEmail);
     const ent = await sell.entitlementMap(env);
     const dm = await bin4.dealMap(env);
     const gate = await bridge.gateAll(env); // マーケくん便 2：一覧の「権利」と「期限」の列
@@ -471,7 +486,9 @@ const core = {
       p.deal_stage = dm[p.id] ? dm[p.id].stage : "none";
       p.gate = (gate[p.id] || []).map((r) => ({ id: r.id, key: r.key, source: r.source, reason: r.reason, granted_at: r.granted_at, expires_at: r.expires_at }));
     }
-    return { ok: true, count: people.length, people };
+    // 探していないときだけ、しあらぼ管理と結べなかった生徒の呼び名を添える（連絡先は返さない）
+    const extra = st.error ? { students_error: st.error } : (!s && env.B_STORE ? { students_unmatched: await students.unmatched(env, st) } : {});
+    return { ok: true, count: people.length, people, ...extra };
   },
 
   // 便 8f-3：人の 1 枚。段階（設計図のレーンと同じ決め方）・買ったもの・部屋の状態を足した。
@@ -480,6 +497,7 @@ const core = {
     if (!/^[0-9a-f-]{36}$/i.test(String(person_id || ""))) return { ok: false, error: "bad_person_id" };
     const [person] = await db(env, "GET", `customer_summary?select=*&id=eq.${person_id}`);
     if (!person) return { ok: true, found: false };
+    applyNames([person], (await students.load(env)).byEmail); // マーケくん便 6：生徒は呼び名で出す
     const events = (await db(env, "GET", `events?select=id,type,payload,actor,occurred_at&customer_id=eq.${person_id}&order=occurred_at.desc&limit=200`))
       .map((e) => String(e.type).startsWith("push_") ? { ...e, payload: { device: (e.payload && e.payload.device) || "", reason: (e.payload && e.payload.reason) || undefined } } : e);
     const deal = await bin4.deal(env, person_id);

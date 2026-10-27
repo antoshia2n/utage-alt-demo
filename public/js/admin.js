@@ -181,7 +181,7 @@ function renderCustomers() {
   document.querySelectorAll(".cust-table [data-sort]").forEach((b) => b.dataset.dir = b.dataset.sort === key ? (dir > 0 ? "asc" : "desc") : "");
   $("people").innerHTML = rows.map((p) => `
     <tr data-id="${p.id}" tabindex="0"${p.id === current ? ' class="sel"' : ""}>
-      <td><div class="c-name">${esc(p.name || "（名前なし）")}</div><div class="sub">${esc(p.email)}</div></td>
+      <td><div class="c-name">${esc(p.name || "（名前なし）")}</div><div class="sub">${esc(p.email)}${p.student_name && p.profile_name && p.profile_name !== p.name ? "　·　" + esc(p.profile_name) : ""}</div></td>
       <td><span class="pill ${p.member ? "" : "gray"}">${esc(stageText(p))}</span>${p.deal_stage && p.deal_stage !== "none" ? ` <span class="pill warn">${esc(STAGE[p.deal_stage])}</span>` : ""}</td>
       <td class="c-ent"><div class="ents">${(p.gate || []).filter(entLive).map(entChip).join("")}</div></td>
       <td class="c-exp">${entUntil(p) ? `<span class="${(p.gate || []).some(entSoon) ? "ent-soon" : ""}">${esc(entDay(entUntil(p)))} まで</span>` : ""}</td>
