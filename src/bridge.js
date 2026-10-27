@@ -30,6 +30,7 @@ export const PUBLISH_APPS = [
   { target: "x-koryaku", name: "X攻略くん" },
   { target: "note-koryaku", name: "note攻略くん" },
   { target: "swipe-file", name: "スワイプくん" },
+  { target: "mindmap", name: "思考整理くん" }, // 2026-10-27 23:57 関門 1〜7 が全部 ○（Naoki「全部OK」）
 ];
 const KEY_RE = /^[a-z0-9_]{2,60}$/;
 const REASON_MAX = 200;
