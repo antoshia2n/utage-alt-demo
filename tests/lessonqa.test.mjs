@@ -41,8 +41,8 @@ const STU = "11111111-1111-4111-8111-111111111111";
 const OTHER = "22222222-2222-4222-8222-222222222222";
 s.table("b_customers").push({ id: STU, email: TOKENS.stu, name: "生徒" }, { id: OTHER, email: TOKENS.other, name: "別の人" });
 s.table("b_admins").push({ email: TOKENS.adm });
-s.table("b_mn_access").push({ member_id: STU, curriculum_id: "college" });
-s.table("b_mn_lessons").push(
+s.table("b_site_member_access").push({ member_id: STU, curriculum_id: "college" });
+s.table("b_site_rows").push(
   { curriculum_id: "college", lesson_id: "lsn-a", title: "言語化の土台" },
   { curriculum_id: "writing", lesson_id: "lsn-b", title: "書く型" },
 );
