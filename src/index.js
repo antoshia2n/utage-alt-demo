@@ -215,7 +215,9 @@ const B_TABLES = {
   announcements: "b_announcements", admins: "b_admins",
   customer_summary: "b_customer_summary", customers: "b_customers",
   // 便 6a：学ぶくんの表を読む見る表（デモの置き場には無い）
-  mn_lessons: "b_mn_lessons", mn_access: "b_mn_access",
+  // 便 20（2026-10-29）：読む先を会員サイトの表へ替えた。名前（mn_lessons・mn_access）と欄の形は前のまま。
+  // curriculum_id の欄にはコースの番号が入る（見られるかは権利 × コースの表 b_site_access で決まる）。正本は supabase/b20_site.sql
+  mn_lessons: "b_site_rows", mn_access: "b_site_member_access",
   // 便 7a：サイト全体の設定（いまはオプチャの招待リンクだけ）
   settings: "b_settings",
 };
