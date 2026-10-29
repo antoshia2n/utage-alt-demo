@@ -2595,8 +2595,9 @@ async function loadGuide() {
 
 // ---------- マーケくん便 5：アプリの公開スイッチ ----------
 // 先行で試すの権利 × 関門を通ったアプリの行を入れる・外す。切り替える前に 1 回確かめる
-let accData = null, accAsk = null;
-const ACC_ERR = { unknown_app: "このアプリはまだ公開の関門を通っていません", bad_on: "切り替えの指定が読めません", not_applied: "表に入りませんでした。開き直してもう一度試してください", demo_store: "デモの置き場では切り替えられません" };
+let accData = null, accAsk = null, accKey = "shiarabo_pilot";
+const ACC_KEYS = [["shiarabo_pilot", "先行で試す"], ["guest", "ゲスト"]];
+const ACC_ERR = { unknown_app: "このアプリはまだ公開の関門を通っていません", bad_on: "切り替えの指定が読めません", not_applied: "表に入りませんでした。開き直してもう一度試してください", demo_store: "デモの置き場では切り替えられません", unknown_key: "この権利は切り替えられません" };
 function accPane(d) {
   return d.apps.map((a) => {
     const asking = accAsk === a.target;
@@ -2605,14 +2606,17 @@ function accPane(d) {
       <span class="acc-state${a.on ? " on" : ""}">${a.on ? "オン" : "オフ"}</span>
       <div class="why">ほかに開いている権利：${a.others.length ? a.others.map((k) => esc(KEY_LABEL[k] || k)).join("、") : "なし"}（ここでは変えません）</div>
       <div class="er-act">${asking ? "" : `<button class="btn ${a.on ? "ghost " : ""}small" type="button" data-accask="${esc(a.target)}" aria-label="${esc(a.name)}を${a.on ? "オフ" : "オン"}にする">${a.on ? "オフにする" : "オンにする"}</button>`}</div>
-      ${asking ? `<div class="conf"><span>${a.on ? `先行で試す人は ${esc(a.name)} に入れなくなります。` : `先行で試す ${d.holders} 人が ${esc(a.name)} に入れるようになります。`}よいですか</span><button class="btn ghost small" type="button" data-acccancel>やめる</button><button class="btn small${a.on ? " danger" : ""}" type="button" data-accgo="${esc(a.target)}" data-accon="${a.on ? "0" : "1"}" aria-label="${esc(a.name)}を${a.on ? "オフ" : "オン"}にする（確定）">${a.on ? "オフにする" : "オンにする"}</button></div>` : ""}
+      ${asking ? `<div class="conf"><span>${a.on ? `${esc(accName())}の人は ${esc(a.name)} に入れなくなります。` : `${esc(accName())}の ${d.holders} 人が ${esc(a.name)} に入れるようになります。`}よいですか</span><button class="btn ghost small" type="button" data-acccancel>やめる</button><button class="btn small${a.on ? " danger" : ""}" type="button" data-accgo="${esc(a.target)}" data-accon="${a.on ? "0" : "1"}" aria-label="${esc(a.name)}を${a.on ? "オフ" : "オン"}にする（確定）">${a.on ? "オフにする" : "オンにする"}</button></div>` : ""}
     </div>`;
   }).join("");
 }
+const accName = () => (ACC_KEYS.find(([k]) => k === accKey) || [, accKey])[1];
 function drawAccess(focusTarget) {
   const box = $("acc-list");
   if (!accData) return;
-  $("acc-holders").textContent = `いま「先行で試す」の権利を持つ人：${accData.holders} 人`;
+  const keyBar = `<div class="acc-keys" role="group" aria-label="切り替える権利">${ACC_KEYS.map(([k, n]) => `<button class="btn small${k === accKey ? "" : " ghost"}" type="button" data-acckey="${k}" aria-pressed="${k === accKey}">${n}</button>`).join(" ")}</div>`;
+  $("acc-holders").innerHTML = `${keyBar}<div style="margin-top:8px">いま「${esc(accName())}」の権利を持つ人：${accData.holders} 人</div>`;
+  $("acc-holders").querySelectorAll("[data-acckey]").forEach((b) => b.addEventListener("click", () => { if (b.dataset.acckey !== accKey) { accKey = b.dataset.acckey; loadAccess(); } }));
   box.innerHTML = accPane(accData);
   // 描き直しても押した所へ戻す（確かめを開いたら確定のボタン、閉じたら元のボタン）
   if (focusTarget) (box.querySelector(`[data-accgo="${focusTarget}"]`) || box.querySelector(`[data-accask="${focusTarget}"]`))?.focus();
@@ -2621,7 +2625,7 @@ function drawAccess(focusTarget) {
   box.querySelectorAll(".conf").forEach((c) => c.addEventListener("keydown", (e) => { if (e.key === "Escape") { const t = accAsk; accAsk = null; drawAccess(t); } }));
   box.querySelectorAll("[data-accgo]").forEach((b) => b.addEventListener("click", async () => {
     b.disabled = true; $("acc-status").textContent = "切り替えています…";
-    const r = await api("/api/admin/access", { method: "POST", token, body: { target: b.dataset.accgo, on: b.dataset.accon === "1" } });
+    const r = await api("/api/admin/access", { method: "POST", token, body: { target: b.dataset.accgo, on: b.dataset.accon === "1", key: accKey } });
     b.disabled = false;
     if (!r.ok) { $("acc-status").textContent = "切り替えられませんでした（" + (ACC_ERR[r.error] || r.error || r.status || "") + "）"; return; }
     accAsk = null; accData = r;
@@ -2632,7 +2636,7 @@ function drawAccess(focusTarget) {
 }
 async function loadAccess() {
   accAsk = null; $("acc-status").textContent = "";
-  const r = await api("/api/admin/access", { token });
+  const r = await api("/api/admin/access?key=" + encodeURIComponent(accKey), { token });
   if (!r.ok) { $("acc-list").innerHTML = `<p class="note">読めませんでした（${esc(ACC_ERR[r.error] || r.error || r.status || "")}）</p>`; return; }
   accData = r; drawAccess();
 }
