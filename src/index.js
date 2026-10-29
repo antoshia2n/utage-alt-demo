@@ -72,7 +72,7 @@ import { makeMypage } from "./mypage.js";
 import { makeNews, newsQuery } from "./news.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.51.3-bmuda12";
+const VERSION = "0.51.4-bmuda10a";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -231,8 +231,12 @@ const B_TABLES = {
   settings: "b_settings",
 };
 
+// ムダ 10 の 1 段目（2026-10-29）：本番の Supabase の値が 1 つでも欠けたら、旧デモ（10/14 から止まっている）へ黙って戻らず、
+// 「設定が足りない」として止める。欠けた名前は missingConfig → /api/health の missing_settings に出る
+const B_NEED = ["B_SUPABASE_URL", "B_SUPABASE_PUBLISHABLE_KEY", "B_SUPABASE_SECRET_KEY"];
 function withStore(env) {
-  if (!env.B_SUPABASE_SECRET_KEY || !env.B_SUPABASE_URL || !env.B_SUPABASE_PUBLISHABLE_KEY) return env;
+  const lack = B_NEED.filter((k) => !env[k]);
+  if (lack.length) return Object.assign(Object.create(env), { SUPABASE_URL: "", SUPABASE_PUBLISHABLE_KEY: "", SUPABASE_SECRET_KEY: "", B_MISSING: lack });
   return Object.assign(Object.create(env), {
     SUPABASE_URL: env.B_SUPABASE_URL,
     SUPABASE_PUBLISHABLE_KEY: env.B_SUPABASE_PUBLISHABLE_KEY,
@@ -243,7 +247,7 @@ function withStore(env) {
 
 function missingConfig(env) {
   const need = ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY", "SUPABASE_SECRET_KEY", "MCP_SECRET"];
-  return need.filter((k) => !env[k] || String(env[k]).startsWith("SET_"));
+  return [...(env.B_MISSING || []), ...need.filter((k) => !env[k] || String(env[k]).startsWith("SET_"))];
 }
 
 function secretHeaders(env) {
@@ -836,7 +840,7 @@ async function handleApi(request, env, url) {
     try { mail = await bin3.mailState(env); } catch (e) { mail = { binding: !!env.EMAIL, from: null, scope: null, error: String(e.message).slice(0, 200) }; }
     return json({
       ok: missing.length === 0 && dbOk === true, version: VERSION, missing_settings: missing, db: dbOk, images: !!env.IMAGES,
-      store: env.B_STORE ? "production" : "demo", manabu, public_origin: env.PUBLIC_ORIGIN || null,
+      store: env.B_MISSING ? "missing" : env.B_STORE ? "production" : "demo", manabu, public_origin: env.PUBLIC_ORIGIN || null,
       // 便 R1：公開の入口の守り。bot_check は両方の鍵がそろったときだけ on。ip_limit は Cloudflare の回数制限の結び
       shield: { bot_check: botCheckOn(env), site_key: !!env.TURNSTILE_SITE_KEY, secret_key: !!env.TURNSTILE_SECRET_KEY, ip_limit: !!(env.PUBLIC_LIMIT && env.HIT_LIMIT) },
       univapay: { configured: pay.configured, mode: pay.mode, store: !!pay.store_id },
@@ -2303,7 +2307,7 @@ async function runTool(env, name, args) {
   if (name === "get_health") {
     const pay = bin3.univapayState(env);
     return {
-      ok: true, version: VERSION, store: env.B_STORE ? "production" : "demo",
+      ok: true, version: VERSION, store: env.B_MISSING ? "missing" : env.B_STORE ? "production" : "demo",
       shield: { bot_check: botCheckOn(env), site_key: !!env.TURNSTILE_SITE_KEY, secret_key: !!env.TURNSTILE_SECRET_KEY, ip_limit: !!(env.PUBLIC_LIMIT && env.HIT_LIMIT) },
       limits: { ip: IP_LIMITS, email: EMAIL_LIMITS },
       univapay: { configured: pay.configured, mode: pay.mode },
