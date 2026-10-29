@@ -2628,7 +2628,14 @@ function drawAccess(focusTarget) {
   if (!accData) return;
   const keyBar = `<div class="acc-keys" role="group" aria-label="切り替える権利">${ACC_KEYS.map(([k, n]) => `<button class="btn small${k === accKey ? "" : " ghost"}" type="button" data-acckey="${k}" aria-pressed="${k === accKey}">${n}</button>`).join(" ")}</div>`;
   $("acc-holders").innerHTML = `${keyBar}<div style="margin-top:8px">いま「${esc(accName())}」の権利を持つ人：${accData.holders} 人</div>`;
-  $("acc-holders").querySelectorAll("[data-acckey]").forEach((b) => b.addEventListener("click", () => { if (b.dataset.acckey !== accKey) { accKey = b.dataset.acckey; loadAccess(); } }));
+  // ムダ 8（2026-10-29）：見出しと説明の権利の名前を、選んでいるボタンに合わせる
+  $("acc-h").textContent = `${accName()}${accKey === "guest" ? "" : "人"}に、アプリを開く`;
+  $("acc-lead-name").textContent = accName();
+  $("acc-holders").querySelectorAll("[data-acckey]").forEach((b) => b.addEventListener("click", () => {
+    if (b.dataset.acckey === accKey) return;
+    accKey = b.dataset.acckey;
+    loadAccess().then(() => document.querySelector(`#acc-holders [data-acckey="${accKey}"]`)?.focus());
+  }));
   box.innerHTML = accPane(accData);
   // 描き直しても押した所へ戻す（確かめを開いたら確定のボタン、閉じたら元のボタン）
   if (focusTarget) (box.querySelector(`[data-accgo="${focusTarget}"]`) || box.querySelector(`[data-accask="${focusTarget}"]`))?.focus();
