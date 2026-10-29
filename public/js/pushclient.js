@@ -35,7 +35,7 @@ export function setupStudentPush(el, token) {
     }
     if (!pushSupported()) { showButtons(false, false); say("この端末のブラウザは通知に対応していません"); return; }
     const r = await api("/api/me/push", { token });
-    if (!r.ok) { showButtons(false, false); say(r.error === "demo_store" ? "通知は準備中です" : "読めませんでした（" + esc(r.error || r.status) + "）"); return; }
+    if (!r.ok) { showButtons(false, false); say(r.error === "demo_store" ? "通知は準備中です" : "読めませんでした。時間をおいてもう一度お試しください"); return; }
     const ps = await pushSub().catch(() => null);
     if (!ps) { showButtons(false, false); say("この端末では通知の準備ができませんでした（画面を開き直すと直ることがあります）"); return; }
     let sub = ps.sub;
@@ -62,7 +62,7 @@ export function setupStudentPush(el, token) {
     p.then(async (sub) => {
       const j = sub.toJSON();
       const res = await api("/api/me/push", { method: "POST", token, body: { endpoint: j.endpoint, keys: j.keys, device: pushDevice() } });
-      if (!res.ok) { say("登録できませんでした（" + esc(res.error || res.status) + "）"); return; }
+      if (!res.ok) { say("登録できませんでした。時間をおいてもう一度お試しください"); return; }
       await load();
     }).catch((e) => {
       say(Notification.permission === "denied"

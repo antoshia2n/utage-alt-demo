@@ -72,7 +72,7 @@ import { makeMypage } from "./mypage.js";
 import { makeNews, newsQuery } from "./news.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.56.1-bkeys";
+const VERSION = "0.56.2-bappmuda";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -993,6 +993,8 @@ async function handleApi(request, env, url) {
       community_url: community.url,
       // 便 8g-2：自分の紹介のリンクと数（紹介した人の名前は出さない）
       referral: await refer.mine(env, customer, url.origin),
+      // ムダ 2（2026-10-30）：予約は準備中。本物の枠ができたら true にすると左のメニューに出る
+      booking_ready: false,
     });
   }
 
