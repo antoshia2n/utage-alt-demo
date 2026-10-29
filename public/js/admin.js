@@ -1,6 +1,7 @@
 import { getClient, api, esc, fmtTime, SOURCE_LABEL, EVENT_LABEL, authImage, noticeHtml } from "/js/common.js";
 import { correctionHtml, wireNotes } from "/js/correction.js";
 import { makeBlueprint } from "/js/blueprint.js";
+import { mountSite } from "/js/site.js";
 
 const $ = (id) => document.getElementById(id);
 const steps = ["step-login", "step-enroll", "step-mfa", "console"];
@@ -683,7 +684,9 @@ const pill = (t, kind = "") => `<span class="pill ${kind}">${esc(t)}</span>`;
 // ---------- 添削ルーム ----------
 let currentRoom = null;
 // 便 8c：左のメニュー。押した項目の画面だけを出し、上のナビにその名前を出す
-const VIEWS = ["home", "blueprint", "people", "rooms", "deals", "ai", "products", "deliver", "settings", "refer", "guide", "forms", "pages", "line", "access"];
+const VIEWS = ["home", "blueprint", "people", "rooms", "deals", "ai", "products", "deliver", "settings", "refer", "guide", "forms", "pages", "line", "access", "site"];
+// 会員サイト（2026-10-29）：影の DOM の中に描く。顧客管理のその人の画面へは openPerson で移る
+let siteUi = null;
 // 便 20：コネクタだけの画面は無くした。"connect" は行き先の名前としてだけ残す。
 // メールを送るコネクタ（ステップ配信）は メール、送らないもの（自動の動き）は ファネル構築 のタブで開く。part を渡すとその 1 件を開く
 function openView(name, part) {
@@ -726,6 +729,10 @@ function setupViews() {
     if (b.dataset.view === "forms") loadForms();
     if (b.dataset.view === "pages") loadPages();
     if (b.dataset.view === "line") loadLine();
+    if (b.dataset.view === "site") {
+      if (!siteUi) siteUi = mountSite($("site-host"), { getToken: () => token, openPerson: (id) => { openView("people"); detail(id); } });
+      siteUi.open();
+    }
   }));
   setupFuncBar();
   $("hm-guide").addEventListener("click", () => openView("guide"));

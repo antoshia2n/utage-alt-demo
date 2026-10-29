@@ -67,6 +67,7 @@ import { makeUtageImport } from "./utageimport.js";
 import { makeSalesMark } from "./salesmark.js";
 import { makeFolders } from "./folders.js";
 import { makeStudents, applyNames } from "./students.js";
+import { makeSite } from "./site.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
 const VERSION = "0.50.1-bmarke4";
@@ -185,6 +186,8 @@ const booking = makeBooking({ db, addEvent, logInbound, bin3, registerPerson: (e
 const folders = makeFolders({ db, logInbound });
 // マーケくん便 6：しあらぼ管理の呼び名を顧客管理に出す（中身は src/students.js・読むだけ）
 const students = makeStudents({ db });
+// 会員サイトの管理（中身は src/site.js・表の正本は supabase/b21_site_shape.sql と b22_site_publish.sql）
+const site = makeSite({ db });
 const plan = makePlan({ db, logInbound, communityLink, changes, pages, seminars, booking, folders });
 // B の便 8g-4：ブロックとテンプレ。中身は src/blocks.js（draftFlow は下の関数）
 const blocks = makeBlocks({ db, logInbound, plan, deliver, draftFlow: (env, a, actor) => draftFlow(env, a, actor) });
@@ -1205,6 +1208,27 @@ async function handleApi(request, env, url) {
       const body = await request.json().catch(() => ({}));
       const r = await bridge.setAccess(env, { target: body.target, on: body.on });
       return json(r, r.ok === false ? 400 : 200);
+    }
+    // 会員サイトの管理（2026-10-29）：サイト › カリキュラム › プログラム › コース › コンテンツ
+    if (path.startsWith("/api/admin/site/")) {
+      const sub = path.slice("/api/admin/site/".length);
+      const body = method === "GET" ? {} : await request.json().catch(() => ({}));
+      const by = "admin:" + a.email;
+      let r = null;
+      if (sub === "tree" && method === "GET") r = await site.tree(env);
+      else if (sub === "content" && method === "GET") r = await site.content(env, url.searchParams.get("id"));
+      else if (sub === "students" && method === "GET") r = await site.studentsOf(env, { names: (await students.load(env)).byEmail });
+      else if (method === "PUT" && sub === "site") r = await site.saveSite(env, body, by);
+      else if (method === "PUT" && sub === "curriculum") r = await site.saveCurriculum(env, body, by);
+      else if (method === "PUT" && sub === "program") r = await site.saveProgram(env, body, by);
+      else if (method === "PUT" && sub === "course") r = await site.saveCourse(env, body, by);
+      else if (method === "PUT" && sub === "course-order") r = await site.orderCourses(env, body);
+      else if (method === "PUT" && sub === "course-contents") r = await site.setCourseContents(env, body);
+      else if (method === "PUT" && sub === "content") r = await site.saveContent(env, body, by);
+      else if (method === "PUT" && sub === "content-status") r = await site.setStatus(env, body, by);
+      else if (method === "PUT" && sub === "content-from-videos") r = await site.fromVideos(env, body, by);
+      else return json({ ok: false, error: "not_found" }, 404);
+      return json(r, r.ok === false ? (r.error === "demo_store" ? 503 : 400) : 200);
     }
     if (path === "/api/admin/stats") return json(await core.stats(env));
     if (path === "/api/admin/setup" && method === "GET") {

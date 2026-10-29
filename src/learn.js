@@ -6,6 +6,8 @@
 //  ・添削の指摘（長文用）：原文の一部を引用し、番号で結ぶ。引用は原文に必ずある文字列でなければ受け付けない。
 // デモの置き場（B_STORE が無い）には学ぶくんの表も公式サイトの表も無いので、今までどおり b_lessons の仮の教材を返す。
 
+import { dripOpen } from "./site.js";
+
 export const LESSON_ID_RE = /^[0-9a-z-]{2,40}$/i;
 export const NOTE_MAX = 30;
 const SUMMARY_MAX = 400;
@@ -33,6 +35,11 @@ export function groupLessons(rows) {
       id: r.lesson_id, title: r.title,
       summary: String(r.summary || "").slice(0, SUMMARY_MAX),
       youtube_id: r.youtube_id || null, mindmap_url: safeUrl(r.mindmap_url),
+      // 会員サイトの管理（便 22）：見る時間・目次・資料・質問を受け付けるか
+      minutes: Number.isInteger(r.minutes) ? r.minutes : null,
+      toc: Array.isArray(r.toc) ? r.toc.filter((x) => x && x.at).map((x) => ({ at: String(x.at), label: String(x.label || "") })) : [],
+      files: Array.isArray(r.files) ? r.files.map((x) => ({ label: String((x && x.label) || ""), url: safeUrl(x && x.url) })).filter((x) => x.url) : [],
+      can_ask: r.can_ask !== false,
     });
     ids.add(r.lesson_id);
   }
@@ -79,17 +86,22 @@ export function makeLearn(h) {
       return { source: "demo", member: true, programs: [], lesson_count: flat.length, flat };
     }
     const admin = await isAdminEmail(env, email);
-    let curricula;
+    let curricula, acc = null;
     if (admin) {
       curricula = null; // 全部
     } else {
-      const acc = await db(env, "GET", `mn_access?select=curriculum_id&member_id=eq.${customer.id}`);
+      acc = await db(env, "GET", `mn_access?select=curriculum_id,opened_at&member_id=eq.${customer.id}`);
       curricula = [...new Set(acc.map((a) => a.curriculum_id))];
       if (!curricula.length) return { source: "manabu", member: false, programs: [], lesson_count: 0, flat: [] };
     }
-    let q = "mn_lessons?select=curriculum_id,program_id,program_title,program_sort,course_id,course_title,course_sort,lesson_id,sort,title,summary,youtube_id,mindmap_url&limit=5000";
+    let q = "mn_lessons?select=curriculum_id,program_id,program_title,program_sort,course_id,course_title,course_sort,lesson_id,sort,title,summary,youtube_id,mindmap_url,minutes,toc,files,can_ask,status,drip_days&limit=5000";
     if (curricula) q += `&curriculum_id=in.(${curricula.map(encodeURIComponent).join(",")})`;
-    const rows = await db(env, "GET", q);
+    let rows = await db(env, "GET", q);
+    // 便 22：入会から日数で開くものは、その人がそのプログラムを開けるようになった日から数える（シアニンは全部見える）
+    if (acc) {
+      const opened = new Map(acc.map((a) => [a.curriculum_id, a.opened_at]));
+      rows = rows.filter((r) => dripOpen(r, opened.get(r.curriculum_id)));
+    }
     const g = groupLessons(rows);
     return { source: "manabu", member: true, admin, programs: g.programs, lesson_count: g.lesson_count, flat: [] };
   }
