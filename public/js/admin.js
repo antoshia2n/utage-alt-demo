@@ -1,7 +1,22 @@
-import { getClient, api, esc, fmtTime, SOURCE_LABEL, EVENT_LABEL, authImage, noticeHtml } from "/js/common.js";
+import { getClient, api as apiRaw, esc, fmtTime, SOURCE_LABEL, EVENT_LABEL, authImage, noticeHtml } from "/js/common.js";
 import { correctionHtml, wireNotes } from "/js/correction.js";
 import { makeBlueprint } from "/js/blueprint.js";
 import { mountSite } from "/js/site.js";
+
+// ムダ 12（2026-10-29）：フォーム・人の項目・ページ・配信の一覧は、画面ごとに読み直さず 20 秒だけ使い回す（シナリオの一覧と同じ）。
+// 何かを書いた（GET 以外を送った）ら、使い回しを全部捨てて次は必ず読み直す
+const listCache = new Map();
+const api = (path, opts = {}) => {
+  if (opts.method && opts.method !== "GET") listCache.clear();
+  return apiRaw(path, opts);
+};
+function getList(path) {
+  const c = listCache.get(path);
+  if (c && Date.now() - c.at < 20e3) return c.p;
+  const p = apiRaw(path, { token }).then((r) => { if (!r.ok) listCache.delete(path); return r; });
+  listCache.set(path, { at: Date.now(), p });
+  return p;
+}
 
 const $ = (id) => document.getElementById(id);
 const steps = ["step-login", "step-enroll", "step-mfa", "console"];
@@ -1310,7 +1325,7 @@ async function seminarEditor() {
 }
 async function loadPagesCache() {
   if (pagesCache.length) return;
-  const l = await api("/api/admin/pages", { token });
+  const l = await getList("/api/admin/pages");
   if (l.ok) { pagesCache = l.pages; pagesOrigin = l.pages_origin || ""; }
 }
 // 知らせを足す・直す（名前は自動で付ける。画面に英字を出さないため）
@@ -1604,7 +1619,7 @@ async function loadDeliver() {
     $("sf-trigger").addEventListener("change", showConnectorFields);
     $("sf-action").addEventListener("change", showConnectorFields);
   }
-  const r = await api("/api/admin/deliver", { token });
+  const r = await getList("/api/admin/deliver");
   if (!r.ok) { $("dv-warm").textContent = "読めませんでした（" + (r.error || r.status) + "）"; return; }
   deliverData = r;
   fillMailOpenOptions(r);
@@ -1736,7 +1751,7 @@ let fieldNames = {}, formNames = {}, fieldsCache = [], formsCache = [], fieldsAt
 async function loadFieldOptions(force) {
   if (!force && Date.now() - fieldsAt < 30e3) return;
   fieldsAt = Date.now();
-  const [fr, fo, pg] = await Promise.all([api("/api/admin/fields", { token }), api("/api/admin/forms", { token }), api("/api/admin/pages", { token })]);
+  const [fr, fo, pg] = await Promise.all([getList("/api/admin/fields"), getList("/api/admin/forms"), getList("/api/admin/pages")]);
   // 便 12a：コネクタのきっかけ「ページを見た／ボタンを押した」で選ぶページ
   if (pg.ok) {
     pageNames = Object.fromEntries(pg.pages.map((x) => [x.slug, x.title]));
@@ -1779,7 +1794,7 @@ async function loadForms() {
     $("fm-new").addEventListener("click", () => formEditor(null));
     $("fd-new").addEventListener("click", () => fieldEditor(null));
   }
-  const [fr, fo] = await Promise.all([api("/api/admin/fields?all=1", { token }), api("/api/admin/forms", { token })]);
+  const [fr, fo] = await Promise.all([getList("/api/admin/fields?all=1"), getList("/api/admin/forms")]);
   if (!fr.ok || !fo.ok) { $("fm-count").textContent = "読めませんでした（" + ((fr.ok ? fo : fr).error || "") + "）"; return; }
   fieldsAt = 0;
   fieldsAll = fr.fields;
@@ -1928,7 +1943,7 @@ async function loadPages() {
     $("rt-make").addEventListener("submit", (ev) => { ev.preventDefault(); makeRouteUrl("rt"); });
     $("rt-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText($("rt-url").textContent); $("rt-copy").textContent = "写しました"; } catch { $("rt-copy").textContent = "写せませんでした"; } });
   }
-  const r = await api("/api/admin/pages", { token });
+  const r = await getList("/api/admin/pages");
   if (!r.ok) { $("pg-count").textContent = "読めませんでした（" + (r.error || r.status) + "）"; return; }
   pagesCache = r.pages; pagesOrigin = r.pages_origin || "";
   $("pg-count").textContent = r.store === "demo" ? "デモの置き場ではページは作れません"
@@ -1995,7 +2010,7 @@ async function openPage(id, opts = {}) {
   currentPage = id;
   showPane("pages", "detail", "読んでいます…", "ページの一覧へ");
   $("page-detail").innerHTML = '<p class="note">読んでいます…</p>';
-  if (!pagesOrigin) { const l = await api("/api/admin/pages", { token }); if (l.ok) { pagesOrigin = l.pages_origin || ""; pagesCache = l.pages; } }
+  if (!pagesOrigin) { const l = await getList("/api/admin/pages"); if (l.ok) { pagesOrigin = l.pages_origin || ""; pagesCache = l.pages; } }
   // Claude が下書きを置いたときに依頼のシナリオへ入れるので、入り先は毎回読み直す
   await loadCampaigns(true);
   const r = await api("/api/admin/pages/" + id, { token });
