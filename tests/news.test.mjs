@@ -40,6 +40,4 @@ test("直す：出ているものを「すぐ出す」のまま直しても日�
   const row = st.table("announcements").find((x) => x.id === 7);
   assert.equal(row.title, "前から（直した）");
   assert.equal(row.published_at, "2026-10-01T00:00:00.000Z");
-  assert.equal((await n.save({}, { title: "x" })).error, "demo_store");
-  assert.doesNotMatch(newsQuery({}, 5), /status/); // デモの置き場の表には status が無い
 });

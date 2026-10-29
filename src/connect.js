@@ -135,7 +135,6 @@ export function makeConnect(h) {
   const { db, addEvent, logInbound, sell } = h;
 
   async function ownersMap(env) {
-    if (!env.B_STORE) return {};
     const [owners, campaigns] = await Promise.all([
       db(env, "GET", "b_campaign_parts?select=part_type,part_id,campaign_id"),
       db(env, "GET", "b_campaigns?select=id,name,kind"),
@@ -148,7 +147,6 @@ export function makeConnect(h) {
   }
 
   async function productNameMap(env) {
-    if (!env.B_STORE) return {};
     return Object.fromEntries((await db(env, "GET", "b_products?select=id,name")).map((p) => [p.id, p.name]));
   }
 

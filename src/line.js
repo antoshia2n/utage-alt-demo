@@ -95,7 +95,6 @@ export function makeLine(h) {
   // 受け口。返すのは Response。転送と記録は ctx.waitUntil の中
   async function handleWebhook(request, env, ctx, account) {
     const res = (body, status) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json; charset=utf-8" } });
-    if (!env.B_STORE) return res({ ok: false, error: "demo_store" }, 503);
     if (!ACCOUNT_RE.test(account)) return res({ ok: false, error: "bad_account" }, 404);
     const secret = env[secretName(account)];
     const raw = await request.text();
@@ -128,7 +127,6 @@ export function makeLine(h) {
 
   // 設定を見る（AI と画面）。転送先の住所は丸ごとは返さず、住所の頭だけ
   async function settings(env, { account } = {}) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const origin = String(env.PUBLIC_ORIGIN || "https://lab.shia2n.jp").replace(/\/+$/, "");
     const rows = await db(env, "GET", `settings?select=key,value,updated_at,updated_by&key=like.${FORWARD_PREFIX}*`); // LINE の行だけ（ほかの設定の値は読まない）
     const names = new Set(rows.filter((r) => String(r.key).startsWith(FORWARD_PREFIX)).map((r) => String(r.key).slice(FORWARD_PREFIX.length)));
@@ -144,7 +142,6 @@ export function makeLine(h) {
 
   // 転送先を入れる・外す。外すと UTAGE へ届かなくなる（UTAGE を止める日に使う）
   async function setForward(env, { account, url }, actor) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     if (!ACCOUNT_RE.test(String(account || ""))) return { ok: false, error: "bad_account", note: "英小文字で始まる英小文字と下線の 2〜20 字" };
     const v = String(url == null ? "" : url).trim();
     if (v && !URL_RE.test(v)) return { ok: false, error: "bad_url", note: "https:// で始まる 500 文字までの住所" };
@@ -163,7 +160,6 @@ export function makeLine(h) {
 
   // 受けた数と転送の結果（統括の条件 1：転送の失敗を数える）
   async function inbound(env, { account, days = 7 } = {}) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const d = Math.min(Math.max(parseInt(days, 10) || 7, 1), 90);
     const since = new Date(Date.now() - d * 864e5).toISOString();
     let q = `inbound_log?select=id,channel,request,response,status,at&channel=in.(line,line_forward_failed,line_bad_signature)&at=gte.${encodeURIComponent(since)}&order=id.desc&limit=5000`;
@@ -239,7 +235,6 @@ export function makeLine(h) {
 
   // リンクの頁から：印を確かめ、台帳に入れて（いなければ）LINE の番号を結ぶ
   async function link(env, { t, email, name, consent }) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const p = parseLinkToken(t);
     if (!p) return { ok: false, error: "bad_link" };
     const secret = env[secretName(p.account)];
@@ -254,7 +249,6 @@ export function makeLine(h) {
 
   // AI：友だちの一覧（結ばれた人の名前とメール・ブロック）
   async function friends(env, { account }) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     if (!ACCOUNT_RE.test(String(account || ""))) return { ok: false, error: "bad_account" };
     const [st, { byUser }] = await Promise.all([friendState(env, account), links(env, account)]);
     const ids = [...new Set(byUser.values())];
@@ -268,7 +262,6 @@ export function makeLine(h) {
 
   // AI：送る（承認の道具）。person_id で 1 人、filter（一斉配信の宛先と同じ形）で絞った人たち。結ばれていない・ブロックの人は数えるだけ
   async function send(env, { account, person_id, filter, text }, actor) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     if (!ACCOUNT_RE.test(String(account || ""))) return { ok: false, error: "bad_account" };
     const body = String(text || "").trim();
     if (!body) return { ok: false, error: "need_text" };
@@ -346,7 +339,6 @@ export function makeLine(h) {
 
   // 一覧：友だち（B が知っている人＋取り出せたら全員）・今月の残り・転送の失敗
   async function board(env, { account }) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     if (!ACCOUNT_RE.test(String(account || ""))) return { ok: false, error: "bad_account" };
     const [st, { byUser }, ins, outs, fol, q, ib] = await Promise.all([friendState(env, account), links(env, account), inRows(env, account), outRows(env, account),
       env[tokenName(account)] ? followerIds(env, account) : null, quota(env, { account }), inbound(env, { account, days: 7 })]);
@@ -372,7 +364,6 @@ export function makeLine(h) {
 
   // 1 人とのやりとり（届いたもの・画面から送ったもの・AI の道具で送ったもの）
   async function thread(env, { account, user }) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     if (!ACCOUNT_RE.test(String(account || ""))) return { ok: false, error: "bad_account" };
     if (!USER_RE.test(String(user || ""))) return { ok: false, error: "bad_user" };
     const [ins, outs, { byUser }, st] = await Promise.all([inRows(env, account), outRows(env, account, user), links(env, account), friendState(env, account)]);
@@ -420,7 +411,6 @@ export function makeLine(h) {
 
   // 1 人へ返す（やりとりの画面から）。ブロックした人には送らない
   async function reply(env, { account, user, text }, by) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     if (!ACCOUNT_RE.test(String(account || ""))) return { ok: false, error: "bad_account" };
     if (!USER_RE.test(String(user || ""))) return { ok: false, error: "bad_user" };
     const t = checkText(text); if (t.error) return { ok: false, ...t };
@@ -433,7 +423,6 @@ export function makeLine(h) {
 
   // 絞って送る。mode=all は友だち全員（ブロック・「除外」の人を除く）、mode=filter は宛先の条件（メールの一斉配信と同じ形）で結ばれた人。dry で数えるだけ
   async function broadcast(env, { account, mode, filter, text, dry }, by) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     if (!ACCOUNT_RE.test(String(account || ""))) return { ok: false, error: "bad_account" };
     const [st, { byUser, byPerson }] = await Promise.all([friendState(env, account), links(env, account)]);
     const ex = h.excluded ? await h.excluded(env) : new Set();
