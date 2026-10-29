@@ -34,6 +34,20 @@ async function main() {
   $("loading").classList.add("hidden");
   $("main").classList.remove("hidden");
   $("who").textContent = r.me.name || r.me.email;
+  $("logout").addEventListener("click", async (e) => { e.preventDefault(); await sb.auth.signOut(); location.replace("/"); });
+  // 関門 1（2026-10-29）：会員でない人（無料の登録・会員でない買い手）は「ご契約」だけ。ほかのタブは出さない
+  if (r.access === "contract") {
+    document.querySelectorAll(".side [data-tab]").forEach((b) => b.classList.toggle("hidden", b.dataset.tab !== "contract"));
+    document.querySelectorAll(".side .grp").forEach((g) => g.classList.toggle("hidden", g.textContent.trim() !== "契約"));
+    ["mypage", "lessons", "lesson", "news", "room", "review", "booking"].forEach((t) => $("tab-" + t).classList.add("hidden"));
+    $("tab-contract").classList.remove("hidden");
+    $("tab-contract").insertAdjacentHTML("afterbegin", '<div class="card"><h3>この画面はご契約の確認用です</h3><p class="note" style="margin:0">教材・添削ルーム・マイページは、しあらぼの会員向けです。ご契約の内容と、定期の停止はここからできます。</p></div>');
+    $("crumb").textContent = "ご契約";
+    document.querySelector('.side [data-tab="contract"]').setAttribute("aria-selected", "true");
+    document.querySelector('.side [data-tab="contract"]').addEventListener("click", () => loadContract(session.access_token));
+    loadContract(session.access_token);
+    return;
+  }
 
   const viewed = new Set(r.viewed);
   const lib = r.library || { source: "demo", member: true, programs: [] };
@@ -215,7 +229,6 @@ async function main() {
   });
   setupStudentPush({ box: $("push-box"), status: $("push-status"), on: $("push-on"), off: $("push-off") }, token);
 
-  $("logout").addEventListener("click", async (e) => { e.preventDefault(); await sb.auth.signOut(); location.replace("/"); });
 
   if (fresh) maybeShowA2hs();
 }
