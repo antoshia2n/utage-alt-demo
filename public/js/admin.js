@@ -467,23 +467,9 @@ function setFunc(item) {
 
 function setCrumbSub(t) { $("crumb-sub").textContent = t ? " › " + t : ""; }
 
-// 便 17：左のメニューのまとまりを開閉する。開閉はこのブラウザに覚える（読めなくても全部開いた形で動く）
-function setupGroups() {
-  let closed = [];
-  try { closed = JSON.parse(localStorage.getItem("labos-closed-groups") || "[]"); } catch { closed = []; }
-  const save = () => { try { localStorage.setItem("labos-closed-groups", JSON.stringify(closed)); } catch { /* 覚えられなくても動く */ } };
-  document.querySelectorAll(".side .grp-box").forEach((box) => {
-    const btn = box.querySelector(".grp");
-    const set = (open) => { box.classList.toggle("closed", !open); btn.setAttribute("aria-expanded", String(open)); };
-    set(!closed.includes(box.dataset.grp) || !!box.querySelector('[aria-selected="true"]'));
-    btn.addEventListener("click", () => {
-      const open = box.classList.contains("closed");
-      set(open);
-      closed = closed.filter((g) => g !== box.dataset.grp).concat(open ? [] : [box.dataset.grp]);
-      save();
-    });
-  });
-}
+// ムダ 5（2026-10-29）：左のメニューの開け閉め（便 17）は、左に 1 機能分だけ出す形（マーケくん便 3）にしてから押せなくなっていたので消した。
+// 前にブラウザへ覚えさせた開け閉めの印も 1 回だけ消す
+try { localStorage.removeItem("labos-closed-groups"); } catch { /* 消せなくても動く */ }
 
 // 便 17：上の帯の検索と、待っているものの数
 function setupTopbar() {
@@ -754,8 +740,6 @@ function setupViews() {
     if (b.dataset.view === "people") custList();
     // 便 18：一覧 → 詳細の画面は、メニューから開くと一覧に戻る
     if (PANE_VIEWS.includes(b.dataset.view)) showPane(b.dataset.view, "list");
-    const box = b.closest(".grp-box");
-    if (box && box.classList.contains("closed")) box.querySelector(".grp").click();
     if (b.dataset.view === "home") loadHome();
     if (b.dataset.view === "rooms") { roomsAt = Date.now(); loadRooms(); }
     if (b.dataset.view === "people" && !peopleLoaded) { peopleLoaded = true; search(); }
@@ -788,7 +772,6 @@ function setupViews() {
     renderCustomers();
   }));
   $("mem").addEventListener("change", renderCustomers);
-  setupGroups();
   setupTopbar();
   $("only-unreplied").addEventListener("change", loadRooms);
   setupLine();

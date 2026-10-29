@@ -418,10 +418,8 @@ details.review time { font-family: var(--mono); font-size: 12px; color: var(--mu
 /* ---------- 便 17：左のメニューの開閉・上の帯・顧客管理 ---------- */
 .side .grp { display: flex; align-items: center; justify-content: space-between; width: 100%; background: none; border: 0; cursor: pointer; font: inherit; font-size: 11px; color: var(--muted); letter-spacing: .1em; padding: 12px 10px 4px; text-align: left; }
 .side .grp::after { content: ""; width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg); margin: 0 4px 3px 0; transition: transform .15s; }
-.side .grp-box.closed .grp::after { transform: rotate(-45deg); margin-bottom: 0; }
 .side .grp:hover { color: var(--ink); }
 .side .grp-items { display: flex; flex-direction: column; gap: 2px; }
-.side .grp-box.closed .grp-items { display: none; }
 /* 便 20：まとまりを持たない 1 項目（ファネル構築） */
 .side .grp-solo { display: flex; flex-direction: column; padding-top: 10px; }
 .topnav .crumb-sub { color: var(--muted); font-weight: 400; }
@@ -457,7 +455,6 @@ details.review time { font-family: var(--mono); font-size: 12px; color: var(--mu
 @media (max-width: 860px) {
   .side .grp-box, .side .grp-items, .side .grp-solo { display: contents; }
   .side .grp { display: none; }
-  .side .grp-box.closed .grp-items { display: contents; }
   .topnav { flex-wrap: wrap; }
   .gsearch { order: 5; flex: 1 1 100%; }
   .gsearch input { width: 100%; }
