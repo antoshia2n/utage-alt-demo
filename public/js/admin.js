@@ -89,8 +89,10 @@ async function openConsole() {
   const roomsTick = (force) => {
     if (document.hidden) return;
     const onRooms = $("view-rooms").style.display !== "none";
-    if (force || Date.now() - roomsAt >= (onRooms ? 30e3 : 300e3)) { roomsAt = Date.now(); loadRooms(); }
+    if (force || Date.now() - roomsAt >= (onRooms ? 25e3 : 295e3)) { roomsAt = Date.now(); loadRooms(); }
   };
+  // 見張りは 30 秒ごとに起き、前に読んでから 25 秒（ほかの画面は 295 秒）たっていれば読む。
+  // 同じ 30 秒にすると、少しの遅れで 1 回飛ばして 60 秒ごとになる（10/29 本番で 82 秒あいたのを見た）
   setInterval(() => roomsTick(false), 30000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) roomsTick(true); });
   let t;
