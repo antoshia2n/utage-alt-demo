@@ -102,7 +102,7 @@ async function openConsole() {
     if ($("view-people").style.display === "none" || !peopleLoaded) return;
     if (custFull) { clearTimeout(t); t = setTimeout(search, 250); } else renderCustomers();
   });
-  $("src").addEventListener("change", search);
+  $("src").addEventListener("change", () => (custFull ? search() : renderCustomers()));
 }
 
 function routeHash() {
@@ -117,14 +117,6 @@ function routeHash() {
   return false;
 }
 
-async function loadStats() {
-  const s = await api("/api/admin/stats", { token });
-  if (!s.ok) return;
-  const box = (label, n) => `<div class="stat"><b>${n}</b>${esc(label)}</div>`;
-  $("stats").innerHTML = box("顧客", s.customers)
-    + Object.entries(s.by_stage).map(([k, v]) => box(k, v)).join("")
-    + Object.entries(s.by_source).map(([k, v]) => box("流入元 " + (SOURCE_LABEL[k] || k), v)).join("");
-}
 
 // ---------- 顧客管理（便 17：一覧の表 → 1 人の詳細。詳細は上に要点、下にタブ） ----------
 let current = null;
@@ -186,11 +178,24 @@ const custQuery = () => $("gq").value.trim();
 async function search() {
   const text = custQuery();
   const server = custFull && !!text;
-  const r = await api(`/api/admin/people?q=${server ? encodeURIComponent(text) : ""}&source=${$("src").value}&limit=2000`, { token });
+  const r = await api(`/api/admin/people?q=${server ? encodeURIComponent(text) : ""}&source=${custFull ? $("src").value : ""}&limit=2000`, { token });
   if (!r.ok) { $("count").textContent = "読めませんでした（" + (r.error || r.status) + "）"; $("people").innerHTML = ""; return; }
   custRows = r.people;
   if (!server) custFull = r.people.length >= 2000;
   renderCustomers();
+}
+// ムダ 4（2026-10-29）：顧客管理の上の数の箱をやめ、手元の一覧で数えた数を選択肢に添える（数を取る読み込みもやめた）
+function countOptions() {
+  const label = (o) => (o.dataset.base ??= o.textContent);
+  for (const o of $("src").options) {
+    if (custFull && o.value) { o.textContent = label(o); continue; }
+    const n = o.value ? custRows.filter((p) => p.source === o.value).length : custRows.length;
+    o.textContent = `${label(o)}（${n}）`;
+  }
+  for (const o of $("mem").options) {
+    const n = o.value === "" ? custRows.length : custRows.filter(MEM_FILTER[o.value] || (() => true)).length;
+    o.textContent = `${label(o)}（${n}）`;
+  }
 }
 // 手元で探す：名前（しあらぼ管理の呼び名）・マーケくんの中の名前・メールのどれかに含む人（サーバーで探すときと同じ範囲）
 function textMatch(p, s) {
@@ -201,8 +206,9 @@ function textMatch(p, s) {
 
 function renderCustomers() {
   const mem = $("mem").value;
-  const text = custQuery();
-  let rows = custRows.filter((p) => (mem === "" || (MEM_FILTER[mem] ? MEM_FILTER[mem](p) : true)) && textMatch(p, text));
+  const text = custQuery(), src = $("src").value;
+  countOptions();
+  let rows = custRows.filter((p) => (mem === "" || (MEM_FILTER[mem] ? MEM_FILTER[mem](p) : true)) && textMatch(p, text) && (custFull || !src || p.source === src));
   const { key, dir } = custSort;
   const val = (p) => key === "stage" ? stageText(p) : key === "source" ? (SOURCE_LABEL[p.source] || p.source || "") : key === "until" ? (entUntil(p) || "9999") : (p[key] || "");
   rows = rows.slice().sort((a, b) => (val(a) > val(b) ? 1 : val(a) < val(b) ? -1 : 0) * dir);
@@ -732,7 +738,7 @@ function openView(name, part) {
   // 便 12a：設計図のページの箱から開いたときは、その 1 枚を開く
   if (name === "pages" && part && part.lp && part.id) openPage(part.id);
 }
-let peopleLoaded = false, statsLoaded = false, roomsAt = 0;
+let peopleLoaded = false, roomsAt = 0;
 // 設定の画面を開くたびに読み直す（AI や承認で値が変わっていても、開いたときは新しい値）
 function loadSettings() { if ($("setup").open) loadSetup(); loadCommunity(); reloadMail(); loadCalendar(); loadPush(); }
 const settingsOpen = () => $("view-settings").style.display !== "none";
@@ -753,7 +759,6 @@ function setupViews() {
     if (b.dataset.view === "home") loadHome();
     if (b.dataset.view === "rooms") { roomsAt = Date.now(); loadRooms(); }
     if (b.dataset.view === "people" && !peopleLoaded) { peopleLoaded = true; search(); }
-    if (b.dataset.view === "people" && !statsLoaded) { statsLoaded = true; loadStats(); }
     if (b.dataset.view === "settings") loadSettings();
     if (b.dataset.view === "blueprint") bp.load();
     if (b.dataset.view === "deliver" || b.dataset.view === "blueprint") loadDeliver();
