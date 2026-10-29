@@ -109,7 +109,8 @@ async function main() {
     // 会員サイトの管理（便 22）：目次（押すとその時間から再生）と資料
     const secs = (t) => String(t).split(":").reduce((a, x) => a * 60 + (Number(x) || 0), 0);
     const toc = Array.isArray(l.toc) ? l.toc : [], files = Array.isArray(l.files) ? l.files : [];
-    $("l-extra").innerHTML = (toc.length ? `<section class="card stack"><h3 style="margin:0">目次</h3><div class="stack" style="gap:4px">${toc.map((x) => l.youtube_id
+    // 目次は一旦出さない（2026-10-29 11:31 Naoki「うまくいかない、一旦なくていい」）。資料だけ出す
+    $("l-extra").innerHTML = (false && toc.length ? `<section class="card stack"><h3 style="margin:0">目次</h3><div class="stack" style="gap:4px">${toc.map((x) => l.youtube_id
       ? `<button type="button" class="btn ghost small" style="justify-content:flex-start;text-align:left" data-at="${secs(x.at)}"><b style="font-variant-numeric:tabular-nums;margin-right:8px">${esc(x.at)}</b>${esc(x.label)}</button>`
       : `<div><b style="font-variant-numeric:tabular-nums;margin-right:8px">${esc(x.at)}</b>${esc(x.label)}</div>`).join("")}</div></section>` : "")
       + (files.length ? `<section class="card stack"><h3 style="margin:0">資料</h3>${files.map((f) => `<a class="btn ghost small" style="justify-content:flex-start" href="${esc(f.url)}" target="_blank" rel="noopener">${esc(f.label)}</a>`).join("")}</section>` : "");
