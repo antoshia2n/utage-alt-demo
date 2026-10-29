@@ -150,7 +150,7 @@ export function mountSite(host, { getToken, openPerson }) {
     m.innerHTML = `${crumbs()}<div class="hrow"><h1>会員サイト</h1></div>
     <p class="lead">生徒がログインして教材を見る場所です。サイトを選んで、中のカリキュラム・プログラムと受講生を管理します。</p>
     <section class="scard" aria-labelledby="how-h" style="margin-bottom:16px"><div class="hrow"><h2 id="how-h" style="font-size:15px">会員サイトのしくみ</h2><span class="grow"></span><button class="btn sm ghost" id="howt" aria-expanded="${howOpen}">${howOpen ? "たたむ ▲" : "中を見る ▼"}</button></div>
-    ${howOpen ? `<div class="how" style="grid-template-columns:repeat(5,minmax(0,1fr))"><div><b>① サイト</b><span>生徒が入る場所。例：しあらぼ</span></div><div><b>② カリキュラム</b><span>権利で開ける教材の一式。どの権利の人に何を見せるかを決める</span></div><div><b>③ プログラム</b><span>カリキュラムに並ぶ講座</span></div><div><b>④ コース</b><span>プログラムの中の区切り。例：2026年</span></div><div><b>⑤ コンテンツ</b><span>生徒が見る 1 回分。動画・目次・資料</span></div></div>
+    ${howOpen ? `<div class="how" style="grid-template-columns:repeat(5,minmax(0,1fr))"><div><b>① サイト</b><span>生徒が入る場所。例：しあらぼ</span></div><div><b>② カリキュラム</b><span>権利で開ける教材の一式。どの権利の人に何を見せるかを決める</span></div><div><b>③ プログラム</b><span>カリキュラムに並ぶ講座</span></div><div><b>④ コース</b><span>プログラムの中の区切り。例：2026年</span></div><div><b>⑤ コンテンツ</b><span>生徒が見る 1 回分。動画・資料</span></div></div>
     <p class="hint" style="margin:8px 0 0">名前は学ぶくんと同じです。新しいのは一番上の「サイト」だけ。サイトを増やすのは、ほかの事業者を迎えるときです</p>` : ""}</section>
     <div class="grid">${S.sites.map((s) => `<div class="ccard"><button class="thumb" ${goAttr({ kind: "curricula", sid: s.id })} style="background:linear-gradient(135deg,${s.color},${s.color}cc);border:0;cursor:pointer;text-align:left">${stChip(s.status)}<span>${esc(s.name)}</span></button>
       <div class="cbody"><div class="hint">${esc(s.desc)}</div><div class="cmeta"><span>カリキュラム ${s.curricula.length}</span><span>プログラム ${s.programs.length}</span><span>コンテンツ ${s.lessons.size}</span>${STU ? `<span>受講生 ${STU.length}</span>` : ""}</div></div>
@@ -400,9 +400,7 @@ export function mountSite(host, { getToken, openPerson }) {
         <div class="f"><label for="sm">要約 <span class="hint">生徒の画面で題名の下に出る</span></label><textarea id="sm" style="min-height:70px">${esc(l.summary)}</textarea></div>
         <div class="f" style="max-width:240px"><label for="mn">見る時間のめやす（分）</label><input type="number" id="mn" min="0" value="${l.minutes || ""}"><span class="err" id="mne"></span></div></div>
       <div class="sec"><h3>動画</h3><div class="f"><label for="v">YouTube の住所</label><input type="url" id="v" value="${esc(l.video)}" placeholder="https://www.youtube.com/watch?v=…"><span class="err" id="ve"></span></div>
-        <div class="f"><span class="lbl">目次 <span class="hint">押すとその時間から再生される。長いセミナーの動画で使う</span></span>
-          <div class="rows" id="toc">${l.toc.map((x, k) => `<div class="rowx"><input type="text" value="${esc(x.at)}" placeholder="12:30" aria-label="${k + 1} 行目の時間"><input type="text" value="${esc(x.label)}" aria-label="${k + 1} 行目の見出し"><button class="x" data-tocx="${k}" aria-label="${k + 1} 行目を消す">×</button></div>`).join("")}</div>
-          <span class="err" id="toce"></span><button class="btn sm ghost" id="tocadd" style="align-self:flex-start">＋ 目次を 1 行足す</button></div></div>
+</div>
       <div class="sec"><h3>資料 <span class="hint">生徒が開ける。PDF・スライド・マインドマップの住所</span></h3>
         <div class="rows" id="files">${l.files.map((x, k) => `<div class="rowx file"><input type="text" value="${esc(x.label)}" aria-label="${k + 1} つ目の資料の名前" placeholder="名前"><input type="url" value="${esc(x.url)}" aria-label="${k + 1} つ目の資料の住所" placeholder="https://"><button class="x" data-flx="${k}" aria-label="${k + 1} つ目の資料を消す">×</button></div>`).join("") || '<span class="hint">まだありません</span>'}</div>
         <span class="err" id="fle"></span><button class="btn sm ghost" id="fladd" style="align-self:flex-start;margin-top:6px;white-space:normal;text-align:left">＋ 資料を足す</button>
@@ -425,19 +423,17 @@ export function mountSite(host, { getToken, openPerson }) {
     $$("[data-rmm]").forEach((b) => (b.onclick = () => { grab(l); V.mem = V.mem.filter((x) => x !== b.dataset.rmm); dirty = true; render(); $("#addm").focus(); }));
     $("#addmb").onclick = () => { const v = $("#addm").value; if (!v) { $("#me").textContent = "足すコースを選んでください"; $("#addm").focus(); return; } grab(l); V.mem.push(v); dirty = true; render(); $("#addm").focus(); };
     $("#at").onfocus = () => { $("[name=st][value=scheduled]").checked = true; }; $("#days").onfocus = () => { $("[name=st][value=drip]").checked = true; };
-    $("#tocadd").onclick = () => { grab(l); l.toc.push({ at: "", label: "" }); dirty = true; render(); const r = $$("#toc input"); r[r.length - 2].focus(); };
-    $$("[data-tocx]").forEach((b) => (b.onclick = () => { grab(l); l.toc.splice(+b.dataset.tocx, 1); dirty = true; render(); $("#tocadd").focus(); }));
     $("#fladd").onclick = () => { grab(l); l.files.push({ label: "", url: "" }); dirty = true; render(); const r = $$("#files input"); r[r.length - 2].focus(); };
     $$("[data-flx]").forEach((b) => (b.onclick = () => { grab(l); l.files.splice(+b.dataset.flx, 1); dirty = true; render(); $("#fladd").focus(); }));
     const save = async () => {
-      ["#te", "#ve", "#me", "#ste", "#toce", "#fle", "#mne"].forEach((x) => ($(x).textContent = ""));
+      ["#te", "#ve", "#me", "#ste", "#fle", "#mne"].forEach((x) => ($(x).textContent = ""));
       const t = $("#t").value.trim(); if (!t) { $("#te").textContent = "題名が空です。題名を入れてから保存してください"; $("#t").focus(); return; }
       const v = $("#v").value.trim(); if (v && !/youtu\.?be/.test(v)) { $("#ve").textContent = ERR.bad_video_url; $("#v").focus(); return; }
       if (!V.mem.length) { $("#me").textContent = "所属するコースを 1 つ以上選んでください。どのコースにも無いと、生徒には出ません"; $("#addm").focus(); return; }
       const stv = $("[name=st]:checked").value;
       if (stv === "scheduled" && !$("#at").value) { $("#ste").textContent = "公開する日時が空です"; $("#at").focus(); return; }
       grab(l);
-      const body = { id: l.id === "new" ? undefined : l.id, title: l.title, summary: l.summary, minutes: l.minutes || null, video_url: l.video, toc: l.toc, files: l.files, status: l.status,
+      const body = { id: l.id === "new" ? undefined : l.id, title: l.title, summary: l.summary, minutes: l.minutes || null, video_url: l.video, files: l.files, status: l.status,
         publish_at: l.status === "scheduled" ? new Date(l.at).toISOString() : null, drip_days: l.status === "drip" ? l.days : null, can_ask: l.qa, courses: V.mem };
       const wasNew = l.id === "new";
       const r = await act("content", body, null, (res) => {
@@ -448,7 +444,7 @@ export function mountSite(host, { getToken, openPerson }) {
         render(); toast(`「${nl.title}」を${wasNew ? "作りました" : "保存しました"}（${where}）`); $("#save")?.focus();
       });
       if (r && !r.ok) {
-        const map = { title: "#te", video_url: "#ve", courses: "#me", publish_at: "#ste", drip_days: "#ste", toc: "#toce", files: "#fle", minutes: "#mne" };
+        const map = { title: "#te", video_url: "#ve", courses: "#me", publish_at: "#ste", drip_days: "#ste", files: "#fle", minutes: "#mne" };
         if (map[r.field]) { $(map[r.field]).textContent = errText(r); }
       }
     };
@@ -465,7 +461,6 @@ export function mountSite(host, { getToken, openPerson }) {
   function grab(l) {
     if (!$("#t")) return;
     l.title = $("#t").value.trim(); l.summary = $("#sm").value; l.minutes = +$("#mn").value || 0; l.video = $("#v").value.trim();
-    l.toc = $$("#toc .rowx").map((r) => { const [a, b] = [...r.querySelectorAll("input")].map((x) => x.value.trim()); return { at: a, label: b }; }).filter((x) => x.at || x.label);
     l.files = $$("#files .rowx").map((r) => { const [a, b] = [...r.querySelectorAll("input")].map((x) => x.value.trim()); return { label: a, url: b }; }).filter((x) => x.label || x.url);
     l.status = $("[name=st]:checked").value; l.at = $("#at").value ? new Date($("#at").value).toISOString() : ""; l.days = $("#days").value === "" ? 0 : +$("#days").value; l.qa = $("#qa").checked;
   }
@@ -475,7 +470,6 @@ export function mountSite(host, { getToken, openPerson }) {
       <h2 style="margin:2px 0 0;font-size:${pv === "sp" ? 17 : 20}px">${esc(l.title || "（題名なし）")}</h2>${l.minutes ? `<div class="hint">約 ${l.minutes} 分</div>` : ""}
       ${locked ? `<div class="locked" style="margin-top:10px">${l.status === "draft" ? "下書きなので、生徒には出ていません" : l.status === "scheduled" ? `${esc(fmtDT(l.at)) || "（日時未設定）"} に開きます` : `入会から ${l.days} 日後に開きます`}</div>` : ""}
       ${l.video ? '<div class="video">▶ 動画（YouTube）</div>' : ""}${l.summary ? `<p style="white-space:pre-wrap">${esc(l.summary)}</p>` : ""}
-      ${l.toc.length ? `<div class="toc" aria-label="目次">${l.toc.map((x) => `<span><b>${esc(x.at)}</b>${esc(x.label)}</span>`).join("")}</div>` : ""}
       ${l.files.length ? `<div class="lbl" style="margin-top:8px">資料</div><div class="dl">${l.files.map((x) => `<span>📄 ${esc(x.label)}</span>`).join("")}</div>` : ""}
       <div class="pvfoot">${l.qa ? '<button class="btn" type="button" tabindex="-1">このコンテンツについて質問する</button>' : ""}</div></div></div>`;
   }

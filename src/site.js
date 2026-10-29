@@ -58,7 +58,8 @@ export function checkContent(b = {}) {
   }
   return {
     ok: true,
-    row: { title, summary: str(b.summary, TEXT_MAX), status, publish_at, drip_days, minutes: m, video_url, toc, files, can_ask: b.can_ask !== false, active: true },
+    // 目次は画面から外した（2026-10-29 11:31 Naoki「一旦なくていい」）。送られてこなければ今の値を変えない
+    row: { title, summary: str(b.summary, TEXT_MAX), status, publish_at, drip_days, minutes: m, video_url, ...(Array.isArray(b.toc) ? { toc } : {}), files, can_ask: b.can_ask !== false, active: true },
   };
 }
 
