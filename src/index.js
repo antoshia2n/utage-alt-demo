@@ -72,7 +72,7 @@ import { makeMypage } from "./mypage.js";
 import { makeNews, newsQuery } from "./news.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.52.0-bgate1";
+const VERSION = "0.52.1-bhookfast";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -129,6 +129,8 @@ async function route(request, env, ctx, url, path) {
   // 便 14a：LINE の受け口（ログイン不要・署名で確かめる。転送は ctx.waitUntil）
   const lw = path.match(/^[/]api[/]line[/]webhook[/]([a-z_]{2,20})$/);
   if (lw && request.method === "POST") return await line.handleWebhook(request, env, ctx, lw[1]);
+  // ログインのメールのフック（Supabase が 5 秒だけ待つ）。記録を返事のあとに回すため ctx を渡す
+  if (path === "/api/auth/send-email" && request.method === "POST") return await deliver.handleAuthEmail(request, env, ctx);
   // 便 12a：公開のページの住所（lp.shia2n.jp）では、ページと /api/p/ の下だけを返す（シアニン用の画面や API はこの住所では開かない）
   if (isPagesHost(env, url)) return await handlePagesHost(request, env, url);
   if (path === "/mcp" || path.startsWith("/mcp/")) return await handleMcp(request, env, url);
@@ -945,7 +947,6 @@ async function handleApi(request, env, url) {
   if (path === "/api/webhooks/univapay" && method === "POST") return await bin3.handleWebhook(request, env);
   if (path === "/api/unsubscribe") return await bin3.handleUnsubscribe(request, env, url);
   // B の便 5：Supabase の「メールを送る引き金」。ログインのリンクを Cloudflare から送る（署名で Supabase からと確かめる）
-  if (path === "/api/auth/send-email" && method === "POST") return await deliver.handleAuthEmail(request, env);
 
   // ログイン画面の見た目（ロゴの文字・色・ひとこと）。ログインの前に読むので鍵は要らない
   if (path === "/api/site-look" && method === "GET") return json(await mypage.publicLook(env), 200, { "cache-control": "public, max-age=60" });
