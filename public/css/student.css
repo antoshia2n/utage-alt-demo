@@ -30,3 +30,10 @@ body.student .side .soon, body.student .pill, body.student .badge { font-size: 1
   body.student .btn, body.student .btn.small, body.student .rtabs [role=tab], body.student label.btn { min-height: 44px; }
   body.student #back { display: inline-block; padding: 12px 0; }
 }
+/* 文の中のリンクは地の色でも 4.5:1 以上（#b45309 は薄い面の上で 4.4 になるため一段濃く） */
+body.student a { color: #92400e; }
+@media (prefers-color-scheme: dark) { body.student a { color: #fbbf24; } }
+/* 下の表記のリンクも、スマホで押せる範囲を 44px に */
+@media (max-width: 860px) {
+  body.student footer.site a, body.student #tab-contract a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 4px; }
+}
