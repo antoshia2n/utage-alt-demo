@@ -290,7 +290,8 @@ export function makePages(h) {
     if (!env.B_STORE) return { ok: true, store: "demo", count: 0, pages: [] };
     const since = new Date(Date.now() - 7 * 864e5).toISOString();
     const [pages, hits, open] = await Promise.all([
-      db(env, "GET", "b_pages?select=*&order=updated_at.desc"),
+      // マイページ（目的 mypage）は会員サイト › マイページで作るので、ここの一覧には出さない
+      db(env, "GET", "b_pages?select=*&purpose=neq.mypage&order=updated_at.desc"),
       hitsSince(env, since),
       db(env, "GET", "b_page_requests?select=id,page_id&done_version=is.null"),
     ]);
@@ -457,7 +458,8 @@ export function makePages(h) {
   // ページを返す。下書きは印（preview）があるときだけ
   async function serve(env, slug, previewTok) {
     const page = await pageBySlug(env, slug);
-    if (!page) return null;
+    // マイページは生徒の画面の枠の中だけで出す（公開の住所では出さない）
+    if (!page || page.purpose === "mypage") return null;
     let v = null, preview = false;
     if (previewTok) {
       v = await readPreviewToken(env, page.id, previewTok);
@@ -474,7 +476,7 @@ export function makePages(h) {
 
   // 設計図に使う：ページと、公開中（無ければ最新）の版の印
   async function forPlan(env) {
-    const pages = await db(env, "GET", "b_pages?select=id,slug,title,status,purpose,latest_version,published_version").catch(() => []);
+    const pages = await db(env, "GET", "b_pages?select=id,slug,title,status,purpose,latest_version,published_version&purpose=neq.mypage").catch(() => []);
     if (!pages.length) return { pages: [], partsOf: {} };
     for (const p of pages) p.url = `${pagesOrigin(env)}/${p.slug}`;
     const vers = await db(env, "GET", `b_page_versions?select=page_id,version,parts&page_id=in.(${pages.map((p) => p.id).join(",")})&limit=5000`).catch(() => []);

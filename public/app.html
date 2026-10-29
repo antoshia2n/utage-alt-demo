@@ -19,6 +19,8 @@
 <div class="shell">
   <nav class="side" aria-label="メニュー">
     <a class="side-logo" href="/app">シアラボ</a>
+    <!-- マイページ（2026-10-29）：公開中の版があるときだけ出す。中身は区切った枠（sandbox）に出す -->
+    <button class="it hidden" id="side-mypage" type="button" aria-selected="false" data-tab="mypage">マイページ</button>
     <div class="grp">学ぶ</div>
     <button class="it" type="button" aria-selected="true" data-tab="lessons">教材</button>
     <button class="it" type="button" aria-selected="false" data-tab="news">お知らせ</button>
@@ -44,6 +46,7 @@
   <main id="main" class="hidden">
 
     <div id="member" class="card member hidden"></div>
+    <section id="tab-mypage" class="hidden"><iframe id="mypage-frame" title="マイページ" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation" style="width:100%;border:0;min-height:480px;display:block;background:transparent"></iframe></section>
     <section id="tab-lessons" class="stack"></section>
 
     <section id="tab-lesson" class="stack hidden">

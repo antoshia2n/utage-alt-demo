@@ -27,7 +27,7 @@ export function mountSite(host, { getToken, openPerson }) {
   const $ = (s) => root.querySelector(s), $$ = (s) => [...root.querySelectorAll(s)];
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const say = (t) => { $("#live").textContent = ""; setTimeout(() => ($("#live").textContent = t), 30); };
-  const call = (path, method = "GET", body) => api("/api/admin/site/" + path, { method, body, token: getToken() });
+  const call = (path, method = "GET", body) => api(path.startsWith("/") ? path : "/api/admin/site/" + path, { method, body, token: getToken() });
   const errText = (r) => ERR[r.error] || `うまくいきませんでした（${r.error || r.status}）`;
 
   let S = null, STU = null, V = { kind: "sites" }, dirty = false, lastF = null, bulk = false, busy = false;
@@ -107,7 +107,7 @@ export function mountSite(host, { getToken, openPerson }) {
   }
   function confirmLeave(fn) {
     modal(`<h3>保存していない書きかけがあります</h3><p>このまま移ると、書きかけは消えます。</p><div class="macts"><button class="btn" data-m="stay">戻って保存する</button><button class="btn pri" data-m="go">保存せずに移る</button></div>`,
-      { stay: () => closeM(), go: async () => { closeM(true); await reload(); fn(); } }); // 書きかけで画面の中の値が変わっているので、表から読み直してから移る
+      { stay: () => closeM(), go: async () => { closeM(true); if (MP) mpDraft = MP.html; await reload(); fn(); } }); // 書きかけで画面の中の値が変わっているので、表から読み直してから移る
   }
   function crumbs() {
     const p = [["会員サイト", { kind: "sites" }]];
@@ -139,7 +139,7 @@ export function mountSite(host, { getToken, openPerson }) {
     if (V.sid && !site()) V = { kind: "sites" };
     renderSide();
     const m = $("#main");
-    ({ sites: renderSites, curricula: renderCurricula, curriculum: renderCurriculum, programs: renderPrograms, contents: renderContents, course: renderCourse, lesson: renderLesson, mypage: renderSoon, news: renderSoon, students: renderStudents, siteset: renderSiteSet })[V.kind](m);
+    ({ sites: renderSites, curricula: renderCurricula, curriculum: renderCurriculum, programs: renderPrograms, contents: renderContents, course: renderCourse, lesson: renderLesson, mypage: renderMypage, news: renderSoon, students: renderStudents, siteset: renderSiteSet })[V.kind](m);
     $$(".st-t").forEach((t) => { const hs = [...t.querySelectorAll("thead th")].map((x) => x.textContent); t.querySelectorAll("tbody tr").forEach((r) => [...r.children].forEach((td, i) => { if (!td.hasAttribute("colspan")) td.dataset.l = i === 0 ? "" : hs[i] || ""; })); });
     $$("[data-go]").forEach((b) => (b.onclick = () => go(JSON.parse(b.dataset.go))));
     try { const sd = $("#side"), cb = sd.querySelector("[aria-current]"); if (cb && sd.scrollWidth > sd.clientWidth) sd.scrollLeft = cb.offsetLeft - sd.clientWidth / 2 + cb.clientWidth / 2; } catch { /* 横に並ばない幅では何もしない */ }
@@ -474,10 +474,91 @@ export function mountSite(host, { getToken, openPerson }) {
       <div class="pvfoot">${l.qa ? '<button class="btn" type="button" tabindex="-1">このコンテンツについて質問する</button>' : ""}</div></div></div>`;
   }
 
+  // ---------- マイページの作成画面（仕組みはページと同じ：HTML・版・公開） ----------
+  let MP = null, mpTab = "html", mpDraft = null, mpH = 0;
+  const MARK_LABEL = { name: "呼び名", next: "次にやること", apps: "使えるアプリの札", news: "新しいお知らせ" };
+  const marksOf = (h) => Object.keys(MARK_LABEL).filter((k) => new RegExp(`data-lab-part\\s*=\\s*["']mypage:${k}["']`).test(String(h || "").replace(/<!--[\\s\\S]*?-->/g, "")));
+  async function loadMypage(v) {
+    const r = await call("/api/admin/mypage" + (v ? "?v=" + encodeURIComponent(v) : ""));
+    if (!r.ok) { toast(errText(r)); return false; }
+    MP = r; mpDraft = r.html; return true;
+  }
+  window.addEventListener("message", (e) => {
+    const fr = $("#mpfr");
+    if (!fr || e.source !== fr.contentWindow || !e.data || typeof e.data.labMypageHeight !== "number") return;
+    mpH = Math.min(Math.max(e.data.labMypageHeight, 200), 6000); fr.style.height = mpH + "px";
+  });
+  function renderMypage(m) {
+    if (!MP) { m.innerHTML = `${crumbs()}<h1>マイページ</h1><p class="hint">読み込んでいます…</p>`; loadMypage().then((ok) => ok && V.kind === "mypage" && render()); return; }
+    const p = MP.page, live = p.status === "published" && p.published_version;
+    const cur = MP.version, have = marksOf(mpDraft);
+    const changed = mpDraft !== MP.html;
+    m.innerHTML = `${crumbs()}<div class="hrow"><h1>マイページ</h1>${live ? `<span class="st pub">● 公開中 版 ${p.published_version}</span>` : '<span class="st draft">○ まだ公開していない</span>'}<span class="grow"></span>
+      ${cur && !(live && cur === p.published_version) ? `<button class="btn pri" id="mppub" ${changed ? "disabled" : ""}>版 ${cur} を公開する</button>` : ""}</div>
+    <p class="lead">生徒がログインして最初に見る画面です。HTML で自由に作れます。印を書いた所に、生徒ごとの中身が入ります。仕組みはパーツの「ページ」と同じです（版を残し、選んだ版を公開する）。</p>
+    <div class="tabs2" role="tablist">${[["html", "HTML"], ["pc", "見え方（パソコン）"], ["sp", "見え方（スマホ）"], ["vers", `版（${MP.versions.length}）`]].map(([k, n]) => `<button role="tab" aria-selected="${mpTab === k}" data-mpt="${k}">${n}</button>`).join("")}</div>
+    <div id="mpb"></div>`;
+    const b = $("#mpb");
+    if (mpTab === "html") {
+      b.innerHTML = `<div class="ed"><div class="sec"><div class="hrow" style="margin-bottom:8px"><span class="hint">いま開いている版：${cur ? `版 ${cur}` : "なし"}${changed ? "（書きかけあり）" : ""}</span><span class="grow"></span>
+        <select id="mpver" aria-label="開く版" style="width:auto">${MP.versions.map((x) => `<option value="${x.version}" ${x.version === cur ? "selected" : ""}>版 ${x.version}${x.version === p.published_version && live ? "（公開中）" : ""}${x.note ? "・" + esc(x.note.slice(0, 20)) : ""}</option>`).join("")}</select></div>
+        <div class="mdbar" role="toolbar" aria-label="印を入れる">${Object.entries(MARK_LABEL).map(([k, n]) => `<button data-mk="${k}" title="カーソルの位置に入れる">＋ ${n}</button>`).join("")}</div>
+        <p class="hint" id="mphint" style="margin:6px 0">入っている印：${Object.entries(MARK_LABEL).map(([k, n]) => have.includes(k) ? `<span class="key">${n}</span>` : `<span class="err">${n} なし</span>`).join(" ")}</p>
+        <textarea id="mph" spellcheck="false" aria-label="マイページの HTML" style="min-height:460px;font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre;tab-size:2">${esc(mpDraft)}</textarea>
+        <div class="f" style="margin-top:8px"><label for="mpnote">この版のメモ <span class="hint">版の一覧に出る</span></label><input type="text" id="mpnote" maxlength="200" placeholder="例：お知らせを上に移した"></div>
+        <span class="err" id="mpe"></span></div>
+        <div class="stick"><button class="btn pri" id="mpsave" ${changed ? "" : "disabled"}>保存する（版 ${(p.latest_version || 0) + 1} になる）</button><button class="btn ghost" id="mpundo" ${changed ? "" : "disabled"}>書きかけを捨てる</button><span class="hint">⌘／Ctrl＋S でも保存。保存しても、公開するまで生徒には出ません</span></div></div>`;
+      const ta = $("#mph");
+      const hint = () => { const hv = marksOf(mpDraft); $("#mphint").innerHTML = "入っている印：" + Object.entries(MARK_LABEL).map(([k, n]) => hv.includes(k) ? `<span class="key">${n}</span>` : `<span class="err">${n} なし</span>`).join(" "); };
+      const sync = () => { mpDraft = ta.value; hint(); dirty = mpDraft !== MP.html; $("#mpsave").disabled = !dirty; $("#mpundo").disabled = !dirty; const pb = $("#mppub"); if (pb) pb.disabled = dirty; };
+      ta.addEventListener("input", sync);
+      ta.addEventListener("keydown", (e) => {
+        if (e.key === "Tab") { e.preventDefault(); const s0 = ta.selectionStart; ta.setRangeText("  ", s0, ta.selectionEnd, "end"); sync(); }
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") { e.preventDefault(); save(); }
+      });
+      $$("[data-mk]").forEach((x) => (x.onclick = () => { const t = `<div data-lab-part="mypage:${x.dataset.mk}"></div>`; ta.focus(); ta.setRangeText(t, ta.selectionStart, ta.selectionEnd, "end"); sync(); }));
+      $("#mpver").onchange = (e) => { const go2 = async () => { dirty = false; if (await loadMypage(e.target.value)) render(); }; if (dirty) { confirmLeave(go2); return; } go2(); };
+      $("#mpundo").onclick = () => { mpDraft = MP.html; dirty = false; render(); toast("書きかけを捨てました"); };
+      const save = async () => {
+        if (busy || mpDraft === MP.html) return;
+        if (!mpDraft.trim()) { $("#mpe").textContent = "HTML が空です"; ta.focus(); return; }
+        busy = true;
+        try {
+          const r = await call("/api/admin/mypage", "PUT", { html: mpDraft, note: $("#mpnote").value });
+          if (!r.ok) { $("#mpe").textContent = r.error === "too_long" ? "長すぎます（40 万字まで）" : errText(r); return; }
+          dirty = false; await loadMypage(r.version); render();
+          const miss = Object.keys(MARK_LABEL).filter((k) => !(r.marks || []).includes(k));
+          toast(`版 ${r.version} として保存しました${miss.length ? `（入っていない印：${miss.map((k) => MARK_LABEL[k]).join("・")}）` : ""}。生徒にはまだ出ていません`);
+          $("#mpsave")?.focus();
+        } finally { busy = false; }
+      };
+      $("#mpsave").onclick = save;
+    } else if (mpTab === "pc" || mpTab === "sp") {
+      b.innerHTML = `<p class="hint">中身は見本です（呼び名は「受講生」、次にやることは教材の最初の 1 本、アプリは関門を通ったもの全部）。${mpDraft !== MP.html ? "保存していない書きかけで出しています。" : ""}</p>
+        <div class="pv-wrap"><div class="pv ${mpTab === "sp" ? "phone" : ""}" style="padding:0;overflow:hidden;background:var(--bg)"><iframe id="mpfr" title="マイページの見え方" sandbox="allow-scripts" style="width:100%;border:0;display:block;height:${mpH || 600}px"></iframe></div></div>`;
+      call("/api/admin/mypage/preview", "POST", { html: mpDraft }).then((r) => { const fr = $("#mpfr"); if (!fr) return; if (!r.ok) { toast(errText(r)); return; } fr.srcdoc = r.html; });
+    } else {
+      b.innerHTML = `<div style="overflow-x:auto"><table class="st-t"><thead><tr><th>版</th><th>メモ</th><th>作った人</th><th>日時</th><th></th></tr></thead><tbody>
+        ${MP.versions.map((x) => `<tr><td><b>版 ${x.version}</b>${x.version === p.published_version && live ? ' <span class="st pub">公開中</span>' : ""}</td><td>${esc(x.note || "")}</td><td>${esc(String(x.made_by || "").replace(/^admin:/, ""))}</td><td>${esc(fmtDT(x.created_at))}</td>
+        <td><button class="btn sm" data-mpopen="${x.version}">開く</button></td></tr>`).join("")}</tbody></table></div>
+        ${live ? `<div class="stick"><button class="btn ghost" id="mpstop">公開を止める（生徒の画面からマイページを外す）</button></div>` : ""}`;
+      $$("[data-mpopen]").forEach((x) => (x.onclick = () => { const go2 = async () => { dirty = false; if (await loadMypage(x.dataset.mpopen)) { mpTab = "html"; render(); } }; if (dirty) { confirmLeave(go2); return; } go2(); }));
+      if ($("#mpstop")) $("#mpstop").onclick = () => { lastF = $("#mpstop"); modal(`<h3>マイページの公開を止めますか</h3><p>生徒の画面からマイページが外れ、教材の一覧が最初に出るようになります。版は残ります。</p><div class="macts"><button class="btn" data-m="x">やめる</button><button class="btn pri" data-m="ok">止める</button></div>`,
+        { x: () => closeM(), ok: async () => { closeM(true); const r = await call("/api/admin/mypage/publish", "POST", { stop: true }); if (!r.ok) { toast(errText(r)); return; } await loadMypage(MP.version); render(); toast("公開を止めました"); } }); };
+    }
+    $$("[data-mpt]").forEach((x) => (x.onclick = () => { mpTab = x.dataset.mpt; render(); $(`[data-mpt="${mpTab}"]`).focus(); }));
+    if ($("#mppub")) $("#mppub").onclick = () => {
+      lastF = $("#mppub"); const miss = Object.keys(MARK_LABEL).filter((k) => !marksOf(MP.html).includes(k));
+      modal(`<h3>版 ${cur} を公開しますか</h3><p>生徒全員のマイページが、すぐにこの版になります。${live ? `今の公開中は版 ${p.published_version} です。` : "生徒の画面で、最初にマイページが出るようになります。"}</p>${miss.length ? `<p class="err">この版には入っていない印があります：${miss.map((k) => MARK_LABEL[k]).join("・")}</p>` : ""}
+        <div class="macts"><button class="btn" data-m="x">やめる</button><button class="btn pri" data-m="ok">公開する</button></div>`,
+        { x: () => closeM(), ok: async () => { closeM(true); const r = await call("/api/admin/mypage/publish", "POST", { version: cur }); if (!r.ok) { toast(errText(r)); return; } await loadMypage(cur); render(); toast(`版 ${cur} を公開しました`); } });
+    };
+  }
+
   // ---------- サイトのほかの画面 ----------
   function renderSoon(m) {
-    const s = site(); const what = V.kind === "mypage" ? ["マイページ", "生徒がログインして最初に着く画面。上に「次にやること 1 つ」、下に使えるアプリの札。並び・色とロゴをここで変える"] : ["お知らせ", "マイページの上に出すお知らせを書く・予約する"];
-    m.innerHTML = `${crumbs()}<h1>${what[0]}</h1><p class="lead">${esc(s.name)}</p><div class="soon"><b>手順 3 で作ります</b><p style="margin:6px 0 0">${what[1]}</p></div>`;
+    const s = site(); const what = ["お知らせ", "マイページと生徒の画面に出すお知らせを書く・日時を決めて出す。書く画面はまだありません（次の 1 枚で作る）"];
+    m.innerHTML = `${crumbs()}<h1>${what[0]}</h1><p class="lead">${esc(s.name)}</p><div class="soon"><b>まだ作っていません</b><p style="margin:6px 0 0">${what[1]}</p></div>`;
   }
   function renderSiteSet(m) {
     const s = site();
@@ -545,7 +626,7 @@ export function mountSite(host, { getToken, openPerson }) {
   return {
     async open() {
       if (dirty) return;
-      if (await reload()) { STU = null; loadStudents().then(() => { if (["sites", "curricula", "curriculum", "students"].includes(V.kind) && !dirty) render(); }); render(); }
+      if (await reload()) { STU = null; MP = null; loadStudents().then(() => { if (["sites", "curricula", "curriculum", "students"].includes(V.kind) && !dirty) render(); }); render(); }
     },
     isDirty: () => dirty,
   };
