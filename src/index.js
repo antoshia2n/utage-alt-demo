@@ -1219,10 +1219,10 @@ async function handleApi(request, env, url) {
       return json(r, r.ok === false ? 400 : 200);
     }
     // マーケくん便 5：アプリの公開スイッチ（先行で試すの権利 × 関門を通ったアプリの行だけ入れる・外す）
-    if (path === "/api/admin/access" && method === "GET") return json(await bridge.accessList(env));
+    if (path === "/api/admin/access" && method === "GET") return json(await bridge.accessList(env, { key: url.searchParams.get("key") }));
     if (path === "/api/admin/access" && method === "POST") {
       const body = await request.json().catch(() => ({}));
-      const r = await bridge.setAccess(env, { target: body.target, on: body.on });
+      const r = await bridge.setAccess(env, { target: body.target, on: body.on, key: body.key });
       return json(r, r.ok === false ? 400 : 200);
     }
     // お知らせ（会員サイト › お知らせ）

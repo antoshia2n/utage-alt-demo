@@ -24,13 +24,16 @@ const MEETING_ROWS_MAX = 2000;
 //  ・ゲストは期限を必ず入れる（試用のあとに開いたまま残さないため）
 export const KNOWN_KEYS = ["shiarabo_basic", "shiarabo_pilot", "shiarabo_next_premium", "shiarabo_next_standard", "shiarabo_monitor", "guest"];
 export const GUEST_KEY = "guest";
-export const EXPIRY_REQUIRED = [GUEST_KEY];
+// 期限が要る名前：ゲスト（10/29 08:06 Naoki「OK」）とモニター（10/27 の判断記録「手で・期限つき」）
+export const EXPIRY_REQUIRED = [GUEST_KEY, "shiarabo_monitor"];
 
 // マーケくん便 5（2026-10-27）：アプリの公開スイッチ。権利 × 開くものの表（member_access）の行を画面から入れる・外す。
 //  ・入れる・外すのは「先行で試す」の権利（shiarabo_pilot・2026-10-27 21:20 Naoki「OK」）の行だけ。basic の生徒から Naoki が名前で選んだ人に付ける
 //  ・アプリは会員公開の関門 1〜7 が全部 ○ のものだけ（事業の設計図 表 E）。○ になったアプリはここに 1 行足す
 //  ・ほかの権利の行は見るだけ。門番（shia2n-mcp の /gate/resolve）はこの表でその人の apps を決め、各アプリは apps に自分の名前があるときだけ通す
 export const PILOT_KEY = "shiarabo_pilot";
+// 公開スイッチで切り替えられる権利：先行で試す と ゲスト（ゲストは関門を通ったアプリを開く・MCP は付けない。10/29 08:06 Naoki「OK」）
+export const SWITCH_KEYS = [PILOT_KEY, "guest"];
 export const PUBLISH_APPS = [
   { target: "x-koryaku", name: "X攻略くん" },
   { target: "note-koryaku", name: "note攻略くん" },
@@ -275,36 +278,40 @@ export function makeBridge(h) {
 
   // ---------- マーケくん便 5：アプリの公開スイッチ ----------
   // 画面に出す形：関門を通ったアプリごとに、先行で試すがオンか・ほかに開いている権利（見るだけ）・その権利を持つ人数
-  async function accessList(env) {
+  async function accessList(env, { key } = {}) {
     if (!env.B_STORE) return { ok: false, error: "demo_store" };
+    const k = key == null || key === "" ? PILOT_KEY : String(key);
+    if (!SWITCH_KEYS.includes(k)) return { ok: false, error: "unknown_key" };
     const targets = PUBLISH_APPS.map((a) => a.target);
     const rows = await db(env, "GET", `member_access?select=entitlement_key,target,created_at&target=in.(${targets.join(",")})&limit=1000`);
     const now = Date.now();
-    const holders = (await db(env, "GET", `member_entitlement?select=member_id,expires_at&key=eq.${PILOT_KEY}&limit=10000`)).filter((r) => live(r, now));
+    const holders = (await db(env, "GET", `member_entitlement?select=member_id,expires_at&key=eq.${k}&limit=10000`)).filter((r) => live(r, now));
     const apps = PUBLISH_APPS.map((a) => {
       const mine = rows.filter((r) => r.target === a.target);
-      const pilot = mine.find((r) => r.entitlement_key === PILOT_KEY);
+      const hit = mine.find((r) => r.entitlement_key === k);
       return {
         target: a.target, name: a.name,
-        on: !!pilot, since: pilot ? pilot.created_at || null : null,
-        others: mine.filter((r) => r.entitlement_key !== PILOT_KEY).map((r) => r.entitlement_key).sort(),
+        on: !!hit, since: hit ? hit.created_at || null : null,
+        others: mine.filter((r) => r.entitlement_key !== k).map((r) => r.entitlement_key).sort(),
       };
     });
-    return { ok: true, key: PILOT_KEY, holders: new Set(holders.map((r) => r.member_id)).size, apps };
+    return { ok: true, key: k, keys: [...SWITCH_KEYS], holders: new Set(holders.map((r) => r.member_id)).size, apps };
   }
 
-  async function setAccess(env, { target, on } = {}) {
+  async function setAccess(env, { target, on, key } = {}) {
     if (!env.B_STORE) return { ok: false, error: "demo_store" };
+    const k = key == null || key === "" ? PILOT_KEY : String(key);
+    if (!SWITCH_KEYS.includes(k)) return { ok: false, error: "unknown_key" };
     const app = PUBLISH_APPS.find((a) => a.target === String(target ?? ""));
     if (!app) return { ok: false, error: "unknown_app" };
     if (typeof on !== "boolean") return { ok: false, error: "bad_on" };
-    const where = `entitlement_key=eq.${PILOT_KEY}&target=eq.${app.target}`;
+    const where = `entitlement_key=eq.${k}&target=eq.${app.target}`;
     const [have] = await db(env, "GET", `member_access?select=entitlement_key&${where}`);
-    if (on && !have) await db(env, "POST", "member_access", [{ entitlement_key: PILOT_KEY, target: app.target }], "return=minimal");
+    if (on && !have) await db(env, "POST", "member_access", [{ entitlement_key: k, target: app.target }], "return=minimal");
     if (!on && have) await db(env, "DELETE", `member_access?${where}`, undefined, "return=minimal");
     const [after] = await db(env, "GET", `member_access?select=entitlement_key&${where}`);
     if (!!after !== on) return { ok: false, error: "not_applied" };
-    return { ok: true, changed: !!have !== on, ...(await accessList(env)) };
+    return { ok: true, changed: !!have !== on, ...(await accessList(env, { key: k })) };
   }
 
   return { withGate, gateMembers, syncGrants, listTables, meetings, entitlementKeys, gateAll, gateFull, grantManual, revokeManual, accessList, setAccess };

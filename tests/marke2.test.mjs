@@ -26,10 +26,11 @@ test("付ける前の確かめ：理由が要る・知らない名前は付け�
   assert.equal(checkGrant({ key: "shiarabo_basic", reason: " " }, KNOWN_KEYS, []).error, "reason_required");
   assert.equal(checkGrant({ key: "shiarabo_basik", reason: "x" }, KNOWN_KEYS, []).error, "unknown_key");
   assert.equal(checkGrant({ key: "Bad Key", reason: "x" }, KNOWN_KEYS, []).error, "bad_key");
-  assert.equal(checkGrant({ key: "shiarabo_monitor", reason: "x".repeat(201) }, KNOWN_KEYS, []).error, "reason_too_long");
-  assert.equal(checkGrant({ key: "shiarabo_monitor", reason: "x" }, KNOWN_KEYS, [{ key: "shiarabo_monitor", source: "manual" }]).error, "already_manual");
+  assert.equal(checkGrant({ key: "shiarabo_next_standard", reason: "x".repeat(201) }, KNOWN_KEYS, []).error, "reason_too_long");
+  assert.equal(checkGrant({ key: "shiarabo_next_standard", reason: "x" }, KNOWN_KEYS, [{ key: "shiarabo_next_standard", source: "manual" }]).error, "already_manual");
   // 支払いの行が同じ名前であっても、手の行は足せる（表の決まりは人・名前・出どころで 1 行）
   assert.equal(checkGrant({ key: "guest", reason: "〇〇社 試用" }, KNOWN_KEYS, []).error, "expires_required");
+  assert.equal(checkGrant({ key: "shiarabo_monitor", reason: "モニター" }, KNOWN_KEYS, []).error, "expires_required");
   assert.equal(checkGrant({ key: "guest", reason: "〇〇社 試用", expires_at: "2099-01-31" }, KNOWN_KEYS, []).ok, true);
   const ok = checkGrant({ key: "shiarabo_basic", reason: "銀行振込" }, KNOWN_KEYS, [{ key: "shiarabo_basic", source: "payment" }]);
   assert.equal(ok.ok, true);
@@ -53,19 +54,19 @@ test("付ける：表にあっても決めた 6 つ以外は付けられない�
   const { st, bridge, env } = setup();
   st.table("member_entitlement").push({ id: 9, member_id: "x", key: "monthly_subscriber", source: "payment", reason: "r" });
   assert.equal((await bridge.grantManual(env, { person_id: PID, key: "monthly_subscriber", reason: "手当て" })).error, "unknown_key");
-  assert.equal((await bridge.grantManual(env, { person_id: "99999999-2222-4333-8444-555555555555", key: "shiarabo_monitor", reason: "x" })).found, false);
-  assert.equal((await bridge.grantManual({}, { person_id: PID, key: "shiarabo_monitor", reason: "x" })).error, "demo_store");
+  assert.equal((await bridge.grantManual(env, { person_id: "99999999-2222-4333-8444-555555555555", key: "shiarabo_next_standard", reason: "x" })).found, false);
+  assert.equal((await bridge.grantManual({}, { person_id: PID, key: "shiarabo_next_standard", reason: "x" })).error, "demo_store");
 });
 
 test("外す：手で付けた行だけ外せる。理由が要り、出来事に残る", async () => {
   const { st, bridge, evs, env } = setup();
-  const g = await bridge.grantManual(env, { person_id: PID, key: "shiarabo_monitor", reason: "招待" });
+  const g = await bridge.grantManual(env, { person_id: PID, key: "shiarabo_next_standard", reason: "招待" });
   const eid = g.entitlement.id;
   assert.equal((await bridge.revokeManual(env, { person_id: PID, entitlement_id: eid, reason: "" })).error, "reason_required");
   assert.equal((await bridge.revokeManual(env, { person_id: PID, entitlement_id: 1, reason: "x" })).error, "not_manual");
   const r = await bridge.revokeManual(env, { person_id: PID, entitlement_id: eid, reason: "退会の申し出" });
   assert.equal(r.ok, true);
-  assert.equal(r.removed.key, "shiarabo_monitor");
+  assert.equal(r.removed.key, "shiarabo_next_standard");
   assert.deepEqual(st.table("member_entitlement").map((x) => x.id), [1]);
   assert.equal(evs.at(-1).type, "entitlement_revoked");
   assert.equal(evs.at(-1).payload.reason, "退会の申し出");
@@ -76,8 +77,8 @@ test("外す：手で付けた行だけ外せる。理由が要り、出来事�
 
 test("一覧用：人ごとに権利の行をまとめる", async () => {
   const { bridge, env } = setup();
-  await bridge.grantManual(env, { person_id: PID, key: "shiarabo_monitor", reason: "招待" });
+  await bridge.grantManual(env, { person_id: PID, key: "shiarabo_next_standard", reason: "招待" });
   const all = await bridge.gateAll(env);
-  assert.deepEqual(all[PID].map((r) => r.key).sort(), ["shiarabo_basic", "shiarabo_monitor"]);
+  assert.deepEqual(all[PID].map((r) => r.key).sort(), ["shiarabo_basic", "shiarabo_next_standard"]);
   assert.deepEqual(await bridge.gateAll({}), {});
 });

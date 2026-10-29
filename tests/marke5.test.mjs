@@ -89,3 +89,13 @@ test("画面：左のメニューに「アプリの公開」があり、画面�
   assert.ok(html.includes('id="view-access"'));
   assert.match(js, /const VIEWS = \[[^\]]*"access"/);
 });
+
+test("ゲストも切り替えられる・ほかの権利は切り替えられない", async () => {
+  const { bridge, env, st } = setup();
+  const r = await bridge.setAccess(env, { target: "x-koryaku", on: true, key: "guest" });
+  assert.equal(r.ok, true); assert.equal(r.key, "guest");
+  assert.ok(st.table("member_access").some((x) => x.entitlement_key === "guest" && x.target === "x-koryaku"));
+  assert.equal((await bridge.accessList(env, { key: "guest" })).apps.find((a) => a.target === "x-koryaku").on, true);
+  assert.equal((await bridge.accessList(env)).apps.find((a) => a.target === "x-koryaku").on, false);
+  assert.equal((await bridge.setAccess(env, { target: "x-koryaku", on: true, key: "shiarabo_basic" })).error, "unknown_key");
+});
