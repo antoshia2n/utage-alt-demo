@@ -562,7 +562,9 @@ export function makeDeliver(h) {
       + `<p style="color:#777;font-size:13px">心当たりが無ければ、このメールは捨ててください。</p><p style="color:#777;font-size:12px">シアラボ（株式会社Best Life Consulting）</p></div>`;
   }
 
-  async function handleAuthEmail(request, env) {
+  async function handleAuthEmail(request, env, ctx) {
+    // Supabase はこの返事を 5 秒しか待たない。台帳と設定は同時に引き、記録は返事のあと（ctx.waitUntil）に回す
+    const t0 = Date.now();
     const raw = await request.text();
     const bad = await verifyHook(env, request, raw);
     let body = null;
@@ -572,25 +574,29 @@ export function makeDeliver(h) {
     const type = String(d.email_action_type || "");
     const reqLog = { type, to_domain: to.split("@")[1] || null, sig_ok: !bad };
     const reply = async (status, res) => {
-      await logInbound(env, "auth_email", reqLog, res, status);
+      reqLog.ms = Date.now() - t0;
+      const work = logInbound(env, "auth_email", reqLog, res, status).catch(() => {});
+      if (ctx && ctx.waitUntil) ctx.waitUntil(work); else await work;
       return new Response(JSON.stringify(status === 200 ? {} : { error: { http_code: status, message: res.error } }), { status, headers: { "content-type": "application/json" } });
     };
     if (bad) return await reply(401, { ok: false, error: bad });
     if (!to || !type) return await reply(400, { ok: false, error: "bad_body" });
-    if (!(await bin3.mailAllowed(env, to, "auth"))) return await reply(400, { ok: false, error: "mail_not_open" });
+    const [allowed, admin, inLedger, cfg] = await Promise.all([
+      bin3.mailAllowed(env, to, "auth"),
+      isAdmin(env, to),
+      env.B_STORE ? db(env, "GET", `customers?select=id&email=eq.${encodeURIComponent(to)}`).then((r) => r.length > 0) : Promise.resolve(true),
+      h.mailcfg.get(env),
+    ]);
+    if (!allowed) return await reply(400, { ok: false, error: "mail_not_open" });
     // 便 R1：台帳にいない住所へは送らない（ログイン・登録のメールは、公開の口の守りを通って台帳に入った人と、シアニンにだけ届く）。
     // Supabase のログインの口を機械が直接呼んでも、知らない人の住所へメールが出ないようにするため
-    if (env.B_STORE && !(await isAdmin(env, to))) {
-      const [c] = await db(env, "GET", `customers?select=id&email=eq.${encodeURIComponent(to)}`);
-      if (!c) return await reply(400, { ok: false, error: "not_in_ledger" });
-    }
-    const cfg = await h.mailcfg.get(env);
+    if (env.B_STORE && !admin && !inLedger) return await reply(400, { ok: false, error: "not_in_ledger" });
     if (!env.EMAIL || !cfg.from) return await reply(500, { ok: false, error: "mail_not_configured" });
     // B の便 7c-1 の続き：リンクは B 自身の住所の /auth を通す（送り元とリンク先の住所をそろえる）。
     // 行き先は /app か /admin だけ。Supabase が行き先を既定の住所に置き換えたときは、シアニンなら /admin、それ以外は /app
     let next = "";
     try { next = new URL(d.redirect_to || "").pathname; } catch (_) {}
-    if (!["/app", "/admin"].includes(next)) next = (await isAdmin(env, to)) ? "/admin" : "/app";
+    if (!["/app", "/admin"].includes(next)) next = admin ? "/admin" : "/app";
     const link = `${origin(env)}/auth?th=${encodeURIComponent(d.token_hash || "")}&ty=${encodeURIComponent(type)}&n=${encodeURIComponent(next)}`;
     const title = AUTH_SUBJECT[type] || "お知らせ";
     const lines = type === "reauthentication"
