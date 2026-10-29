@@ -23,7 +23,7 @@ function setup() {
   st.table("member_access").push({ entitlement_key: "shiarabo_basic", target: "mindmap" }, { entitlement_key: "shiarabo_pilot", target: "x-koryaku" });
   st.table("b_site_sites").push({ id: "shiarabo", name: "しあらぼ", sort: 0, mypage: null, mypage_mode: "blocks", landing: "mypage", login: {} });
   st.table("b_site_contents").push({ id: "t3", active: true, status: "published", created_at: "2026-10-28" }, { id: "t1", active: true, status: "published", created_at: "2026-01-01" });
-  st.table("announcements").push({ id: 1, title: "11 月のセミナー", body: "日程が決まりました", published_at: "2026-10-28T00:00:00Z" });
+  st.table("announcements").push({ id: 1, title: "11 月のセミナー", body: "日程が決まりました", published_at: "2026-10-28T00:00:00Z", status: "published" });
   return { st, env, mp, pages };
 }
 

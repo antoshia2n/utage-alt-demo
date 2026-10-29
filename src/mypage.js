@@ -10,6 +10,7 @@
 //    枠の中のリンクは target="_top" で生徒の画面を動かす（/app#lesson/<番号>・/app#news）。
 
 import { PUBLISH_APPS } from "./bridge.js";
+import { newsQuery } from "./news.js";
 
 export const MYPAGE_PURPOSE = "mypage";
 export const MYPAGE_SLUG = "mypage-shiarabo";
@@ -118,7 +119,7 @@ export function makeMypage({ db, pages, learn, names }) {
     const viewed = await db(env, "GET", `events?select=payload,occurred_at&customer_id=eq.${customer.id}&type=eq.lesson_viewed&order=occurred_at.desc&limit=2000`);
     const views = viewed.map((e) => ({ id: e.payload && e.payload.lesson_id, at: e.occurred_at })).filter((v) => v.id);
     const order = [...new Set(views.map((v) => v.id))];
-    const [news] = await db(env, "GET", "announcements?select=id,title,body,published_at&order=published_at.desc&limit=1");
+    const [news] = await db(env, "GET", newsQuery(env, 1));
     const t = Date.now();
     const keys = (await db(env, "GET", `member_entitlement?select=key,expires_at&member_id=eq.${customer.id}`)).filter((e) => !e.expires_at || Date.parse(e.expires_at) > t).map((e) => e.key);
     let apps = [];
@@ -236,7 +237,7 @@ export function makeMypage({ db, pages, learn, names }) {
     if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const g = html != null ? { html: String(html) } : config ? { html: blocksHtml(config) } : await adminGet(env, { version }, by);
     const lib = await learn.lessonsFor(env, { id: "00000000-0000-0000-0000-000000000000" }, adminEmail);
-    const [news] = await db(env, "GET", "announcements?select=id,title,body,published_at&order=published_at.desc&limit=1");
+    const [news] = await db(env, "GET", newsQuery(env, 1));
     const d = { name: "受講生", next: pickNext(lib.programs || [], []), apps: PUBLISH_APPS.filter((a) => APP_URLS[a.target]).map((a) => ({ name: a.name, url: APP_URLS[a.target] })), news: news || null, programs: lib.programs || [], views: [], fresh: await freshIds(env) };
     const parts = allParts(d);
     return { ok: true, html: withHeight(fillMarks(g.html, parts)) };
