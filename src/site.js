@@ -80,7 +80,7 @@ export function makeSite({ db }) {
   async function tree(env) {
     const d = demo(env); if (d) return d;
     const [sites, curricula, cprog, rights, programs, courses, contents, links] = await Promise.all([
-      get(env, `${T.sites}?select=id,name,description,active,sort&order=sort.asc`),
+      get(env, `${T.sites}?select=id,name,description,active,sort,landing,login&order=sort.asc`),
       get(env, `${T.curricula}?select=id,site_id,title,description,active,sort&order=sort.asc`),
       get(env, `${T.cprog}?select=curriculum_id,program_id,sort&order=sort.asc&limit=5000`),
       get(env, `${T.rights}?select=curriculum_id,entitlement_key&limit=5000`),

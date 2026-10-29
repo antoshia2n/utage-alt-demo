@@ -933,6 +933,8 @@ async function handleApi(request, env, url) {
   // B の便 5：Supabase の「メールを送る引き金」。ログインのリンクを Cloudflare から送る（署名で Supabase からと確かめる）
   if (path === "/api/auth/send-email" && method === "POST") return await deliver.handleAuthEmail(request, env);
 
+  // ログイン画面の見た目（ロゴの文字・色・ひとこと）。ログインの前に読むので鍵は要らない
+  if (path === "/api/site-look" && method === "GET") return json(await mypage.publicLook(env), 200, { "cache-control": "public, max-age=60" });
   // 生徒：マイページ（公開中の版に、その人の中身を入れた HTML。生徒の画面は区切った枠に出す）
   if (path === "/api/mypage" && method === "GET") {
     const v = await verifyUser(request, env);
@@ -1228,6 +1230,9 @@ async function handleApi(request, env, url) {
       else if (path === "/api/admin/mypage" && method === "PUT") r = await mypage.save(env, await request.json().catch(() => ({})), by);
       else if (path === "/api/admin/mypage/publish" && method === "POST") r = await mypage.publish(env, await request.json().catch(() => ({})), by);
       else if (path === "/api/admin/mypage/preview" && method === "POST") r = await mypage.preview(env, await request.json().catch(() => ({})), by, a.email);
+      else if (path === "/api/admin/mypage/config" && method === "PUT") r = await mypage.publishConfig(env, await request.json().catch(() => ({})), by);
+      else if (path === "/api/admin/mypage/to-html" && method === "POST") r = await mypage.toHtml(env, await request.json().catch(() => ({})), by);
+      else if (path === "/api/admin/mypage/look" && method === "PUT") r = await mypage.saveSiteLook(env, await request.json().catch(() => ({})), by);
       else return json({ ok: false, error: "not_found" }, 404);
       return json(r, r.ok === false ? (r.error === "demo_store" ? 503 : 400) : 200);
     }

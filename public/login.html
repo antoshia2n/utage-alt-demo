@@ -17,10 +17,10 @@
 </head>
 <body>
 <div class="wrap">
-  <header class="top"><a class="brand" href="/">シアラボ</a></header>
+  <header class="top"><a class="brand" href="/" id="brand">シアラボ</a></header>
   <main style="padding:24px 0 8px">
     <h1 style="font-size:26px">ログイン</h1>
-    <p class="note">登録したメールアドレスに、ログイン用のリンクを送ります。パスワードは要りません。</p>
+    <p class="note" id="login-msg">登録したメールアドレスに、ログイン用のリンクを送ります。パスワードは要りません。</p>
     <form id="f" class="card stack" novalidate>
       <div><label for="email">メールアドレス</label><input id="email" type="email" autocomplete="email" required></div>
       <button class="btn block" id="go" type="submit">ログイン用のリンクを送る</button>
@@ -44,6 +44,13 @@
   import { getClient } from "/js/common.js";
   const $ = (id) => document.getElementById(id);
   const show = (text, ok) => { const m = $("msg"); m.textContent = text; m.className = "msg " + (ok ? "ok" : "err"); };
+  // 会員サイト › サイトの設定「ログイン画面」：ロゴの文字・主な色・ひとこと（入っているものだけ当てる）
+  fetch("/api/site-look").then((r) => r.json()).then((l) => {
+    const g = (l && l.login) || {};
+    if (g.logo) $("brand").textContent = g.logo;
+    if (g.msg) $("login-msg").textContent = g.msg;
+    if (/^#[0-9a-f]{6}$/i.test(g.color || "")) { document.documentElement.style.setProperty("--accent", g.color); document.querySelector('meta[name="theme-color"]').content = g.color; }
+  }).catch(() => {});
   getClient().then(async (sb) => { const { data } = await sb.auth.getSession(); if (data.session) location.replace("/app"); }).catch(() => {});
   $("f").addEventListener("submit", async (e) => {
     e.preventDefault();

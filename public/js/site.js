@@ -61,7 +61,7 @@ export function mountSite(host, { getToken, openPerson }) {
         rights: t.rights.filter((r) => r.curriculum_id === k.id).map((r) => r.entitlement_key),
         programs: t.cprog.filter((x) => x.curriculum_id === k.id).sort((a, b) => a.sort - b.sort).map((x) => x.program_id),
       }));
-      return { id: s.id, name: s.name, desc: s.description || "", status: s.active ? "published" : "draft", color: PALETTE[(si * 3) % PALETTE.length], programs, curricula, lessons };
+      return { id: s.id, name: s.name, desc: s.description || "", status: s.active ? "published" : "draft", landing: s.landing || "mypage", login: s.login || {}, color: PALETTE[(si * 3) % PALETTE.length], programs, curricula, lessons };
     });
     return { sites };
   }
@@ -107,7 +107,7 @@ export function mountSite(host, { getToken, openPerson }) {
   }
   function confirmLeave(fn) {
     modal(`<h3>保存していない書きかけがあります</h3><p>このまま移ると、書きかけは消えます。</p><div class="macts"><button class="btn" data-m="stay">戻って保存する</button><button class="btn pri" data-m="go">保存せずに移る</button></div>`,
-      { stay: () => closeM(), go: async () => { closeM(true); if (MP) mpDraft = MP.html; await reload(); fn(); } }); // 書きかけで画面の中の値が変わっているので、表から読み直してから移る
+      { stay: () => closeM(), go: async () => { closeM(true); if (MP) { mpDraft = MP.html; MPC = MP.config ? cfgCopy(MP.config) : null; } await reload(); fn(); } }); // 書きかけで画面の中の値が変わっているので、表から読み直してから移る
   }
   function crumbs() {
     const p = [["会員サイト", { kind: "sites" }]];
@@ -476,7 +476,7 @@ export function mountSite(host, { getToken, openPerson }) {
 
   // ---------- マイページの作成画面（仕組みはページと同じ：HTML・版・公開） ----------
   let MP = null, mpTab = "html", mpDraft = null, mpH = 0;
-  const MARK_LABEL = { name: "呼び名", next: "次にやること", apps: "使えるアプリの札", news: "新しいお知らせ" };
+  const MARK_LABEL = { name: "呼び名", next: "続きから見る", shelf: "教材の棚", fresh: "新しく入った教材", progress: "学びの記録", news: "新しいお知らせ", apps: "使えるアプリ" };
   const marksOf = (h) => Object.keys(MARK_LABEL).filter((k) => new RegExp(`data-lab-part\\s*=\\s*["']mypage:${k}["']`).test(String(h || "").replace(/<!--[\\s\\S]*?-->/g, "")));
   async function loadMypage(v) {
     const r = await call("/api/admin/mypage" + (v ? "?v=" + encodeURIComponent(v) : ""));
@@ -488,14 +488,14 @@ export function mountSite(host, { getToken, openPerson }) {
     if (!fr || e.source !== fr.contentWindow || !e.data || typeof e.data.labMypageHeight !== "number") return;
     mpH = Math.min(Math.max(e.data.labMypageHeight, 200), 6000); fr.style.height = mpH + "px";
   });
-  function renderMypage(m) {
+  function renderMypageHtml(m) {
     if (!MP) { m.innerHTML = `${crumbs()}<h1>マイページ</h1><p class="hint">読み込んでいます…</p>`; loadMypage().then((ok) => ok && V.kind === "mypage" && render()); return; }
-    const p = MP.page, live = p.status === "published" && p.published_version;
+    const p = MP.page, live = MP.mode === "html" && p.status === "published" && p.published_version;
     const cur = MP.version, have = marksOf(mpDraft);
     const changed = mpDraft !== MP.html;
-    m.innerHTML = `${crumbs()}<div class="hrow"><h1>マイページ</h1>${live ? `<span class="st pub">● 公開中 版 ${p.published_version}</span>` : '<span class="st draft">○ まだ公開していない</span>'}<span class="grow"></span>
+    m.innerHTML = `${crumbs()}<p style="margin:0 0 6px"><button class="btn sm ghost" id="mpback">← テンプレと部品に戻る</button></p><div class="hrow"><h1>マイページ（上級：HTML）</h1>${live ? `<span class="st pub">● 公開中 版 ${p.published_version}</span>` : '<span class="st draft">○ まだ公開していない</span>'}<span class="grow"></span>
       ${cur && !(live && cur === p.published_version) ? `<button class="btn pri" id="mppub" ${changed ? "disabled" : ""}>版 ${cur} を公開する</button>` : ""}</div>
-    <p class="lead">生徒がログインして最初に見る画面です。HTML で自由に作れます。印を書いた所に、生徒ごとの中身が入ります。仕組みはパーツの「ページ」と同じです（版を残し、選んだ版を公開する）。</p>
+    <p class="lead">HTML でまるごと作ります。印を書いた所に、生徒ごとの中身が入ります。版を公開すると、生徒にはテンプレと部品の形の代わりにこの HTML が出ます（テンプレと部品の形を公開し直すと戻る）。</p>
     <div class="tabs2" role="tablist">${[["html", "HTML"], ["pc", "見え方（パソコン）"], ["sp", "見え方（スマホ）"], ["vers", `版（${MP.versions.length}）`]].map(([k, n]) => `<button role="tab" aria-selected="${mpTab === k}" data-mpt="${k}">${n}</button>`).join("")}</div>
     <div id="mpb"></div>`;
     const b = $("#mpb");
@@ -503,13 +503,13 @@ export function mountSite(host, { getToken, openPerson }) {
       b.innerHTML = `<div class="ed"><div class="sec"><div class="hrow" style="margin-bottom:8px"><span class="hint">いま開いている版：${cur ? `版 ${cur}` : "なし"}${changed ? "（書きかけあり）" : ""}</span><span class="grow"></span>
         <select id="mpver" aria-label="開く版" style="width:auto">${MP.versions.map((x) => `<option value="${x.version}" ${x.version === cur ? "selected" : ""}>版 ${x.version}${x.version === p.published_version && live ? "（公開中）" : ""}${x.note ? "・" + esc(x.note.slice(0, 20)) : ""}</option>`).join("")}</select></div>
         <div class="mdbar" role="toolbar" aria-label="印を入れる">${Object.entries(MARK_LABEL).map(([k, n]) => `<button data-mk="${k}" title="カーソルの位置に入れる">＋ ${n}</button>`).join("")}</div>
-        <p class="hint" id="mphint" style="margin:6px 0">入っている印：${Object.entries(MARK_LABEL).map(([k, n]) => have.includes(k) ? `<span class="key">${n}</span>` : `<span class="err">${n} なし</span>`).join(" ")}</p>
+        <p class="hint" id="mphint" style="margin:6px 0">入っている印：${Object.entries(MARK_LABEL).map(([k, n]) => have.includes(k) ? `<span class="key">${n}</span>` : `<span style="color:var(--muted)">${n}（なし）</span>`).join(" ")}</p>
         <textarea id="mph" spellcheck="false" aria-label="マイページの HTML" style="min-height:460px;font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre;tab-size:2">${esc(mpDraft)}</textarea>
         <div class="f" style="margin-top:8px"><label for="mpnote">この版のメモ <span class="hint">版の一覧に出る</span></label><input type="text" id="mpnote" maxlength="200" placeholder="例：お知らせを上に移した"></div>
         <span class="err" id="mpe"></span></div>
         <div class="stick"><button class="btn pri" id="mpsave" ${changed ? "" : "disabled"}>保存する（版 ${(p.latest_version || 0) + 1} になる）</button><button class="btn ghost" id="mpundo" ${changed ? "" : "disabled"}>書きかけを捨てる</button><span class="hint">⌘／Ctrl＋S でも保存。保存しても、公開するまで生徒には出ません</span></div></div>`;
       const ta = $("#mph");
-      const hint = () => { const hv = marksOf(mpDraft); $("#mphint").innerHTML = "入っている印：" + Object.entries(MARK_LABEL).map(([k, n]) => hv.includes(k) ? `<span class="key">${n}</span>` : `<span class="err">${n} なし</span>`).join(" "); };
+      const hint = () => { const hv = marksOf(mpDraft); $("#mphint").innerHTML = "入っている印：" + Object.entries(MARK_LABEL).map(([k, n]) => hv.includes(k) ? `<span class="key">${n}</span>` : `<span style="color:var(--muted)">${n}（なし）</span>`).join(" "); };
       const sync = () => { mpDraft = ta.value; hint(); dirty = mpDraft !== MP.html; $("#mpsave").disabled = !dirty; $("#mpundo").disabled = !dirty; const pb = $("#mppub"); if (pb) pb.disabled = dirty; };
       ta.addEventListener("input", sync);
       ta.addEventListener("keydown", (e) => {
@@ -527,8 +527,7 @@ export function mountSite(host, { getToken, openPerson }) {
           const r = await call("/api/admin/mypage", "PUT", { html: mpDraft, note: $("#mpnote").value });
           if (!r.ok) { $("#mpe").textContent = r.error === "too_long" ? "長すぎます（40 万字まで）" : errText(r); return; }
           dirty = false; await loadMypage(r.version); render();
-          const miss = Object.keys(MARK_LABEL).filter((k) => !(r.marks || []).includes(k));
-          toast(`版 ${r.version} として保存しました${miss.length ? `（入っていない印：${miss.map((k) => MARK_LABEL[k]).join("・")}）` : ""}。生徒にはまだ出ていません`);
+          toast(`版 ${r.version} として保存しました。生徒にはまだ出ていません`);
           $("#mpsave")?.focus();
         } finally { busy = false; }
       };
@@ -547,12 +546,73 @@ export function mountSite(host, { getToken, openPerson }) {
         { x: () => closeM(), ok: async () => { closeM(true); const r = await call("/api/admin/mypage/publish", "POST", { stop: true }); if (!r.ok) { toast(errText(r)); return; } await loadMypage(MP.version); render(); toast("公開を止めました"); } }); };
     }
     $$("[data-mpt]").forEach((x) => (x.onclick = () => { mpTab = x.dataset.mpt; render(); $(`[data-mpt="${mpTab}"]`).focus(); }));
+    $("#mpback").onclick = () => { const g = () => { dirty = false; mpDraft = MP.html; mpView = "blocks"; render(); }; if (dirty) { confirmLeave(g); return; } g(); };
     if ($("#mppub")) $("#mppub").onclick = () => {
-      lastF = $("#mppub"); const miss = Object.keys(MARK_LABEL).filter((k) => !marksOf(MP.html).includes(k));
-      modal(`<h3>版 ${cur} を公開しますか</h3><p>生徒全員のマイページが、すぐにこの版になります。${live ? `今の公開中は版 ${p.published_version} です。` : "生徒の画面で、最初にマイページが出るようになります。"}</p>${miss.length ? `<p class="err">この版には入っていない印があります：${miss.map((k) => MARK_LABEL[k]).join("・")}</p>` : ""}
+      lastF = $("#mppub");
+      modal(`<h3>版 ${cur} を公開しますか</h3><p>生徒全員のマイページが、すぐにこの版になります。${live ? `今の公開中は版 ${p.published_version} です。` : "生徒の画面で、最初にマイページが出るようになります。"}</p>
         <div class="macts"><button class="btn" data-m="x">やめる</button><button class="btn pri" data-m="ok">公開する</button></div>`,
         { x: () => closeM(), ok: async () => { closeM(true); const r = await call("/api/admin/mypage/publish", "POST", { version: cur }); if (!r.ok) { toast(errText(r)); return; } await loadMypage(cur); render(); toast(`版 ${cur} を公開しました`); } });
     };
+  }
+
+
+  // ---------- マイページ：テンプレと部品（2026-10-29 デモ 8 版）。HTML は「上級」から ----------
+  let mpView = "blocks", MPC = null, mpOpen = null, mpPv = "pc", mpTimer = null;
+  const TPLS = [["simple", "シンプル", "縦に 1 列。スマホで読みやすい"], ["dash", "ダッシュボード", "続きと教材の棚を大きく、横に記録とお知らせ"], ["magazine", "マガジン", "上に大きな画像。教材の棚を横に並べる"]];
+  const BLOCKS = { hero: "ようこそ", next: "続きから見る", shelf: "教材の棚", fresh: "新しく入った教材", progress: "学びの記録", news: "お知らせ", cards: "カード（自由なリンク）" };
+  const AUTO = { next: "中身は自動：前回の続き（まだ何も見ていない人には最初の 1 本）。進み具合のバー付き", shelf: "中身は自動：その人が見られるプログラムを、カリキュラムの並びで出す。進み具合付き", fresh: "中身は自動：その人が見られる教材のうち、新しく入った 3 本", progress: "中身は自動：今週見た本数・続けた日数・全体の進み", news: "中身は自動：新しいお知らせ 1 件" };
+  const cfgCopy = (o) => JSON.parse(JSON.stringify(o));
+  const published = () => MP.config || null;
+  function renderMypage(m) {
+    if (mpView === "html") return renderMypageHtml(m);
+    if (!MP) { m.innerHTML = `${crumbs()}<h1>マイページ</h1><p class="hint">読み込んでいます…</p>`; loadMypage().then((ok) => ok && V.kind === "mypage" && render()); return; }
+    if (!MPC) MPC = cfgCopy(published() || MP.default_config);
+    const pub = published(), changed = JSON.stringify(MPC) !== JSON.stringify(pub || null);
+    const liveBlocks = !!pub && MP.mode === "blocks", liveHtml = MP.mode === "html" && MP.page.status === "published" && MP.page.published_version;
+    m.innerHTML = `${crumbs()}<div class="hrow"><h1>マイページ</h1>${liveBlocks ? '<span class="st pub">● 公開中</span>' : liveHtml ? '<span class="st sch">● HTML の版が公開中</span>' : '<span class="st draft">○ まだ公開していない</span>'}${changed ? '<span class="hint">公開していない変更があります</span>' : ""}<span class="grow"></span>
+      <button class="btn" id="mprev" ${changed && pub ? "" : "disabled"}>変更を捨てる</button><button class="btn pri" id="mppub" ${changed || !liveBlocks ? "" : "disabled"}>公開する</button></div>
+    <p class="lead">生徒がログインして最初に見る画面です。テンプレを選んで、部品の並びと文言を直します。${liveHtml ? "いまは上級の HTML の版が出ています。ここで「公開する」と、こちらの形に戻ります。" : ""}</p>
+    <div class="mp-ed"><div class="mp-cfg">
+      <div class="sec"><h3>テンプレ</h3><div class="mp-tpls" role="radiogroup" aria-label="テンプレ">${TPLS.map(([k, n, d]) => `<button role="radio" aria-checked="${MPC.tpl === k}" data-tpl="${k}" class="mp-tpl"><span class="mp-mini mp-mini-${k}" aria-hidden="true"><i></i><i></i><i></i></span><b>${n}</b><small>${d}</small></button>`).join("")}</div></div>
+      <div class="sec"><h3>部品 <span class="hint">並べ替え・出す出さない・文言</span></h3><div class="mp-blocks">${MPC.blocks.map((b, i) => `<div class="mp-bl ${b.on ? "" : "off"}"><div class="mp-blh"><label class="mp-tg"><input type="checkbox" data-bon="${i}" ${b.on ? "checked" : ""} aria-label="${BLOCKS[b.k]}を出す"><span></span></label><b>${BLOCKS[b.k]}</b><span class="grow"></span>
+        <span class="mv"><button data-bmv="${i}" data-d="-1" ${i === 0 ? "disabled" : ""} aria-label="${BLOCKS[b.k]}を上へ">▲</button><button data-bmv="${i}" data-d="1" ${i === MPC.blocks.length - 1 ? "disabled" : ""} aria-label="${BLOCKS[b.k]}を下へ">▼</button></span>
+        <button class="btn sm" data-bed="${i}" aria-expanded="${mpOpen === i}">${mpOpen === i ? "閉じる" : "編集"}</button></div>
+        ${mpOpen === i ? `<div class="mp-blf">${b.k === "hero" ? `<div class="f"><label for="bh-t">見出し <span class="hint">{{呼び名}} に生徒の呼び名が入る</span></label><input type="text" id="bh-t" data-bf="title" maxlength="120" value="${esc(b.title)}"></div><div class="f"><label for="bh-x">ひとこと</label><input type="text" id="bh-x" data-bf="text" maxlength="300" value="${esc(b.text)}"></div><div class="f"><label for="bh-i">背景の画像の住所 <span class="hint">空なら画像なし。https:// から</span></label><input type="url" id="bh-i" data-bf="img" value="${esc(b.img)}" placeholder="https://"></div>`
+          : `<div class="f"><label for="bl-${i}">見出し</label><input type="text" id="bl-${i}" data-bf="label" maxlength="60" value="${esc(b.label)}"></div>${AUTO[b.k] ? `<p class="hint" style="margin:0">${AUTO[b.k]}</p>`
+          : `<div class="f"><span class="lbl">中身</span><div class="radio"><label><input type="radio" name="csrc" value="hand" ${b.src !== "apps" ? "checked" : ""}>自分で並べる<span class="hint sub">オプチャ・質問の仕方・申込のページなど、何でも</span></label><label><input type="radio" name="csrc" value="apps" ${b.src === "apps" ? "checked" : ""}>その人が使えるアプリ（自動）<span class="hint sub">権利で開くアプリだけが出る。使えるアプリが無い人には、このカードごと出ない</span></label></div></div>
+            ${b.src !== "apps" ? `<div class="rows">${b.items.map((it, k) => `<div class="cardrow"><input type="text" value="${esc(it.title)}" data-li="${k}" data-lf="title" aria-label="${k + 1} 枚目の名前" placeholder="名前"><input type="text" value="${esc(it.desc)}" data-li="${k}" data-lf="desc" aria-label="${k + 1} 枚目のひとこと" placeholder="ひとこと"><input type="url" value="${esc(it.url)}" data-li="${k}" data-lf="url" aria-label="${k + 1} 枚目の住所" placeholder="https://"><button class="x" data-lx="${k}" aria-label="${k + 1} 枚目を消す">×</button></div>`).join("")}</div><button class="btn sm ghost" id="ladd" style="align-self:flex-start">＋ カードを足す</button>` : ""}`}`}<span class="err" id="mpbe"></span></div>` : ""}</div>`).join("")}</div></div>
+      <details class="sec mp-adv"><summary>上級：HTML で書く</summary><p class="hint">テンプレと部品の代わりに、HTML でまるごと作ります。今の形を HTML に写して始められます。HTML の版を公開するまで、生徒の見え方は変わりません。</p><div class="hrow"><button class="btn sm" id="mphtml">今の形を HTML に写して書き始める</button>${MP.versions.length ? '<button class="btn sm ghost" id="mphtml2">HTML の版を開く</button>' : ""}</div></details>
+    </div>
+    <div class="mp-pvbox"><div class="hrow" style="margin-bottom:8px"><b style="font-size:13px">見え方</b><span class="hint">中身は見本（呼び名は「受講生」）</span><span class="grow"></span><div class="seg"><button class="btn sm ${mpPv === "pc" ? "pri" : ""}" data-mpv="pc" aria-pressed="${mpPv === "pc"}">パソコン</button><button class="btn sm ${mpPv === "sp" ? "pri" : ""}" data-mpv="sp" aria-pressed="${mpPv === "sp"}">スマホ</button></div></div>
+      <div class="mp-frame ${mpPv}" style="padding:12px"><iframe id="mpfr" title="マイページの見え方" sandbox="allow-scripts" style="width:100%;border:0;display:block;height:${mpH || 640}px"></iframe></div></div></div>`;
+    const refresh = (now) => { clearTimeout(mpTimer); mpTimer = setTimeout(() => call("/api/admin/mypage/preview", "POST", { config: MPC }).then((r) => { const fr = $("#mpfr"); if (fr && r.ok) fr.srcdoc = r.html; }), now ? 0 : 400); };
+    const ch = (focusSel) => { dirty = true; render(); if (focusSel) $(focusSel)?.focus(); };
+    refresh(true);
+    $$("[data-tpl]").forEach((b) => (b.onclick = () => { MPC.tpl = b.dataset.tpl; ch(`[data-tpl="${MPC.tpl}"]`); say(`テンプレを「${TPLS.find((x) => x[0] === MPC.tpl)[1]}」にしました`); }));
+    $$("[data-bon]").forEach((x) => (x.onchange = () => { MPC.blocks[+x.dataset.bon].on = x.checked; ch(`[data-bon="${x.dataset.bon}"]`); }));
+    $$("[data-bmv]").forEach((b) => (b.onclick = () => { const i = +b.dataset.bmv, j = i + +b.dataset.d; [MPC.blocks[i], MPC.blocks[j]] = [MPC.blocks[j], MPC.blocks[i]]; if (mpOpen === i) mpOpen = j; else if (mpOpen === j) mpOpen = i; dirty = true; render(); ($(`[data-bmv="${j}"][data-d="${b.dataset.d}"]:not([disabled])`) || $(`[data-bmv="${j}"]:not([disabled])`))?.focus(); }));
+    $$("[data-bed]").forEach((b) => (b.onclick = () => { const i = +b.dataset.bed; mpOpen = mpOpen === i ? null : i; render(); ($(".mp-blf input") || $(`[data-bed="${i}"]`)).focus(); }));
+    const mark = () => { dirty = true; $("#mprev").disabled = !published(); $("#mppub").disabled = false; refresh(); };
+    $$("[data-bf]").forEach((x) => (x.oninput = () => { MPC.blocks[mpOpen][x.dataset.bf] = x.value; mark(); }));
+    $$("[data-li]").forEach((x) => (x.oninput = () => { MPC.blocks[mpOpen].items[+x.dataset.li][x.dataset.lf] = x.value; mark(); }));
+    $$("[data-lx]").forEach((b) => (b.onclick = () => { MPC.blocks[mpOpen].items.splice(+b.dataset.lx, 1); ch("#ladd"); }));
+    if ($("#ladd")) $("#ladd").onclick = () => { MPC.blocks[mpOpen].items.push({ title: "", desc: "", url: "" }); ch(); const r = $$("[data-li]"); r[r.length - 3]?.focus(); };
+    $$("[name=csrc]").forEach((x) => (x.onchange = () => { MPC.blocks[mpOpen].src = x.value; MPC.blocks[mpOpen].items = MPC.blocks[mpOpen].items || []; ch(`[name=csrc][value=${x.value}]`); }));
+    $$("[data-mpv]").forEach((b) => (b.onclick = () => { mpPv = b.dataset.mpv; render(); $(`[data-mpv="${mpPv}"]`).focus(); }));
+    $("#mprev").onclick = () => { MPC = cfgCopy(published()); mpOpen = null; dirty = false; render(); toast("公開中の形に戻しました"); };
+    $("#mppub").onclick = () => {
+      lastF = $("#mppub");
+      modal(`<h3>マイページを公開しますか</h3><p>生徒全員のマイページが、すぐにこの形になります。${liveHtml ? "いま出ている HTML の版の代わりに、こちらが出ます。" : ""}</p><div class="macts"><button class="btn" data-m="x">やめる</button><button class="btn pri" data-m="ok">公開する</button></div>`,
+        { x: () => closeM(), ok: async () => { closeM(true); const r = await call("/api/admin/mypage/config", "PUT", { config: MPC });
+          if (!r.ok) { toast({ bad_card_url: "カードの住所は https:// から入れてください", card_title_required: "カードの名前が空です", bad_image_url: "画像の住所は https:// から入れてください" }[r.error] || errText(r)); return; }
+          dirty = false; await loadMypage(); MPC = cfgCopy(MP.config); render(); toast("マイページを公開しました"); $("#mprev")?.focus(); } });
+    };
+    $("#mphtml").onclick = async () => {
+      if (busy) return; busy = true;
+      try { const r = await call("/api/admin/mypage/to-html", "POST", { config: MPC }); if (!r.ok) { toast(errText(r)); return; } dirty = false; await loadMypage(r.version); mpView = "html"; mpTab = "html"; render(); toast(`今の形を版 ${r.version} として写しました。公開するまで生徒には出ません`); }
+      finally { busy = false; }
+    };
+    if ($("#mphtml2")) $("#mphtml2").onclick = () => { mpView = "html"; mpTab = "html"; render(); };
   }
 
   // ---------- サイトのほかの画面 ----------
@@ -560,19 +620,42 @@ export function mountSite(host, { getToken, openPerson }) {
     const s = site(); const what = ["お知らせ", "マイページと生徒の画面に出すお知らせを書く・日時を決めて出す。書く画面はまだありません（次の 1 枚で作る）"];
     m.innerHTML = `${crumbs()}<h1>${what[0]}</h1><p class="lead">${esc(s.name)}</p><div class="soon"><b>まだ作っていません</b><p style="margin:6px 0 0">${what[1]}</p></div>`;
   }
+  const LCOL = ["#b45309", "#1d4ed8", "#0f766e", "#7c3aed", "#be123c", "#334155"];
   function renderSiteSet(m) {
-    const s = site();
-    m.innerHTML = `${crumbs()}<h1>サイトの設定</h1><p class="lead">${esc(s.name)}</p><div class="ed" style="max-width:760px">
-    <div class="sec"><div class="f"><label for="sn">サイトの名前 <span class="hint">生徒の画面の上に出る</span></label><input type="text" id="sn" value="${esc(s.name)}"><span class="err" id="sne"></span></div>
+    const s = site(); const L = { logo: s.login.logo || "", color: s.login.color || "", msg: s.login.msg || "" };
+    const origin = location.origin;
+    const urls = [["ログイン", "/login", "生徒に最初に渡す住所。ログインしたら下の「最初に出す画面」へ"], ["マイページ", "/app", "ログインしたあとの入口"], ["教材の一覧", "/app#lessons", "教材だけを開いてほしいとき"]];
+    m.innerHTML = `${crumbs()}<h1>サイトの設定</h1><p class="lead">${esc(s.name)}</p><div class="ed" style="max-width:820px">
+    <div class="sec"><h3>基本</h3><div class="f"><label for="sn">サイトの名前 <span class="hint">生徒の画面の上に出る</span></label><input type="text" id="sn" value="${esc(s.name)}"><span class="err" id="sne"></span></div>
       <div class="f"><label for="sd">説明 <span class="hint">Naoki だけが見るメモ</span></label><input type="text" id="sd" value="${esc(s.desc)}"></div>
-      <div class="f"><span class="lbl">生徒が入る住所</span><span>${esc(location.host)}/app</span><span class="hint">サイトごとの住所は、ほかの事業者を迎えるときに決める</span></div>
       <div class="f"><span class="lbl">公開</span><div class="radio"><label><input type="radio" name="ss" value="published" ${s.status === "published" ? "checked" : ""}>公開する</label><label><input type="radio" name="ss" value="draft" ${s.status === "draft" ? "checked" : ""}>下書き（サイトごと生徒に出ない）</label></div></div></div>
+    <div class="sec"><h3>住所 <span class="hint">決まった形。変えられません（独自のドメインは、ほかの事業者を迎えるときに）</span></h3>
+      <div class="urls">${urls.map(([n, u, h], i) => `<div class="urlrow"><div><b>${n}</b><span class="hint">${h}</span></div><code>${esc(origin + u)}</code><button class="btn sm" data-cp="${i}">写す</button></div>`).join("")}</div></div>
+    <div class="sec"><h3>ログインしたあと最初に出す画面</h3><div class="radio"><label><input type="radio" name="land" value="mypage" ${s.landing !== "lessons" ? "checked" : ""}>マイページ<span class="hint sub">マイページを公開していないときは、教材の一覧が出ます</span></label><label><input type="radio" name="land" value="lessons" ${s.landing === "lessons" ? "checked" : ""}>教材の一覧</label></div></div>
+    <div class="sec"><h3>ログイン画面</h3><div class="two"><div>
+      <div class="f"><label for="lg">ロゴの文字 <span class="hint">空ならシアラボ</span></label><input type="text" id="lg" maxlength="40" value="${esc(L.logo)}"></div>
+      <div class="f"><span class="lbl">主な色 <span class="hint">ボタンとリンクの色</span></span><div style="display:flex;gap:6px;flex-wrap:wrap"><label style="cursor:pointer"><input type="radio" name="lc" value="" ${!L.color ? "checked" : ""} class="sr" aria-label="今の色のまま"><span class="lcsw" style="display:inline-grid;place-items:center;width:40px;height:40px;border-radius:8px;border:1px dashed var(--field);font-size:11px">なし</span></label>${LCOL.map((c) => `<label style="cursor:pointer"><input type="radio" name="lc" value="${c}" ${L.color === c ? "checked" : ""} class="sr" aria-label="色 ${c}"><span class="lcsw" style="display:inline-block;width:40px;height:40px;border-radius:8px;background:${c}"></span></label>`).join("")}</div></div>
+      <div class="f"><label for="lm">ひとこと <span class="hint">空なら今の説明のまま</span></label><input type="text" id="lm" maxlength="200" value="${esc(L.msg)}"></div></div>
+      <div><div class="lbl" style="margin-bottom:6px">見え方</div><div class="lgpv" id="lgpv"></div></div></div></div>
     <div class="stick"><button class="btn pri" id="ssave">保存する</button></div></div>`;
-    $$("#main input").forEach((x) => { x.addEventListener("input", () => (dirty = true)); x.addEventListener("change", () => (dirty = true)); });
+    const swatch = () => $$("[name=lc]").forEach((r) => (r.nextElementSibling.style.outline = r.checked ? "3px solid var(--fg)" : "0", r.nextElementSibling.style.outlineOffset = "2px"));
+    const lp = () => { const c = ($("[name=lc]:checked") || {}).value || "#1f5c4d"; $("#lgpv").innerHTML = `<div class="lgcard"><div class="lglogo" style="color:${c}">${esc($("#lg").value || "シアラボ")}</div><p>${esc($("#lm").value || "登録したメールアドレスに、ログイン用のリンクを送ります。パスワードは要りません。")}</p><div class="lgin">メールアドレス</div><div class="lgbtn" style="background:${c}">ログイン用のリンクを送る</div><span class="hint">まだ登録していない方は無料登録へ</span></div>`; };
+    lp(); swatch();
+    $$("#main input").forEach((x) => { x.addEventListener("input", () => { dirty = true; lp(); }); x.addEventListener("change", () => { dirty = true; lp(); swatch(); }); });
+    $$("[data-cp]").forEach((b) => (b.onclick = async () => { try { await navigator.clipboard.writeText(origin + urls[+b.dataset.cp][1]); b.textContent = "写しました"; } catch { b.textContent = "写せませんでした"; } setTimeout(() => (b.textContent = "写す"), 1800); }));
     $("#ssave").onclick = () => {
       const n = $("#sn").value.trim(); if (!n) { $("#sne").textContent = "名前が空です"; $("#sn").focus(); return; }
       const active = $("[name=ss]:checked").value === "published";
-      const doIt = () => { dirty = false; act("site", { id: s.id, name: n, description: $("#sd").value, active }, "サイトの設定を保存しました", () => { render(); $("#ssave").focus(); }); };
+      const doIt = async () => {
+        if (busy) return; busy = true;
+        try {
+          const r1 = await call("site", "PUT", { id: s.id, name: n, description: $("#sd").value, active });
+          if (!r1.ok) { toast(errText(r1)); return; }
+          const r2 = await call("/api/admin/mypage/look", "PUT", { landing: $("[name=land]:checked").value, login: { logo: $("#lg").value, color: $("[name=lc]:checked").value, msg: $("#lm").value } });
+          if (!r2.ok) { toast(errText(r2)); return; }
+          dirty = false; await reload(); render(); toast("サイトの設定を保存しました"); $("#ssave").focus();
+        } finally { busy = false; }
+      };
       if (!active && s.status === "published") { lastF = $("#ssave"); modal(`<h3>サイトを下書きにしますか</h3><p>しあらぼの生徒全員の教材が、すぐに見えなくなります。</p><div class="macts"><button class="btn" data-m="x">やめる</button><button class="btn pri" data-m="ok">下書きにする</button></div>`, { x: () => closeM(), ok: () => { closeM(true); doIt(); } }); return; }
       doIt();
     };
@@ -626,7 +709,7 @@ export function mountSite(host, { getToken, openPerson }) {
   return {
     async open() {
       if (dirty) return;
-      if (await reload()) { STU = null; MP = null; loadStudents().then(() => { if (["sites", "curricula", "curriculum", "students"].includes(V.kind) && !dirty) render(); }); render(); }
+      if (await reload()) { STU = null; MP = null; MPC = null; mpView = "blocks"; loadStudents().then(() => { if (["sites", "curricula", "curriculum", "students"].includes(V.kind) && !dirty) render(); }); render(); }
     },
     isDirty: () => dirty,
   };
