@@ -223,3 +223,10 @@ a.btn{text-decoration:none;color:inherit}
 @media (max-width:1000px){.mp-ed{grid-template-columns:minmax(0,1fr)}.mp-pvbox{position:static}}
 @media (max-width:760px){.urlrow{grid-template-columns:minmax(0,1fr) auto}.urlrow code{grid-column:1/-1;grid-row:2}.mp-dash{grid-template-columns:minmax(0,1fr)}}
 
+
+/* 2026-10-29 13:25：会員サイトを開いたら、サイトの一覧の下にサイトの名前を出して押せるようにする */
+.side button.site-pick{width:calc(100% - 12px);display:block;text-align:left;background:none;border:0;border-top:1px solid var(--line);border-radius:0;margin:14px 6px 4px;padding:10px 8px 6px;font-weight:800;font-size:13px;color:var(--fg);cursor:pointer;min-height:40px}
+.side button.site-pick:hover{color:var(--ink)}
+@media (max-width:760px){.side button.site-pick{margin:0 4px;border-top:0;border-left:1px solid var(--line);white-space:nowrap;padding:10px 8px}}
+.how5{grid-template-columns:repeat(5,minmax(0,1fr))}
+@media (max-width:760px){.how5{grid-template-columns:1fr 1fr}}
