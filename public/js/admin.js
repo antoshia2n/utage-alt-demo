@@ -763,7 +763,6 @@ function setupViews() {
   setupFuncBar();
   // ムダ 7：決済の設定は欄を開いたときに読み、閉じたら伏せ字に戻す
   $("setup").addEventListener("toggle", () => { if ($("setup").open) loadSetup(); else { setupReveal = false; $("setup-body").textContent = "読み込んでいます…"; } });
-  $("hm-guide").addEventListener("click", () => openView("guide"));
   $("cust-back").addEventListener("click", custList);
   document.querySelectorAll("[data-back]").forEach((b) => b.addEventListener("click", () => showPane(b.dataset.back, "list")));
   setupViewTabs();
