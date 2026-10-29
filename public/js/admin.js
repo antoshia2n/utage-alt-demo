@@ -68,11 +68,10 @@ async function openConsole() {
   }
   show("console");
   $("who-admin").textContent = who.email;
-  loadStats();
-  search();
+  // ムダ 1（2026-10-29）：開くときに読むのはホームに要るものだけ。顧客の一覧と数は「顧客管理」、
+  // 決済・メール・通知・カレンダー・オプチャは「決済・メール・オプチャ」を開いたときに読む（setupViews）
   setupViews();
   loadRooms();
-  loadSetup();
   setupCommunity();
   setupMail();
   setupCalendar();
@@ -456,8 +455,10 @@ function setupTopbar() {
   $("gsearch").addEventListener("submit", (ev) => {
     ev.preventDefault();
     $("q").value = $("gq").value.trim();
+    // 顧客管理を初めて開くときは、開いたところで今の言葉で読む（2 回読まない）
+    const loaded = peopleLoaded;
     openView("people");
-    search();
+    if (loaded) search();
   });
   $("chip-ai").addEventListener("click", () => openView("ai"));
   $("chip-rooms").addEventListener("click", () => { $("only-unreplied").checked = true; openView("rooms"); loadRooms(); });
@@ -703,6 +704,10 @@ function openView(name, part) {
   // 便 12a：設計図のページの箱から開いたときは、その 1 枚を開く
   if (name === "pages" && part && part.lp && part.id) openPage(part.id);
 }
+let peopleLoaded = false;
+// 設定の画面を開くたびに読み直す（AI や承認で値が変わっていても、開いたときは新しい値）
+function loadSettings() { loadSetup(); loadCommunity(); reloadMail(); loadCalendar(); loadPush(); }
+const settingsOpen = () => $("view-settings").style.display !== "none";
 function setupViews() {
   document.querySelectorAll(".side [data-view]").forEach((b) => b.addEventListener("click", () => {
     clearErr();
@@ -718,6 +723,8 @@ function setupViews() {
     const box = b.closest(".grp-box");
     if (box && box.classList.contains("closed")) box.querySelector(".grp").click();
     if (b.dataset.view === "home") loadHome();
+    if (b.dataset.view === "people" && !peopleLoaded) { peopleLoaded = true; search(); loadStats(); }
+    if (b.dataset.view === "settings") loadSettings();
     if (b.dataset.view === "blueprint") bp.load();
     if (b.dataset.view === "deliver" || b.dataset.view === "blueprint") loadDeliver();
     if (b.dataset.view === "products") loadProducts();
@@ -2313,7 +2320,6 @@ function setupCommunity() {
   };
   $("cm-save").addEventListener("click", () => save($("cm-url").value));
   $("cm-clear").addEventListener("click", () => { if (confirm("招待リンクを外します。会員の画面からも消えます。")) save(""); });
-  loadCommunity();
 }
 
 // ---------- 便 8f-1：ホームの今日の 1 枚と段階のボード ----------
@@ -2378,7 +2384,6 @@ function setupCalendar() {
   };
   document.querySelectorAll("[data-cal-save]").forEach((b) => b.addEventListener("click", () => save(b.dataset.calSave, $("cal-url-" + b.dataset.calSave).value.trim())));
   document.querySelectorAll("[data-cal-clear]").forEach((b) => b.addEventListener("click", () => { if (confirm("このカレンダーを外します。ホームにこのカレンダーの予定が出なくなります。")) save(b.dataset.calClear, ""); }));
-  loadCalendar();
 }
 
 // 便 7c-1：メールの送り方。表 b_settings の 4 行を読み、変える（AI の set_mail_settings と同じ処理）
@@ -2402,9 +2407,9 @@ async function reloadMail() {
   fillMail(r.settings);
 }
 function setupMail() {
-  reloadMail();
-  $("mail-box").addEventListener("toggle", () => { if ($("mail-box").open) reloadMail(); });
-  window.addEventListener("focus", () => { if ($("mail-box").open) reloadMail(); });
+  // ムダ 1：前は画面に戻るたびに（ホームにいても）読んでいた。設定の画面を開いているときだけ読む
+  $("mail-box").addEventListener("toggle", () => { if ($("mail-box").open && settingsOpen()) reloadMail(); });
+  window.addEventListener("focus", () => { if ($("mail-box").open && settingsOpen()) reloadMail(); });
   $("ml-save").addEventListener("click", async () => {
     const scope = $("ml-scope").value;
     const now = { from: $("ml-from").value.trim(), from_name: $("ml-name").value.trim(), reply_to: $("ml-reply").value.trim(), scope };
@@ -2461,7 +2466,6 @@ async function loadPush() {
   return r;
 }
 function setupPush() {
-  loadPush();
   $("push-on").addEventListener("click", () => {
     clearErr();
     const st = $("push-status");
