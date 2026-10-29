@@ -10,6 +10,23 @@ let deferredPrompt = null;
 window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); deferredPrompt = e; });
 
 // 5b：スマホの上の帯の右端まで送ったら、続きの印（右端を薄く）を外す
+// 失敗の言葉（ムダ 4・2026-10-30）：生徒には日本語だけを出し、開発の言葉は裏の記録（console）にだけ残す
+const ERR_TEXT = {
+  not_found: "見つかりませんでした。画面を読み直してください",
+  not_registered: "このメールアドレスは台帳にありません",
+  unauthorized: "ログインが切れました。もう一度ログインしてください",
+  too_long: "文が長すぎます。短くしてもう一度お試しください",
+  empty: "中身が空です",
+  too_many_images: "画像が多すぎます",
+  too_large: "画像が大きすぎます",
+  no_image_store: "いまは画像を送れません",
+  not_ready: "準備中です",
+};
+function errText(x) {
+  const code = x && (x.error || x.status);
+  if (code) console.warn("error:", code);
+  return ERR_TEXT[x && x.error] || "時間をおいてもう一度お試しください";
+}
 function watchSideEnd() {
   const side = document.querySelector(".side");
   if (!side) return;
@@ -41,7 +58,7 @@ async function main() {
   const r = await api("/api/me" + (fresh ? "?fresh=1" : ""), { token });
   if (!r.ok) {
     if (r.error === "not_registered") return fail("このメールアドレスは台帳にありません。無料登録からやり直してください。");
-    return fail("読み込めませんでした（" + (r.error || r.status) + "）");
+    return fail("読み込めませんでした。" + errText(r));
   }
   $("loading").classList.add("hidden");
   $("main").classList.remove("hidden");
@@ -198,14 +215,14 @@ async function main() {
     $("l-ask").disabled = true;
     const r2 = await api("/api/room", { method: "POST", token, body: { kind: "chat", lesson_id: qaLesson, text } });
     $("l-ask").disabled = false;
-    if (!r2.ok) { $("l-q-status").textContent = "送れませんでした（" + (r2.error || r2.status) + "）"; return; }
+    if (!r2.ok) { $("l-q-status").textContent = "送れませんでした。" + errText(r2); return; }
     await loadLessonNotes(qaLesson);
     $("l-q-status").textContent = "送りました";
   });
   $("l-memo-save").addEventListener("click", async () => {
     if (!qaLesson) return;
     const r2 = await api("/api/lesson/memo", { method: "POST", token, body: { lesson_id: qaLesson, text: $("l-memo").value } });
-    $("l-memo-status").textContent = r2.ok ? "保存しました" : "保存できませんでした（" + (r2.error || r2.status) + "）";
+    $("l-memo-status").textContent = r2.ok ? "保存しました" : "保存できませんでした。" + errText(r2);
   });
   document.querySelectorAll(".lesson").forEach((el) => {
     el.addEventListener("click", () => openLesson(el.dataset.id));
@@ -245,13 +262,16 @@ async function main() {
   routeLesson();
   if (location.hash === "#news") showTab("news");
   if (location.hash === "#review") showTab("review");
-  if (location.hash === "#booking") showTab("booking");
+  // ムダ 2（2026-10-30）：予約は、サーバーが準備できたと返すまで左のメニューに出さない
+  const bookingReady = r.booking_ready === true;
+  document.querySelector('.side [data-tab="booking"]').classList.toggle("hidden", !bookingReady);
+  if (location.hash === "#booking" && bookingReady) showTab("booking");
   if (location.hash === "#contract") showTab("contract");
   // 便 8g-1：通知を押して開いた画面がもう出ているとき、住所の # だけが変わるので、ここで部屋へ移る
   window.addEventListener("hashchange", () => {
     const [h, pane] = location.hash.slice(1).split("/");
     if (h === "room") room.setPane(pane);
-    if (["room", "review", "booking", "contract", "news", "mypage"].includes(h)) showTab(h);
+    if (["room", "review", "contract", "news", "mypage"].includes(h) || (h === "booking" && bookingReady)) showTab(h);
     routeLesson();
   });
   setupStudentPush({ box: $("push-box"), status: $("push-status"), on: $("push-on"), off: $("push-off") }, token);
@@ -261,10 +281,18 @@ async function main() {
 }
 
 // ---------- 添削の振り返り（便 6a）：返ってきた添削だけを新しい順に。出した文章の日付と並べる ----------
+// ムダ 3（2026-10-30）：添削の画面は、見回りが直近 30 秒以内に読んだ部屋を使い回す。古いときだけ読み直す
+let roomCache = null;
+async function roomData(token) {
+  if (roomCache && Date.now() - roomCache.at < 30000) return roomCache.r;
+  const r = await api("/api/room", { token });
+  if (r.ok) roomCache = { r, at: Date.now() };
+  return r;
+}
 async function loadReview(token) {
   const box = $("review-list");
-  const r = await api("/api/room", { token });
-  if (!r.ok) { box.innerHTML = `<div class="msg err">読めませんでした（${esc(r.error || r.status)}）</div>`; return; }
+  const r = await roomData(token);
+  if (!r.ok) { box.innerHTML = `<div class="msg err">読めませんでした。${esc(errText(r))}</div>`; return; }
   const subs = Object.fromEntries(r.messages.filter((m) => m.from === "student").map((m) => [String(m.id), m]));
   const back = r.messages.filter((m) => m.from === "cyanin" && m.kind !== "chat").reverse();
   $("review-count").textContent = back.length ? `これまでに返ってきた添削 ${back.length} 件（新しい順）` : "";
@@ -284,7 +312,7 @@ const day = (iso) => iso ? fmtTime(iso).slice(0, 10) : "";
 async function loadContract(token) {
   const box = $("ct-list");
   const r = await api("/api/me/subscriptions", { token });
-  if (!r.ok) { box.innerHTML = `<div class="msg err">読めませんでした（${esc(r.error || r.status)}）</div>`; return; }
+  if (!r.ok) { box.innerHTML = `<div class="msg err">読めませんでした。${esc(errText(r))}</div>`; return; }
   box.innerHTML = r.subscriptions.map((s) => {
     const lines = [esc(s.price)];
     if (s.since) lines.push(day(s.since) + " から");
@@ -309,7 +337,7 @@ async function loadContract(token) {
       e.target.disabled = true;
       const res = await api("/api/me/subscriptions/cancel", { method: "POST", token, body: { subscription_id: s.subscription_id } });
       const why = { installment_not_cancelable: "分割のお支払いはここからは止められません", univapay_cancel_failed: "決済の会社で止められませんでした。時間をおいてもう一度お試しください", no_paid_until: "次のお支払いの日が分からないため止められませんでした。メールでご連絡ください" };
-      $("ct-status").textContent = res.ok ? `止めました。${res.keep_until ? day(res.keep_until) + " までお使いいただけます。" : ""}` : (why[res.error] || "止められませんでした（" + (res.error || res.status) + "）");
+      $("ct-status").textContent = res.ok ? `止めました。${res.keep_until ? day(res.keep_until) + " までお使いいただけます。" : ""}` : (why[res.error] || "止められませんでした。" + errText(res));
       loadContract(token);
     });
   }));
@@ -319,7 +347,7 @@ async function loadContract(token) {
 let pickedSlot = null;
 async function loadBooking(token) {
   const r = await api("/api/booking", { token });
-  if (!r.ok) { $("bk-status").textContent = "読めませんでした（" + (r.error || r.status) + "）"; return; }
+  if (!r.ok) { $("bk-status").textContent = "読めませんでした。" + errText(r); return; }
   // B の便 7c-1：本番では、本物の枠ができるまで（便 8f）準備中だけを出す
   if (r.ready === false) {
     $("bk-mine").innerHTML = ""; $("bk-slots").innerHTML = `<p class="note" style="margin:0">${esc(r.note || "準備中です")}</p>`;
@@ -344,7 +372,7 @@ async function loadBooking(token) {
   document.querySelectorAll("[data-cancel]").forEach((b) => b.addEventListener("click", async () => {
     b.disabled = true;
     const res = await api("/api/booking/cancel", { method: "POST", token, body: { slot: b.dataset.cancel } });
-    $("bk-status").textContent = res.ok ? "予約を取り消しました" : "取り消せませんでした（" + (res.error || res.status) + "）";
+    $("bk-status").textContent = res.ok ? "予約を取り消しました" : "取り消せませんでした。" + errText(res);
     loadBooking(token);
   }));
   $("bk-go").onclick = async () => {
@@ -353,7 +381,7 @@ async function loadBooking(token) {
     const res = await api("/api/booking", { method: "POST", token, body: { slot: pickedSlot, topic: $("bk-topic").value } });
     $("bk-go").disabled = false;
     const why = { slot_taken: "その枠は先に埋まりました", already_booked: "予約は 1 件までです", bad_slot: "その枠は選べません" };
-    $("bk-status").textContent = res.ok ? "予約しました（確認のメールを送りました）" : (why[res.error] || "予約できませんでした（" + (res.error || res.status) + "）");
+    $("bk-status").textContent = res.ok ? "予約しました（確認のメールを送りました）" : (why[res.error] || "予約できませんでした。" + errText(res));
     if (res.ok) { pickedSlot = null; $("bk-topic").value = ""; }
     loadBooking(token);
   };
@@ -367,7 +395,7 @@ async function loadBooking(token) {
   document.querySelectorAll("[data-sem]").forEach((b) => b.addEventListener("click", async () => {
     b.disabled = true;
     const res = await api(`/api/seminars/${b.dataset.sem}/register`, { method: "POST", token });
-    $("bk-status").textContent = res.ok ? "セミナーに申し込みました（Zoom の URL をメールで送りました）" : "申し込めませんでした（" + (res.error || res.status) + "）";
+    $("bk-status").textContent = res.ok ? "セミナーに申し込みました（Zoom の URL をメールで送りました）" : "申し込めませんでした。" + errText(res);
     loadBooking(token);
   }));
 }
@@ -489,7 +517,8 @@ function setupRoom(token, communityUrl, communityState) {
 
   const load = async (markRead) => {
     const r = await api("/api/room", { token });
-    if (!r.ok) { $("room-list").innerHTML = `<div class="msg err">読めませんでした（${esc(r.error || r.status)}）</div>`; return; }
+    if (r.ok) roomCache = { r, at: Date.now() };
+    if (!r.ok) { $("room-list").innerHTML = `<div class="msg err">読めませんでした。${esc(errText(r))}</div>`; return; }
     const notices = r.notices || [];
     const un = unreadOf(r.messages);
     seen.corr = Math.max(seen.corr, un.corr); seen.chat = Math.max(seen.chat, un.chat);
@@ -536,13 +565,14 @@ function setupRoom(token, communityUrl, communityState) {
         status(`画像を送っています（${i + 1}/${pending.length}）`);
         const res = await fetch("/api/room/images", { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": p.blob.type || "image/jpeg" }, body: p.blob });
         const d = await res.json().catch(() => ({}));
-        if (!d.ok) throw new Error("画像を送れませんでした（" + (d.error || res.status) + "）");
+        if (!d.ok) throw new Error("画像を送れませんでした。" + errText(d));
         keys.push(d.key);
       }
       status("出しています…");
       const kind = kindOf();
       const r = await api("/api/room", { method: "POST", token, body: { text, images: keys, kind } });
-      if (!r.ok) throw new Error("出せませんでした（" + (r.error || r.status) + "）");
+      roomCache = null;
+      if (!r.ok) throw new Error("出せませんでした。" + errText(r));
       $("c-text").value = ""; pending = []; drawThumbs();
       status(kind === "chat" ? "送りました。返事が来たらこの部屋とタブの数字でお知らせします" : "出しました。返ってきたらこの部屋とタブの数字でお知らせします");
       await load(true);
