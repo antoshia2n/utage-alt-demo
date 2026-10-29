@@ -209,7 +209,7 @@ export function makeSell(h) {
       const prod = s.product_id ? pmap[s.product_id] : null;
       items.push({
         product_id: s.product_id, subscription_id: sid, kind: s.installments ? "installment" : "subscription",
-        name: prod ? prod.name : (s.product_id ? s.product_id : bin3.PLAN.name),
+        name: prod ? prod.name : (s.product_id || "定期課金"),
         // 便 R3：本人が止めた定期は、払った期間の終わり（keep_until）まで続いている扱い。期限は門番の表の expires_at にも入る
         status: s.mode === "test" ? "test" : (SUB_ACTIVE.has(s.last.type) || keepsUntil(s.last, s.keep) ? "active" : s.last.type.replace("subscription_", "")), mode: s.mode || null,
         since: s.since, until: keepsUntil(s.last, s.keep) ? s.keep : null, ending: keepsUntil(s.last, s.keep) || undefined,
@@ -460,7 +460,7 @@ export function makeSell(h) {
       if (keepsUntil(last_event, s.keep_until)) status = "ending";
       const period = s.period || (prod && prod.period) || "monthly";
       return { ...s, period, paid_until: paidUntil(s.last_paid_at, period), keep_until: s.keep_until || null,
-        product_name: prod ? prod.name : s.product_id || bin3.PLAN.name, kind: s.installments ? "installment" : "subscription", status, status_label: STATUS_LABEL[status] || status };
+        product_name: prod ? prod.name : s.product_id || "定期課金", kind: s.installments ? "installment" : "subscription", status, status_label: STATUS_LABEL[status] || status };
     });
   }
 

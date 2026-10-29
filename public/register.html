@@ -53,7 +53,7 @@
   const $ = (id) => document.getElementById(id);
   const show = (text, ok) => { const m = $("msg"); m.textContent = text; m.className = "msg " + (ok ? "ok" : "err"); };
   const payShow = (text, ok) => { const m = $("paymsg"); m.textContent = text; m.className = "msg " + (ok ? "ok" : "err"); };
-  // B の便 4：?product=<商品の id> で来たら、その商品を申し込む（紹介用の価格のリンクもこれ）。無ければデモの置き場の見本のプラン（本番の置き場には無いので出さない）
+  // B の便 4：?product=<商品の id> で来たら、その商品を申し込む（紹介用の価格のリンクもこれ）。無ければ申し込みの枠は出さない
   const productId = new URLSearchParams(location.search).get("product") || "";
   // 便 8g-2：紹介のリンク（?ref=番号）。登録のときに一緒に送る
   const refCode = (new URLSearchParams(location.search).get("ref") || "").slice(0, 20);
@@ -72,8 +72,6 @@
       const { priceLabel } = await import("/js/pay.js");
       product = r.products[0];
       $("join-plan").textContent = product.name + "：" + priceLabel(product);
-    } else if (cfg.plan) {
-      $("join-plan").textContent = cfg.plan.name + "：月 " + cfg.plan.amount.toLocaleString() + " 円";
     } else return;
     // B の便 7c-1：試しの決済のときだけ、試しのカードの案内を出す
     $("test-note").classList.toggle("hidden", cfg.univapayMode !== "test");

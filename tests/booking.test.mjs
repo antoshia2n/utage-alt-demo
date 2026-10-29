@@ -148,7 +148,6 @@ test("設計図：予約の種類ごとに箱ができ、ページ → 予約 �
   assert.ok(edges.includes("booking:t1>page:p2:サンクス"));
   assert.equal(partKeyOf({ type: "consult_booked", payload: { slot: "x", type_id: "t1" } }), "booking:t1");
   assert.equal(partKeyOf({ type: "consult_booked", payload: { slot: "x" } }), "booking:consult");
-  assert.ok(buildParts({}).some((p) => p.key === "booking:consult"), "デモの置き場は今までどおり");
 });
 
 test("段の名前（Naoki 確定 2026-10-10）", () => {

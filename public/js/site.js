@@ -14,7 +14,7 @@ const ERR = {
   bad_drip_days: "日数は 0 以上の整数で入れてください", bad_minutes: "見る時間は 0〜1440 の整数で入れてください",
   bad_video_url: "YouTube の住所ではないようです（youtube.com か youtu.be）", bad_toc_time: "目次の時間は 12:30 や 1:02:30 の形で入れてください",
   bad_file_url: "資料の住所は https:// から始まる形で入れてください", course_required: "所属するコースを 1 つ以上選んでください",
-  list_mismatch: "並びが読み直す前のものでした。もう一度試してください", demo_store: "デモの置き場では使えません（本番の置き場だけ）",
+  list_mismatch: "並びが読み直す前のものでした。もう一度試してください",
   not_found: "見つかりませんでした（ほかの画面で消えたかもしれません）", bad_urls: "YouTube の住所ではない行があります",
 };
 const STL = { published: "公開", draft: "下書き", scheduled: "予約", drip: "入会から日数" };

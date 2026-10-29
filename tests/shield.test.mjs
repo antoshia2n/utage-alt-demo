@@ -249,7 +249,7 @@ test("B の決済の窓は metadata に source=lab を付け、知らせの受�
   const { readFileSync } = await import("node:fs");
   const pay = readFileSync(new URL("../public/js/pay.js", import.meta.url), "utf8");
   const metas = pay.match(/metadata: \{[^}]*\}/g) || [];
-  assert.equal(metas.length, 2);
+  assert.equal(metas.length, 1); // 見本のプランの窓（ムダ 10 の 3 段目で消した）を除いた、商品の窓
   for (const m of metas) assert.ok(m.includes('source: "lab"'), m);
   const bin3 = readFileSync(new URL("../src/bin3.js", import.meta.url), "utf8");
   assert.ok(bin3.includes("meta_source: (data.metadata && data.metadata.source) || null"));

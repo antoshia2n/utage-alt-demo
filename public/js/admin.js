@@ -256,7 +256,7 @@ async function loadEntKeys() {
 const ENT_ERR = {
   reason_required: "理由を書いてください", already_manual: "この権利はもう手で付けてあります。外してから付け直してください",
   unknown_key: "その名前の権利はありません", expires_in_past: "期限が今より前です", expires_required: "ゲストは期限を必ず入れてください", bad_expires_at: "期限の日付が読めません",
-  not_manual: "支払いから付いた権利は、ここでは外せません", demo_store: "デモの置き場では付け外しできません", reason_too_long: "理由は 200 字までです",
+  not_manual: "支払いから付いた権利は、ここでは外せません", reason_too_long: "理由は 200 字までです",
 };
 // 「権利」のタブの中身（付ける窓と、手で付けた行の外す確かめを含む）
 function entPane(rows, keys) {
@@ -1038,9 +1038,8 @@ async function loadDeals(focusId, msg) {
   const s = await api("/api/admin/seminars", { token });
   if (!s.ok) { $("sem-count").textContent = "読めませんでした"; return; }
   seminarsCache = s.seminars;
-  semStore = s.store === "production";
-  $("sem-new").classList.toggle("hidden", !semStore);
-  if (semStore && !semNewWired) { semNewWired = true; $("sem-new").addEventListener("click", () => seminarEditor(null)); }
+  $("sem-new").classList.remove("hidden");
+  if (!semNewWired) { semNewWired = true; $("sem-new").addEventListener("click", () => seminarEditor(null)); }
   $("sem-count").textContent = `${s.seminars.length} 件・これから ${s.seminars.filter((x) => !x.past).length}`;
   await loadCampaigns();
   const smRows = campRows("seminars", "seminar", s.seminars, (x) => x.id, () => loadDeals());
@@ -1050,33 +1049,8 @@ async function loadDeals(focusId, msg) {
     { key: "registrants", label: "申込", html: (x) => `${x.registrants} 人` + (x.capacity ? `<div class="sub">定員 ${x.capacity}</div>` : "") },
     campCol("seminar", (x) => x.id),
     { key: "past", label: "状態", sortVal: (x) => (x.past ? 1 : 0), html: (x) => x.past ? pill("終了", "gray") : pill("これから") },
-  ], smRows, (x) => (semStore ? openSeminar(x.id) : seminarDetail(x.id)), s.seminars.length ? "ここに当たるセミナーはありません" : (semStore ? "まだありません。「新しく作る」から回を作ります" : "セミナーはまだありません"));
-  if (focusId) (semStore ? openSeminar(focusId, { msg }) : seminarDetail(focusId, msg));
-}
-// デモの置き場（架空の 2 回）
-function seminarDetail(id, msg) {
-  const x = seminarsCache.find((y) => y.id === id);
-  if (!x) return;
-  showPane("deals", "detail", x.title, "セミナーの一覧へ");
-  $("seminar-detail").innerHTML = headHtml({
-    title: x.title,
-    sub: esc(x.label),
-    pills: [x.past ? pill("終了", "gray") : pill("これから"), pill(`申込 ${x.registrants} 人`, "gray")],
-    actions: x.past ? `<button class="btn small" type="button" id="sem-run" data-kind="archive">アーカイブを配る</button>` : `<button class="btn ghost small" type="button" id="sem-run" data-kind="remind">前日の知らせを今送る（試し）</button>`,
-    foot: campPicker("seminar", x.id),
-  }) + `${msg ? `<p class="msg ok" style="margin:12px 0 0">${esc(msg)}</p>` : ""}
-    <section class="card" style="margin-top:16px"><dl class="kv">
-      <dt>申込</dt><dd>${x.registrants} 人</dd>
-      <dt>前日の知らせ</dt><dd>${x.reminded} 人に送った</dd>
-      <dt>アーカイブ</dt><dd>${x.archive_sent} 人に配った</dd>
-    </dl><p class="note" id="sem-status" style="margin:12px 0 0"></p></section>`;
-  wireCampPicker($("seminar-detail"), () => loadDeals());
-  $("sem-run").addEventListener("click", async () => {
-    $("sem-status").textContent = "送っています…";
-    const r = await api(`/api/admin/seminars/${x.id}/${$("sem-run").dataset.kind}`, { method: "POST", token });
-    if (!r.ok) { $("sem-status").textContent = "送れませんでした（" + (r.error || r.status) + "）"; return; }
-    await loadDeals(x.id, `送った ${r.sent}・テスト宛てでないので送らなかった ${r.blocked}・失敗 ${r.failed}${r.skipped ? "・送り済み " + r.skipped : ""}`);
-  });
+  ], smRows, (x) => openSeminar(x.id), s.seminars.length ? "ここに当たるセミナーはありません" : "まだありません。「新しく作る」から回を作ります");
+  if (focusId) openSeminar(focusId, { msg });
 }
 
 // ---------- 便 13b：個別相談の予約の種類（本番の置き場）。一覧 → 詳細（予約・知らせ・中身） ----------
@@ -1095,7 +1069,7 @@ async function loadBookingTypes() {
   const store = r.store === "production";
   $("bt-new").classList.toggle("hidden", !store);
   if (store && !btWired) { btWired = true; $("bt-new").addEventListener("click", () => bookingTypeEditor(null)); }
-  $("bt-count").textContent = store ? `${r.count} 件・受付中 ${btCache.filter((t) => t.active).length}` : "デモの置き場では予約の種類は作れません";
+  $("bt-count").textContent = `${r.count} 件・受付中 ${btCache.filter((t) => t.active).length}`;
   await loadCampaigns();
   const rows = campRows("btypes", "booking", btCache, (t) => t.id, () => loadBookingTypes());
   table("btypes", [
@@ -1205,7 +1179,7 @@ async function bookingTypeEditor() {
 }
 
 // ---------- 便 13：セミナーの回（本番の置き場）。一覧 → 詳細（中身・知らせ・申込者）。作るは一覧の「新しく作る」 ----------
-let semStore = false, semNewWired = false, currentSeminar = null;
+let semNewWired = false, currentSeminar = null;
 const SEM_WHY = {
   bad_title: "題名を入れてください（80 字まで）", bad_starts_at: "日時は「2026-11-01 21:00」の形で入れてください", bad_minutes: "長さは 10〜600 分",
   bad_capacity: "定員は 1 以上の数（空なら無制限）", bad_zoom_url: "Zoom の住所は https:// から", bad_archive_url: "アーカイブの住所は https:// から",
@@ -1623,7 +1597,7 @@ async function loadDeliver() {
   if (!r.ok) { $("dv-warm").textContent = "読めませんでした（" + (r.error || r.status) + "）"; return; }
   deliverData = r;
   fillMailOpenOptions(r);
-  $("dv-warm").textContent = (r.warm ? `今日の上限 ${r.warm.cap} 通（送り始めて ${r.warm.day + 1} 日目・今日 ${r.warm.sent_today} 通）` : "デモの置き場") + (r.open_to_all ? "" : "・いまはテスト宛てにだけ届く");
+  $("dv-warm").textContent = (r.warm ? `今日の上限 ${r.warm.cap} 通（送り始めて ${r.warm.day + 1} 日目・今日 ${r.warm.sent_today} 通）` : "送る上限は読めませんでした") + (r.open_to_all ? "" : "・いまはテスト宛てにだけ届く");
   await loadCampaigns();
   const bcRows = campRows("deliver", "broadcast", r.broadcasts, (b) => b.id, () => loadDeliver());
   // 便 20：メールを送るコネクタはステップ配信（メールの画面）、送らないものは自動の動き（ファネル構築の画面）
@@ -1801,7 +1775,7 @@ async function loadForms() {
   fieldsCache = fr.fields.filter((f) => !f.archived_at);
   fieldNames = Object.fromEntries(fr.fields.map((f) => [f.key, f.label]));
   formsCache = fo.forms;
-  $("fm-count").textContent = fo.store === "demo" ? "デモの置き場ではフォームは作れません" : `${fo.count} 件・公開中 ${fo.forms.filter((f) => f.active).length}`;
+  $("fm-count").textContent = `${fo.count} 件・公開中 ${fo.forms.filter((f) => f.active).length}`;
   await loadCampaigns();
   const fmRows = campRows("forms", "form", fo.forms, (f) => f.id, () => loadForms());
   table("forms-table", [
@@ -1946,8 +1920,7 @@ async function loadPages() {
   const r = await getList("/api/admin/pages");
   if (!r.ok) { $("pg-count").textContent = "読めませんでした（" + (r.error || r.status) + "）"; return; }
   pagesCache = r.pages; pagesOrigin = r.pages_origin || "";
-  $("pg-count").textContent = r.store === "demo" ? "デモの置き場ではページは作れません"
-    : `${r.count} 枚・公開中 ${r.pages.filter((p) => p.status === "published").length}` + (r.open_new_requests ? `・下書き待ちの新しい依頼 ${r.open_new_requests}` : "");
+  $("pg-count").textContent = `${r.count} 枚・公開中 ${r.pages.filter((p) => p.status === "published").length}` + (r.open_new_requests ? `・下書き待ちの新しい依頼 ${r.open_new_requests}` : "");
   await loadCampaigns();
   const rows = campRows("pages", "page", r.pages, (p) => p.id, () => loadPages());
   table("pages-table", [
@@ -2215,7 +2188,7 @@ async function loadProducts(focusId, msg) {
   if (!r.ok) { $("pr-count").textContent = "読めませんでした（" + (r.error || r.status) + "）"; return; }
   productsCache = r.products;
   const sellable = r.products.filter((p) => p.active).length, shown = r.products.filter((p) => p.public).length;
-  $("pr-count").textContent = `${r.count} 件・売っている ${sellable}・サイトに出している ${shown}${r.store === "demo" ? "（デモの置き場：見本だけ）" : ""}`;
+  $("pr-count").textContent = `${r.count} 件・売っている ${sellable}・サイトに出している ${shown}`;
   await loadCampaigns();
   // マーケくん便 4：売っていない商品は普段は出さない（左の列の下で出せる）
   const off = r.products.filter((p) => !p.active).length;
@@ -2246,7 +2219,7 @@ async function loadSubscriptions() {
   const r = await api("/api/admin/subscriptions" + (st ? "?status=" + st : ""), { token });
   if (!r.ok) { $("sub-count").textContent = "読めませんでした（" + (r.error || r.status) + "）"; return; }
   const c = r.counts || {};
-  $("sub-count").textContent = r.store === "demo" ? "デモの置き場では出しません" : `${r.count} 件・続いている ${c.active || 0}・失敗 ${c.failed || 0}・解約 ${c.canceled || 0}${c.ending ? `・止めた（期限まで） ${c.ending}` : ""}`;
+  $("sub-count").textContent = `${r.count} 件・続いている ${c.active || 0}・失敗 ${c.failed || 0}・解約 ${c.canceled || 0}${c.ending ? `・止めた（期限まで） ${c.ending}` : ""}`;
   const tone = { active: "", completed: "", failed: "warn", canceled: "gray", suspended: "gray", ending: "warn" };
   table("subs", [
     { key: "name", label: "名前", sortVal: (s) => s.name || s.email, html: (s) => `<div class="c-name">${esc(s.name || s.email)}</div><div class="sub">${esc(s.email)}</div>` },
@@ -2645,7 +2618,7 @@ async function loadGuide() {
 // 先行で試すの権利 × 関門を通ったアプリの行を入れる・外す。切り替える前に 1 回確かめる
 let accData = null, accAsk = null, accKey = "shiarabo_pilot";
 const ACC_KEYS = [["shiarabo_pilot", "先行で試す"], ["guest", "ゲスト"]];
-const ACC_ERR = { unknown_app: "このアプリはまだ公開の関門を通っていません", bad_on: "切り替えの指定が読めません", not_applied: "表に入りませんでした。開き直してもう一度試してください", demo_store: "デモの置き場では切り替えられません", unknown_key: "この権利は切り替えられません" };
+const ACC_ERR = { unknown_app: "このアプリはまだ公開の関門を通っていません", bad_on: "切り替えの指定が読めません", not_applied: "表に入りませんでした。開き直してもう一度試してください", unknown_key: "この権利は切り替えられません" };
 function accPane(d) {
   return d.apps.map((a) => {
     const asking = accAsk === a.target;

@@ -30,7 +30,7 @@
 //   ページの中の印（申込の枠・決済の枠・ボタン）に、B が /_lab/embed.js で中身を差し込む。見た・押したは b_page_hits と出来事に積む
 //   経路（?r=名前）：初めて登録したときの経路を registered の payload.route に残し、自動ラベル「経路:名前」になる
 // B の便 13：セミナーの回と知らせ（b_seminars・b_seminar_notices）。中身は src/seminars.js。本番の置き場ではこちらを使い、
-//   架空の 2 回（src/bin4.js の SEMINARS）はデモの置き場だけで使う。回のフォームに答えた人が申込者になり、受付のメール・
+//  回のフォームに答えた人が申込者になり、受付のメール・
 //   開催の何分前の知らせ（定時の処理）・サンクスページへの移動が付く。申込者には自動のラベル「セミナー:題名」
 // B の便 12b：売るページ。商品に「決済のあとに移るページ」（b_products.thanks_page_slug）を持たせ、決済が通ったらそこへ移す。
 //   売るページ（目的 sale）と移る先のページはファネル構築のオファーの段に置く
@@ -72,7 +72,7 @@ import { makeMypage } from "./mypage.js";
 import { makeNews, newsQuery } from "./news.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.54.3-bmuda10b3";
+const VERSION = "0.55.0-bmuda10c";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -110,7 +110,7 @@ export default {
       if (missingConfig(env).length) return;
       try {
         const r = await bin3.remindUnread(env, roomEvents, roomState);
-        // 便 13：本番の置き場は表のセミナーの知らせ、デモの置き場は架空の 2 回の前日の知らせ
+        // 便 13：表のセミナーの知らせ
         const s = await seminars.run(env);
         const bk = await booking.run(env); // 便 13b：個別相談の前日の知らせ
         const d = await deliver.run(env);
@@ -520,7 +520,7 @@ const core = {
     const rs = roomState(await roomEvents(env, person_id));
     return {
       ok: true, found: true,
-      person: { ...person, entitlement: await sell.entitlement(env, person_id), deal, contract: bin4.contractOf(person.email) },
+      person: { ...person, entitlement: await sell.entitlement(env, person_id), deal, contract: null },
       stage: { id: lane, label: (LANES.find((l) => l.id === lane) || {}).label || lane },
       labels,
       entitlements: await bridge.gateFull(env, person_id), // マーケくん便 2：「権利」のタブ
@@ -866,7 +866,6 @@ async function handleApi(request, env, url) {
       univapayMode: bin3.univapayState(env).mode || null,
       // 便 R1：ロボット判定の表示用の鍵（判定を掛けるときだけ。公開してよい値）
       botSiteKey: botSiteKey(env),
-      plan: null,
       version: VERSION,
     });
   }
@@ -941,7 +940,7 @@ async function handleApi(request, env, url) {
   // 決済の確かめ（ウィジェットのあと。ログインの前でも来る）。商品を指定したら便 4 の道、無ければ便 3 の見本のプラン
   if (path === "/api/checkout/confirm" && method === "POST") {
     const body = await request.json().catch(() => ({}));
-    const r = body.product_id ? await sell.confirm(env, body) : await bin3.confirmCheckout(env, body);
+    const r = body.product_id ? await sell.confirm(env, body) : { ok: false, error: "product_id_required" };
     await logInbound(env, "checkout", { email: body.email || null, product_id: body.product_id || null, charge_id: body.charge_id || null, subscription_id: body.subscription_id || null, raw_keys: body.raw && typeof body.raw === "object" ? Object.keys(body.raw) : null }, { ok: r.ok, error: r.error || null, detail: r.detail || null }, r.ok ? 200 : 400);
     return json(r, r.ok ? 200 : 400);
   }
@@ -1032,26 +1031,9 @@ async function handleApi(request, env, url) {
     if (v.error) return json({ ok: false, error: v.error }, 401);
     const customer = await customerByEmail(env, v.email);
     if (!customer) return json({ ok: false, error: "not_registered" }, 404);
-    // B の便 7c-1：個別相談の枠とセミナーはまだ架空（本物は便 8f）。本番の置き場では、シアニン以外には「準備中」だけを返す
-    if (!(await learn.isAdminEmail(env, v.email))) {
-      if (method === "GET" && path === "/api/booking") return json({ ok: true, ready: false, note: "個別相談とセミナーの申し込みは準備中です" });
-      return json({ ok: false, error: "not_ready" }, 403);
-    }
-    if (path === "/api/booking" && method === "GET") return json({ ready: true, ...(await bin4.studentView(env, customer)) });
-    if (path === "/api/booking" && method === "POST") {
-      const r = await bin4.book(env, customer, await request.json().catch(() => ({})));
-      return json(r, r.ok ? 200 : 400);
-    }
-    if (path === "/api/booking/cancel" && method === "POST") {
-      const r = await bin4.cancel(env, customer, await request.json().catch(() => ({})));
-      return json(r, r.ok ? 200 : 400);
-    }
-    const sm = path.match(/^\/api\/seminars\/([a-z0-9-]+)\/register$/);
-    if (sm && method === "POST") {
-      const r = await bin4.registerSeminar(env, customer, sm[1]);
-      return json(r, r.ok ? 200 : 400);
-    }
-    return json({ ok: false, error: "not_found" }, 404);
+    // 個別相談の予約とセミナーの申し込みは準備中（ムダ 10 の 3 段目で架空の枠とセミナーを消した。シアニンにも同じ答え）
+    if (method === "GET" && path === "/api/booking") return json({ ok: true, ready: false, note: "個別相談とセミナーの申し込みは準備中です" });
+    return json({ ok: false, error: "not_ready" }, 403);
   }
 
   // 生徒：教材の下の質問と答え・自分のメモ（便 15）
@@ -1340,12 +1322,6 @@ async function handleApi(request, env, url) {
       }
       return json({ ok: false, error: "not_found" }, 404);
     }
-    if (path === "/api/admin/seminars" && method === "GET") return json(await bin4.seminarsAdmin(env));
-    const sr = path.match(/^\/api\/admin\/seminars\/([a-z0-9-]+)\/(remind|archive)$/);
-    if (sr && method === "POST") {
-      const r = sr[2] === "remind" ? await bin4.remindSeminars(env, { force_seminar_id: sr[1] }) : await bin4.sendArchive(env, sr[1], "admin");
-      return json({ ok: r.ok !== false, ...r }, r.ok === false ? 400 : 200);
-    }
     const em = path.match(/^\/api\/admin\/people\/([0-9a-f-]{36})\/email$/i);
     if (em && method === "POST") {
       const body = await request.json().catch(() => ({}));
@@ -1564,7 +1540,7 @@ const TOOLS = [
     name: "find_person",
     screen: "people",
     say: "人を名前かメールで探す",
-    description: "デモの顧客の台帳から人を探す。名前かメールの一部で探し、段階・流入元・最後の出来事の時刻を返す。query を空にすると最近動いた順に返す。0 件は count: 0 で返す（失敗とは別）。",
+    description: "顧客の台帳から人を探す。名前かメールの一部で探し、段階・流入元・最後の出来事の時刻を返す。query を空にすると最近動いた順に返す。0 件は count: 0 で返す（失敗とは別）。",
     inputSchema: {
       type: "object",
       properties: {
@@ -2366,14 +2342,6 @@ async function runTool(env, name, args) {
   if (name === "send_seminar_notice") return await seminars.sendNotice(env, args, "mcp");
   if ((name === "send_seminar_reminder" || name === "send_seminar_archive")) return { ok: false, error: "use_send_seminar_notice", note: "本番の置き場のセミナーは知らせ（set_seminar_notice）と send_seminar_notice で送る。この道具は架空の 2 回のためのもの" };
   if (name === "set_note_member") return await core.setNoteMember(env, { person_id: args.person_id, value: args.value }, "mcp");
-  if (name === "send_seminar_reminder") {
-    if (!/^[a-z0-9-]{1,40}$/.test(String(args.seminar_id || ""))) return { ok: false, error: "bad_seminar_id" };
-    return await bin4.remindSeminars(env, { force_seminar_id: args.seminar_id });
-  }
-  if (name === "send_seminar_archive") {
-    if (!/^[a-z0-9-]{1,40}$/.test(String(args.seminar_id || ""))) return { ok: false, error: "bad_seminar_id" };
-    return await bin4.sendArchive(env, args.seminar_id, "mcp");
-  }
   if (name === "list_approvals") return await guard.listApprovals(env, args);
   if (name === "get_approval") return await guard.getApproval(env, args);
   if (name === "list_permissions") return await guard.listPermissions(env);

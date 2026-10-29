@@ -28,39 +28,10 @@ function findId(obj, keys, depth = 0) {
   return null;
 }
 
-// product を渡すと B の便 4 の道（商品の台帳の 1 つを買う）。渡さなければ便 3 の見本のプラン
+// 商品の台帳の 1 つを買う（B の便 4）。商品が無いときは申し込めない（見本のプランはムダ 10 の 3 段目で消した）
 export async function startCheckout({ email, product, onStatus }) {
-  if (product) return await startProductCheckout({ email, product, onStatus });
-  const cfg = await fetch("/api/config").then((r) => r.json());
-  if (!cfg.univapayAppId || !cfg.plan) throw new Error("決済の設定がまだ入っていません");
-  await loadWidget();
-  const plan = cfg.plan;
-  return await new Promise((resolve, reject) => {
-    let subId = null, settled = false, raw = null;
-    const onEvt = (e) => { subId = subId || findId(e.detail, ["subscriptionId", "subscription_id", "id"]); };
-    window.addEventListener("univapay:subscription-created", onEvt);
-    const finish = async (result) => {
-      if (settled) return; settled = true;
-      window.removeEventListener("univapay:subscription-created", onEvt);
-      raw = result;
-      const id = findId(result, ["subscriptionId", "subscription_id"]) || subId;
-      onStatus && onStatus("決済を確かめています…");
-      const r = await api("/api/checkout/confirm", { method: "POST", body: { email, subscription_id: id, raw } });
-      r.ok ? resolve(r) : reject(new Error("決済を確かめられませんでした（" + (r.error || r.status) + "）"));
-    };
-    const checkout = window.UnivapayCheckout.create({
-      appId: cfg.univapayAppId,
-      checkout: "payment",
-      amount: plan.amount,
-      currency: plan.currency,
-      tokenType: "subscription",
-      subscriptionPeriod: plan.period,
-      metadata: { email, source: "lab" },
-      onSuccess: (result) => { finish(result).catch(reject); },
-      onError: (err) => { if (!settled) { settled = true; reject(new Error("決済が通りませんでした" + (err && err.message ? "：" + err.message : ""))); } },
-    });
-    checkout.open();
-  });
+  if (!product) throw new Error("申し込む商品が選ばれていません");
+  return await startProductCheckout({ email, product, onStatus });
 }
 
 const PREPARE_ERR = {
