@@ -127,7 +127,7 @@ const KEY_LABEL = {
   consult_single: "単発の個別相談", consult_followup: "フォローアップ相談", seminar_recording: "セミナー録画",
   workbook_ai_30day: "30日AIワークブック", textbook_60day: "60日教材", vip_status: "VIP",
   shiarabo_trial: "しあらぼ体験", note_membership: "note メンシプ", shiarabo_pilot: "先行で試す（アプリを先に開く生徒）",
-  shiarabo_monitor: "モニター", x_tester: "開発の試し", note_tester: "開発の試し", swipe_tester: "開発の試し",
+  shiarabo_monitor: "モニター", shiarabo_next_premium: "シアラボ NEXT プレミアム", shiarabo_next_standard: "シアラボ NEXT スタンダード", guest: "ゲスト（期限つきの試用）", x_tester: "開発の試し", note_tester: "開発の試し", swipe_tester: "開発の試し",
 };
 const entSrc = (r) => (r.source === "manual" ? "manual" : String(r.reason || "").startsWith("B で購入") ? "lab" : "payment");
 const ENT_SRC_LABEL = { payment: "支払い", manual: "手で付けた", lab: "マーケくんで購入" };
@@ -206,7 +206,7 @@ async function loadEntKeys() {
 }
 const ENT_ERR = {
   reason_required: "理由を書いてください", already_manual: "この権利はもう手で付けてあります。外してから付け直してください",
-  unknown_key: "その名前の権利はありません", expires_in_past: "期限が今より前です", bad_expires_at: "期限の日付が読めません",
+  unknown_key: "その名前の権利はありません", expires_in_past: "期限が今より前です", expires_required: "ゲストは期限を必ず入れてください", bad_expires_at: "期限の日付が読めません",
   not_manual: "支払いから付いた権利は、ここでは外せません", demo_store: "デモの置き場では付け外しできません", reason_too_long: "理由は 200 字までです",
 };
 // 「権利」のタブの中身（付ける窓と、手で付けた行の外す確かめを含む）
