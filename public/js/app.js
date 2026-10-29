@@ -104,9 +104,19 @@ async function main() {
     $("l-summary").textContent = l.summary || "";
     $("l-mindmap").innerHTML = l.mindmap_url ? `<a class="btn ghost small" href="${esc(l.mindmap_url)}" target="_blank" rel="noopener">マインドマップを開く</a>` : "";
     $("l-player").classList.toggle("hidden", !l.youtube_id && lib.source === "manabu");
-    $("l-player").innerHTML = l.youtube_id
-      ? `<iframe src="https://www.youtube-nocookie.com/embed/${esc(l.youtube_id)}" style="width:100%;height:100%;border:0;border-radius:10px" allow="fullscreen; picture-in-picture" allowfullscreen></iframe>`
-      : "この教材には動画がありません";
+    const frame = (start) => `<iframe src="https://www.youtube-nocookie.com/embed/${esc(l.youtube_id)}${start ? `?start=${start}&autoplay=1` : ""}" title="${esc(l.title)} の動画" style="width:100%;height:100%;border:0;border-radius:10px" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>`;
+    $("l-player").innerHTML = l.youtube_id ? frame(0) : "この教材には動画がありません";
+    // 会員サイトの管理（便 22）：目次（押すとその時間から再生）と資料
+    const secs = (t) => String(t).split(":").reduce((a, x) => a * 60 + (Number(x) || 0), 0);
+    const toc = Array.isArray(l.toc) ? l.toc : [], files = Array.isArray(l.files) ? l.files : [];
+    $("l-extra").innerHTML = (toc.length ? `<section class="card stack"><h3 style="margin:0">目次</h3><div class="stack" style="gap:4px">${toc.map((x) => l.youtube_id
+      ? `<button type="button" class="btn ghost small" style="justify-content:flex-start;text-align:left" data-at="${secs(x.at)}"><b style="font-variant-numeric:tabular-nums;margin-right:8px">${esc(x.at)}</b>${esc(x.label)}</button>`
+      : `<div><b style="font-variant-numeric:tabular-nums;margin-right:8px">${esc(x.at)}</b>${esc(x.label)}</div>`).join("")}</div></section>` : "")
+      + (files.length ? `<section class="card stack"><h3 style="margin:0">資料</h3>${files.map((f) => `<a class="btn ghost small" style="justify-content:flex-start" href="${esc(f.url)}" target="_blank" rel="noopener">${esc(f.label)}</a>`).join("")}</section>` : "");
+    $("l-extra").querySelectorAll("[data-at]").forEach((b) => b.addEventListener("click", () => {
+      $("l-player").innerHTML = frame(Number(b.dataset.at));
+      $("l-player").scrollIntoView({ block: "nearest" });
+    }));
     showTab("lesson");
     window.scrollTo(0, 0);
     loadLessonNotes(id);
@@ -128,6 +138,10 @@ async function main() {
     $("l-qa").classList.toggle("hidden", !n.ok);
     $("l-memo-box").classList.toggle("hidden", !n.ok);
     if (!n.ok) return;
+    // 便 22：質問を受け付けないコンテンツは、送る欄を出さない（前の質問と答えは見える）
+    const canAsk = !lessons[id] || lessons[id].can_ask !== false;
+    ["l-q", "l-ask"].forEach((k) => $(k).classList.toggle("hidden", !canAsk));
+    $("l-q-status").textContent = canAsk ? "" : "このコンテンツは質問を受け付けていません";
     $("l-questions").innerHTML = n.questions.map((q) => `<div class="qa">
       <div class="msg-me"><div class="bubble chat mine"><div class="pre">${esc(q.text)}</div></div><div class="meta">${fmtQa(q.at)}</div></div>
       ${q.answers.length ? q.answers.map((a) => `<div class="msg-them"><div class="bubble chat"><div class="pre">${esc(a.text)}</div></div><div class="meta">${fmtQa(a.at)}<span class="pill gray">シアニンの答え</span></div></div>`).join("")
