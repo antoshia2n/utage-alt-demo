@@ -9,11 +9,24 @@ const hashErr = new URLSearchParams(location.hash.slice(1)).get("error_descripti
 let deferredPrompt = null;
 window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); deferredPrompt = e; });
 
+// 5b：スマホの上の帯の右端まで送ったら、続きの印（右端を薄く）を外す
+function watchSideEnd() {
+  const side = document.querySelector(".side");
+  if (!side) return;
+  const mark = () => side.classList.toggle("at-end", side.scrollLeft + side.clientWidth >= side.scrollWidth - 4);
+  side.addEventListener("scroll", mark, { passive: true });
+  window.addEventListener("resize", mark);
+  mark();
+}
+
 function shellDemo() {
   let on = new URLSearchParams(location.search).get("demo") === "shell";
   try { if (on) sessionStorage.setItem("s2demo-shell", "1"); else on = sessionStorage.getItem("s2demo-shell") === "1"; } catch (_) {}
   return on;
 }
+
+// デモの間は、新しい見た目（student.css）も ?demo=shell のときだけ
+if (shellDemo()) document.body.classList.add("student");
 
 function fail(text) {
   $("loading").classList.add("hidden");
@@ -39,6 +52,7 @@ async function main() {
   }
   $("loading").classList.add("hidden");
   $("main").classList.remove("hidden");
+  watchSideEnd();
   $("who").textContent = r.me.name || r.me.email;
   $("logout").addEventListener("click", async (e) => { e.preventDefault(); await sb.auth.signOut(); location.replace("/"); });
   // 便 2（関門 5）：共通の外枠。デモの間は ?demo=shell で開いたときだけ（同じタブの中は覚えておく）
@@ -124,6 +138,8 @@ async function main() {
       const on = b.dataset.tab === name || (name === "lesson" && b.dataset.tab === "lessons");
       b.setAttribute("aria-selected", String(on));
       if (on) $("crumb").textContent = b.firstChild.textContent.trim();
+      // 5b：スマホの上の帯では、今いるタブを見える位置へ送る
+      if (on && window.matchMedia("(max-width: 860px)").matches) b.scrollIntoView({ block: "nearest", inline: "center" });
     });
   };
   document.querySelectorAll(".side [data-tab]").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));

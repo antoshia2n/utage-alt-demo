@@ -1,0 +1,32 @@
+/* 便 2（関門 4・2026-10-29）：生徒の画面（/app）だけ、ほかの会員用アプリと同じ見た目の値にそろえる（作り方の 1 枚 §5・5b）。
+   シアニン用の画面・ログインの画面は今の値のまま（style.css）。共通の外枠（右上）は --panel・--soft・--fg などを読む */
+body.student {
+  --bg: #f5f0eb; --surface: #ffffff; --ink: #1a1a1a; --muted: #6b6259; --line: #e6dfd6;
+  --accent: #b45309; --accent-ink: #ffffff; --accent-soft: #fef3c7;
+  --panel: #ffffff; --soft: #f7f3ee; --fg: #1a1a1a; --faint: #736a62; --field: #a39a90; --accent-bg: #fef3c7;
+  font-family: "Geist", "Noto Sans JP", system-ui, -apple-system, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  body.student {
+    --bg: #1b1916; --surface: #24211d; --ink: #f1ece6; --muted: #b0a69b; --line: #38332c;
+    --accent: #fbbf24; --accent-ink: #1b1916; --accent-soft: rgba(251, 191, 36, .14);
+    --panel: #24211d; --soft: #2b2823; --fg: #f1ece6; --faint: #a0968b; --field: #6f665c; --accent-bg: rgba(251, 191, 36, .14);
+  }
+}
+/* 欄の枠は 3:1 以上の濃さ（5b） */
+body.student input, body.student textarea, body.student select { border-color: var(--field); }
+/* いちばん小さい字でも 12px（5b） */
+body.student .side .grp { font-size: 12px; }
+body.student .side .soon, body.student .pill, body.student .badge { font-size: 12px; }
+@media (max-width: 860px) {
+  /* スマホの上の帯：押す所は高さ 44px 以上。全部入らないときは右端を薄くして続きがあると示す（5b） */
+  body.student .side { scroll-padding-inline: 16px; -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); }
+  body.student .side.at-end { -webkit-mask-image: none; mask-image: none; }
+  body.student .side button.it { min-height: 44px; }
+  body.student .topnav { min-height: 52px; }
+}
+/* 押す所（スマホ）：ボタン・小さいボタンも 44px（見た目はそのまま、押せる範囲を広げる） */
+@media (max-width: 860px) and (pointer: coarse), (max-width: 480px) {
+  body.student .btn, body.student .btn.small, body.student .rtabs [role=tab], body.student label.btn { min-height: 44px; }
+  body.student #back { display: inline-block; padding: 12px 0; }
+}
