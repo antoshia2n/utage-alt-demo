@@ -95,8 +95,13 @@ async function openConsole() {
   // 同じ 30 秒にすると、少しの遅れで 1 回飛ばして 60 秒ごとになる（10/29 本番で 82 秒あいたのを見た）
   setInterval(() => roomsTick(false), 30000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) roomsTick(true); });
+  // ムダ 3（2026-10-29）：検索欄は上の帯の 1 つだけ。顧客管理を開いているときは、打つたびに手元の一覧から絞る。
+  // 一覧が 2000 人に届いているとき（手元に全員がいない）だけ、今までどおりサーバーで探す
   let t;
-  $("q").addEventListener("input", () => { clearTimeout(t); t = setTimeout(search, 250); });
+  $("gq").addEventListener("input", () => {
+    if ($("view-people").style.display === "none" || !peopleLoaded) return;
+    if (custFull) { clearTimeout(t); t = setTimeout(search, 250); } else renderCustomers();
+  });
   $("src").addEventListener("change", search);
 }
 
@@ -176,17 +181,28 @@ function custList() {
   setCrumbSub("");
 }
 
+let custFull = false;
+const custQuery = () => $("gq").value.trim();
 async function search() {
-  const q = encodeURIComponent($("q").value.trim());
-  const r = await api(`/api/admin/people?q=${q}&source=${$("src").value}&limit=2000`, { token });
+  const text = custQuery();
+  const server = custFull && !!text;
+  const r = await api(`/api/admin/people?q=${server ? encodeURIComponent(text) : ""}&source=${$("src").value}&limit=2000`, { token });
   if (!r.ok) { $("count").textContent = "読めませんでした（" + (r.error || r.status) + "）"; $("people").innerHTML = ""; return; }
   custRows = r.people;
+  if (!server) custFull = r.people.length >= 2000;
   renderCustomers();
+}
+// 手元で探す：名前（しあらぼ管理の呼び名）・マーケくんの中の名前・メールのどれかに含む人（サーバーで探すときと同じ範囲）
+function textMatch(p, s) {
+  if (!s || custFull) return true;
+  const k = s.toLowerCase();
+  return [p.name, p.profile_name, p.student_name, p.email].some((v) => String(v || "").toLowerCase().includes(k));
 }
 
 function renderCustomers() {
   const mem = $("mem").value;
-  let rows = custRows.filter((p) => mem === "" || (MEM_FILTER[mem] ? MEM_FILTER[mem](p) : true));
+  const text = custQuery();
+  let rows = custRows.filter((p) => (mem === "" || (MEM_FILTER[mem] ? MEM_FILTER[mem](p) : true)) && textMatch(p, text));
   const { key, dir } = custSort;
   const val = (p) => key === "stage" ? stageText(p) : key === "source" ? (SOURCE_LABEL[p.source] || p.source || "") : key === "until" ? (entUntil(p) || "9999") : (p[key] || "");
   rows = rows.slice().sort((a, b) => (val(a) > val(b) ? 1 : val(a) < val(b) ? -1 : 0) * dir);
@@ -467,11 +483,10 @@ function setupGroups() {
 function setupTopbar() {
   $("gsearch").addEventListener("submit", (ev) => {
     ev.preventDefault();
-    $("q").value = $("gq").value.trim();
-    // 顧客管理を初めて開くときは、開いたところで今の言葉で読む（2 回読まない）
+    // 顧客管理を初めて開くときは、開いたところで読んで絞る（2 回読まない）
     const loaded = peopleLoaded;
     openView("people");
-    if (loaded) search();
+    if (loaded) { if (custFull) search(); else renderCustomers(); }
   });
   $("chip-ai").addEventListener("click", () => openView("ai"));
   $("chip-rooms").addEventListener("click", () => { $("only-unreplied").checked = true; openView("rooms"); });
