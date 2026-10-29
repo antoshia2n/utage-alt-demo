@@ -9,6 +9,12 @@ const hashErr = new URLSearchParams(location.hash.slice(1)).get("error_descripti
 let deferredPrompt = null;
 window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); deferredPrompt = e; });
 
+function shellDemo() {
+  let on = new URLSearchParams(location.search).get("demo") === "shell";
+  try { if (on) sessionStorage.setItem("s2demo-shell", "1"); else on = sessionStorage.getItem("s2demo-shell") === "1"; } catch (_) {}
+  return on;
+}
+
 function fail(text) {
   $("loading").classList.add("hidden");
   $("err").textContent = text;
@@ -35,6 +41,16 @@ async function main() {
   $("main").classList.remove("hidden");
   $("who").textContent = r.me.name || r.me.email;
   $("logout").addEventListener("click", async (e) => { e.preventDefault(); await sb.auth.signOut(); location.replace("/"); });
+  // 便 2（関門 5）：共通の外枠。デモの間は ?demo=shell で開いたときだけ（同じタブの中は覚えておく）
+  if (shellDemo()) {
+    try {
+      const { mountStudentShell } = await import("/js/student-shell.js");
+      mountStudentShell($("shell-slot"), { me: r, sb, session });
+      $("shell-slot").classList.remove("hidden");
+      $("who-line").classList.add("hidden");
+      $("logout").classList.add("hidden");
+    } catch (e) { console.warn("shell", e); }
+  }
   // 関門 1（2026-10-29）：会員でない人（無料の登録・会員でない買い手）は「ご契約」だけ。ほかのタブは出さない
   if (r.access === "contract") {
     document.querySelectorAll(".side [data-tab]").forEach((b) => b.classList.toggle("hidden", b.dataset.tab !== "contract"));

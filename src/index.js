@@ -72,7 +72,7 @@ import { makeMypage } from "./mypage.js";
 import { makeNews, newsQuery } from "./news.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.52.2-bhookbg";
+const VERSION = "0.53.0-bshell1";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -798,8 +798,15 @@ function snippet(e) {
 
 // 関門 1：生徒の画面で開けるのは full（会員の 4 つ・先行で試す・ゲスト・シアニン）か contract（ご契約だけ）
 async function studentAccess(env, customer, email) {
-  const ent = await sell.entitlement(env, customer.id);
-  return { ent, access: appAccess(ent, await learn.isAdminEmail(env, email)) };
+  const [ent, admin] = await Promise.all([sell.entitlement(env, customer.id), learn.isAdminEmail(env, email)]);
+  return { ent, admin, access: appAccess(ent, admin) };
+}
+// 便 2（関門 5）：右上の「アプリ一覧」に出す、この人が開けるアプリの名前（権利 × 開くものの表 member_access）。共通の外枠の門番の答えと同じ形
+async function openAppTargets(env, ent) {
+  const keys = (ent && ent.grants) || [];
+  if (!env.B_STORE || !keys.length) return [];
+  const rows = await db(env, "GET", `member_access?select=target&entitlement_key=in.(${keys.map(encodeURIComponent).join(",")})&limit=1000`);
+  return [...new Set(rows.map((r) => r.target))];
 }
 const NOT_MEMBER = { ok: false, error: "not_member", note: "この画面はしあらぼの会員向けです" };
 
@@ -971,7 +978,7 @@ async function handleApi(request, env, url) {
     if (url.searchParams.get("fresh") === "1") await addEvent(env, customer.id, "login", {}, "site");
     const sa = await studentAccess(env, customer, v.email);
     if (sa.access !== "full") {
-      return json({ ok: true, access: "contract", me: { name: customer.name, email: customer.email, source: customer.source },
+      return json({ ok: true, access: "contract", admin: false, apps: [], me: { name: customer.name, email: customer.email, source: customer.source },
         lessons: [], announcements: [], viewed: [], library: { source: "manabu", member: false, lesson_count: 0, programs: [] },
         room_unread: 0, entitlement: sa.ent, community: null, community_url: null, referral: null });
     }
@@ -983,7 +990,7 @@ async function handleApi(request, env, url) {
     const ent = sa.ent;
     const community = await communityFor(env, ent, v.email);
     return json({
-      ok: true, access: "full",
+      ok: true, access: "full", admin: sa.admin, apps: sa.admin ? [] : await openAppTargets(env, ent),
       me: { name: customer.name, email: customer.email, source: customer.source },
       lessons: lib.flat, announcements, viewed: viewedIds,
       library: { source: lib.source, member: lib.member, lesson_count: lib.lesson_count, programs: lib.programs },
