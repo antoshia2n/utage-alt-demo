@@ -81,7 +81,6 @@ body { font-family: "Geist", "Noto Sans JP", "Hiragino Sans", "Hiragino Kaku Got
 .side { grid-area: side; top: 53px; height: calc(100vh - 53px); padding-top: 16px; }
 .side .grp, .side .grp-box, .side .grp-solo { display: none; }
 .side .grp-box.on, .side .grp-solo.on { display: flex; flex-direction: column; gap: 2px; padding-top: 0; }
-.side .grp-box.closed .grp-items { display: flex; }
 .side-title { font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: .1em; padding: 0 10px 8px; }
 .top-logo { display: inline-flex; align-items: center; gap: 8px; font-weight: 800; letter-spacing: -.01em; color: var(--ink); white-space: nowrap; margin-right: 8px; }
 .top-logo img { flex: none; }
