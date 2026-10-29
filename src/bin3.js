@@ -9,7 +9,6 @@
 
 import { mailHtml, mailText } from "./mailhtml.js";
 
-export const PLAN = { name: "言語化ラボ 月額（テスト）", amount: 3000, currency: "jpy", period: "monthly" };
 
 const UNIVAPAY_API = "https://api.univapay.com";
 const ACTIVE = new Set(["subscription_started", "subscription_payment"]);
@@ -89,7 +88,7 @@ export function makeBin3(h) {
     return {
       member: ACTIVE.has(last.type),
       status: ACTIVE.has(last.type) ? "active" : last.type.replace("subscription_", ""),
-      plan: PLAN.name,
+      plan: null,
       subscription_id: sub,
       since,
       last_event_at: last.occurred_at,
@@ -118,34 +117,6 @@ export function makeBin3(h) {
   // ---------- 決済の確かめ（画面から） ----------
   // ウィジェットが UnivaPay で定期課金を作ったあと、画面がその番号を送ってくる。
   // 画面の言うことは信じず、秘密の鍵で UnivaPay に聞き直してから台帳に積む。
-  async function confirmCheckout(env, { email, subscription_id, raw }) {
-    const st = univapayState(env);
-    if (!st.configured || !st.store_id) return { ok: false, error: "univapay_not_configured" };
-    const mail = String(email || "").trim().toLowerCase();
-    const sid = String(subscription_id || "").trim();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) return { ok: false, error: "bad_email" };
-    if (!/^[0-9a-f-]{36}$/i.test(sid)) return { ok: false, error: "bad_subscription_id", raw_keys: raw && typeof raw === "object" ? Object.keys(raw) : null };
-    const [customer] = await db(env, "GET", `customers?select=id,email,name&email=eq.${encodeURIComponent(mail)}`);
-    if (!customer) return { ok: false, error: "not_registered" };
-    const already = await customerBySubscription(env, sid);
-    if (already && already !== customer.id) return { ok: false, error: "subscription_taken" };
-    if (already === customer.id) return { ok: true, already: true, entitlement: await entitlement(env, customer.id) };
-    const r = await univapay(env, "GET", `/stores/${st.store_id}/subscriptions/${sid}`);
-    if (!r.ok) return { ok: false, error: "univapay_lookup_failed", status: r.status };
-    const s = r.data || {};
-    if (["canceled", "suspended", "unpaid"].includes(s.status)) return { ok: false, error: "subscription_not_active", status: s.status };
-    await addEvent(env, customer.id, "subscription_started", {
-      subscription_id: sid, status: s.status || null, amount: s.amount ?? PLAN.amount,
-      currency: s.currency || PLAN.currency, period: s.period || PLAN.period, mode: s.mode || st.mode, via: "checkout",
-    }, "site");
-    const mailResult = await sendMail(env, customer, {
-      kind: "purchase",
-      subject: "【言語化ラボ・デモ】ご入会ありがとうございます",
-      text: `${customer.name || ""} さん\n\n${PLAN.name}（月 ${PLAN.amount.toLocaleString()} 円・テスト決済）のお申し込みを受け付けました。\nログインすると教材と添削ルームが使えます。\n\nhttps://utage-alt-demo.gameister1.workers.dev/app`,
-    });
-    return { ok: true, already: false, entitlement: await entitlement(env, customer.id), mail: mailResult.result };
-  }
-
   // ---------- UnivaPay の知らせ（Webhook） ----------
   async function handleWebhook(request, env) {
     const raw = await request.text();
@@ -326,7 +297,7 @@ export function makeBin3(h) {
   }
 
   return {
-    PLAN, univapayState, mailState, webhookAuth, entitlement, entitlementMap,
-    confirmCheckout, handleWebhook, sendMail, sendMailTo, handleUnsubscribe, remindUnread, mailAllowed,
+    univapayState, mailState, webhookAuth, entitlement, entitlementMap,
+    handleWebhook, sendMail, sendMailTo, handleUnsubscribe, remindUnread, mailAllowed,
   };
 }

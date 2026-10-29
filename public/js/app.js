@@ -74,7 +74,7 @@ async function main() {
 
   const viewed = new Set(r.viewed);
   const lib = r.library || { source: "demo", member: true, programs: [] };
-  // 便 6a：学ぶくんの本物の教材（プログラム → コース → 教材）。デモの置き場では今までどおり仮の教材の一覧
+  // 便 6a：学ぶくんの本物の教材（プログラム → コース → 教材）
   const lessons = {};
   const pill = (id) => viewed.has(id) ? ' <span class="pill">視聴済み</span>' : "";
   const lessonRow = (l, i) => {
@@ -379,17 +379,11 @@ function setupMember(ent, email) {
   box.innerHTML = ownedHtml + `<div id="m-shop"></div><div id="m-msg" class="note" style="margin-top:8px"></div>`;
   fetch("/api/config").then((x) => x.json()).then(async (cfg) => {
     if (!cfg.univapayAppId) { if (!owned.length) $("m-msg").textContent = "決済の設定がまだ入っていません"; return; }
-    if (cfg.plan) {
-      // デモの置き場：便 3 の見本のプラン 1 つ
-      if (ent && ent.member) return;
-      $("m-shop").innerHTML = `<div class="member-row"><div><b>会員になると添削が受けられます</b><div class="note">${esc(cfg.plan.name)}：月 ${cfg.plan.amount.toLocaleString()} 円（デモなので請求はされません）</div></div><button class="btn" data-buy="" type="button">入会する（テスト）</button></div>`;
-    } else {
-      const r = await fetch("/api/products").then((x) => x.json()).catch(() => ({ products: [] }));
-      const { priceLabel } = await import("/js/pay.js");
-      const list = (r.products || []).filter((p) => !owned.some((o) => o.product_id === p.id && o.kind === "subscription"));
-      if (!list.length) { if (!owned.length) $("m-msg").textContent = "いまお申し込みを受け付けている商品はありません"; return; }
-      $("m-shop").innerHTML = list.map((p) => `<div class="member-row"><div><b>${esc(p.name)}</b><div class="note">${esc(priceLabel(p))}${p.description ? "・" + esc(p.description) : ""}</div></div><button class="btn" data-buy="${esc(p.id)}" type="button">申し込む</button></div>`).join("");
-    }
+    const r = await fetch("/api/products").then((x) => x.json()).catch(() => ({ products: [] }));
+    const { priceLabel } = await import("/js/pay.js");
+    const list = (r.products || []).filter((p) => !owned.some((o) => o.product_id === p.id && o.kind === "subscription"));
+    if (!list.length) { if (!owned.length) $("m-msg").textContent = "いまお申し込みを受け付けている商品はありません"; return; }
+    $("m-shop").innerHTML = list.map((p) => `<div class="member-row"><div><b>${esc(p.name)}</b><div class="note">${esc(priceLabel(p))}${p.description ? "・" + esc(p.description) : ""}</div></div><button class="btn" data-buy="${esc(p.id)}" type="button">申し込む</button></div>`).join("");
     box.querySelectorAll("[data-buy]").forEach((btn) => btn.addEventListener("click", async () => {
       box.querySelectorAll("[data-buy]").forEach((x) => { x.disabled = true; });
       try {

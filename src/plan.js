@@ -9,7 +9,6 @@
 //   配信とステップは「そのシナリオのもの」、ほかのデータ（商品・ページ・フォーム・セミナー・予約など）は「借りているもの」。
 //   しまえないのは、そのシナリオだけに入っていて動いている配信・ステップがあるときだけ（借りているデータは止めない）。
 
-import { SEMINARS } from "./bin4.js";
 import { MEMBER_KEYS } from "./bridge.js";
 import { isTestPurchase } from "./purchase.js";
 
@@ -106,9 +105,8 @@ export function buildParts({ products = [], steps = [], broadcasts = [], seminar
     add("broadcast", b.id, "warm", b.subject || "（件名なし）", st, { filter: b.filter || {} });
   }
   for (const s of seminars) add("seminar", s.id, "warm", s.title, new Date(s.starts_at) < now ? "stopped" : "running", { starts_at: s.starts_at, form_slug: s.form_slug || null, thanks_page_slug: s.thanks_page_slug || null });
-  // 便 13b：本番の置き場は予約の種類ごとに 1 箱（bookingTypes が null のデモの置き場だけ架空の 1 箱）
-  if (bookingTypes === null) add("booking", "consult", "consult", "個別相談（30 分）", "running");
-  else for (const t of bookingTypes) add("booking", t.id, "consult", t.title, t.active ? "running" : "stopped", { slug: t.slug, thanks_page_slug: t.thanks_page_slug || null });
+  // 便 13b：予約の種類ごとに 1 箱（読めなかったときは箱を出さない）
+  for (const t of bookingTypes || []) add("booking", t.id, "consult", t.title, t.active ? "running" : "stopped", { slug: t.slug, thanks_page_slug: t.thanks_page_slug || null });
   const groups = {};
   for (const p of products) { const g = p.utage_product_id || p.id; (groups[g] = groups[g] || []).push(p.name); }
   for (const p of products) {
@@ -362,8 +360,8 @@ export function makePlan(h) {
     const owned = new Set(owners.filter((o) => o.part_type === "product").map((o) => o.part_id));
     const shownProducts = products.filter((p) => p.active || owned.has(p.id));
     const parts = buildParts({
-      // 便 13：本番の置き場は表のセミナー（架空の 2 回は出さない）
-      products: shownProducts, steps, broadcasts, seminars: seminarsMod ? await seminarsMod.forPlan(env).catch(() => []) : SEMINARS,
+      // 便 13：表のセミナー
+      products: shownProducts, steps, broadcasts, seminars: seminarsMod ? await seminarsMod.forPlan(env).catch(() => []) : [],
       courseCount: new Set(lessons.map((l) => l.lesson_id)).size, community: community.url, forms, pages: lp.pages, pageParts: lp.partsOf,
       bookingTypes: bookingMod ? await bookingMod.forPlan(env) : null,
     });
