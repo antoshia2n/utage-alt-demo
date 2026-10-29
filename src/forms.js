@@ -68,7 +68,6 @@ export function makeForms(h) {
   const now = () => new Date().toISOString();
 
   async function listFields(env, { include_archived } = {}) {
-    if (!env.B_STORE) return { ok: true, store: "demo", count: 0, fields: [], types: FIELD_TYPES };
     let q = "b_fields?select=*&order=sort.asc,created_at.asc";
     if (!include_archived) q += "&archived_at=is.null";
     const fields = await db(env, "GET", q);
@@ -76,7 +75,6 @@ export function makeForms(h) {
   }
 
   async function setField(env, args = {}, by = "admin") {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const key = String(args.key || "").trim();
     if (!KEY_RE.test(key)) return { ok: false, error: "bad_key", note: "英小文字で始まり、英小文字・数字・下線の 2〜31 字" };
     const [cur] = await db(env, "GET", `b_fields?select=*&key=eq.${key}`);
@@ -128,7 +126,6 @@ export function makeForms(h) {
   }
 
   async function listForms(env, { origin = "" } = {}) {
-    if (!env.B_STORE) return { ok: true, store: "demo", count: 0, forms: [] };
     const forms = await db(env, "GET", "b_forms?select=*&order=created_at.desc");
     const ans = await db(env, "GET", "b_answers?select=form_id,submitted_at&limit=20000");
     for (const f of forms) {
@@ -141,7 +138,6 @@ export function makeForms(h) {
   }
 
   async function setForm(env, args = {}, by = "admin") {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const fm = await fieldMap(env);
     let cur = null;
     if (args.id) {
@@ -183,7 +179,6 @@ export function makeForms(h) {
 
   // 公開の面：開いているフォームの中身（項目の名前・型・選択肢・必須）。人のことは何も返さない
   async function publicForm(env, slug) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const s = String(slug || "").toLowerCase();
     if (!SLUG_RE.test(s)) return { ok: false, error: "not_found" };
     const [f] = await db(env, "GET", `b_forms?select=id,slug,title,intro,thanks,items,ask_name,active&slug=eq.${s}`);
@@ -238,7 +233,6 @@ export function makeForms(h) {
 
   // 回答の一覧（フォームごと、または人ごと）。答えは項目の名前つきで返す
   async function listAnswers(env, { form_id, person_id, limit } = {}) {
-    if (!env.B_STORE) return { ok: true, store: "demo", count: 0, answers: [] };
     const lim = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 500);
     let q = `b_answers?select=*&order=submitted_at.desc&limit=${lim}`;
     if (form_id) { if (!UUID_RE.test(String(form_id))) return { ok: false, error: "bad_form_id" }; q += `&form_id=eq.${form_id}`; }
@@ -259,7 +253,6 @@ export function makeForms(h) {
 
   // 人の 1 枚：項目の最新の値（項目の並び順）と、回答の履歴
   async function personValues(env, person_id) {
-    if (!env.B_STORE) return { ok: true, store: "demo", values: [], answers: [] };
     if (!UUID_RE.test(String(person_id || ""))) return { ok: false, error: "bad_person_id" };
     const rows = await db(env, "GET", `b_person_values?select=key,value,updated_at&customer_id=eq.${person_id}`);
     const fields = (await db(env, "GET", "b_fields?select=*&order=sort.asc,created_at.asc"));

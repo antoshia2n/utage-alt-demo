@@ -1,6 +1,5 @@
 // B の便 7c-1：メールの送り方の設定（送り元・表示名・返信先・誰に送るか）を表 b_settings に置く。
 // 運用で変える値を Cloudflare の値（環境変数）に置かない（予防の行）。変えるのはシアニン用の画面か、承認が要る AI の道具。
-// デモの置き場（B_STORE が無い）では今までどおり Cloudflare の値 MAIL_FROM・MAIL_OPEN を読む。
 //
 // 誰に送るか（mail_scope）は 3 段：
 //   test  … テスト宛て（b_admins のメールと + 付きの別名・MAIL_ALLOW）だけ。既定
@@ -32,22 +31,18 @@ export function makeMailCfg(h) {
   async function get(env) {
     if (cache.has(env)) return cache.get(env);
     let cfg;
-    if (!env.B_STORE) {
-      cfg = { from: env.MAIL_FROM || "", from_name: "", reply_to: "", scope: env.MAIL_OPEN === "1" ? "all" : "test", store: "demo", updated_at: null, updated_by: null };
-    } else {
-      const rows = await db(env, "GET", `settings?select=key,value,updated_at,updated_by&key=in.(${MAIL_KEYS.join(",")})`);
-      const m = Object.fromEntries(rows.map((r) => [r.key, r]));
-      const v = (k) => (m[k] ? String(m[k].value || "") : "");
-      const last = rows.slice().sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)))[0] || null;
-      cfg = {
-        from: v("mail_from") || env.MAIL_FROM || "",
-        from_name: v("mail_from_name"),
-        reply_to: v("mail_reply_to"),
-        scope: MAIL_SCOPES.includes(v("mail_scope")) ? v("mail_scope") : "test",
-        store: "production",
-        updated_at: last ? last.updated_at : null, updated_by: last ? last.updated_by : null,
-      };
-    }
+    const rows = await db(env, "GET", `settings?select=key,value,updated_at,updated_by&key=in.(${MAIL_KEYS.join(",")})`);
+    const m = Object.fromEntries(rows.map((r) => [r.key, r]));
+    const v = (k) => (m[k] ? String(m[k].value || "") : "");
+    const last = rows.slice().sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)))[0] || null;
+    cfg = {
+      from: v("mail_from") || env.MAIL_FROM || "",
+      from_name: v("mail_from_name"),
+      reply_to: v("mail_reply_to"),
+      scope: MAIL_SCOPES.includes(v("mail_scope")) ? v("mail_scope") : "test",
+      store: "production",
+      updated_at: last ? last.updated_at : null, updated_by: last ? last.updated_by : null,
+    };
     cache.set(env, cfg);
     return cfg;
   }
@@ -73,7 +68,6 @@ export function makeMailCfg(h) {
 
   // 差し替える。渡した欄だけ変える。actor は画面ならメール、AI なら mcp
   async function set(env, patch = {}, actor) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const rows = [];
     const now = new Date().toISOString();
     const by = String(actor || "").slice(0, 200);
@@ -121,12 +115,6 @@ export function makeMailCfg(h) {
 
   // メールの末尾（特定電子メール法の表記と配信停止）。テキストと HTML の 2 つ
   function footer(env, cfg, unsubUrl) {
-    if (!env.B_STORE) {
-      return {
-        text: `\n\n――――\n言語化ラボ（デモ）— 架空の事業者です。このメールはデモの試しで送っています。\n配信を止める：${unsubUrl}`,
-        html: "言語化ラボ（デモ）— 架空の事業者です。このメールはデモの試しで送っています。<br><a href=\"" + unsubUrl + "\">配信を止める</a>",
-      };
-    }
     const origin = env.PUBLIC_ORIGIN || "https://utage-alt-demo.gameister1.workers.dev";
     const contact = cfg.reply_to || ORG.contact;
     const law = `${origin}/legal/tokushoho.html`;

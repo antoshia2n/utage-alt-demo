@@ -41,7 +41,6 @@ export function applyNames(people, byEmail) {
 export function makeStudents({ db }) {
   // 本番の置き場だけ（デモの置き場に生徒の表は無い）。読めなければ空で返し、一覧は今までどおり出す
   async function load(env) {
-    if (!env.B_STORE) return indexStudents([]);
     try {
       const rows = await db(env, "GET", "shr_students?select=name,contact&archived=eq.false&or=(deleted.is.null,deleted.eq.false)&limit=1000");
       return indexStudents(rows);

@@ -147,7 +147,6 @@ export function makePages(h) {
 
   // ---------- 依頼 ----------
   async function createRequest(env, args = {}, by = "admin") {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const kind = args.page_id ? "fix" : "new";
     const row = { kind, created_by: String(by).slice(0, 200) };
     let page = null;
@@ -204,7 +203,6 @@ export function makePages(h) {
   }
 
   async function getRequest(env, { request_id } = {}) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     if (!/^\d{1,12}$/.test(String(request_id || ""))) return { ok: false, error: "bad_request_id" };
     const [r] = await db(env, "GET", `b_page_requests?select=*&id=eq.${request_id}`);
     if (!r) return { ok: true, found: false };
@@ -219,7 +217,6 @@ export function makePages(h) {
   }
 
   async function listRequests(env, { page_id, open } = {}) {
-    if (!env.B_STORE) return { ok: true, store: "demo", count: 0, requests: [] };
     let q = "b_page_requests?select=id,kind,page_id,purpose,title,comment,base_version,done_version,done_page_id,created_at,created_by&order=id.desc&limit=100";
     if (page_id) { if (!UUID_RE.test(String(page_id))) return { ok: false, error: "bad_page_id" }; q += `&or=(page_id.eq.${page_id},done_page_id.eq.${page_id})`; }
     if (open === true || open === "true") q += "&done_version=is.null";
@@ -229,7 +226,6 @@ export function makePages(h) {
 
   // ---------- 下書き ----------
   async function saveDraft(env, args = {}, by = "mcp") {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const html = String(args.html || "");
     if (!html.trim()) return { ok: false, error: "need_html" };
     if (html.length > HTML_MAX) return { ok: false, error: "too_long", max: HTML_MAX };
@@ -287,7 +283,6 @@ export function makePages(h) {
   }
 
   async function listPages(env) {
-    if (!env.B_STORE) return { ok: true, store: "demo", count: 0, pages: [] };
     const since = new Date(Date.now() - 7 * 864e5).toISOString();
     const [pages, hits, open] = await Promise.all([
       // マイページ（目的 mypage）は会員サイト › マイページで作るので、ここの一覧には出さない
@@ -329,7 +324,6 @@ export function makePages(h) {
   }
 
   async function getPage(env, { page_id, slug, version: v, include_html = true } = {}, { forAdmin = false } = {}) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const page = await findPage(env, { page_id, slug });
     if (!page) return { ok: true, found: false };
     const versions = await db(env, "GET", `b_page_versions?select=version,note,request_id,made_by,created_at,parts&page_id=eq.${page.id}&order=version.desc&limit=100`);
@@ -352,7 +346,6 @@ export function makePages(h) {
 
   // ---------- 公開 ----------
   async function publish(env, { page_id, version: v, stop = false } = {}, by = "admin") {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const page = await pageById(env, page_id);
     if (!page) return { ok: false, error: "page_not_found" };
     const before = { status: page.status, published_version: page.published_version };
@@ -371,7 +364,6 @@ export function makePages(h) {
   // ---------- 経路（全体） ----------
   // 経路ごとの見た人（ページ全体）・その経路で初めて登録した人・その人のうち買った人
   async function routeStats(env, { days = 30 } = {}) {
-    if (!env.B_STORE) return { ok: true, store: "demo", routes: [] };
     const d = Math.min(Math.max(parseInt(days, 10) || 30, 1), 365);
     const since = new Date(Date.now() - d * 864e5).toISOString();
     const [hits, regs, buys] = await Promise.all([

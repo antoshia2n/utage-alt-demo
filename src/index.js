@@ -72,7 +72,7 @@ import { makeMypage } from "./mypage.js";
 import { makeNews, newsQuery } from "./news.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.54.2-bmuda10b2";
+const VERSION = "0.54.3-bmuda10b3";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -243,7 +243,6 @@ function withStore(env) {
     SUPABASE_URL: env.B_SUPABASE_URL,
     SUPABASE_PUBLISHABLE_KEY: env.B_SUPABASE_PUBLISHABLE_KEY,
     SUPABASE_SECRET_KEY: env.B_SUPABASE_SECRET_KEY,
-    B_STORE: true,
   });
 }
 
@@ -1256,7 +1255,7 @@ async function handleApi(request, env, url) {
       else if (path === "/api/admin/news" && method === "PUT") r = await news.save(env, await request.json().catch(() => ({})), by);
       else if (path === "/api/admin/news/status" && method === "PUT") r = await news.setStatus(env, await request.json().catch(() => ({})), by);
       else return json({ ok: false, error: "not_found" }, 404);
-      return json(r, r.ok === false ? (r.error === "demo_store" ? 503 : 400) : 200);
+      return json(r, r.ok === false ? 400 : 200);
     }
     // マイページの作成画面（会員サイト › マイページ）
     if (path.startsWith("/api/admin/mypage")) {
@@ -1270,7 +1269,7 @@ async function handleApi(request, env, url) {
       else if (path === "/api/admin/mypage/to-html" && method === "POST") r = await mypage.toHtml(env, await request.json().catch(() => ({})), by);
       else if (path === "/api/admin/mypage/look" && method === "PUT") r = await mypage.saveSiteLook(env, await request.json().catch(() => ({})), by);
       else return json({ ok: false, error: "not_found" }, 404);
-      return json(r, r.ok === false ? (r.error === "demo_store" ? 503 : 400) : 200);
+      return json(r, r.ok === false ? 400 : 200);
     }
     // 会員サイトの管理（2026-10-29）：サイト › カリキュラム › プログラム › コース › コンテンツ
     if (path.startsWith("/api/admin/site/")) {
@@ -1291,7 +1290,7 @@ async function handleApi(request, env, url) {
       else if (method === "PUT" && sub === "content-status") r = await site.setStatus(env, body, by);
       else if (method === "PUT" && sub === "content-from-videos") r = await site.fromVideos(env, body, by);
       else return json({ ok: false, error: "not_found" }, 404);
-      return json(r, r.ok === false ? (r.error === "demo_store" ? 503 : 400) : 200);
+      return json(r, r.ok === false ? 400 : 200);
     }
     if (path === "/api/admin/stats") return json(await core.stats(env));
     if (path === "/api/admin/setup" && method === "GET") {

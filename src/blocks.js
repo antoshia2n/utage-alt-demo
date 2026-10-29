@@ -52,7 +52,6 @@ export function makeBlocks(h) {
 
   // ---------- テンプレ ----------
   async function listTemplates(env, { kind = "", include_archived = false } = {}) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     let q = "b_templates?select=id,name,kind,version,note,body,updated_at,updated_by,archived_at&order=updated_at.desc&limit=200";
     if (kind === "block" || kind === "campaign") q += `&kind=eq.${kind}`;
     if (!(include_archived === true || include_archived === "true")) q += "&archived_at=is.null";
@@ -69,7 +68,6 @@ export function makeBlocks(h) {
 
   // 企画のブロック 1 つ（kind block）か、企画まるごと（kind campaign）をテンプレにする。同じ名前があれば版を 1 つ上げて中身を差し替える
   async function saveTemplate(env, { name, kind = "block", campaign_id, block_name = "", note = "" } = {}, actor) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const n = String(name || "").trim();
     if (!n || n.length > NAME_MAX) return { ok: false, error: "bad_name", max: NAME_MAX };
     if (kind !== "block" && kind !== "campaign") return { ok: false, error: "bad_kind", kinds: ["block", "campaign"] };
@@ -121,7 +119,6 @@ export function makeBlocks(h) {
 
   // テンプレから下書きを作る。campaign_id（いまある企画）か campaign_title（新しく作る）。元に開催日があれば starts_on が要る
   async function useTemplate(env, { template_id, campaign_id = null, campaign_title = "", starts_on = null, block_name = "" } = {}, actor) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     if (!UUID_RE.test(String(template_id || ""))) return { ok: false, error: "bad_template_id" };
     const [t] = await db(env, "GET", `b_templates?select=*&id=eq.${template_id}`);
     if (!t || t.archived_at) return { ok: false, error: "template_not_found" };
@@ -138,7 +135,6 @@ export function makeBlocks(h) {
 
   // 企画を下書きで複製する。新しい企画名と開催日だけを入れる。元に開催日があれば starts_on が要る
   async function copyCampaign(env, { campaign_id, title, starts_on = null } = {}, actor) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const c = await campaignOf(env, campaign_id);
     if (!c) return { ok: false, error: "campaign_not_found" };
     if (c.kind === "standing") return { ok: false, error: "standing_cannot_copy" };
@@ -192,7 +188,6 @@ export function makeBlocks(h) {
   // ---------- まとめて動かす ----------
   // 承認を頼む前に呼ぶ。動かす下書きの番号と、部品の一覧（種類・名前・宛先の人数）を中身に書き込む
   async function preparePublish(env, { campaign_id, block_name } = {}) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const c = await campaignOf(env, campaign_id);
     if (!c) return { ok: false, error: "campaign_not_found" };
     if (c.archived_at) return { ok: false, error: "campaign_archived" };
@@ -220,7 +215,6 @@ export function makeBlocks(h) {
 
   // 承認されたあとに動く。頼んだ時点の番号の下書きだけを動かす
   async function publishBlock(env, { campaign_id, block_name, step_ids } = {}, actor) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const ids = Array.isArray(step_ids) ? step_ids.map(Number).filter(Number.isFinite) : [];
     if (!ids.length) return { ok: false, error: "need_step_ids", note: "publish_block は承認の前に中身を書き込む。そのまま呼び直す" };
     const now = await stepsOfCampaign(env, campaign_id, String(block_name || ""));
@@ -239,7 +233,6 @@ export function makeBlocks(h) {
 
   // 企画の中のブロックの一覧（設計図の部品と線から、入口と出口を出す）
   async function listBlocks(env, { campaign_id } = {}) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const bp = await plan.blueprint(env, { campaign_id: campaign_id || "all" });
     if (!bp.ok) return bp;
     const groups = new Map();

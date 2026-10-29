@@ -47,7 +47,6 @@ export function makeSalesMark(h) {
 
   // 課金が通った月を売上管理で入金済みにする。at は課金の時刻（受け取った時刻）、amount は入った額
   async function markMonth(env, customerId, subscriptionId, { at, amount } = {}, via = "webhook") {
-    if (!env.B_STORE) return { ok: true, skipped: "demo_store" };
     const st = await startedOf(env, subscriptionId);
     const p = (st && st.payload) || {};
     const day = jstDay(at);
@@ -82,7 +81,6 @@ export function makeSalesMark(h) {
 
   // 今の定期を引き継ぐ（承認の道具 takeover_subscriptions）。items: [{ subscription_id, customer_id, product_id, sales_contract_id }]
   async function takeover(env, { items } = {}, by = "mcp") {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const list = Array.isArray(items) ? items : [];
     if (!list.length || list.length > 10) return { ok: false, error: "need_items", max: 10 };
     const products = Object.fromEntries((await db(env, "GET", "b_products?select=id,kind,period,amount,grants")).map((x) => [x.id, x]));

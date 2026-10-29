@@ -145,7 +145,6 @@ export function makeMypage({ db, pages, learn, names }) {
 
   // 生徒の画面：公開中の版に、その人の中身を入れて返す。公開中の版が無ければ html は null（生徒の画面はマイページを出さない）
   async function forStudent(env, customer, email) {
-    if (!env.B_STORE) return { ok: true, html: null };
     const site = await siteRow(env);
     const landing = site && site.landing === "lessons" ? "lessons" : "mypage";
     let tpl = null;
@@ -162,7 +161,6 @@ export function makeMypage({ db, pages, learn, names }) {
 
   // 作成画面：ページ・版の一覧・選んだ版の HTML
   async function adminGet(env, { version } = {}, by) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const p = await ensure(env, by);
     const versions = await db(env, "GET", `b_page_versions?select=version,note,made_by,created_at&page_id=eq.${p.id}&order=version.desc&limit=100`);
     const want = Number(version) || p.latest_version;
@@ -173,7 +171,6 @@ export function makeMypage({ db, pages, learn, names }) {
   }
 
   async function save(env, { html, note } = {}, by) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const h = String(html || "");
     if (!h.trim()) return { ok: false, error: "need_html" };
     if (h.length > HTML_MAX) return { ok: false, error: "too_long" };
@@ -184,7 +181,6 @@ export function makeMypage({ db, pages, learn, names }) {
   }
 
   async function publish(env, { version, stop } = {}, by) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const p = await ensure(env, by);
     const r = await pages.publish(env, { page_id: p.id, version, stop }, by);
     // HTML の版を公開したら、生徒には HTML の形を出す（テンプレと部品の形を公開し直すと戻る）
@@ -194,7 +190,6 @@ export function makeMypage({ db, pages, learn, names }) {
 
   // テンプレと部品の形を公開する（公開すると、生徒にはこの形が出る）
   async function publishConfig(env, { config } = {}, by) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const c = checkConfig(config);
     if (!c.ok) return c;
     const site = await siteRow(env);
@@ -205,7 +200,6 @@ export function makeMypage({ db, pages, learn, names }) {
 
   // 上級：今の部品の形を HTML の版に写す（公開はしない）
   async function toHtml(env, { config } = {}, by) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const c = checkConfig(config);
     if (!c.ok) return c;
     return await save(env, { html: blocksHtml(c.config), note: "テンプレと部品から写した" }, by);
@@ -213,7 +207,6 @@ export function makeMypage({ db, pages, learn, names }) {
 
   // ログイン後に最初に出す画面と、ログイン画面の見た目
   async function saveSiteLook(env, { landing, login } = {}, by) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const site = await siteRow(env);
     if (!site) return { ok: false, error: "no_site" };
     const patch = { updated_at: new Date().toISOString(), updated_by: String(by).slice(0, 200) };
@@ -227,14 +220,12 @@ export function makeMypage({ db, pages, learn, names }) {
     return { ok: true };
   }
   async function publicLook(env) {
-    if (!env.B_STORE) return { ok: true, login: {} };
     const site = await siteRow(env).catch(() => null);
     return { ok: true, login: (site && site.login) || {}, landing: (site && site.landing) || "mypage" };
   }
 
   // 作成画面の見え方：選んだ版に、見本の中身を入れる。html を渡すと保存前の書きかけで見る（本物の教材の最初の 1 本・アプリは関門を通ったもの全部・本物のお知らせ）
   async function preview(env, { version, html, config } = {}, by, adminEmail) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const g = html != null ? { html: String(html) } : config ? { html: blocksHtml(config) } : await adminGet(env, { version }, by);
     const lib = await learn.lessonsFor(env, { id: "00000000-0000-0000-0000-000000000000" }, adminEmail);
     const [news] = await db(env, "GET", newsQuery(env, 1));

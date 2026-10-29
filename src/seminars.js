@@ -126,7 +126,6 @@ export function makeSeminars(h) {
   });
 
   async function list(env, { include_archived } = {}) {
-    if (!env.B_STORE) return { ok: true, store: "demo", count: 0, seminars: [] };
     let q = "b_seminars?select=*&order=starts_at.desc";
     if (!(include_archived === true || include_archived === "true")) q += "&archived_at=is.null";
     const rows = await db(env, "GET", q);
@@ -136,7 +135,6 @@ export function makeSeminars(h) {
   }
 
   async function get(env, { seminar_id } = {}) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const s = await byId(env, seminar_id);
     if (!s) return { ok: true, found: false };
     const [notices, regs, sent] = await Promise.all([noticesOf(env, [s.id]), registrants(env, s.id), sentOf(env, s.id)]);
@@ -157,7 +155,6 @@ export function makeSeminars(h) {
 
   // 回を作る・直す。作ったときは知らせ 3 本（DEFAULT_NOTICES）が入る
   async function set(env, args = {}, by = "admin") {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     let cur = null;
     if (args.id) { cur = await byId(env, args.id); if (!cur) return { ok: false, error: "not_found" }; }
     const row = { updated_at: now(), updated_by: String(by).slice(0, 200) };
@@ -223,7 +220,6 @@ export function makeSeminars(h) {
 
   // 知らせを足す・直す（名前 key で見分ける。同じ名前なら直す）。リマインドの流れに、あとから配信を足すのはここ
   async function setNotice(env, args = {}, by = "admin") {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const s = await byId(env, args.seminar_id);
     if (!s) return { ok: false, error: "seminar_not_found" };
     const key = String(args.key || "").trim().toLowerCase();
@@ -274,7 +270,7 @@ export function makeSeminars(h) {
 
   // その回のフォームに答えた人を申込者にする。受付のメール（申込の直後の知らせ）を送り、サンクスページの住所を返す
   async function onForm(env, customerId, formSlug) {
-    if (!env.B_STORE || !formSlug) return null;
+    if (!formSlug) return null;
     const [s] = await db(env, "GET", `b_seminars?select=*&form_slug=eq.${String(formSlug).toLowerCase()}&archived_at=is.null`);
     if (!s) return null;
     // サンクスページは公開中のときだけ使う（下書きや止めたページへ移さない）
@@ -300,7 +296,6 @@ export function makeSeminars(h) {
 
   // いますぐ 1 本送る（まだ受け取っていない申込者へ・時刻は見ない）。試しと、送る時刻を過ぎてから足した知らせに使う
   async function sendNotice(env, { seminar_id, key } = {}, actor = "admin") {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const s = await byId(env, seminar_id);
     if (!s) return { ok: false, error: "seminar_not_found" };
     const [n] = await db(env, "GET", `b_seminar_notices?select=*&seminar_id=eq.${s.id}&key=eq.${String(key || "").toLowerCase()}`);
@@ -319,7 +314,6 @@ export function makeSeminars(h) {
   // 定時の処理：送る時刻が来た知らせを、まだ受け取っていない申込者へ
   async function run(env, t = Date.now()) {
     const out = { seminars: 0, sent: 0, blocked: 0, failed: 0 };
-    if (!env.B_STORE) return out;
     const from = new Date(t - (-OFFSET_MIN) * 60e3 - WINDOW_MS).toISOString(), to = new Date(t + OFFSET_MAX * 60e3).toISOString();
     const rows = await db(env, "GET", `b_seminars?select=*&archived_at=is.null&starts_at=gte.${encodeURIComponent(from)}&starts_at=lte.${encodeURIComponent(to)}`);
     if (!rows.length) return out;
@@ -341,7 +335,6 @@ export function makeSeminars(h) {
 
   // 設計図に使う（しまっていない回）
   async function forPlan(env) {
-    if (!env.B_STORE) return [];
     return await db(env, "GET", "b_seminars?select=id,title,starts_at,form_slug,thanks_page_slug&archived_at=is.null&order=starts_at.asc").catch(() => []);
   }
 

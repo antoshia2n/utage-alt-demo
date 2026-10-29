@@ -199,7 +199,6 @@ export function makeToday(h) {
   function maskUrl(u) { return u ? `…${u.slice(-10, -4)}.ics` : ""; }
 
   async function setCalendarUrl(env, { url, which }, actor) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const cal = calOf(which);
     if (!cal) return { ok: false, error: "bad_which", allowed: CALENDARS.map((c) => c.which) };
     const v = String(url == null ? "" : url).trim();
@@ -274,7 +273,6 @@ export function makeToday(h) {
   }
 
   async function today(env, now = Date.now()) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const day = jstDay(now);
     const from = new Date(jstMidnightUtc(day)).toISOString();
     const [cal, tasks, approvals, rooms, consults, notices, b] = await Promise.all([

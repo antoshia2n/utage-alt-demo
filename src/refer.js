@@ -53,7 +53,7 @@ export function makeRefer(h) {
 
   // 買ったとき（sell.js の record から呼ぶ）。紹介されていて、期間内で、率があるときだけ紹介者に報酬を積む
   async function onPurchase(env, buyerId, purchaseEv, product, actor = "site") {
-    if (!env.B_STORE || !purchaseEv || !product) return { ok: true, reward: 0, skipped: "no_store" };
+    if (!purchaseEv || !product) return { ok: true, reward: 0, skipped: "no_store" };
     const [r] = await db(env, "GET", `events?select=id,payload,occurred_at&customer_id=eq.${buyerId}&type=eq.referred&order=id.asc&limit=1`);
     if (!r || !r.payload || !UUID_RE.test(String(r.payload.by || ""))) return { ok: true, reward: 0, skipped: "not_referred" };
     const by = r.payload.by;
@@ -75,7 +75,6 @@ export function makeRefer(h) {
 
   // 紹介者ごとの集計。referrer_id を渡すとその人だけ
   async function list(env, { referrer_id, origin = "" } = {}) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const evs = await db(env, "GET", "events?select=id,customer_id,type,payload,occurred_at&type=in.(referred,referral_reward,referral_paid)&order=id.asc&limit=50000");
     const ps = await people(env);
     const nameOf = Object.fromEntries(ps.map((p) => [p.id, { name: p.name || "", email: p.email }]));
@@ -110,7 +109,6 @@ export function makeRefer(h) {
 
   // 払ったことを記録する（払う作業そのものは B の外）。まだ払っていない分を超えては積まない
   async function markPaid(env, { referrer_id, amount, note = "" } = {}, actor = "admin") {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     if (!UUID_RE.test(String(referrer_id || ""))) return { ok: false, error: "bad_referrer_id" };
     const a = Number(amount);
     if (!Number.isInteger(a) || a <= 0) return { ok: false, error: "bad_amount" };
@@ -125,7 +123,6 @@ export function makeRefer(h) {
   async function mine(env, customer, origin = "") {
     const code = refCode(customer.id);
     const base = { code, link: (origin || "") + "/register?ref=" + code };
-    if (!env.B_STORE) return { ...base, referred: 0, purchases: 0, reward_total: 0, paid_total: 0, unpaid: 0 };
     const r = (await list(env, { referrer_id: customer.id })).referrers[0];
     return { ...base, referred: r ? r.referred : 0, purchases: r ? r.purchases : 0, reward_total: r ? r.reward_total : 0, paid_total: r ? r.paid_total : 0, unpaid: r ? r.unpaid : 0 };
   }
