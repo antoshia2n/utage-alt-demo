@@ -92,3 +92,13 @@ for (const tok of ["mem", "pil", "gst"]) {
     assert.equal((await (await call("/api/me", tok)).json()).access, "full");
   });
 }
+
+// 便 2（関門 5）：右上の「アプリ一覧」に出すアプリは、その人の権利 × 開くものの表だけ
+test("/api/me の apps は、その人の権利で開いているアプリだけ", async () => {
+  s.table("member_access").push({ entitlement_key: "shiarabo_pilot", target: "x-koryaku" }, { entitlement_key: "shiarabo_basic", target: "mindmap" });
+  assert.deepEqual((await (await call("/api/me", "pil")).json()).apps, ["x-koryaku"]);
+  assert.deepEqual((await (await call("/api/me", "mem")).json()).apps, ["mindmap"]);
+  const c = await (await call("/api/me", "con")).json();
+  assert.deepEqual(c.apps, []);
+  assert.equal(c.admin, false);
+});
