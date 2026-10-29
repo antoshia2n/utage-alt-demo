@@ -79,7 +79,9 @@ async function openConsole() {
   loadApprovalBadge();
   // AI から渡された承認の URL（/admin#approval/<番号>）で開いたときは、AI と承認のタブを開く
   // 便 8f-3：通知から開いたとき（#room/<人の番号>）は、その人の部屋を開く。開いたままの画面で通知を押したときも同じ
-  if (!routeHash()) loadHome();
+  // ムダ 1 の止める条件（顧客管理を開いてから一覧が出るまで 1 秒を超えた・10/29 実測 1.6 秒）：
+  // 顧客の一覧だけは、ホームを出したあとに裏で読んでおく（数の箱は顧客管理を開いたとき）
+  Promise.resolve(routeHash() ? null : loadHome()).finally(() => { if (!peopleLoaded) { peopleLoaded = true; search(); } });
   window.addEventListener("hashchange", routeHash);
   setInterval(() => { if (!document.hidden) loadRooms(); }, 30000);
   let t;
@@ -704,7 +706,7 @@ function openView(name, part) {
   // 便 12a：設計図のページの箱から開いたときは、その 1 枚を開く
   if (name === "pages" && part && part.lp && part.id) openPage(part.id);
 }
-let peopleLoaded = false;
+let peopleLoaded = false, statsLoaded = false;
 // 設定の画面を開くたびに読み直す（AI や承認で値が変わっていても、開いたときは新しい値）
 function loadSettings() { loadSetup(); loadCommunity(); reloadMail(); loadCalendar(); loadPush(); }
 const settingsOpen = () => $("view-settings").style.display !== "none";
@@ -723,7 +725,8 @@ function setupViews() {
     const box = b.closest(".grp-box");
     if (box && box.classList.contains("closed")) box.querySelector(".grp").click();
     if (b.dataset.view === "home") loadHome();
-    if (b.dataset.view === "people" && !peopleLoaded) { peopleLoaded = true; search(); loadStats(); }
+    if (b.dataset.view === "people" && !peopleLoaded) { peopleLoaded = true; search(); }
+    if (b.dataset.view === "people" && !statsLoaded) { statsLoaded = true; loadStats(); }
     if (b.dataset.view === "settings") loadSettings();
     if (b.dataset.view === "blueprint") bp.load();
     if (b.dataset.view === "deliver" || b.dataset.view === "blueprint") loadDeliver();
