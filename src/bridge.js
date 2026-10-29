@@ -36,10 +36,15 @@ export const PILOT_KEY = "shiarabo_pilot";
 export const SWITCH_KEYS = [PILOT_KEY, "guest"];
 // 関門 1（2026-10-29）：生徒の画面（/app）のマイページ・教材・お知らせ・添削ルーム・振り返りを開ける権利。
 // それ以外の人（無料の登録・会員でない買い手）は「ご契約」だけ（表A の確定「無料の登録はアプリは使えない」）
-export const APP_ACCESS_KEYS = [...MEMBER_KEYS, PILOT_KEY, GUEST_KEY];
+// 2026-10-29 統括（Naoki 20:49）：公開の順番はゲスト → 先行 → 生徒。今マイページを全部使えるのは guest と shiarabo_pilot（とシアニン）だけ。
+// 生徒（会員の 4 つ）だけの人は「ご契約」だけで、画面には「準備中・教材は学ぶくんで」と出す（memberWaiting）
+export const APP_ACCESS_KEYS = [PILOT_KEY, GUEST_KEY];
 export function appAccess(ent, admin = false) {
-  if (admin || (ent && ent.member)) return "full";
+  if (admin) return "full";
   return ((ent && ent.gate_keys) || []).some((k) => APP_ACCESS_KEYS.includes(k)) ? "full" : "contract";
+}
+export function memberWaiting(ent) {
+  return !!(ent && (ent.member || ((ent.gate_keys) || []).some((k) => MEMBER_KEYS.includes(k))));
 }
 export const PUBLISH_APPS = [
   { target: "x-koryaku", name: "X攻略くん" },

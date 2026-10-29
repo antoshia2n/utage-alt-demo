@@ -41,7 +41,7 @@ const STU = "11111111-1111-4111-8111-111111111111";
 const OTHER = "22222222-2222-4222-8222-222222222222";
 s.table("b_customers").push({ id: STU, email: TOKENS.stu, name: "生徒" }, { id: OTHER, email: TOKENS.other, name: "別の人" });
 s.table("b_admins").push({ email: TOKENS.adm });
-s.table("member_entitlement").push({ id: "e1", member_id: STU, key: "shiarabo_basic", source: "manual" }, { id: "e2", member_id: OTHER, key: "shiarabo_basic", source: "manual" });
+s.table("member_entitlement").push({ id: "e1", member_id: STU, key: "shiarabo_pilot", source: "manual" }, { id: "e2", member_id: OTHER, key: "shiarabo_pilot", source: "manual" });
 const ev = (customer_id, type, payload) => s.table("b_events").push({ id: s.table("b_events").length + 1000, customer_id, type, payload, actor: "site", occurred_at: new Date().toISOString() });
 ev(STU, "consult_booked", { slot: "2026-10-12T11:00:00.000Z", type_id: "t1", type_title: "個別相談 30 分", minutes: 30, topic: "" });
 ev(STU, "purchase_completed", { product_id: "p1", product_name: "言語化ラボ", amount: 1000, mode: "test" });

@@ -41,8 +41,8 @@ const STU = "11111111-1111-4111-8111-111111111111";
 const OTHER = "22222222-2222-4222-8222-222222222222";
 s.table("b_customers").push({ id: STU, email: TOKENS.stu, name: "生徒" }, { id: OTHER, email: TOKENS.other, name: "別の人" });
 s.table("b_admins").push({ email: TOKENS.adm });
-// 関門 1（2026-10-29）：生徒の画面は会員などの権利を持つ人だけ。試しの 2 人は shiarabo_basic を持つ
-s.table("member_entitlement").push({ id: "e1", member_id: STU, key: "shiarabo_basic", source: "manual" }, { id: "e2", member_id: OTHER, key: "shiarabo_basic", source: "manual" });
+// 関門 1（2026-10-29）：生徒の画面は会員などの権利を持つ人だけ。試しの 2 人は shiarabo_pilot（先行で試す）を持つ（10/29 から生徒の権利だけでは入れない）
+s.table("member_entitlement").push({ id: "e1", member_id: STU, key: "shiarabo_pilot", source: "manual" }, { id: "e2", member_id: OTHER, key: "shiarabo_pilot", source: "manual" });
 s.table("b_site_member_access").push({ member_id: STU, curriculum_id: "college" });
 s.table("b_site_rows").push(
   { curriculum_id: "college", lesson_id: "lsn-a", title: "言語化の土台" },

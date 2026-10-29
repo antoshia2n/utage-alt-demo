@@ -82,7 +82,16 @@ test("ご契約だけの人：GET /api/booking は「準備中」だけ", async 
   assert.equal(j.ready, false);
 });
 
-for (const tok of ["mem", "pil", "gst"]) {
+// 2026-10-29 統括：生徒（shiarabo_basic）だけの人は、公開の順番（ゲスト → 先行 → 生徒）が来るまで「ご契約」だけ
+test("生徒の権利だけの人：口はご契約だけの人と同じく 403・/api/me は準備中の印つき", async () => {
+  for (const [method, path, body] of GATED.slice(0, 5)) assert.equal((await call(path, "mem", { method, body })).status, 403, `${method} ${path}`);
+  const j = await (await call("/api/me", "mem")).json();
+  assert.equal(j.access, "contract");
+  assert.equal(j.member_waiting, true);
+  assert.equal((await (await call("/api/me", "con")).json()).member_waiting, false);
+});
+
+for (const tok of ["pil", "gst"]) {
   test(`権利のある人（${tok}）：マイページ・教材の質問・部屋は会員向けの 403 にならない`, async () => {
     for (const [method, path, body] of GATED.slice(0, 5)) {
       const r = await call(path, tok, { method, body });
@@ -97,7 +106,7 @@ for (const tok of ["mem", "pil", "gst"]) {
 test("/api/me の apps は、その人の権利で開いているアプリだけ", async () => {
   s.table("member_access").push({ entitlement_key: "shiarabo_pilot", target: "x-koryaku" }, { entitlement_key: "shiarabo_basic", target: "mindmap" });
   assert.deepEqual((await (await call("/api/me", "pil")).json()).apps, ["x-koryaku"]);
-  assert.deepEqual((await (await call("/api/me", "mem")).json()).apps, ["mindmap"]);
+  assert.deepEqual((await (await call("/api/me", "mem")).json()).apps, [], "生徒の権利だけの人は今はアプリ一覧も空");
   const c = await (await call("/api/me", "con")).json();
   assert.deepEqual(c.apps, []);
   assert.equal(c.admin, false);

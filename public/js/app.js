@@ -64,7 +64,9 @@ async function main() {
     document.querySelectorAll(".side .grp").forEach((g) => g.classList.toggle("hidden", g.textContent.trim() !== "契約"));
     ["mypage", "lessons", "lesson", "news", "room", "review", "booking"].forEach((t) => $("tab-" + t).classList.add("hidden"));
     $("tab-contract").classList.remove("hidden");
-    $("tab-contract").insertAdjacentHTML("afterbegin", '<div class="card"><h3>この画面はご契約の確認用です</h3><p class="note" style="margin:0">教材・添削ルーム・マイページは、しあらぼの会員向けです。ご契約の内容と、定期の停止はここからできます。</p></div>');
+    $("tab-contract").insertAdjacentHTML("afterbegin", r.member_waiting
+      ? '<div class="card"><h3>マイページは準備中です</h3><p class="note" style="margin:0">教材は今までどおり <a href="https://manabu.shia2n.jp/" target="_blank" rel="noopener">学ぶくん ↗</a> で見られます。ご契約の内容と、定期の停止はここからできます。</p></div>'
+      : '<div class="card"><h3>この画面はご契約の確認用です</h3><p class="note" style="margin:0">教材・添削ルーム・マイページは、しあらぼの会員向けです。ご契約の内容と、定期の停止はここからできます。</p></div>');
     $("crumb").textContent = "ご契約";
     document.querySelector('.side [data-tab="contract"]').setAttribute("aria-selected", "true");
     document.querySelector('.side [data-tab="contract"]').addEventListener("click", () => loadContract(session.access_token));
