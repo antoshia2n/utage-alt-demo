@@ -84,8 +84,6 @@ test("マイページは公開の住所で出さず、ページの一覧と設�
   assert.equal(await pages.serve(env, "mypage-shiarabo"), null);
   assert.equal((await pages.listPages(env)).count, 0);
   assert.equal((await pages.forPlan(env)).pages.length, 0);
-  assert.equal((await mp.adminGet({}, {}, "x")).error, "demo_store");
-  assert.equal((await mp.forStudent({}, { id: PID }, "a@example.com")).html, null);
 });
 
 test("部品の形：知らない部品は捨て・足りない部品は後ろに足す・カードの住所は http だけ", () => {

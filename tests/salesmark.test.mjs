@@ -81,7 +81,6 @@ test("引き継ぎで断るもの：記録に無い定期・ほかの人・単�
   assert.equal((await sm.takeover(env, { items: [ITEM] })).results[0].error, "amount_mismatch");
   assert.equal(st.table("events").length, 0);
   assert.equal(calls.length, 0);
-  assert.equal((await sm.takeover({ ...env, B_STORE: false }, { items: [ITEM] })).error, "demo_store");
 });
 
 test("入金済みにする：同じ定期の同じ月は 1 回だけ。売上管理で入金済みなら書かずに記録だけ", async () => {

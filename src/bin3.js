@@ -253,7 +253,7 @@ export function makeBin3(h) {
     const unsubUrl = `${origin}/api/unsubscribe?c=${customer.id}&t=${await unsubToken(env, customer.id)}`;
     const foot = h.mailcfg.footer(env, cfg, unsubUrl);
     const bodyText = mailText(text) + foot.text;
-    const html = mailHtml(String(text), { footHtml: foot.html, openUrl, brand: env.B_STORE ? "シアラボ" : "言語化ラボ（デモ）" });
+    const html = mailHtml(String(text), { footHtml: foot.html, openUrl, brand: "シアラボ" });
     try {
       const msg = {
         to: customer.email, from: h.mailcfg.fromField(cfg), subject, text: bodyText, html,
@@ -286,7 +286,7 @@ export function makeBin3(h) {
 
   async function handleUnsubscribe(request, env, url) {
     const c = url.searchParams.get("c") || "", t = url.searchParams.get("t") || "";
-    const page = (msg) => new Response(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>配信の停止</title><body style="font-family:sans-serif;max-width:520px;margin:48px auto;padding:0 16px;line-height:1.8"><h1 style="font-size:20px">配信の停止</h1><p>${msg}</p><p><a href="/">${env.B_STORE ? "シアラボ" : "言語化ラボ（デモ）"}へ</a></p></body>`, { headers: { "content-type": "text/html; charset=utf-8" } });
+    const page = (msg) => new Response(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>配信の停止</title><body style="font-family:sans-serif;max-width:520px;margin:48px auto;padding:0 16px;line-height:1.8"><h1 style="font-size:20px">配信の停止</h1><p>${msg}</p><p><a href="/">シアラボへ</a></p></body>`, { headers: { "content-type": "text/html; charset=utf-8" } });
     if (!/^[0-9a-f-]{36}$/i.test(c) || !safeEqual(t, await unsubToken(env, c))) return page("このリンクは使えません。");
     if (!(await unsubscribed(env, c))) await addEvent(env, c, "email_unsubscribed", { via: request.method === "POST" ? "one_click" : "link" }, "site");
     return page("お知らせのメールを止めました。ログインのリンクなど、手続きに要るメールは届きます。");
@@ -319,7 +319,7 @@ export function makeBin3(h) {
   async function sendMailWithUpto(env, customer, upto, n) {
     return await sendMail(env, customer, {
       kind: "room_unread",
-      subject: env.B_STORE ? "【シアラボ】添削が返っています" : "【言語化ラボ・デモ】添削が返っています",
+      subject: "【シアラボ】添削が返っています",
       text: `${customer.name || ""} さん\n\n添削ルームに、まだ読んでいない添削が ${n} 件あります。\n\n${env.PUBLIC_ORIGIN || "https://utage-alt-demo.gameister1.workers.dev"}/app#room`,
       extra: { upto: String(upto) },
     });

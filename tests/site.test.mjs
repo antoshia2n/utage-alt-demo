@@ -94,8 +94,6 @@ test("まとめて公開・下書き：2 つだけ受ける・デモの置き場
   assert.equal((await site.setStatus(env, { ids: ["t1", "t2"], status: "draft" })).count, 2);
   assert.ok(st.table("b_site_contents").every((x) => x.status === "draft"));
   assert.equal((await site.setStatus(env, { ids: ["t1"], status: "drip" })).error, "bad_status");
-  assert.equal((await site.tree({})).error, "demo_store");
-  assert.equal((await site.saveContent({}, { title: "x", courses: ["c1"] })).error, "demo_store");
 });
 
 test("生徒の側：入会から日数で開くものは、日数がたつまで出ない。目次・資料・見る時間・質問の可否が届く", async () => {

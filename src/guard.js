@@ -85,7 +85,6 @@ export function makeGuard(h) {
   }
 
   async function modeOf(env, tool) {
-    if (!env.B_STORE) return "auto";
     if (ALWAYS.has(tool)) return "auto";
     const rows = await db(env, "GET", `b_permissions?select=mode&tool=eq.${encodeURIComponent(tool)}`);
     if (rows.length) return rows[0].mode;
@@ -94,14 +93,12 @@ export function makeGuard(h) {
   }
 
   async function listPermissions(env) {
-    if (!env.B_STORE) return { ok: true, store: "demo", note: "デモの置き場では権限の表を使わない（全部自動）", permissions: [] };
     await seedDefaults(env);
     const rows = await db(env, "GET", "b_permissions?select=tool,mode,note,updated_at,updated_by&order=tool.asc");
     return { ok: true, count: rows.length, permissions: rows, unknown_tool_mode: "deny" };
   }
 
   async function setPermission(env, { tool, mode }, adminEmail) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     if (!/^[a-z_]{2,40}$/.test(String(tool || ""))) return { ok: false, error: "bad_tool" };
     if (!MODES.includes(mode)) return { ok: false, error: "bad_mode" };
     const before = await db(env, "GET", `b_permissions?select=mode&tool=eq.${tool}`);
@@ -131,7 +128,6 @@ export function makeGuard(h) {
   }
 
   async function listApprovals(env, { status = "pending", limit = 50 } = {}) {
-    if (!env.B_STORE) return { ok: true, store: "demo", count: 0, approvals: [] };
     const lim = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 200);
     let q = `b_approvals?select=*&order=created_at.desc&limit=${lim}`;
     if (status && status !== "all") {
@@ -175,7 +171,6 @@ export function makeGuard(h) {
   }
 
   async function aiLog(env, { limit = 100 } = {}) {
-    if (!env.B_STORE) return { ok: true, store: "demo", count: 0, items: [] };
     const lim = Math.min(Math.max(parseInt(limit, 10) || 100, 1), 300);
     const rows = await db(env, "GET", `inbound_log?select=id,channel,request,response,status,at&channel=in.(mcp,approval,permission)&order=at.desc&limit=${lim}`);
     return { ok: true, count: rows.length, items: rows };

@@ -168,7 +168,6 @@ export function makeUtageImport(h) {
 
   async function run(env) {
     const out = { ok: true, readers: 0, pages: 0, created: 0, imported: 0, unsubscribed: 0, no_email: 0, consults: 0, consult_no_email: 0, consult_waiting: false, consult_restamped: 0, sweep_done: false };
-    if (!env.B_STORE) return { ok: true, skipped: "demo_store" };
     if (!sourceOf(env)) return { ok: true, skipped: "no_source" };
     const budget = { left: NEW_PER_RUN };
     try {
@@ -199,7 +198,6 @@ export function makeUtageImport(h) {
 
   // AI の道具：取り込みの様子（しおり・直近の回・取り込んだ人の数）
   async function status(env) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const [c, runs, imported, unsub, consults] = await Promise.all([
       getCursor(env),
       db(env, "GET", "inbound_log?select=at,status,response&channel=eq.utage_import&order=id.desc&limit=10"),

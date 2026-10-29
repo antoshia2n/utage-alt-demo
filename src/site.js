@@ -2,7 +2,6 @@
 //  ・表は supabase/b21_site_shape.sql と b22_site_publish.sql が正本：サイト › カリキュラム › プログラム › コース › コンテンツ。
 //    名前は学ぶくんと同じ。権利はカリキュラムに付く。コンテンツは複数のコースに並べられる（中身は 1 つ）。
 //  ・ここはシアニン用の画面（/api/admin/site/*）から呼ぶ。生徒が読む側は src/learn.js（見る表 b_site_rows・b_site_member_access）。
-//  ・デモの置き場（B_STORE が無い）には表が無いので、読む・書くとも demo_store を返す。
 //  ・受講生は読むだけ。人の情報の正本は顧客管理としあらぼ管理、開け閉めは権利だけ。
 
 export const STATUSES = ["published", "draft", "scheduled", "drip"];
@@ -72,13 +71,11 @@ export function dripOpen(row, openedAt, at = Date.now()) {
 }
 
 export function makeSite({ db }) {
-  const demo = (env) => (!env.B_STORE ? { ok: false, error: "demo_store" } : null);
   const get = (env, q) => db(env, "GET", q);
   const newId = () => crypto.randomUUID();
 
   // 画面に要るものをまとめて返す（本文と目次は 1 本を開くときに読む）
   async function tree(env) {
-    const d = demo(env); if (d) return d;
     const [sites, curricula, cprog, rights, programs, courses, contents, links] = await Promise.all([
       get(env, `${T.sites}?select=id,name,description,active,sort,landing,login&order=sort.asc`),
       get(env, `${T.curricula}?select=id,site_id,title,description,active,sort&order=sort.asc`),
@@ -93,7 +90,6 @@ export function makeSite({ db }) {
   }
 
   async function content(env, id) {
-    const d = demo(env); if (d) return d;
     if (!ID_RE.test(String(id || ""))) return { ok: false, error: "bad_id" };
     const [row] = await get(env, `${T.contents}?select=${CONTENT_FULL}&id=eq.${encodeURIComponent(id)}`);
     if (!row) return { ok: false, error: "not_found" };
@@ -102,7 +98,6 @@ export function makeSite({ db }) {
   }
 
   async function saveSite(env, b = {}, by) {
-    const d = demo(env); if (d) return d;
     const name = str(b.name, 100);
     if (!name) return { ok: false, error: "name_required", field: "name" };
     if (!ID_RE.test(String(b.id || ""))) return { ok: false, error: "bad_id" };
@@ -111,7 +106,6 @@ export function makeSite({ db }) {
   }
 
   async function saveCurriculum(env, b = {}, by) {
-    const d = demo(env); if (d) return d;
     const title = str(b.title, TITLE_MAX);
     if (!title) return { ok: false, error: "title_required", field: "title" };
     const fields = { title, description: str(b.description, TEXT_MAX), active: b.active !== false, updated_at: now(), updated_by: by };
@@ -142,7 +136,6 @@ export function makeSite({ db }) {
   }
 
   async function saveProgram(env, b = {}, by) {
-    const d = demo(env); if (d) return d;
     const title = str(b.title, TITLE_MAX);
     if (!title) return { ok: false, error: "title_required", field: "title" };
     const fields = { title, description: str(b.description, TEXT_MAX), active: b.active !== false, updated_at: now(), updated_by: by };
@@ -166,7 +159,6 @@ export function makeSite({ db }) {
   }
 
   async function saveCourse(env, b = {}, by) {
-    const d = demo(env); if (d) return d;
     const title = str(b.title, TITLE_MAX);
     if (!title) return { ok: false, error: "title_required", field: "title" };
     const fields = { title, active: b.active !== false, updated_at: now(), updated_by: by };
@@ -184,7 +176,6 @@ export function makeSite({ db }) {
 
   // プログラムの中のコースの並び
   async function orderCourses(env, { program_id, course_ids } = {}) {
-    const d = demo(env); if (d) return d;
     const ids = Array.isArray(course_ids) ? course_ids.map(String) : [];
     if (!ID_RE.test(String(program_id || "")) || ids.some((x) => !ID_RE.test(x))) return { ok: false, error: "bad_id" };
     const have = await get(env, `${T.courses}?select=id&program_id=eq.${encodeURIComponent(program_id)}`);
@@ -196,7 +187,6 @@ export function makeSite({ db }) {
 
   // コースに並ぶコンテンツを、渡した並びにそろえる（並べ替え・外す・移すに使う）。並びに無いものは、このコースから外れるだけで消えない
   async function setCourseContents(env, { course_id, content_ids } = {}) {
-    const d = demo(env); if (d) return d;
     const ids = [...new Set((Array.isArray(content_ids) ? content_ids : []).map(String))];
     if (!ID_RE.test(String(course_id || "")) || ids.some((x) => !ID_RE.test(x))) return { ok: false, error: "bad_id" };
     const cur = await get(env, `${T.links}?select=content_id&course_id=eq.${encodeURIComponent(course_id)}`);
@@ -208,7 +198,6 @@ export function makeSite({ db }) {
 
   // コンテンツ 1 本を作る・直す。courses（所属するコースの番号の並び）を渡すと、所属をそれにそろえる（新しく入るコースでは末尾に並ぶ）
   async function saveContent(env, b = {}, by) {
-    const d = demo(env); if (d) return d;
     const c = checkContent(b);
     if (!c.ok) return c;
     const courses = Array.isArray(b.courses) ? [...new Set(b.courses.map(String))] : null;
@@ -239,7 +228,6 @@ export function makeSite({ db }) {
 
   // 何本かの公開のしかたをまとめて変える（公開にする・下書きに戻す）
   async function setStatus(env, { ids, status } = {}, by) {
-    const d = demo(env); if (d) return d;
     const list = [...new Set((Array.isArray(ids) ? ids : []).map(String))];
     if (!list.length || list.length > 500 || list.some((x) => !ID_RE.test(x))) return { ok: false, error: "bad_ids" };
     if (status !== "published" && status !== "draft") return { ok: false, error: "bad_status" };
@@ -249,7 +237,6 @@ export function makeSite({ db }) {
 
   // 受講生（読むだけ）：カリキュラムを開ける権利を今持っている人
   async function studentsOf(env, { names } = {}) {
-    const d = demo(env); if (d) return d;
     const rights = await get(env, `${T.rights}?select=curriculum_id,entitlement_key&limit=5000`);
     const keys = [...new Set(rights.map((r) => r.entitlement_key))];
     if (!keys.length) return { ok: true, students: [] };
@@ -288,7 +275,6 @@ export function makeSite({ db }) {
 
   // 動画の住所からまとめて作る：1 本ずつ下書きのコンテンツにし、コースの末尾に並べる。題名は YouTube の oEmbed から読む（読めなければ仮の題名）
   async function fromVideos(env, { course_id, urls } = {}, by, fetcher = fetch) {
-    const d = demo(env); if (d) return d;
     if (!ID_RE.test(String(course_id || ""))) return { ok: false, error: "bad_course" };
     const list = (Array.isArray(urls) ? urls : []).map((u) => String(u).trim()).filter(Boolean);
     if (!list.length || list.length > 30) return { ok: false, error: "bad_urls" };

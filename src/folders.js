@@ -50,7 +50,6 @@ export function makeFolders(h) {
 
   // 一覧。part_type を渡すとその種類だけ（folders と、データの番号 → フォルダの番号 items）
   async function list(env, { part_type } = {}) {
-    if (!env.B_STORE) return { ok: true, store: "demo", folders: [], items: {} };
     const r = await read(env);
     if (part_type) {
       if (!PART_TYPES[part_type]) return { ok: false, error: "bad_part_type", types: FOLDER_TYPES };
@@ -63,7 +62,6 @@ export function makeFolders(h) {
 
   // 作る（name）・名前を変える（id と name）・消す（id と remove）
   async function save(env, { id, part_type, name, remove = false } = {}, actor) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const by = String(actor || "unknown").slice(0, 200);
     const now = new Date().toISOString();
     try {
@@ -100,7 +98,6 @@ export function makeFolders(h) {
 
   // データ 1 つ（か複数）をフォルダに入れる。folder_id を空にすると「フォルダに入っていない」に戻す
   async function assign(env, { part_type, part_id, part_ids, folder_id = null } = {}, actor) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     if (!PART_TYPES[part_type]) return { ok: false, error: "bad_part_type", types: FOLDER_TYPES };
     const ids = (Array.isArray(part_ids) ? part_ids : [part_id]).map((x) => String(x ?? "").trim()).filter(Boolean);
     if (!ids.length || ids.length > 200) return { ok: false, error: "need_part_id", max: 200 };

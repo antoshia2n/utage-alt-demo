@@ -36,10 +36,6 @@ export function makeLessonQA(h) {
   async function lessonInfo(env, customer, email, lessonId) {
     if (!LESSON_ID_RE.test(String(lessonId || ""))) return null;
     const id = String(lessonId);
-    if (!env.B_STORE) {
-      const [l] = await db(env, "GET", `lessons?select=id,title&id=eq.${encodeURIComponent(id)}&published=eq.true`);
-      return l ? { id: String(l.id), title: l.title || "" } : null;
-    }
     let q = `mn_lessons?select=lesson_id,title&lesson_id=eq.${encodeURIComponent(id)}&limit=1`;
     if (!(await learn.isAdminEmail(env, email))) {
       const acc = await db(env, "GET", `mn_access?select=curriculum_id&member_id=eq.${customer.id}`);

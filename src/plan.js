@@ -378,7 +378,6 @@ export function makePlan(h) {
   }
 
   async function blueprint(env, { campaign_id = "all" } = {}) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const view = campaign_id === "unassigned" || campaign_id === "all" || !campaign_id ? (campaign_id || "all") : String(campaign_id);
     if (view !== "all" && view !== "unassigned" && !UUID_RE.test(view)) return { ok: false, error: "bad_campaign_id" };
     const all = await loadAll(env);
@@ -388,7 +387,6 @@ export function makePlan(h) {
 
   // 便 19：一覧の「シナリオ」の列と絞り込みに使う軽い一覧（部品ごとの入り先のシナリオ）。出来事は読まない
   async function owners(env) {
-    if (!env.B_STORE) return { ok: true, store: "demo", campaigns: [], owners: [] };
     const [campaigns, rows, f] = await Promise.all([
       db(env, "GET", "b_campaigns?select=id,name,kind,archived_at&order=kind.desc,created_at.asc"),
       db(env, "GET", "b_campaign_parts?select=part_type,part_id,campaign_id,block_name,role"),
@@ -399,7 +397,6 @@ export function makePlan(h) {
   }
 
   async function listCampaigns(env, { include_archived = false } = {}) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const all = await loadAll(env);
     const a = assemble(all, "all");
     const list = a.campaigns.filter((c) => include_archived === true || include_archived === "true" || !c.archived_at);
@@ -407,7 +404,6 @@ export function makePlan(h) {
   }
 
   async function createCampaign(env, { title, starts_on = null }, actor) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const t = String(title || "").trim();
     if (!t || t.length > 60) return { ok: false, error: "bad_title", note: "1〜60 文字" };
     if (starts_on && !DATE_RE.test(String(starts_on))) return { ok: false, error: "bad_starts_on", note: "YYYY-MM-DD" };
@@ -425,7 +421,6 @@ export function makePlan(h) {
   // マーケくん便 4：部品をシナリオに入れる（ほかのシナリオからは外さない）・役目とブロックを変える。
   //   remove が真ならそのシナリオから外す。campaign_id を空にすると全部のシナリオから外す（前の「企画から外す」と同じ）
   async function setPartCampaign(env, { part_type, part_id, campaign_id = null, role, block_name, remove = false }, actor) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     if (!PART_TYPES[part_type]) return { ok: false, error: "bad_part_type", types: Object.keys(PART_TYPES) };
     const r = role === undefined ? undefined : String(role || "").trim();
     if (r !== undefined && r.length > 60) return { ok: false, error: "role_too_long", max: 60 };
@@ -479,7 +474,6 @@ export function makePlan(h) {
 
   // しまう（restore が真なら戻す）。常設はしまえない。持ち主の部品が 1 つでも動いていたらしまわずに並べて返す
   async function archiveCampaign(env, { campaign_id, restore = false }, actor) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     if (!UUID_RE.test(String(campaign_id || ""))) return { ok: false, error: "bad_campaign_id" };
     const all = await loadAll(env);
     const c = all.campaigns.find((x) => x.id === campaign_id);
@@ -503,7 +497,6 @@ export function makePlan(h) {
   // 便 8d：片付け案。企画に入っていない部品を、常設へ入れる案にする（下書き・何も変えない）。
   // AI が別の振り分けを考えたときは apply_tidy に assignments を渡して当てる
   async function tidyPlan(env) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const all = await loadAll(env);
     const a = assemble(all, "all");
     const standing = all.campaigns.find((c) => c.kind === "standing");
@@ -520,7 +513,6 @@ export function makePlan(h) {
   }
 
   async function applyTidy(env, { assignments, archives } = {}, actor) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     let list = Array.isArray(assignments) ? assignments : null;
     let arch = Array.isArray(archives) ? archives.map((x) => (typeof x === "string" ? x : x && x.campaign_id)).filter(Boolean) : null;
     if (!list && !arch) { const p = await tidyPlan(env); if (!p.ok) return p; list = p.assignments; arch = p.archives.map((x) => x.campaign_id); }

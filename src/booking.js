@@ -115,7 +115,6 @@ export function makeBooking(h) {
   });
 
   async function list(env, { include_archived } = {}) {
-    if (!env.B_STORE) return { ok: true, store: "demo", count: 0, types: [] };
     let q = "b_booking_types?select=*&order=created_at.asc";
     if (!(include_archived === true || include_archived === "true")) q += "&archived_at=is.null";
     const [rows, bs] = await Promise.all([db(env, "GET", q), bookings(env)]);
@@ -124,7 +123,6 @@ export function makeBooking(h) {
   }
 
   async function get(env, { type_id } = {}) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const t = await typeById(env, type_id);
     if (!t) return { ok: true, found: false };
     const bs = (await bookings(env)).filter((b) => b.type_id === t.id).sort((a, b) => a.slot.localeCompare(b.slot));
@@ -140,7 +138,6 @@ export function makeBooking(h) {
 
   // 作る・直す
   async function set(env, args = {}, by = "admin") {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     let cur = null;
     if (args.id) { cur = await typeById(env, args.id); if (!cur) return { ok: false, error: "not_found" }; }
     const row = { updated_at: now(), updated_by: String(by).slice(0, 200) };
@@ -241,7 +238,6 @@ export function makeBooking(h) {
   }
 
   async function getSlots(env, { type_id, slug } = {}) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const t = type_id ? await typeById(env, type_id) : await typeBySlug(env, slug);
     if (!t) return { ok: true, found: false };
     const r = await slots(env, t);
@@ -287,7 +283,6 @@ export function makeBooking(h) {
   // 定時の処理：前日の知らせ（送る時刻から 3 時間のうち・1 人 1 枠 1 回）
   async function run(env, at = Date.now()) {
     const out = { sent: 0, blocked: 0, failed: 0 };
-    if (!env.B_STORE) return out;
     const types = new Map((await db(env, "GET", "b_booking_types?select=*&archived_at=is.null")).map((t) => [t.id, t]));
     if (!types.size) return out;
     const done = new Set((await db(env, "GET", "events?select=customer_id,payload&type=eq.consult_reminded&limit=20000")).map((e) => e.customer_id + "|" + (e.payload && e.payload.slot)));
@@ -307,7 +302,6 @@ export function makeBooking(h) {
   }
 
   async function forPlan(env) {
-    if (!env.B_STORE) return null;
     return await db(env, "GET", "b_booking_types?select=id,slug,title,active,thanks_page_slug&archived_at=is.null&order=created_at.asc").catch(() => []);
   }
 

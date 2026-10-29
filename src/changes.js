@@ -13,7 +13,6 @@ export function makeChanges(h) {
   const { db, logInbound } = h;
 
   async function record(env, { kind, target, before = null, after = null, summary = "", actor = "" }) {
-    if (!env.B_STORE) return;
     if (JSON.stringify(before) === JSON.stringify(after)) return;
     await logInbound(env, "change", { kind, target, before, after, summary: String(summary).slice(0, 200), actor: String(actor).slice(0, 200) }, { ok: true }, 200);
   }
@@ -34,14 +33,12 @@ export function makeChanges(h) {
   }
 
   async function list(env, { limit = 50 } = {}) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const lim = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 200);
     const changes = shape(await rows(env, 400)).slice(0, lim);
     return { ok: true, count: changes.length, changes };
   }
 
   async function undo(env, { id }, actor) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const n = parseInt(id, 10);
     if (!Number.isFinite(n) || n <= 0) return { ok: false, error: "bad_id" };
     const all = shape(await rows(env, 400));
