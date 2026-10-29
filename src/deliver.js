@@ -602,14 +602,30 @@ export function makeDeliver(h) {
     const lines = type === "reauthentication"
       ? ["確認コードは次の 6 桁です。", "", String(d.token || ""), "", "心当たりが無ければ、このメールは捨ててください。"]
       : [`下のリンクを押すと${type === "magiclink" || type === "signup" ? "ログインできます" : "手続きが進みます"}。リンクは 1 回だけ使えます。`, "", link, "", d.token ? `リンクが開けないときの確認コード：${d.token}` : "", "", "心当たりが無ければ、このメールは捨ててください。"];
-    try {
-      const msg = { to, from: h.mailcfg.fromField(cfg), subject: `【シアラボ】${title}`, text: lines.join(NL), html: authHtml(type, link, d.token) };
-      if (cfg.reply_to) msg.replyTo = cfg.reply_to;
-      const r = await env.EMAIL.send(msg);
-      return await reply(200, { ok: true, message_id: (r && r.messageId) || null });
-    } catch (e) {
-      return await reply(500, { ok: false, error: "send_failed", detail: String(e && e.message || e).slice(0, 200) });
+    const msg = { to, from: h.mailcfg.fromField(cfg), subject: `【シアラボ】${title}`, text: lines.join(NL), html: authHtml(type, link, d.token) };
+    if (cfg.reply_to) msg.replyTo = cfg.reply_to;
+    // 送り出しに 3〜4 秒かかり、Supabase の 5 秒の上限を超えると 2 重・3 重に届いていた。
+    // 確かめは全部済ませたので、Supabase にはすぐ「受けた」と返し、送るのと記録はそのあと（ctx.waitUntil）で行う。失敗は記録に残る
+    const send = async () => {
+      try {
+        const r = await env.EMAIL.send(msg);
+        reqLog.ms = Date.now() - t0;
+        await logInbound(env, "auth_email", reqLog, { ok: true, message_id: (r && r.messageId) || null, after_reply: !!(ctx && ctx.waitUntil) }, 200);
+        return null;
+      } catch (e) {
+        reqLog.ms = Date.now() - t0;
+        const res = { ok: false, error: "send_failed", detail: String(e && e.message || e).slice(0, 200) };
+        await logInbound(env, "auth_email", reqLog, res, 500).catch(() => {});
+        return res;
+      }
+    };
+    if (ctx && ctx.waitUntil) {
+      ctx.waitUntil(send());
+      return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
     }
+    const failed = await send();
+    if (failed) return new Response(JSON.stringify({ error: { http_code: 500, message: failed.error } }), { status: 500, headers: { "content-type": "application/json" } });
+    return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
   }
 
   return { previewAudience, listSteps, setStep, listBroadcasts, draftBroadcast, queueBroadcast, cancelBroadcast, run, warmState, handleClick, handleOpen, handleAuthEmail, normFilter, triggerQuery, audience };
