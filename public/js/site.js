@@ -7,7 +7,7 @@ import { api } from "/js/common.js";
 const KEY_LABEL = {
   shiarabo_basic: "しあらぼ", shiarabo_office_hour: "オフィスアワー", consult_single: "単発の個別相談", consult_followup: "フォローアップ相談",
   seminar_recording: "セミナー録画", workbook_ai_30day: "30日AIワークブック", textbook_60day: "60日教材", vip_status: "VIP",
-  shiarabo_trial: "しあらぼ体験", note_membership: "note メンシプ", shiarabo_pilot: "先行で試す", shiarabo_monitor: "モニター",
+  shiarabo_trial: "しあらぼ体験", note_membership: "note メンシプ", shiarabo_pilot: "先行で試す", shiarabo_monitor: "モニター", shiarabo_next_premium: "シアラボ NEXT プレミアム", shiarabo_next_standard: "シアラボ NEXT スタンダード", guest: "ゲスト（期限つきの試用）",
 };
 const ERR = {
   title_required: "名前が空です", name_required: "名前が空です", publish_at_required: "公開する日時が空です",

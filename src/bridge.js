@@ -8,7 +8,8 @@
 //    表の一覧と欄は Supabase の表の目録（/rest/v1/ の定義）から取り、1 人分は「行のどこかにその人の番号かメールが入っている行」で拾う。
 //  ・表の目録を読む道具（list_tables）：決めた頭の名前の表だけ、欄の名前と行数を返す（中身は返さない）。
 
-export const MEMBER_KEYS = ["shiarabo_basic"];
+// 2026-10-29 Naoki「OK」：NEXT の 2 つとモニターも、しあらぼの会員と同じ扱い（ゲストは会員扱いにしない）
+export const MEMBER_KEYS = ["shiarabo_basic", "shiarabo_next_premium", "shiarabo_next_standard", "shiarabo_monitor"];
 export const B_REASON = "B で購入";
 const TABLE_PREFIXES = ["ic_", "mn_tensaku_", "member", "shr_billing_logs", "b_"];
 const MEETING_PREFIX = "ic_";
@@ -19,7 +20,11 @@ const MEETING_ROWS_MAX = 2000;
 //  ・付けるのは source=manual の行だけ。理由は必ず書く（表の側にも決まりがある）。支払いの行（source=payment）は画面からは触らない
 //  ・外せるのは source=manual の行だけ。外す理由も必ず書き、付けた・外したを出来事（b_events）に残す
 //  ・付けられる権利の名前は、門番の表にもうある名前と、下の決めた名前だけ（打ち間違いで新しい名前を作らない）
-export const KNOWN_KEYS = ["shiarabo_basic", "shiarabo_office_hour", "consult_single", "consult_followup", "seminar_recording", "workbook_ai_30day", "textbook_60day", "vip_status", "shiarabo_trial", "note_membership", "shiarabo_pilot"];
+//  ・2026-10-29 Naoki「OK」：選べる名前はこの 6 つだけ。ほかの名前は表に残っていても選ぶ欄に出さない（消さない）
+//  ・ゲストは期限を必ず入れる（試用のあとに開いたまま残さないため）
+export const KNOWN_KEYS = ["shiarabo_basic", "shiarabo_pilot", "shiarabo_next_premium", "shiarabo_next_standard", "shiarabo_monitor", "guest"];
+export const GUEST_KEY = "guest";
+export const EXPIRY_REQUIRED = [GUEST_KEY];
 
 // マーケくん便 5（2026-10-27）：アプリの公開スイッチ。権利 × 開くものの表（member_access）の行を画面から入れる・外す。
 //  ・入れる・外すのは「先行で試す」の権利（shiarabo_pilot・2026-10-27 21:20 Naoki「OK」）の行だけ。basic の生徒から Naoki が名前で選んだ人に付ける
@@ -58,6 +63,7 @@ export function checkGrant({ key, reason, expires_at } = {}, allowed, existing, 
   if (why.length > REASON_MAX) return { ok: false, error: "reason_too_long", max: REASON_MAX };
   const u = parseUntil(expires_at, now);
   if (!u.ok) return u;
+  if (EXPIRY_REQUIRED.includes(k) && !u.value) return { ok: false, error: "expires_required" };
   if (existing.some((r) => r.key === k && r.source === "manual")) return { ok: false, error: "already_manual" };
   return { ok: true, row: { key: k, source: "manual", reason: why, expires_at: u.value } };
 }
@@ -218,12 +224,10 @@ export function makeBridge(h) {
   // ---------- マーケくん便 2：権利の一覧と手での付け外し ----------
   const ENT_COLS = "id,member_id,key,source,reason,granted_at,expires_at";
 
-  // 付けられる権利の名前：門番の表にもうある名前＋決めた名前
+  // 付けられる権利の名前：決めた 6 つだけ（2026-10-29）
   async function entitlementKeys(env) {
     if (!env.B_STORE) return { ok: true, store: "demo", keys: [...KNOWN_KEYS] };
-    const rows = await db(env, "GET", "member_entitlement?select=key&limit=10000");
-    const keys = [...new Set([...KNOWN_KEYS, ...rows.map((r) => r.key)])];
-    return { ok: true, keys };
+    return { ok: true, keys: [...KNOWN_KEYS] };
   }
 
   // 一覧用：全員の権利の行（人の番号ごと）。期限切れも返し、画面で見分ける
