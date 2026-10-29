@@ -146,12 +146,11 @@ const stageText = (p) => (p.member ? "会員" : p.stage || "");
 
 // ---------- マーケくん便 2：権利（門番の表 member_entitlement の行） ----------
 // 出どころは 3 つ：支払い（shr-webhook が付けた）・手で付けた・マーケくんで購入（支払いの行で理由が「B で購入」で始まる）
+// 残す名前は 9 つ（商品と 1 対 1 の 7 つ＋先行＋ゲスト・2026-10-29 Naoki OK で古い名前を外した）
 const KEY_LABEL = {
-  shiarabo_basic: "しあらぼの基本（教材・Q&A・コミュニティ）", shiarabo_office_hour: "オフィスアワー",
-  consult_single: "単発の個別相談", consult_followup: "フォローアップ相談", seminar_recording: "セミナー録画",
-  workbook_ai_30day: "30日AIワークブック", textbook_60day: "60日教材", vip_status: "VIP",
-  shiarabo_trial: "しあらぼ体験", note_membership: "note メンシプ", shiarabo_pilot: "先行で試す（アプリを先に開く生徒）",
-  shiarabo_monitor: "モニター", shiarabo_next_premium: "シアラボ NEXT プレミアム", shiarabo_next_standard: "シアラボ NEXT スタンダード", guest: "ゲスト（期限つきの試用）", x_tester: "開発の試し", note_tester: "開発の試し", swipe_tester: "開発の試し",
+  shiarabo_basic: "しあらぼの基本（教材・Q&A・コミュニティ）", shiarabo_next_premium: "シアラボ NEXT プレミアム", shiarabo_next_standard: "シアラボ NEXT スタンダード",
+  shiarabo_trial: "しあらぼ体験", shiarabo_monitor: "モニター", note_membership: "note メンシプ", shiarabo_paused: "休止",
+  shiarabo_pilot: "先行で試す（アプリを先に開く生徒）", guest: "ゲスト（期限つきの試用）",
 };
 const entSrc = (r) => (r.source === "manual" ? "manual" : String(r.reason || "").startsWith("B で購入") ? "lab" : "payment");
 const ENT_SRC_LABEL = { payment: "支払い", manual: "手で付けた", lab: "マーケくんで購入" };
