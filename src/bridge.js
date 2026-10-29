@@ -138,7 +138,6 @@ export function makeBridge(h) {
 
   // 門番の表の権利を、B の権利の返りに足す（会員かどうかはここで決まる）
   async function withGate(env, customerId, ent) {
-    if (!env.B_STORE) return ent;
     const rows = (await gateRows(env, customerId)).filter((r) => live(r));
     const keys = [...new Set(rows.map((r) => r.key))];
     const gateMember = keys.some((k) => MEMBER_KEYS.includes(k));
@@ -155,14 +154,12 @@ export function makeBridge(h) {
 
   // 一覧用：門番の表で会員の人の番号の集まり
   async function gateMembers(env) {
-    if (!env.B_STORE) return new Set();
     const rows = await db(env, "GET", `member_entitlement?select=member_id,expires_at&key=in.(${MEMBER_KEYS.join(",")})&limit=10000`);
     return new Set(rows.filter((r) => live(r)).map((r) => r.member_id));
   }
 
   // B で買った権利の印を門番の表へ合わせる。何度呼んでも同じ結果。失敗しても決済の記録は止めない
   async function syncGrants(env, customerId, ent) {
-    if (!env.B_STORE) return { ok: true, skipped: "demo_store" };
     try {
       const existing = await gateRows(env, customerId);
       const plan = planGrants(existing, desiredGrants(ent));
@@ -200,7 +197,6 @@ export function makeBridge(h) {
 
   // AI の道具：決めた頭の名前の表の、欄の名前と行数（中身は返さない）
   async function listTables(env, { prefix } = {}) {
-    if (!env.B_STORE) return { ok: true, store: "demo", tables: [] };
     const want = String(prefix || "");
     if (want && !TABLE_PREFIXES.some((p) => want.startsWith(p))) return { ok: false, error: "prefix_not_allowed", allowed: TABLE_PREFIXES };
     const defs = await catalog(env);
@@ -215,7 +211,6 @@ export function makeBridge(h) {
 
   // 1 人分の面談の記録（consult-manager の ic_ の表から、その人の番号・旧の番号・メールが入っている行）
   async function meetings(env, { person_id } = {}) {
-    if (!env.B_STORE) return { ok: true, store: "demo", count: 0, records: [] };
     if (!/^[0-9a-f-]{36}$/i.test(String(person_id || ""))) return { ok: false, error: "bad_person_id" };
     const [m] = await db(env, "GET", `member?select=id,email,legacy_shr_id&id=eq.${person_id}`);
     if (!m) return { ok: true, found: false };
@@ -236,13 +231,11 @@ export function makeBridge(h) {
 
   // 付けられる権利の名前：決めた 6 つだけ（2026-10-29）
   async function entitlementKeys(env) {
-    if (!env.B_STORE) return { ok: true, store: "demo", keys: [...KNOWN_KEYS] };
     return { ok: true, keys: [...KNOWN_KEYS] };
   }
 
   // 一覧用：全員の権利の行（人の番号ごと）。期限切れも返し、画面で見分ける
   async function gateAll(env) {
-    if (!env.B_STORE) return {};
     const rows = await db(env, "GET", `member_entitlement?select=${ENT_COLS}&order=granted_at.asc&limit=10000`);
     const out = {};
     for (const r of rows) (out[r.member_id] = out[r.member_id] || []).push(r);
@@ -251,13 +244,11 @@ export function makeBridge(h) {
 
   // 1 人分の権利の行（詳細の「権利」のタブ）
   async function gateFull(env, memberId) {
-    if (!env.B_STORE) return [];
     return await db(env, "GET", `member_entitlement?select=${ENT_COLS}&member_id=eq.${memberId}&order=granted_at.asc`);
   }
 
   async function grantManual(env, { person_id, key, reason, expires_at } = {}, actor = "admin") {
     if (!/^[0-9a-f-]{36}$/i.test(String(person_id || ""))) return { ok: false, error: "bad_person_id" };
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const [m] = await db(env, "GET", `member?select=id&id=eq.${person_id}`);
     if (!m) return { ok: true, found: false };
     const existing = await gateFull(env, person_id);
@@ -271,7 +262,6 @@ export function makeBridge(h) {
   async function revokeManual(env, { person_id, entitlement_id, reason } = {}, actor = "admin") {
     if (!/^[0-9a-f-]{36}$/i.test(String(person_id || ""))) return { ok: false, error: "bad_person_id" };
     if (!/^[0-9a-z-]{1,40}$/i.test(String(entitlement_id ?? ""))) return { ok: false, error: "bad_entitlement_id" };
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const why = String(reason ?? "").trim();
     if (!why) return { ok: false, error: "reason_required" };
     if (why.length > REASON_MAX) return { ok: false, error: "reason_too_long", max: REASON_MAX };
@@ -286,7 +276,6 @@ export function makeBridge(h) {
   // ---------- マーケくん便 5：アプリの公開スイッチ ----------
   // 画面に出す形：関門を通ったアプリごとに、先行で試すがオンか・ほかに開いている権利（見るだけ）・その権利を持つ人数
   async function accessList(env, { key } = {}) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const k = key == null || key === "" ? PILOT_KEY : String(key);
     if (!SWITCH_KEYS.includes(k)) return { ok: false, error: "unknown_key" };
     const targets = PUBLISH_APPS.map((a) => a.target);
@@ -306,7 +295,6 @@ export function makeBridge(h) {
   }
 
   async function setAccess(env, { target, on, key } = {}) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const k = key == null || key === "" ? PILOT_KEY : String(key);
     if (!SWITCH_KEYS.includes(k)) return { ok: false, error: "unknown_key" };
     const app = PUBLISH_APPS.find((a) => a.target === String(target ?? ""));

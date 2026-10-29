@@ -4,7 +4,6 @@
 //    シアニン用の画面に入れるメール（b_admins）は全部見られる。
 //  ・公開の面：公式サイトの表（tl_contents）の公開中の記事と、教材の数だけを返す（中身や動画は出さない）。
 //  ・添削の指摘（長文用）：原文の一部を引用し、番号で結ぶ。引用は原文に必ずある文字列でなければ受け付けない。
-// デモの置き場（B_STORE が無い）には学ぶくんの表も公式サイトの表も無いので、今までどおり b_lessons の仮の教材を返す。
 
 import { dripOpen } from "./site.js";
 
@@ -81,10 +80,6 @@ export function makeLearn(h) {
 
   // 1 人が見られる教材。返すのは { source, member, programs, lesson_count, flat }
   async function lessonsFor(env, customer, email) {
-    if (!env.B_STORE) {
-      const flat = await db(env, "GET", "lessons?select=id,sort,title,summary,minutes,youtube_id&published=eq.true&order=sort.asc");
-      return { source: "demo", member: true, programs: [], lesson_count: flat.length, flat };
-    }
     const admin = await isAdminEmail(env, email);
     let curricula, acc = null;
     if (admin) {
@@ -108,7 +103,6 @@ export function makeLearn(h) {
 
   // AI の道具：教材の数（プログラムとコースごと）。person_id を渡すとその人に見える分だけ
   async function listLessons(env, { person_id } = {}) {
-    if (!env.B_STORE) return { ok: true, store: "demo", note: "デモの置き場には学ぶくんの表が無い", count: 0, programs: [] };
     let customer = null, curricula = null;
     if (person_id) {
       [customer] = await db(env, "GET", `customers?select=id,email&id=eq.${encodeURIComponent(person_id)}`);
@@ -130,7 +124,6 @@ export function makeLearn(h) {
 
   // 公開の面：公式サイトの公開中の記事と、教材の数（題名や動画は出さない）
   async function publicFront(env) {
-    if (!env.B_STORE) return { ok: true, store: "demo", articles: [], catalog: [], lesson_count: 0 };
     const [articles, rows] = await Promise.all([
       db(env, "GET", "tl_contents?select=kind,slug,title,summary,tags,published_at&status=eq.published&order=published_at.desc&limit=5"),
       db(env, "GET", "mn_lessons?select=program_id,program_title,program_sort,course_id,course_title,course_sort,lesson_id,sort,title,curriculum_id&limit=5000"),

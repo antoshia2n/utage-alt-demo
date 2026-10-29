@@ -71,8 +71,6 @@ test("関門を通っていないアプリ・おかしな指定は書かない�
   assert.equal((await bridge.setAccess(env, { target: "x-koryaku", on: "yes" })).error, "bad_on");
   assert.equal((await bridge.setAccess(env, { target: "x-koryaku,portal", on: true })).error, "unknown_app");
   assert.equal(st.table("member_access").length, before);
-  assert.equal((await bridge.setAccess({}, { target: "x-koryaku", on: true })).error, "demo_store");
-  assert.equal((await bridge.accessList({})).error, "demo_store");
 });
 
 test("入口：公開スイッチの口はシアニン用の確認（/api/admin/ の下）の内側にある", () => {

@@ -55,7 +55,6 @@ test("付ける：表にあっても決めた 6 つ以外は付けられない�
   st.table("member_entitlement").push({ id: 9, member_id: "x", key: "monthly_subscriber", source: "payment", reason: "r" });
   assert.equal((await bridge.grantManual(env, { person_id: PID, key: "monthly_subscriber", reason: "手当て" })).error, "unknown_key");
   assert.equal((await bridge.grantManual(env, { person_id: "99999999-2222-4333-8444-555555555555", key: "shiarabo_next_standard", reason: "x" })).found, false);
-  assert.equal((await bridge.grantManual({}, { person_id: PID, key: "shiarabo_next_standard", reason: "x" })).error, "demo_store");
 });
 
 test("外す：手で付けた行だけ外せる。理由が要り、出来事に残る", async () => {
@@ -80,5 +79,4 @@ test("一覧用：人ごとに権利の行をまとめる", async () => {
   await bridge.grantManual(env, { person_id: PID, key: "shiarabo_next_standard", reason: "招待" });
   const all = await bridge.gateAll(env);
   assert.deepEqual(all[PID].map((r) => r.key).sort(), ["shiarabo_basic", "shiarabo_next_standard"]);
-  assert.deepEqual(await bridge.gateAll({}), {});
 });

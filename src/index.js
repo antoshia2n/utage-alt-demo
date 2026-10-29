@@ -72,7 +72,7 @@ import { makeMypage } from "./mypage.js";
 import { makeNews, newsQuery } from "./news.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.54.0-bshell";
+const VERSION = "0.54.1-bmuda10b1";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -111,7 +111,7 @@ export default {
       try {
         const r = await bin3.remindUnread(env, roomEvents, roomState);
         // 便 13：本番の置き場は表のセミナーの知らせ、デモの置き場は架空の 2 回の前日の知らせ
-        const s = env.B_STORE ? await seminars.run(env) : await bin4.remindSeminars(env);
+        const s = await seminars.run(env);
         const bk = await booking.run(env); // 便 13b：個別相談の前日の知らせ
         const d = await deliver.run(env);
         await logInbound(env, "cron", { cron: event.cron }, { room: r, seminars: s, booking: bk, deliver: d }, 200);
@@ -263,12 +263,10 @@ function secretHeaders(env) {
 // PostgREST を秘密の鍵で呼ぶ。失敗は投げる（0 件と失敗を混ぜない）
 // 本番の置き場では表の名前を b_ に読み替える。顧客の台帳への書き込みだけは別の道（storeCustomerWrite）を通る
 async function db(env, method, pathAndQuery, body, prefer) {
-  if (env.B_STORE) {
-    const i = pathAndQuery.search(/[?]/);
-    const table = i < 0 ? pathAndQuery : pathAndQuery.slice(0, i);
-    if (table === "customers" && method !== "GET") return await storeCustomerWrite(env, method, pathAndQuery, body);
-    if (B_TABLES[table]) pathAndQuery = B_TABLES[table] + (i < 0 ? "" : pathAndQuery.slice(i));
-  }
+  const i = pathAndQuery.search(/[?]/);
+  const table = i < 0 ? pathAndQuery : pathAndQuery.slice(0, i);
+  if (table === "customers" && method !== "GET") return await storeCustomerWrite(env, method, pathAndQuery, body);
+  if (B_TABLES[table]) pathAndQuery = B_TABLES[table] + (i < 0 ? "" : pathAndQuery.slice(i));
   return await rawDb(env, method, pathAndQuery, body, prefer);
 }
 
@@ -332,7 +330,7 @@ async function registerPerson(env, body = {}) {
   }
   // 便 8g-2：紹介のリンク（/register?ref=番号）から来たら、紹介された印を積む（1 人 1 回・自分の番号は積まない）
   let referred = false;
-  if (env.B_STORE && body.ref) referred = (await refer.onRegister(env, id, String(body.ref), isNew)).referred === true;
+  if (body.ref) referred = (await refer.onRegister(env, id, String(body.ref), isNew)).referred === true;
   await logInbound(env, "register", { email, source, via, route, ref: body.ref ? String(body.ref).slice(0, 20) : undefined }, { ok: true, isNew, referred }, 200);
   return { ok: true, id, is_new: isNew };
 }
@@ -373,7 +371,7 @@ async function handlePagesHost(request, env, url) {
     return new Response(EMBED_JS, { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "public, max-age=300" } });
   }
   if (path === "/robots.txt") return new Response("User-agent: *\nAllow: /\n", { headers: { "content-type": "text/plain; charset=utf-8" } });
-  if (missingConfig(env).length || !env.B_STORE) return html(PAGE_404, 503, { "cache-control": "no-store" });
+  if (missingConfig(env).length) return html(PAGE_404, 503, { "cache-control": "no-store" });
   if (path === "/api/p/hit" && method === "POST") {
     const stop = await guardPublic(request, env, "lp_hit", { ip: "hit" });
     if (stop) return stop;
@@ -437,13 +435,11 @@ async function verifyUser(request, env) {
 const COMMUNITY_KEY = "community_url";
 const COMMUNITY_URL_RE = /^https:[/][/][^\s<>"']{4,490}$/;
 async function communityLink(env) {
-  if (!env.B_STORE) return { url: env.COMMUNITY_URL || "", updated_at: null, updated_by: null };
   const rows = await db(env, "GET", `settings?select=value,updated_at,updated_by&key=eq.${COMMUNITY_KEY}`);
   return rows.length ? { url: rows[0].value || "", updated_at: rows[0].updated_at, updated_by: rows[0].updated_by } : { url: "", updated_at: null, updated_by: null };
 }
 // 差し替える。空の文字は「リンクを外す（入口を閉じる）」。actor は画面ならメール、AI なら mcp
 async function setCommunityLink(env, { url }, actor) {
-  if (!env.B_STORE) return { ok: false, error: "demo_store" };
   const v = String(url == null ? "" : url).trim();
   if (v && !COMMUNITY_URL_RE.test(v)) return { ok: false, error: "bad_url", note: "https:// で始まる 500 文字までのリンク。外すときは空にする" };
   const before = await communityLink(env);
@@ -504,7 +500,7 @@ const core = {
       p.gate = (gate[p.id] || []).map((r) => ({ id: r.id, key: r.key, source: r.source, reason: r.reason, granted_at: r.granted_at, expires_at: r.expires_at }));
     }
     // 探していないときだけ、しあらぼ管理と結べなかった生徒の呼び名を添える（連絡先は返さない）
-    const extra = st.error ? { students_error: st.error } : (!s && env.B_STORE ? { students_unmatched: await students.unmatched(env, st) } : {});
+    const extra = st.error ? { students_error: st.error } : (!s ? { students_unmatched: await students.unmatched(env, st) } : {});
     return { ok: true, count: people.length, people, ...extra };
   },
 
@@ -518,7 +514,7 @@ const core = {
     const events = (await db(env, "GET", `events?select=id,type,payload,actor,occurred_at&customer_id=eq.${person_id}&order=occurred_at.desc&limit=200`))
       .map((e) => String(e.type).startsWith("push_") ? { ...e, payload: { device: (e.payload && e.payload.device) || "", reason: (e.payload && e.payload.reason) || undefined } } : e);
     const deal = await bin4.deal(env, person_id);
-    const labels = env.B_STORE ? ((await connect.getLabels(env, { person_id })).labels || []) : [];
+    const labels = (await connect.getLabels(env, { person_id })).labels || [];
     const lane = stageOf({ labels: labels.map((x) => x.label), deal: deal ? deal.stage : "none", logins: person.login_count || 0 });
     const purchases = (await db(env, "GET", `events?select=id,payload,occurred_at&customer_id=eq.${person_id}&type=eq.purchase_completed&order=occurred_at.desc&limit=50`))
       .map((e) => ({ at: e.occurred_at, product_id: e.payload.product_id || null, name: e.payload.product_name || e.payload.product_id || "", amount: e.payload.amount ?? null, kind: e.payload.kind || null, mode: e.payload.mode || null }));
@@ -687,7 +683,6 @@ const core = {
 // 途中で 1 本でも形が合わなければそこで止め、それまでに作った下書きの番号を返す（下書きは動かないので害は無い）
 const DRAFT_MAX = 10;
 async function draftFlow(env, { campaign_id = null, campaign_title = "", starts_on = null, connectors } = {}, actor = "mcp") {
-  if (!env.B_STORE) return { ok: false, error: "demo_store" };
   const list = Array.isArray(connectors) ? connectors : [];
   if (!list.length || list.length > DRAFT_MAX) return { ok: false, error: "need_connectors", min: 1, max: DRAFT_MAX };
   let cid = campaign_id || null, cname = null;
@@ -804,7 +799,7 @@ async function studentAccess(env, customer, email) {
 // 便 2（関門 5）：右上の「アプリ一覧」に出す、この人が開けるアプリの名前（権利 × 開くものの表 member_access）。共通の外枠の門番の答えと同じ形
 async function openAppTargets(env, ent) {
   const keys = (ent && ent.grants) || [];
-  if (!env.B_STORE || !keys.length) return [];
+  if (!keys.length) return [];
   const rows = await db(env, "GET", `member_access?select=target&entitlement_key=in.(${keys.map(encodeURIComponent).join(",")})&limit=1000`);
   return [...new Set(rows.map((r) => r.target))];
 }
@@ -848,7 +843,7 @@ async function handleApi(request, env, url) {
     }
     // 便 6a：学ぶくんの教材を読めるか（本番の置き場だけ）
     let manabu = null;
-    if (dbOk === true && env.B_STORE) {
+    if (dbOk === true) {
       try { await db(env, "GET", "mn_lessons?select=lesson_id&limit=1"); manabu = true; } catch (e) { manabu = String(e.message).slice(0, 200); }
     }
     const pay = bin3.univapayState(env);
@@ -856,7 +851,7 @@ async function handleApi(request, env, url) {
     try { mail = await bin3.mailState(env); } catch (e) { mail = { binding: !!env.EMAIL, from: null, scope: null, error: String(e.message).slice(0, 200) }; }
     return json({
       ok: missing.length === 0 && dbOk === true, version: VERSION, missing_settings: missing, db: dbOk, images: !!env.IMAGES,
-      store: env.B_MISSING ? "missing" : env.B_STORE ? "production" : "demo", manabu, public_origin: env.PUBLIC_ORIGIN || null,
+      store: env.B_MISSING ? "missing" : "production", manabu, public_origin: env.PUBLIC_ORIGIN || null,
       // 便 R1：公開の入口の守り。bot_check は両方の鍵がそろったときだけ on。ip_limit は Cloudflare の回数制限の結び
       shield: { bot_check: botCheckOn(env), site_key: !!env.TURNSTILE_SITE_KEY, secret_key: !!env.TURNSTILE_SECRET_KEY, ip_limit: !!(env.PUBLIC_LIMIT && env.HIT_LIMIT) },
       univapay: { configured: pay.configured, mode: pay.mode, store: !!pay.store_id },
@@ -872,7 +867,7 @@ async function handleApi(request, env, url) {
       univapayMode: bin3.univapayState(env).mode || null,
       // 便 R1：ロボット判定の表示用の鍵（判定を掛けるときだけ。公開してよい値）
       botSiteKey: botSiteKey(env),
-      plan: env.B_STORE ? null : bin3.PLAN,
+      plan: null,
       version: VERSION,
     });
   }
@@ -1039,7 +1034,7 @@ async function handleApi(request, env, url) {
     const customer = await customerByEmail(env, v.email);
     if (!customer) return json({ ok: false, error: "not_registered" }, 404);
     // B の便 7c-1：個別相談の枠とセミナーはまだ架空（本物は便 8f）。本番の置き場では、シアニン以外には「準備中」だけを返す
-    if (env.B_STORE && !(await learn.isAdminEmail(env, v.email))) {
+    if (!(await learn.isAdminEmail(env, v.email))) {
       if (method === "GET" && path === "/api/booking") return json({ ok: true, ready: false, note: "個別相談とセミナーの申し込みは準備中です" });
       return json({ ok: false, error: "not_ready" }, 403);
     }
@@ -1172,7 +1167,7 @@ async function handleApi(request, env, url) {
     if (a.error) return json({ ok: false, error: a.error }, a.status);
     if (path === "/api/admin/whoami") return json({ ok: true, email: a.email });
     // 便 7a：オプチャの招待リンク（読む・差し替える）
-    if (path === "/api/admin/community" && method === "GET") return json({ ok: true, store: env.B_STORE ? "production" : "demo", ...(await communityLink(env)) });
+    if (path === "/api/admin/community" && method === "GET") return json({ ok: true, store: "production", ...(await communityLink(env)) });
     if (path === "/api/admin/community" && method === "PUT") {
       const body = await request.json().catch(() => ({}));
       const r = await setCommunityLink(env, { url: body.url }, a.email);
@@ -1330,7 +1325,7 @@ async function handleApi(request, env, url) {
     const bt = path.match(/^[/]api[/]admin[/]booking-types[/]([0-9a-f-]{36})(?:[/](slots))?$/i);
     if (bt && method === "GET") return json(bt[2] ? await booking.getSlots(env, { type_id: bt[1] }) : await booking.get(env, { type_id: bt[1] }));
     // 便 13：本番の置き場は表のセミナー（作る・直す・知らせを足す・いま送る）
-    if (env.B_STORE && path.startsWith("/api/admin/seminars")) {
+    if (path.startsWith("/api/admin/seminars")) {
       const actor = a.email;
       if (path === "/api/admin/seminars" && method === "GET") return json(await seminars.list(env, { include_archived: url.searchParams.get("all") === "1" }));
       if (path === "/api/admin/seminars" && method === "POST") {
@@ -1490,7 +1485,7 @@ async function handleApi(request, env, url) {
     }
     // B の便 5：配信（シアニン用の画面からは承認なしで送れる。AI からは一斉配信とステップの変更に承認が要る）
     if (path === "/api/admin/deliver" && method === "GET") {
-      const [b, s, w] = await Promise.all([deliver.listBroadcasts(env, {}), deliver.listSteps(env), env.B_STORE ? deliver.warmState(env) : null]);
+      const [b, s, w] = await Promise.all([deliver.listBroadcasts(env, {}), deliver.listSteps(env), deliver.warmState(env)]);
       return json({ ok: true, broadcasts: b.broadcasts, steps: s.steps, warm: w, open_to_all: (await mailcfg.get(env)).scope === "all" });
     }
     if (path === "/api/admin/deliver/run" && method === "POST") return json(await deliver.run(env));
@@ -2331,7 +2326,7 @@ async function runTool(env, name, args) {
   if (name === "get_health") {
     const pay = bin3.univapayState(env);
     return {
-      ok: true, version: VERSION, store: env.B_MISSING ? "missing" : env.B_STORE ? "production" : "demo",
+      ok: true, version: VERSION, store: env.B_MISSING ? "missing" : "production",
       shield: { bot_check: botCheckOn(env), site_key: !!env.TURNSTILE_SITE_KEY, secret_key: !!env.TURNSTILE_SECRET_KEY, ip_limit: !!(env.PUBLIC_LIMIT && env.HIT_LIMIT) },
       limits: { ip: IP_LIMITS, email: EMAIL_LIMITS },
       univapay: { configured: pay.configured, mode: pay.mode },
@@ -2359,7 +2354,7 @@ async function runTool(env, name, args) {
   if (name === "send_email") return await bin3.sendMailTo(env, args, "mcp");
   if (name === "list_consults") return await bin4.listConsults(env, args);
   if (name === "set_deal_stage") return await bin4.setDealStage(env, args, "mcp");
-  if (name === "list_seminars") return env.B_STORE ? await seminars.list(env, args) : await bin4.seminarsAdmin(env);
+  if (name === "list_seminars") return await seminars.list(env, args);
   // 便 13b
   if (name === "list_booking_types") return await booking.list(env, args);
   if (name === "get_booking_type") return await booking.get(env, args);
@@ -2370,7 +2365,7 @@ async function runTool(env, name, args) {
   if (name === "set_seminar") return await seminars.set(env, args, "mcp");
   if (name === "set_seminar_notice") return await seminars.setNotice(env, args, "mcp");
   if (name === "send_seminar_notice") return await seminars.sendNotice(env, args, "mcp");
-  if ((name === "send_seminar_reminder" || name === "send_seminar_archive") && env.B_STORE) return { ok: false, error: "use_send_seminar_notice", note: "本番の置き場のセミナーは知らせ（set_seminar_notice）と send_seminar_notice で送る。この道具は架空の 2 回のためのもの" };
+  if ((name === "send_seminar_reminder" || name === "send_seminar_archive")) return { ok: false, error: "use_send_seminar_notice", note: "本番の置き場のセミナーは知らせ（set_seminar_notice）と send_seminar_notice で送る。この道具は架空の 2 回のためのもの" };
   if (name === "set_note_member") return await core.setNoteMember(env, { person_id: args.person_id, value: args.value }, "mcp");
   if (name === "send_seminar_reminder") {
     if (!/^[a-z0-9-]{1,40}$/.test(String(args.seminar_id || ""))) return { ok: false, error: "bad_seminar_id" };
