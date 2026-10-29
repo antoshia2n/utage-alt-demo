@@ -53,7 +53,7 @@ async function main() {
     $("tab-lessons").innerHTML = `
       <div class="lib-head"><span class="note">教材 ${lib.lesson_count} 本</span>
         <label for="lib-q" class="sr">教材を探す</label><input id="lib-q" type="search" placeholder="題名で探す" autocomplete="off"></div>
-      ${lib.programs.map((p, pi) => `<details class="prog"${pi === 0 ? " open" : ""}><summary><b>${esc(p.title)}</b><span class="note">${p.courses.reduce((a, c) => a + c.lessons.length, 0)} 本</span></summary>
+      ${lib.programs.map((p, pi) => `<details class="prog" data-pid="${esc(p.id)}"${pi === 0 ? " open" : ""}><summary><b>${esc(p.title)}</b><span class="note">${p.courses.reduce((a, c) => a + c.lessons.length, 0)} 本</span></summary>
         ${p.courses.map((c) => `<div class="course"><div class="course-h">${esc(c.title)}<span class="note">${c.lessons.length} 本</span></div><div class="stack">${c.lessons.map(lessonRow).join("")}</div></div>`).join("")}
       </details>`).join("") || '<p class="note">教材はまだありません。</p>'}
       <p class="note hidden" id="lib-none">見つかりませんでした。</p>`;
@@ -186,10 +186,21 @@ async function main() {
       fr.style.height = Math.min(Math.max(e.data.labMypageHeight, 200), 20000) + "px";
     });
     fr.srcdoc = mp.html;
-    if (!location.hash) showTab("mypage");
+    if (!location.hash && mp.landing !== "lessons") showTab("mypage"); // サイトの設定「ログインしたあと最初に出す画面」
   }
   // マイページの枠の中のリンク：#lesson/<番号> はそのコンテンツ、#news はお知らせ
-  const routeLesson = () => { const m = location.hash.match(/^#lesson[/](.+)$/); if (m) { openLesson(decodeURIComponent(m[1])); return true; } return false; };
+  const routeLesson = () => {
+    const m = location.hash.match(/^#lesson[/](.+)$/); if (m) { openLesson(decodeURIComponent(m[1])); return true; }
+    // #program/<番号>：教材の一覧で、そのプログラムを開いて見えるところまで動かす。#lessons：教材の一覧
+    const pg = location.hash.match(/^#program[/](.+)$/);
+    if (pg || location.hash === "#lessons") {
+      showTab("lessons");
+      const d = pg && document.querySelector(`details.prog[data-pid="${CSS.escape(decodeURIComponent(pg[1]))}"]`);
+      if (d) { d.open = true; d.scrollIntoView({ block: "start" }); d.querySelector("summary").focus(); }
+      return true;
+    }
+    return false;
+  };
   routeLesson();
   if (location.hash === "#news") showTab("news");
   if (location.hash === "#review") showTab("review");
