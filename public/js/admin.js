@@ -83,7 +83,16 @@ async function openConsole() {
   // 顧客の一覧だけは、ホームを出したあとに裏で読んでおく（数の箱は顧客管理を開いたとき）
   Promise.resolve(routeHash() ? null : loadHome()).finally(() => { if (!peopleLoaded) { peopleLoaded = true; search(); } });
   window.addEventListener("hashchange", routeHash);
-  setInterval(() => { if (!document.hidden) loadRooms(); }, 30000);
+  // ムダ 2（2026-10-29）：部屋の一覧の見張りは、添削ルームを開いているときだけ 30 秒ごと。ほかの画面では 5 分ごと、
+  // ほかのタブから戻ったときはすぐ 1 回（生徒からのメッセージはスマホの通知でもすぐ届く）
+  roomsAt = Date.now();
+  const roomsTick = (force) => {
+    if (document.hidden) return;
+    const onRooms = $("view-rooms").style.display !== "none";
+    if (force || Date.now() - roomsAt >= (onRooms ? 30e3 : 300e3)) { roomsAt = Date.now(); loadRooms(); }
+  };
+  setInterval(() => roomsTick(false), 30000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) roomsTick(true); });
   let t;
   $("q").addEventListener("input", () => { clearTimeout(t); t = setTimeout(search, 250); });
   $("src").addEventListener("change", search);
@@ -463,7 +472,7 @@ function setupTopbar() {
     if (loaded) search();
   });
   $("chip-ai").addEventListener("click", () => openView("ai"));
-  $("chip-rooms").addEventListener("click", () => { $("only-unreplied").checked = true; openView("rooms"); loadRooms(); });
+  $("chip-rooms").addEventListener("click", () => { $("only-unreplied").checked = true; openView("rooms"); });
 }
 function setChip(id, n) {
   $(id + "-n").textContent = n > 0 ? String(n) : "";
@@ -706,7 +715,7 @@ function openView(name, part) {
   // 便 12a：設計図のページの箱から開いたときは、その 1 枚を開く
   if (name === "pages" && part && part.lp && part.id) openPage(part.id);
 }
-let peopleLoaded = false, statsLoaded = false;
+let peopleLoaded = false, statsLoaded = false, roomsAt = 0;
 // 設定の画面を開くたびに読み直す（AI や承認で値が変わっていても、開いたときは新しい値）
 function loadSettings() { if ($("setup").open) loadSetup(); loadCommunity(); reloadMail(); loadCalendar(); loadPush(); }
 const settingsOpen = () => $("view-settings").style.display !== "none";
@@ -725,6 +734,7 @@ function setupViews() {
     const box = b.closest(".grp-box");
     if (box && box.classList.contains("closed")) box.querySelector(".grp").click();
     if (b.dataset.view === "home") loadHome();
+    if (b.dataset.view === "rooms") { roomsAt = Date.now(); loadRooms(); }
     if (b.dataset.view === "people" && !peopleLoaded) { peopleLoaded = true; search(); }
     if (b.dataset.view === "people" && !statsLoaded) { statsLoaded = true; loadStats(); }
     if (b.dataset.view === "settings") loadSettings();
