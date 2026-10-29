@@ -19,14 +19,7 @@ function watchSideEnd() {
   mark();
 }
 
-function shellDemo() {
-  let on = new URLSearchParams(location.search).get("demo") === "shell";
-  try { if (on) sessionStorage.setItem("s2demo-shell", "1"); else on = sessionStorage.getItem("s2demo-shell") === "1"; } catch (_) {}
-  return on;
-}
 
-// デモの間は、新しい見た目（student.css）も ?demo=shell のときだけ
-if (shellDemo()) document.body.classList.add("student");
 
 function fail(text) {
   $("loading").classList.add("hidden");
@@ -55,8 +48,8 @@ async function main() {
   watchSideEnd();
   $("who").textContent = r.me.name || r.me.email;
   $("logout").addEventListener("click", async (e) => { e.preventDefault(); await sb.auth.signOut(); location.replace("/"); });
-  // 便 2（関門 5）：共通の外枠。デモの間は ?demo=shell で開いたときだけ（同じタブの中は覚えておく）
-  if (shellDemo()) {
+  // 便 2（関門 5）：共通の外枠（？・アプリ一覧・アカウント）。読めなかったときは今までの名前とログアウトのまま
+  {
     try {
       const { mountStudentShell } = await import("/js/student-shell.js");
       mountStudentShell($("shell-slot"), { me: r, sb, session });
