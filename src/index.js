@@ -72,7 +72,7 @@ import { makeMypage } from "./mypage.js";
 import { makeNews, newsQuery } from "./news.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.50.3-bmuda1b";
+const VERSION = "0.50.4-bmuda7";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -1276,7 +1276,11 @@ async function handleApi(request, env, url) {
       return json({
         ok: true,
         univapay: { configured: pay.configured, mode: pay.mode, store: !!pay.store_id },
-        webhook: { url: url.origin + "/api/webhooks/univapay", auth_token: await bin3.webhookAuth(env) },
+        // ムダ 7（2026-10-29）：合言葉はふだん末尾 4 文字だけ。画面の「表示する」（?reveal=1）のときだけそのものを返す
+        webhook: await (async () => {
+          const t = await bin3.webhookAuth(env);
+          return { url: url.origin + "/api/webhooks/univapay", auth_tail: t.slice(-4), ...(url.searchParams.get("reveal") === "1" ? { auth_token: t } : {}) };
+        })(),
         mail: await bin3.mailState(env),
       });
     }

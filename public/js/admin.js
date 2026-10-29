@@ -708,7 +708,7 @@ function openView(name, part) {
 }
 let peopleLoaded = false, statsLoaded = false;
 // 設定の画面を開くたびに読み直す（AI や承認で値が変わっていても、開いたときは新しい値）
-function loadSettings() { loadSetup(); loadCommunity(); reloadMail(); loadCalendar(); loadPush(); }
+function loadSettings() { if ($("setup").open) loadSetup(); loadCommunity(); reloadMail(); loadCalendar(); loadPush(); }
 const settingsOpen = () => $("view-settings").style.display !== "none";
 function setupViews() {
   document.querySelectorAll(".side [data-view]").forEach((b) => b.addEventListener("click", () => {
@@ -745,6 +745,8 @@ function setupViews() {
     }
   }));
   setupFuncBar();
+  // ムダ 7：決済の設定は欄を開いたときに読み、閉じたら伏せ字に戻す
+  $("setup").addEventListener("toggle", () => { if ($("setup").open) loadSetup(); else { setupReveal = false; $("setup-body").textContent = "読み込んでいます…"; } });
   $("hm-guide").addEventListener("click", () => openView("guide"));
   $("cust-back").addEventListener("click", custList);
   document.querySelectorAll("[data-back]").forEach((b) => b.addEventListener("click", () => showPane(b.dataset.back, "list")));
@@ -2505,17 +2507,20 @@ function setupPush() {
   });
 }
 
+// ムダ 7：決済の知らせの合言葉はふだん伏せ字。「表示する」を押したときだけ読む。欄を開いたときだけ読む
+let setupReveal = false;
 async function loadSetup() {
-  const s = await api("/api/admin/setup", { token });
+  const s = await api("/api/admin/setup" + (setupReveal ? "?reveal=1" : ""), { token });
   if (!s.ok) { $("setup-body").textContent = "読めませんでした（" + (s.error || s.status) + "）"; return; }
   const yes = (b) => (b ? "入っている" : "まだ");
   $("setup-body").innerHTML = `<dl>
     <dt>UnivaPay の鍵</dt><dd>${yes(s.univapay.configured)}${s.univapay.mode ? "（" + esc(s.univapay.mode) + "）" : ""}</dd>
     <dt>Webhook の URL</dt><dd><code>${esc(s.webhook.url)}</code></dd>
-    <dt>Webhook の認証</dt><dd><code>${esc(s.webhook.auth_token)}</code></dd>
+    <dt>Webhook の認証</dt><dd><code>${s.webhook.auth_token ? esc(s.webhook.auth_token) : "••••••••" + esc(s.webhook.auth_tail || "")}</code> <button class="btn ghost small" type="button" id="setup-reveal" aria-pressed="${setupReveal}">${setupReveal ? "隠す" : "表示する"}</button></dd>
     <dt>メールの送り口</dt><dd>${yes(s.mail.binding)}</dd>
     <dt>送信元</dt><dd>${s.mail.from ? "<code>" + esc(s.mail.from) + "</code>" : "まだ"}</dd>
   </dl>`;
+  $("setup-reveal").addEventListener("click", () => { setupReveal = !setupReveal; loadSetup().then(() => $("setup-reveal")?.focus()); });
 }
 
 function detailText(e) {
