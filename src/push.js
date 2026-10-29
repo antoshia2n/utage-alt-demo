@@ -143,7 +143,6 @@ export function makePush(h) {
   }
 
   async function status(env) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const k = await publicKey(env);
     if (!k.ok) return { ok: false, error: k.error, note: k.note };
     const subs = await subscriptions(env);
@@ -158,7 +157,6 @@ export function makePush(h) {
 
   // 便 8g-1：生徒が自分の画面で見る分。宛先の住所は返さない
   async function studentStatus(env, customerId) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const k = await publicKey(env);
     if (!k.ok) return { ok: false, error: k.error };
     const subs = await subscriptions(env, { aud: "student", customerId });
@@ -171,7 +169,6 @@ export function makePush(h) {
   }
 
   async function subscribe(env, email, { endpoint, keys, device } = {}, aud = "admin") {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     if (!endpointAllowed(endpoint)) return { ok: false, error: "bad_endpoint" };
     const p256dh = keys && keys.p256dh, auth = keys && keys.auth;
     try { if (fromB64u(p256dh).length !== 65 || fromB64u(auth).length !== 16) throw 0; } catch (_) { return { ok: false, error: "bad_keys" }; }
@@ -186,7 +183,6 @@ export function makePush(h) {
   }
 
   async function unsubscribe(env, email, { endpoint } = {}, aud = "admin") {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     let s = (await subscriptions(env, { aud })).find((x) => x.endpoint === endpoint);
     // 生徒は自分の端末しか外せない
     if (s && aud === "student" && s.email !== String(email || "").toLowerCase()) s = null;
@@ -229,7 +225,6 @@ export function makePush(h) {
 
   // シアニン用の画面の全部の端末へ 1 通
   async function send(env, { title, body = "", url = "/admin", tag = "" } = {}) {
-    if (!env.B_STORE) return { ok: true, sent: 0, skipped: "demo_store" };
     const out = { ok: true, devices: 0, sent: 0, failed: 0, gone: 0 };
     try {
       const subs = await subscriptions(env);
@@ -244,7 +239,6 @@ export function makePush(h) {
 
   // 便 8g-1：生徒 1 人の端末へ 1 通。押すと生徒の画面（/app で始まる場所）が開く
   async function sendTo(env, customerId, { title, body = "", url = "/app", tag = "" } = {}) {
-    if (!env.B_STORE) return { ok: true, sent: 0, skipped: "demo_store" };
     const out = { ok: true, devices: 0, sent: 0, failed: 0, gone: 0 };
     try {
       const subs = await subscriptions(env, { aud: "student", customerId });

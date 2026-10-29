@@ -202,7 +202,6 @@ export function makeDeliver(h) {
   }
 
   async function previewAudience(env, { filter } = {}) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const a = await audience(env, filter || {});
     return {
       ok: true, filter: a.filter, count: a.people.length, unsubscribed: a.unsubscribed, excluded: a.excluded,
@@ -214,7 +213,6 @@ export function makeDeliver(h) {
 
   // ---------- ステップ配信 ----------
   async function listSteps(env) {
-    if (!env.B_STORE) return { ok: true, store: "demo", count: 0, steps: [] };
     const steps = await db(env, "GET", "b_steps?select=*&order=sort.asc,id.asc");
     const ev = await db(env, "GET", "events?select=type,payload&type=in.(email_sent,email_clicked)&payload->>kind=eq.step&limit=10000");
     const ran = await db(env, "GET", "events?select=type,payload&type=in.(admin_notified,admin_notify_failed,label_added,connector_skipped,step_entered,field_set)&payload->>step_id=not.is.null&limit=10000");
@@ -238,7 +236,6 @@ export function makeDeliver(h) {
 
   // コネクタを足す・直す・動かす・止める。欄の決まりは connect.js の TRIGGERS・ACTIONS と b8e_connect.sql の check に合わせる
   async function setStep(env, args, by) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const patch = {};
     if ("name" in args) patch.name = String(args.name || "").trim().slice(0, 120);
     if ("trigger" in args) { if (!TRIGGERS[args.trigger]) return { ok: false, error: "bad_trigger", triggers: Object.keys(TRIGGERS) }; patch.trigger = args.trigger; }
@@ -427,7 +424,6 @@ export function makeDeliver(h) {
 
   // ---------- 一斉配信 ----------
   async function listBroadcasts(env, { limit = 30 } = {}) {
-    if (!env.B_STORE) return { ok: true, store: "demo", count: 0, broadcasts: [] };
     const lim = Math.min(Math.max(parseInt(limit, 10) || 30, 1), 100);
     const rows = await db(env, "GET", `b_broadcasts?select=*&order=created_at.desc&limit=${lim}`);
     if (rows.length) {
@@ -448,7 +444,6 @@ export function makeDeliver(h) {
 
   // 下書きを作る・直す（送らない）。送るのは queueBroadcast
   async function draftBroadcast(env, args, by) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const subject = String(args.subject || "").trim().slice(0, 200), body = String(args.body || "").slice(0, 10000);
     if (!subject || !body.trim()) return { ok: false, error: "need_subject_and_body" };
     const filter = normFilter(args.filter || {});
@@ -467,7 +462,6 @@ export function makeDeliver(h) {
 
   // 送る列に入れる。宛先の数はこの時点で数えて残す（実際に送るのは毎時の定時の処理。1 日の上限の中で少しずつ）
   async function queueBroadcast(env, { id }, by) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     if (!UUID_RE.test(String(id || ""))) return { ok: false, error: "bad_id" };
     const [b] = await db(env, "GET", `b_broadcasts?select=*&id=eq.${id}`);
     if (!b) return { ok: false, error: "not_found" };
@@ -481,7 +475,6 @@ export function makeDeliver(h) {
   }
 
   async function cancelBroadcast(env, { id }, by) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     if (!UUID_RE.test(String(id || ""))) return { ok: false, error: "bad_id" };
     const rows = await db(env, "PATCH", `b_broadcasts?id=eq.${id}&status=in.(draft,queued,sending)`,
       { status: "canceled", finished_at: new Date().toISOString(), updated_by: String(by || "unknown").slice(0, 120) }, "return=representation");
@@ -517,7 +510,6 @@ export function makeDeliver(h) {
 
   // 定時の処理（と、シアニン用の画面の「いま送る」）。ステップが先、一斉配信が後
   async function run(env) {
-    if (!env.B_STORE) return { ok: true, store: "demo", skipped: true };
     const warm = await warmState(env);
     const left = { n: warm.left };
     const steps = await runSteps(env, left);
@@ -584,13 +576,13 @@ export function makeDeliver(h) {
     const [allowed, admin, inLedger, cfg] = await Promise.all([
       bin3.mailAllowed(env, to, "auth"),
       isAdmin(env, to),
-      env.B_STORE ? db(env, "GET", `customers?select=id&email=eq.${encodeURIComponent(to)}`).then((r) => r.length > 0) : Promise.resolve(true),
+      db(env, "GET", `customers?select=id&email=eq.${encodeURIComponent(to)}`).then((r) => r.length > 0),
       h.mailcfg.get(env),
     ]);
     if (!allowed) return await reply(400, { ok: false, error: "mail_not_open" });
     // 便 R1：台帳にいない住所へは送らない（ログイン・登録のメールは、公開の口の守りを通って台帳に入った人と、シアニンにだけ届く）。
     // Supabase のログインの口を機械が直接呼んでも、知らない人の住所へメールが出ないようにするため
-    if (env.B_STORE && !admin && !inLedger) return await reply(400, { ok: false, error: "not_in_ledger" });
+    if (!admin && !inLedger) return await reply(400, { ok: false, error: "not_in_ledger" });
     if (!env.EMAIL || !cfg.from) return await reply(500, { ok: false, error: "mail_not_configured" });
     // B の便 7c-1 の続き：リンクは B 自身の住所の /auth を通す（送り元とリンク先の住所をそろえる）。
     // 行き先は /app か /admin だけ。Supabase が行き先を既定の住所に置き換えたときは、シアニンなら /admin、それ以外は /app
