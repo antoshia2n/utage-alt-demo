@@ -4,7 +4,6 @@
 //   subscription_started … 定期の商品のときは、これまでどおり定期課金の始まりも積む（2 回目以降の入金と止まった知らせを結ぶため）
 // 画面の言うことは信じない：決済の番号を秘密の鍵で UnivaPay に聞き直し、金額・通貨・周期・商品が台帳と合うときだけ積む。
 // 同じ決済の番号は 1 回しか積まない（画面の確かめと UnivaPay の知らせの両方から来ても 1 件）。
-// デモの置き場（B_STORE が無いとき）には商品の台帳が無いので、便 3 の見本のプラン 1 つだけを商品として見せる。
 // 権利（grants）は B の中の印。便 6b から門番の権利の表（member_entitlement）へも書く（中身は src/bridge.js）。
 // 会員かどうかは、B で買ったものに加えて門番の表の shiarabo_basic（shr-webhook が付ける本番の会員）でも決まる。
 // 便 12c：① カード会社の分割（card_installments の商品だけ、決済の枠をページに埋め込んで回数をお客さんが選ぶ）
@@ -52,17 +51,8 @@ export function makeSell(h) {
   const { db, addEvent, bin3 } = h;
 
   // ---------- 商品の台帳 ----------
-  function demoProducts() {
-    const p = bin3.PLAN;
-    return [{
-      id: "demo-monthly", name: p.name, kind: "subscription", amount: p.amount, currency: p.currency, period: p.period,
-      installments: null, grant_days: null, grants: [], deny_multiple: true, sales_limit: null, list_price_of: null,
-      description: "", active: true, public: true, sort: 1, note: "デモの置き場の見本",
-    }];
-  }
 
   async function allProducts(env) {
-    if (!env.B_STORE) return demoProducts();
     return await db(env, "GET", "b_products?select=*&order=sort.asc,id.asc");
   }
 
@@ -97,12 +87,11 @@ export function makeSell(h) {
     const sold = await salesCount(env);
     const rows = list.filter((p) => include_inactive === true || include_inactive === "true" || p.active)
       .map((p) => ({ ...p, sold: sold[p.id] || 0 }));
-    return { ok: true, store: env.B_STORE ? "production" : "demo", count: rows.length, products: rows };
+    return { ok: true, store: "production", count: rows.length, products: rows };
   }
 
   // 価格・売る売らない・サイトに出す出さない・権利などを変える。新しい id なら足す。変えた中身は戻せるように前後を返す
   async function setProduct(env, args, by) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const id = String(args.id || "");
     if (!ID_RE.test(id)) return { ok: false, error: "bad_id" };
     const [before] = await db(env, "GET", `b_products?select=*&id=eq.${id}`);
@@ -476,7 +465,6 @@ export function makeSell(h) {
   }
 
   async function listSubscriptions(env, { status } = {}) {
-    if (!env.B_STORE) return { ok: true, store: "demo", count: 0, subscriptions: [] };
     let list = await subscriptions(env);
     if (status) list = list.filter((s) => s.status === status);
     const ids = [...new Set(list.map((s) => s.customer_id))];
@@ -491,7 +479,6 @@ export function makeSell(h) {
   // 解約：UnivaPay の定期課金を消す（永久停止。戻せない）。消えたら出来事に積んで権利を合わせ直す
   // 便 R3：opts.via（admin／self）と opts.keep_until（止めたあと使える期限。無ければその場で使えなくなる＝前と同じ）
   async function cancelSubscription(env, { subscription_id, reason } = {}, by = "admin", opts = {}) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     const sid = String(subscription_id || "");
     if (!UUID_RE.test(sid)) return { ok: false, error: "bad_subscription_id" };
     const s = (await subscriptions(env)).find((x) => x.subscription_id === sid);
@@ -517,7 +504,7 @@ export function makeSell(h) {
   // ---------- 便 R3：生徒が自分の契約を見て、定期を止める ----------
   // 生徒に見せる形（UnivaPay の番号は止めるボタンのために返すが、ほかの人の分は返さない）
   async function mySubscriptions(env, customer) {
-    if (!env.B_STORE || !customer) return { ok: true, subscriptions: [] };
+    if (!customer) return { ok: true, subscriptions: [] };
     const pmap = Object.fromEntries((await allProducts(env)).map((p) => [p.id, p]));
     const list = (await subscriptions(env, customer.id)).filter((s) => s.customer_id === customer.id)
       .sort((a, b) => String(b.since || "").localeCompare(String(a.since || "")));
@@ -541,7 +528,6 @@ export function makeSell(h) {
 
   // 本人が止める：UnivaPay の課金は今止め、使えるのは払った期間の終わり（次の課金の時刻）まで
   async function cancelOwnSubscription(env, customer, { subscription_id } = {}) {
-    if (!env.B_STORE) return { ok: false, error: "demo_store" };
     if (!customer) return { ok: false, error: "not_registered" };
     const sid = String(subscription_id || "");
     if (!UUID_RE.test(sid)) return { ok: false, error: "bad_subscription_id" };
