@@ -8,13 +8,15 @@ import { fakeStore } from "./fake-store.mjs";
 import { makeLine, secretName, tokenName } from "../src/line.js";
 import { SCREENS } from "../src/guide.js";
 
+// ムダ 11（2026-10-29）：日付を固定で書いていたため、「直近 7 日」の数えが 10/17 から 0 になり落ちていた。走らせた時刻の 2 時間前を起点にする
+const BASE = Date.now() - 2 * 3600e3;
 const U1 = "U" + "1".repeat(32), U2 = "U" + "2".repeat(32), U3 = "U" + "3".repeat(32);
 const P1 = "11111111-1111-4111-8111-111111111111", P3 = "33333333-3333-4333-8333-333333333333";
 
 function setup({ followers = null, excluded = [] } = {}) {
   const s = fakeStore();
   let n = 0;
-  const logInbound = async (env, channel, request, response, status) => { n++; s.table("inbound_log").push({ id: n, channel, request, response, status, at: new Date(Date.UTC(2026, 9, 10, 8, 0, n)).toISOString() }); };
+  const logInbound = async (env, channel, request, response, status) => { n++; s.table("inbound_log").push({ id: n, channel, request, response, status, at: new Date(BASE + 3600e3 + n * 1000).toISOString() }); };
   const addEvent = async (env, cid, type, payload, actor) => (await s.db(env, "POST", "events", [{ customer_id: cid, type, payload, actor, occurred_at: new Date().toISOString() }], "return=representation"))[0];
   const calls = [];
   const fetch = async (url, init = {}) => {
@@ -32,7 +34,7 @@ function setup({ followers = null, excluded = [] } = {}) {
   const env = { B_STORE: true, [secretName("college_ops")]: "x".repeat(32), [tokenName("college_ops")]: "tok" };
   return { s, line, env, calls, logInbound, addEvent };
 }
-const ev = (type, user, extra = {}) => ({ type, at: "2026-10-10T04:44:0" + (extra.sec || 0) + ".000Z", source: { type: "user", user }, ...extra });
+const ev = (type, user, extra = {}) => ({ type, at: new Date(BASE + (extra.sec || 0) * 1000).toISOString(), source: { type: "user", user }, ...extra });
 async function seed(t) {
   await t.logInbound(t.env, "line", { account: "college_ops", events: [ev("follow", U1)] }, { forward: { ok: true } }, 200);
   await t.logInbound(t.env, "line", { account: "college_ops", events: [ev("message", U1, { sec: 1, message: { type: "text", text: "こんにちは" } })] }, { forward: { ok: true } }, 200);
