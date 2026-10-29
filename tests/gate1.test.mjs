@@ -3,13 +3,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { appAccess, APP_ACCESS_KEYS } from "../src/bridge.js";
+import { appAccess, APP_ACCESS_KEYS, memberWaiting } from "../src/bridge.js";
 
-test("開ける権利は 6 つ", () => {
-  assert.deepEqual([...APP_ACCESS_KEYS].sort(), ["guest", "shiarabo_basic", "shiarabo_monitor", "shiarabo_next_premium", "shiarabo_next_standard", "shiarabo_pilot"]);
+test("開ける権利は guest と shiarabo_pilot の 2 つだけ（2026-10-29 統括：ゲスト → 先行 → 生徒の順）", () => {
+  assert.deepEqual([...APP_ACCESS_KEYS].sort(), ["guest", "shiarabo_pilot"]);
 });
 test("会員・先行で試す・ゲスト・シアニンは full、それ以外は contract", () => {
-  assert.equal(appAccess({ member: true, gate_keys: [] }), "full");
+  assert.equal(appAccess({ member: true, gate_keys: ["shiarabo_basic"] }), "contract");
   assert.equal(appAccess({ member: false, gate_keys: ["shiarabo_pilot"] }), "full");
   assert.equal(appAccess({ member: false, gate_keys: ["guest"] }), "full");
   assert.equal(appAccess({ member: false, gate_keys: [] }, true), "full");
@@ -22,4 +22,11 @@ test("マイページ・教材の質問とメモ・添削ルームの口は、co
   const n = (src.match(/studentAccess\(env, customer, v\.email\)\)\.access !== "full"\) return json\(NOT_MEMBER, 403\)/g) || []).length;
   assert.equal(n, 3, "マイページ・lesson・room の 3 か所");
   assert.ok(src.includes('access: "contract"'), "/api/me は contract の人に中身を返さない");
+});
+
+test("生徒の権利だけの人は「ご契約」＋準備中の印", () => {
+  assert.equal(memberWaiting({ member: false, gate_keys: ["shiarabo_basic"] }), true);
+  assert.equal(memberWaiting({ member: true, gate_keys: [] }), true);
+  assert.equal(memberWaiting({ member: false, gate_keys: [] }), false);
+  assert.equal(memberWaiting(null), false);
 });

@@ -45,7 +45,7 @@ import { makeGuard } from "./guard.js";
 import { makeSell } from "./sell.js";
 import { makeDeliver } from "./deliver.js";
 import { makeLearn, normalizeNotes, LESSON_ID_RE } from "./learn.js";
-import { makeBridge, appAccess } from "./bridge.js";
+import { makeBridge, appAccess, memberWaiting } from "./bridge.js";
 import { makePlan } from "./plan.js";
 import { makeMailCfg } from "./mailcfg.js";
 import { makeChanges } from "./changes.js";
@@ -72,7 +72,7 @@ import { makeMypage } from "./mypage.js";
 import { makeNews, newsQuery } from "./news.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.55.0-bmuda10c";
+const VERSION = "0.56.0-bpilotonly";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -971,7 +971,7 @@ async function handleApi(request, env, url) {
     if (url.searchParams.get("fresh") === "1") await addEvent(env, customer.id, "login", {}, "site");
     const sa = await studentAccess(env, customer, v.email);
     if (sa.access !== "full") {
-      return json({ ok: true, access: "contract", admin: false, apps: [], me: { name: customer.name, email: customer.email, source: customer.source },
+      return json({ ok: true, access: "contract", member_waiting: memberWaiting(sa.ent), admin: false, apps: [], me: { name: customer.name, email: customer.email, source: customer.source },
         lessons: [], announcements: [], viewed: [], library: { source: "manabu", member: false, lesson_count: 0, programs: [] },
         room_unread: 0, entitlement: sa.ent, community: null, community_url: null, referral: null });
     }
