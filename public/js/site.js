@@ -103,7 +103,7 @@ export function mountSite(host, { getToken, openPerson }) {
 
   function go(v) {
     if (dirty) { confirmLeave(() => { dirty = false; go(v); }); return; }
-    V = v; bulk = false; picked.clear(); render(); $("#main").focus({ preventScroll: true }); host.scrollIntoView({ block: "start" });
+    V = v; bulk = false; picked.clear(); if (v.kind === "news") newsEdit = null; render(); $("#main").focus({ preventScroll: true }); host.scrollIntoView({ block: "start" });
   }
   function confirmLeave(fn) {
     modal(`<h3>保存していない書きかけがあります</h3><p>このまま移ると、書きかけは消えます。</p><div class="macts"><button class="btn" data-m="stay">戻って保存する</button><button class="btn pri" data-m="go">保存せずに移る</button></div>`,
@@ -139,7 +139,7 @@ export function mountSite(host, { getToken, openPerson }) {
     if (V.sid && !site()) V = { kind: "sites" };
     renderSide();
     const m = $("#main");
-    ({ sites: renderSites, curricula: renderCurricula, curriculum: renderCurriculum, programs: renderPrograms, contents: renderContents, course: renderCourse, lesson: renderLesson, mypage: renderMypage, news: renderSoon, students: renderStudents, siteset: renderSiteSet })[V.kind](m);
+    ({ sites: renderSites, curricula: renderCurricula, curriculum: renderCurriculum, programs: renderPrograms, contents: renderContents, course: renderCourse, lesson: renderLesson, mypage: renderMypage, news: renderNews, students: renderStudents, siteset: renderSiteSet })[V.kind](m);
     $$(".st-t").forEach((t) => { const hs = [...t.querySelectorAll("thead th")].map((x) => x.textContent); t.querySelectorAll("tbody tr").forEach((r) => [...r.children].forEach((td, i) => { if (!td.hasAttribute("colspan")) td.dataset.l = i === 0 ? "" : hs[i] || ""; })); });
     $$("[data-go]").forEach((b) => (b.onclick = () => go(JSON.parse(b.dataset.go))));
     try { const sd = $("#side"), cb = sd.querySelector("[aria-current]"); if (cb && sd.scrollWidth > sd.clientWidth) sd.scrollLeft = cb.offsetLeft - sd.clientWidth / 2 + cb.clientWidth / 2; } catch { /* 横に並ばない幅では何もしない */ }
@@ -615,6 +615,61 @@ export function mountSite(host, { getToken, openPerson }) {
     if ($("#mphtml2")) $("#mphtml2").onclick = () => { mpView = "html"; mpTab = "html"; render(); };
   }
 
+
+  // ---------- お知らせ（2026-10-29 13:06）：書く・日時を決めて出す・下書き・取り下げ ----------
+  let NEWS = null, newsEdit = null;
+  const NST = { live: ["pub", "● 公開中"], scheduled: ["sch", "⏱ 予約"], draft: ["draft", "○ 下書き"], withdrawn: ["draft", "取り下げ"] };
+  async function loadNews() { const r = await call("/api/admin/news"); if (!r.ok) { toast(errText(r)); NEWS = []; return; } NEWS = r.news; }
+  function renderNews(m) {
+    if (!NEWS) { m.innerHTML = `${crumbs()}<h1>お知らせ</h1><p class="hint">読み込んでいます…</p>`; loadNews().then(() => V.kind === "news" && render()); return; }
+    if (newsEdit) return renderNewsEdit(m);
+    m.innerHTML = `${crumbs()}<div class="hrow"><h1>お知らせ</h1><span class="grow"></span><button class="btn pri" id="nadd">＋ お知らせを書く</button></div>
+    <p class="lead">生徒の画面の「お知らせ」と、マイページのお知らせの部品に出ます。日時を決めたものは、その時刻を過ぎてから出ます。</p>
+    ${NEWS.length ? `<div style="overflow-x:auto"><table class="st-t"><thead><tr><th>題名</th><th>状態</th><th>出す日時</th><th></th></tr></thead><tbody>
+    ${NEWS.map((n) => `<tr><td><b>${esc(n.title)}</b><div class="hint">${esc(String(n.body || "").replace(/\s+/g, " ").slice(0, 60))}</div></td><td><span class="st ${NST[n.state][0]}">${NST[n.state][1]}</span></td><td>${esc(fmtDT(n.published_at))}</td>
+      <td style="white-space:nowrap"><button class="btn sm" data-ned="${n.id}">編集</button> ${n.state === "withdrawn" ? `<button class="btn sm ghost" data-nst="${n.id}" data-to="published">戻す</button>` : n.state !== "draft" ? `<button class="btn sm ghost" data-nst="${n.id}" data-to="withdrawn">取り下げる</button>` : ""}</td></tr>`).join("")}</tbody></table></div>`
+      : '<div class="empty">まだお知らせがありません。「＋ お知らせを書く」から書きます</div>'}`;
+    $("#nadd").onclick = () => { newsEdit = { id: null, title: "", body: "", mode: "now", at: "" }; render(); $("#nt").focus(); };
+    $$("[data-ned]").forEach((b) => (b.onclick = () => { const n = NEWS.find((x) => String(x.id) === b.dataset.ned); newsEdit = { id: n.id, title: n.title, body: n.body || "", mode: n.status === "draft" ? "draft" : n.state === "scheduled" ? "at" : "now", at: n.state === "scheduled" ? n.published_at : "" }; render(); $("#nt").focus(); }));
+    $$("[data-nst]").forEach((b) => (b.onclick = async () => {
+      const id = b.dataset.nst, to = b.dataset.to, n = NEWS.find((x) => String(x.id) === id);
+      const r = await call("/api/admin/news/status", "PUT", { id, status: to }); if (!r.ok) { toast(errText(r)); return; }
+      await loadNews(); render();
+      if (to === "withdrawn") undoToast(`「${n.title}」を取り下げました（生徒に出なくなりました）`, async () => { await call("/api/admin/news/status", "PUT", { id, status: "published" }); await loadNews(); render(); toast("元に戻しました"); });
+      else toast(`「${n.title}」を戻しました`);
+    }));
+  }
+  function renderNewsEdit(m) {
+    const e = newsEdit;
+    m.innerHTML = `${crumbs()}<p style="margin:0 0 6px"><button class="btn sm ghost" id="nback">← お知らせの一覧へ戻る</button></p><h1>${e.id ? "お知らせを直す" : "お知らせを書く"}</h1>
+    <div class="lpage" style="margin-top:12px"><div class="ed"><div class="sec">
+      <div class="f"><label for="nt">題名</label><input type="text" id="nt" maxlength="120" value="${esc(e.title)}"><span class="err" id="nte"></span></div>
+      <div class="f"><label for="nb">本文 <span class="hint">改行はそのまま出る</span></label><textarea id="nb" maxlength="4000" style="min-height:200px">${esc(e.body)}</textarea></div></div></div>
+    <aside class="lside"><div class="sec"><h3>出し方</h3><div class="radio">
+      <label><input type="radio" name="nm" value="now" ${e.mode === "now" ? "checked" : ""}>すぐ出す</label>
+      <label><input type="radio" name="nm" value="at" ${e.mode === "at" ? "checked" : ""}>日時を決めて出す<span class="sub"><input type="datetime-local" id="nat" value="${esc(localDT(e.at))}" aria-label="出す日時"></span></label>
+      <label><input type="radio" name="nm" value="draft" ${e.mode === "draft" ? "checked" : ""}>下書き（生徒には出ない）</label></div><span class="err" id="nme"></span></div>
+      <div class="sec" style="display:flex;flex-direction:column;gap:8px"><button class="btn pri" id="nsave" style="justify-content:center">保存する</button><span class="hint">⌘／Ctrl＋Enter でも保存</span></div></aside></div>`;
+    $$("#main input,#main textarea").forEach((x) => { x.addEventListener("input", () => (dirty = true)); x.addEventListener("change", () => (dirty = true)); });
+    $("#nat").onfocus = () => { $("[name=nm][value=at]").checked = true; };
+    $("#nback").onclick = () => { const g = () => { dirty = false; newsEdit = null; render(); }; if (dirty) { confirmLeave(g); return; } g(); };
+    const save = async () => {
+      $("#nte").textContent = $("#nme").textContent = "";
+      const title = $("#nt").value.trim(); if (!title) { $("#nte").textContent = "題名が空です"; $("#nt").focus(); return; }
+      const mode = $("[name=nm]:checked").value;
+      if (mode === "at" && !$("#nat").value) { $("#nme").textContent = "出す日時が空です"; $("#nat").focus(); return; }
+      if (busy) return; busy = true;
+      try {
+        const atIso = mode === "at" ? new Date($("#nat").value).toISOString() : undefined;
+        const r = await call("/api/admin/news", "PUT", { id: e.id || undefined, title, body: $("#nb").value, mode, at: atIso });
+        if (!r.ok) { if (r.field === "at") { $("#nme").textContent = r.error === "at_in_past" ? "過ぎた日時は選べません" : "出す日時が空です"; $("#nat").focus(); } else toast(errText(r)); return; }
+        dirty = false; newsEdit = null; await loadNews(); render();
+        toast(mode === "draft" ? `「${title}」を下書きで保存しました` : mode === "at" ? `「${title}」を ${fmtDT(atIso)} に出すように予約しました` : `「${title}」を出しました`);
+      } finally { busy = false; }
+    };
+    $("#nsave").onclick = save;
+    $$("#main input,#main textarea").forEach((x) => x.addEventListener("keydown", (ev) => { if ((ev.metaKey || ev.ctrlKey) && ev.key === "Enter") { ev.preventDefault(); save(); } }));
+  }
   // ---------- サイトのほかの画面 ----------
   function renderSoon(m) {
     const s = site(); const what = ["お知らせ", "マイページと生徒の画面に出すお知らせを書く・日時を決めて出す。書く画面はまだありません（次の 1 枚で作る）"];
@@ -709,7 +764,7 @@ export function mountSite(host, { getToken, openPerson }) {
   return {
     async open() {
       if (dirty) return;
-      if (await reload()) { STU = null; MP = null; MPC = null; mpView = "blocks"; loadStudents().then(() => { if (["sites", "curricula", "curriculum", "students"].includes(V.kind) && !dirty) render(); }); render(); }
+      if (await reload()) { STU = null; MP = null; MPC = null; mpView = "blocks"; NEWS = null; newsEdit = null; loadStudents().then(() => { if (["sites", "curricula", "curriculum", "students"].includes(V.kind) && !dirty) render(); }); render(); }
     },
     isDirty: () => dirty,
   };

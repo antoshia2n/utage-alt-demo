@@ -69,6 +69,7 @@ import { makeFolders } from "./folders.js";
 import { makeStudents, applyNames } from "./students.js";
 import { makeSite } from "./site.js";
 import { makeMypage } from "./mypage.js";
+import { makeNews, newsQuery } from "./news.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
 const VERSION = "0.50.1-bmarke4";
@@ -182,6 +183,8 @@ const lessonqa = makeLessonQA({ db, addEvent, learn });
 const pages = makePages({ db, addEvent, logInbound, forms, sell });
 // マイページ（中身は src/mypage.js・仕組みはページと同じ表）
 const mypage = makeMypage({ db, pages, learn, names: (env) => students.load(env) });
+// お知らせ（会員サイト › お知らせ・中身は src/news.js）
+const news = makeNews({ db });
 const seminars = makeSeminars({ db, addEvent, logInbound, bin3, pagesOrigin: (env) => pages.pagesOrigin(env) });
 forms.hooks.onSubmitted = (env, cid, slug) => seminars.onForm(env, cid, slug);
 const booking = makeBooking({ db, addEvent, logInbound, bin3, registerPerson: (env, a) => registerPerson(env, a), busyBetween: (env, a, b) => today.busyBetween(env, a, b), pagesOrigin: (env) => pages.pagesOrigin(env) });
@@ -954,7 +957,7 @@ async function handleApi(request, env, url) {
     }
     if (url.searchParams.get("fresh") === "1") await addEvent(env, customer.id, "login", {}, "site");
     const lib = await learn.lessonsFor(env, customer, v.email);
-    const announcements = await db(env, "GET", "announcements?select=id,title,body,published_at&order=published_at.desc&limit=20");
+    const announcements = await db(env, "GET", newsQuery(env, 20)); // 便 25：下書き・取り下げ・まだ日時の来ていないものは出さない
     const viewed = await db(env, "GET", `events?select=payload&customer_id=eq.${customer.id}&type=eq.lesson_viewed`);
     const viewedIds = [...new Set(viewed.map((e) => e.payload && e.payload.lesson_id).filter(Boolean))];
     const room = roomState(await roomEvents(env, customer.id));
@@ -1221,6 +1224,16 @@ async function handleApi(request, env, url) {
       const body = await request.json().catch(() => ({}));
       const r = await bridge.setAccess(env, { target: body.target, on: body.on });
       return json(r, r.ok === false ? 400 : 200);
+    }
+    // お知らせ（会員サイト › お知らせ）
+    if (path.startsWith("/api/admin/news")) {
+      const by = "admin:" + a.email;
+      let r = null;
+      if (path === "/api/admin/news" && method === "GET") r = await news.list(env);
+      else if (path === "/api/admin/news" && method === "PUT") r = await news.save(env, await request.json().catch(() => ({})), by);
+      else if (path === "/api/admin/news/status" && method === "PUT") r = await news.setStatus(env, await request.json().catch(() => ({})), by);
+      else return json({ ok: false, error: "not_found" }, 404);
+      return json(r, r.ok === false ? (r.error === "demo_store" ? 503 : 400) : 200);
     }
     // マイページの作成画面（会員サイト › マイページ）
     if (path.startsWith("/api/admin/mypage")) {
