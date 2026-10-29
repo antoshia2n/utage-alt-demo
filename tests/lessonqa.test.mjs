@@ -8,7 +8,7 @@ import worker from "../src/index.js";
 import { lessonThreads, openLessonQuestions } from "../src/lessonqa.js";
 
 const s = fakeStore();
-const TOKENS = { stu: "stu@example.com", other: "other@example.com", adm: "admin@example.com" };
+const TOKENS = { stu: "stu@example.com", other: "other@example.com", adm: "admin@example.com", free: "free@example.com" };
 const realFetch = globalThis.fetch;
 globalThis.fetch = async (input, init = {}) => {
   const u = new URL(typeof input === "string" ? input : input.url);
@@ -41,6 +41,8 @@ const STU = "11111111-1111-4111-8111-111111111111";
 const OTHER = "22222222-2222-4222-8222-222222222222";
 s.table("b_customers").push({ id: STU, email: TOKENS.stu, name: "生徒" }, { id: OTHER, email: TOKENS.other, name: "別の人" });
 s.table("b_admins").push({ email: TOKENS.adm });
+// 関門 1（2026-10-29）：生徒の画面は会員などの権利を持つ人だけ。試しの 2 人は shiarabo_basic を持つ
+s.table("member_entitlement").push({ id: "e1", member_id: STU, key: "shiarabo_basic", source: "manual" }, { id: "e2", member_id: OTHER, key: "shiarabo_basic", source: "manual" });
 s.table("b_site_member_access").push({ member_id: STU, curriculum_id: "college" });
 s.table("b_site_rows").push(
   { curriculum_id: "college", lesson_id: "lsn-a", title: "言語化の土台" },
@@ -128,4 +130,14 @@ test("質問と答えのまとめ方（部屋の出来事から）", () => {
   ];
   assert.deepEqual(lessonThreads(evs, "x"), [{ id: 1, at: "t1", text: "q1", answers: [{ id: 3, at: "t3", text: "a1" }] }]);
   assert.deepEqual(openLessonQuestions(evs).map((e) => e.id), [2]);
+});
+
+test("関門 1：権利を持たない人は、/api/me が「ご契約」だけ、添削ルームと教材の質問とマイページは 403", async () => {
+  const FREE = "33333333-3333-4333-8333-333333333333";
+  s.table("b_customers").push({ id: FREE, email: TOKENS.free, name: "無料の人" });
+  const me = await (await call("/api/me", "free")).json();
+  assert.equal(me.access, "contract");
+  assert.deepEqual([me.lessons.length, me.announcements.length, me.room_unread], [0, 0, 0]);
+  for (const p of ["/api/room", "/api/lesson/notes?lesson_id=lsn-a", "/api/mypage"]) assert.equal((await call(p, "free")).status, 403, p);
+  assert.equal((await (await call("/api/me", "stu")).json()).access, "full");
 });

@@ -45,7 +45,7 @@ import { makeGuard } from "./guard.js";
 import { makeSell } from "./sell.js";
 import { makeDeliver } from "./deliver.js";
 import { makeLearn, normalizeNotes, LESSON_ID_RE } from "./learn.js";
-import { makeBridge } from "./bridge.js";
+import { makeBridge, appAccess } from "./bridge.js";
 import { makePlan } from "./plan.js";
 import { makeMailCfg } from "./mailcfg.js";
 import { makeChanges } from "./changes.js";
@@ -72,7 +72,7 @@ import { makeMypage } from "./mypage.js";
 import { makeNews, newsQuery } from "./news.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.51.4-bmuda10a";
+const VERSION = "0.52.0-bgate1";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -794,6 +794,13 @@ function snippet(e) {
   return String(t).replace(/\s+/g, " ").slice(0, 60);
 }
 
+// 関門 1：生徒の画面で開けるのは full（会員の 4 つ・先行で試す・ゲスト・シアニン）か contract（ご契約だけ）
+async function studentAccess(env, customer, email) {
+  const ent = await sell.entitlement(env, customer.id);
+  return { ent, access: appAccess(ent, await learn.isAdminEmail(env, email)) };
+}
+const NOT_MEMBER = { ok: false, error: "not_member", note: "この画面はしあらぼの会員向けです" };
+
 async function customerByEmail(env, email) {
   const [c] = await db(env, "GET", `customers?select=id,name,email&email=eq.${encodeURIComponent(email)}`);
   return c || null;
@@ -948,6 +955,7 @@ async function handleApi(request, env, url) {
     if (v.error) return json({ ok: false, error: v.error }, 401);
     const [customer] = await db(env, "GET", `customers?select=*&email=eq.${encodeURIComponent(v.email)}`);
     if (!customer) return json({ ok: false, error: "not_registered" }, 404);
+    if ((await studentAccess(env, customer, v.email)).access !== "full") return json(NOT_MEMBER, 403);
     return json(await mypage.forStudent(env, customer, v.email));
   }
   // 生徒：自分の情報・教材・お知らせ
@@ -960,15 +968,21 @@ async function handleApi(request, env, url) {
       [customer] = await db(env, "PATCH", `customers?id=eq.${customer.id}`, { auth_user_id: v.user.id }, "return=representation");
     }
     if (url.searchParams.get("fresh") === "1") await addEvent(env, customer.id, "login", {}, "site");
+    const sa = await studentAccess(env, customer, v.email);
+    if (sa.access !== "full") {
+      return json({ ok: true, access: "contract", me: { name: customer.name, email: customer.email, source: customer.source },
+        lessons: [], announcements: [], viewed: [], library: { source: "manabu", member: false, lesson_count: 0, programs: [] },
+        room_unread: 0, entitlement: sa.ent, community: null, community_url: null, referral: null });
+    }
     const lib = await learn.lessonsFor(env, customer, v.email);
     const announcements = await db(env, "GET", newsQuery(env, 20)); // 便 25：下書き・取り下げ・まだ日時の来ていないものは出さない
     const viewed = await db(env, "GET", `events?select=payload&customer_id=eq.${customer.id}&type=eq.lesson_viewed`);
     const viewedIds = [...new Set(viewed.map((e) => e.payload && e.payload.lesson_id).filter(Boolean))];
     const room = roomState(await roomEvents(env, customer.id));
-    const ent = await sell.entitlement(env, customer.id);
+    const ent = sa.ent;
     const community = await communityFor(env, ent, v.email);
     return json({
-      ok: true,
+      ok: true, access: "full",
       me: { name: customer.name, email: customer.email, source: customer.source },
       lessons: lib.flat, announcements, viewed: viewedIds,
       library: { source: lib.source, member: lib.member, lesson_count: lib.lesson_count, programs: lib.programs },
@@ -1044,6 +1058,7 @@ async function handleApi(request, env, url) {
     if (v.error) return json({ ok: false, error: v.error }, 401);
     const customer = await customerByEmail(env, v.email);
     if (!customer) return json({ ok: false, error: "not_registered" }, 404);
+    if ((await studentAccess(env, customer, v.email)).access !== "full") return json(NOT_MEMBER, 403);
     if (path === "/api/lesson/notes" && method === "GET") {
       const r = await lessonqa.notes(env, customer, v.email, url.searchParams.get("lesson_id"), roomEvents);
       return json(r, r.ok ? 200 : 404);
@@ -1061,6 +1076,7 @@ async function handleApi(request, env, url) {
     if (v.error) return json({ ok: false, error: v.error }, 401);
     const customer = await customerByEmail(env, v.email);
     if (!customer) return json({ ok: false, error: "not_registered" }, 404);
+    if ((await studentAccess(env, customer, v.email)).access !== "full") return json(NOT_MEMBER, 403);
 
     if (path === "/api/room" && method === "GET") {
       const evs = await roomEvents(env, customer.id);
