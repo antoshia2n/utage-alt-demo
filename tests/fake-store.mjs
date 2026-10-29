@@ -14,6 +14,7 @@ export function fakeStore() {
     if (v === "is.null") return x == null;
     if (v === "not.is.null") return x != null;
     if (v.startsWith("eq.")) return x != null && String(x) === v.slice(3);
+    if (v.startsWith("neq.")) return x == null || String(x) !== v.slice(4);
     if (v.startsWith("in.(")) return v.slice(4, -1).split(",").map((s) => s.replace(/^"|"$/g, "")).includes(String(x));
     if (v.startsWith("gte.")) return x != null && String(x) >= v.slice(4);
     if (v.startsWith("lte.")) return x != null && String(x) <= v.slice(4);

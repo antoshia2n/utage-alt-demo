@@ -25,6 +25,7 @@ async function main() {
   const token = session.access_token;
   if (fresh) history.replaceState(null, "", "/app");
 
+  const mpWait = api("/api/mypage", { token }); // マイページ（2026-10-29）：教材と並べて読む
   const r = await api("/api/me" + (fresh ? "?fresh=1" : ""), { token });
   if (!r.ok) {
     if (r.error === "not_registered") return fail("このメールアドレスは台帳にありません。無料登録からやり直してください。");
@@ -81,7 +82,7 @@ async function main() {
     $("rf-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText(rf.link); $("rf-copy").textContent = "写しました"; } catch (_) { $("rf-copy").textContent = "写せませんでした"; } });
   }
 
-  const sections = ["lessons", "lesson", "news", "room", "review", "booking", "contract"];
+  const sections = ["mypage", "lessons", "lesson", "news", "room", "review", "booking", "contract"];
   const showTab = (name) => {
     sections.forEach((s) => $("tab-" + s).classList.toggle("hidden", s !== name));
     if (name === "room") room.open();
@@ -175,6 +176,22 @@ async function main() {
   room.setBadge(r.room_unread);
   // 便 15b：#room/chat・#room/corr は、部屋のその枠を開く
   if (location.hash.startsWith("#room")) { room.setPane(location.hash.split("/")[1]); showTab("room"); }
+  // マイページ：公開中の版があれば左の一番上に出し、住所に # が無ければ最初に開く。枠の高さは枠の中から知らせてもらう
+  const mp = await mpWait;
+  if (mp.ok && mp.html) {
+    const fr = $("mypage-frame");
+    $("side-mypage").classList.remove("hidden");
+    window.addEventListener("message", (e) => {
+      if (e.source !== fr.contentWindow || !e.data || typeof e.data.labMypageHeight !== "number") return;
+      fr.style.height = Math.min(Math.max(e.data.labMypageHeight, 200), 20000) + "px";
+    });
+    fr.srcdoc = mp.html;
+    if (!location.hash) showTab("mypage");
+  }
+  // マイページの枠の中のリンク：#lesson/<番号> はそのコンテンツ、#news はお知らせ
+  const routeLesson = () => { const m = location.hash.match(/^#lesson[/](.+)$/); if (m) { openLesson(decodeURIComponent(m[1])); return true; } return false; };
+  routeLesson();
+  if (location.hash === "#news") showTab("news");
   if (location.hash === "#review") showTab("review");
   if (location.hash === "#booking") showTab("booking");
   if (location.hash === "#contract") showTab("contract");
@@ -182,7 +199,8 @@ async function main() {
   window.addEventListener("hashchange", () => {
     const [h, pane] = location.hash.slice(1).split("/");
     if (h === "room") room.setPane(pane);
-    if (["room", "review", "booking", "contract"].includes(h)) showTab(h);
+    if (["room", "review", "booking", "contract", "news", "mypage"].includes(h)) showTab(h);
+    routeLesson();
   });
   setupStudentPush({ box: $("push-box"), status: $("push-status"), on: $("push-on"), off: $("push-off") }, token);
 

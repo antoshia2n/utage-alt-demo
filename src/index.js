@@ -68,6 +68,7 @@ import { makeSalesMark } from "./salesmark.js";
 import { makeFolders } from "./folders.js";
 import { makeStudents, applyNames } from "./students.js";
 import { makeSite } from "./site.js";
+import { makeMypage } from "./mypage.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
 const VERSION = "0.50.1-bmarke4";
@@ -179,6 +180,8 @@ const learn = makeLearn({ db });
 // B の便 15：教材の質問とメモ（中身は src/lessonqa.js）
 const lessonqa = makeLessonQA({ db, addEvent, learn });
 const pages = makePages({ db, addEvent, logInbound, forms, sell });
+// マイページ（中身は src/mypage.js・仕組みはページと同じ表）
+const mypage = makeMypage({ db, pages, learn, names: (env) => students.load(env) });
 const seminars = makeSeminars({ db, addEvent, logInbound, bin3, pagesOrigin: (env) => pages.pagesOrigin(env) });
 forms.hooks.onSubmitted = (env, cid, slug) => seminars.onForm(env, cid, slug);
 const booking = makeBooking({ db, addEvent, logInbound, bin3, registerPerson: (env, a) => registerPerson(env, a), busyBetween: (env, a, b) => today.busyBetween(env, a, b), pagesOrigin: (env) => pages.pagesOrigin(env) });
@@ -930,6 +933,14 @@ async function handleApi(request, env, url) {
   // B の便 5：Supabase の「メールを送る引き金」。ログインのリンクを Cloudflare から送る（署名で Supabase からと確かめる）
   if (path === "/api/auth/send-email" && method === "POST") return await deliver.handleAuthEmail(request, env);
 
+  // 生徒：マイページ（公開中の版に、その人の中身を入れた HTML。生徒の画面は区切った枠に出す）
+  if (path === "/api/mypage" && method === "GET") {
+    const v = await verifyUser(request, env);
+    if (v.error) return json({ ok: false, error: v.error }, 401);
+    const [customer] = await db(env, "GET", `customers?select=*&email=eq.${encodeURIComponent(v.email)}`);
+    if (!customer) return json({ ok: false, error: "not_registered" }, 404);
+    return json(await mypage.forStudent(env, customer, v.email));
+  }
   // 生徒：自分の情報・教材・お知らせ
   if (path === "/api/me" && method === "GET") {
     const v = await verifyUser(request, env);
@@ -1208,6 +1219,17 @@ async function handleApi(request, env, url) {
       const body = await request.json().catch(() => ({}));
       const r = await bridge.setAccess(env, { target: body.target, on: body.on });
       return json(r, r.ok === false ? 400 : 200);
+    }
+    // マイページの作成画面（会員サイト › マイページ）
+    if (path.startsWith("/api/admin/mypage")) {
+      const by = "admin:" + a.email;
+      let r = null;
+      if (path === "/api/admin/mypage" && method === "GET") r = await mypage.adminGet(env, { version: url.searchParams.get("v") }, by);
+      else if (path === "/api/admin/mypage" && method === "PUT") r = await mypage.save(env, await request.json().catch(() => ({})), by);
+      else if (path === "/api/admin/mypage/publish" && method === "POST") r = await mypage.publish(env, await request.json().catch(() => ({})), by);
+      else if (path === "/api/admin/mypage/preview" && method === "POST") r = await mypage.preview(env, await request.json().catch(() => ({})), by, a.email);
+      else return json({ ok: false, error: "not_found" }, 404);
+      return json(r, r.ok === false ? (r.error === "demo_store" ? 503 : 400) : 200);
     }
     // 会員サイトの管理（2026-10-29）：サイト › カリキュラム › プログラム › コース › コンテンツ
     if (path.startsWith("/api/admin/site/")) {
