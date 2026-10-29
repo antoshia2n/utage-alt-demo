@@ -1400,8 +1400,11 @@ async function loadAi() {
   else {
     const pending = r.approvals.filter((x) => x.status === "pending");
     $("ap-count").textContent = pending.length === 0 ? "承認待ちは 0 件です" : `承認待ち ${pending.length} 件（頼まれてから 24 時間で期限切れ）`;
-    $("approvals").innerHTML = r.approvals.slice(0, 20).map((x) => `
-      <div class="deal-box" ${x.id === focus ? 'style="outline:2px solid var(--accent)"' : ""}>
+    // ムダ 9（2026-10-29）：欄には待っているものだけ。済んだもの（直近 20 件）は「済んだ依頼を見る ▼」の中。
+    // 通知から開いた依頼（#approval/番号）が済んだ側なら、その欄を開いて枠で示す
+    const done = r.approvals.filter((x) => x.status !== "pending").slice(0, 20);
+    const card = (x) => `
+      <div class="deal-box" data-apid="${esc(x.id)}" ${x.id === focus ? 'style="outline:2px solid var(--accent)"' : ""}>
         <div class="note">${fmtTime(x.created_at)}・AI が頼んだ・<span class="pill ${x.status === "pending" ? "warn" : "gray"}">${esc(AP_LABEL[x.status] || x.status)}</span></div>
         <h4 style="margin:4px 0">${esc(sayOf(x.tool))}</h4>
         ${approvalRef(x)}
@@ -1410,7 +1413,11 @@ async function loadAi() {
           <button class="btn small" data-ap="${x.id}" data-d="approve" type="button">承認して実行</button>
           <button class="btn ghost small" data-ap="${x.id}" data-d="reject" type="button">却下</button></div>`
         : (x.decided_by ? `<div class="note">${esc(x.decided_by)}・${fmtTime(x.decided_at)}</div>` : "")}
-      </div>`).join("");
+      </div>`;
+    const doneOpen = done.some((x) => x.id === focus);
+    $("approvals").innerHTML = pending.map(card).join("")
+      + (done.length ? `<details class="ap-done"${doneOpen ? " open" : ""}><summary>済んだ依頼を見る ▼（直近 ${done.length} 件）</summary><div class="stack" style="margin-top:8px">${done.map(card).join("")}</div></details>` : "");
+    if (focus) document.querySelector(`#approvals [data-apid="${CSS.escape(focus)}"]`)?.scrollIntoView({ block: "center" });
     document.querySelectorAll("[data-ap]").forEach((b) => b.addEventListener("click", async () => {
       b.disabled = true;
       const d = await api(`/api/admin/approvals/${b.dataset.ap}`, { method: "POST", token, body: { decision: b.dataset.d } });

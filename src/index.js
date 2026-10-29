@@ -72,7 +72,7 @@ import { makeMypage } from "./mypage.js";
 import { makeNews, newsQuery } from "./news.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.50.5-bmuda8";
+const VERSION = "0.50.6-bmuda9";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
