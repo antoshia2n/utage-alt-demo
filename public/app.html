@@ -22,6 +22,9 @@
     <a class="side-logo" href="/app">シアラボ</a>
     <!-- マイページ（2026-10-29）：公開中の版があるときだけ出す。中身は区切った枠（sandbox）に出す -->
     <button class="it hidden" id="side-mypage" type="button" aria-selected="false" data-tab="mypage">マイページ</button>
+    <!-- 目標タブ（2026-10-30）：しあらぼの生徒だけ（サーバーが goals_ready を返したときに出す） -->
+    <div class="grp hidden" id="grp-goals">目標</div>
+    <button class="it hidden" type="button" aria-selected="false" data-tab="goals">目標と日報</button>
     <div class="grp">学ぶ</div>
     <button class="it" type="button" aria-selected="true" data-tab="lessons">教材</button>
     <button class="it" type="button" aria-selected="false" data-tab="news">お知らせ</button>
@@ -50,6 +53,24 @@
 
     <div id="member" class="card member hidden"></div>
     <section id="tab-mypage" class="hidden"><iframe id="mypage-frame" title="マイページ" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation" style="width:100%;border:0;min-height:480px;display:block;background:transparent"></iframe></section>
+    <section id="tab-goals" class="stack hidden">
+      <div class="card stack" id="g-goal"><p class="note" style="margin:0">読み込んでいます…</p></div>
+      <form class="card stack" id="g-daily" novalidate>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><h3 style="margin:0">日報</h3><label class="note" style="display:flex;gap:6px;align-items:center;margin:0">日付 <select id="g-day" aria-label="日報の日付"></select></label></div>
+        <div id="g-nums" class="stack"></div>
+        <div><label for="g-body">今日やったこと・気づき</label><textarea id="g-body" rows="4" maxlength="2000" placeholder="例：X に 2 本投稿。反応が良かったのは〇〇の型。明日は〇〇を試す"></textarea></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><span class="note" style="margin:0">⌘／Ctrl＋Enter でも保存できます</span><button class="btn" id="g-save" type="submit">日報を保存</button></div>
+        <p class="note" id="g-msg" role="status" aria-live="polite" style="margin:0"></p>
+      </form>
+      <form class="card stack" id="g-weekly" novalidate>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><h3 style="margin:0">週の振り返り</h3><label class="note" style="display:flex;gap:6px;align-items:center;margin:0">週 <select id="g-week" aria-label="振り返る週"></select></label></div>
+        <div id="g-sum" class="note" style="margin:0"></div>
+        <div><label for="g-wbody">よかったこと・うまくいかなかったこと・次の週にやること</label><textarea id="g-wbody" rows="5" maxlength="2000" placeholder="シアニンは面談の前にここを読みます"></textarea></div>
+        <div style="display:flex;justify-content:flex-end"><button class="btn" id="g-wsave" type="submit">振り返りを保存</button></div>
+        <p class="note" id="g-wmsg" role="status" aria-live="polite" style="margin:0"></p>
+      </form>
+      <details class="card" id="g-past"><summary>これまでの日報を見る ▼</summary><div id="g-list" class="stack" style="margin-top:10px"></div></details>
+    </section>
     <section id="tab-lessons" class="stack"></section>
 
     <section id="tab-lesson" class="stack hidden">

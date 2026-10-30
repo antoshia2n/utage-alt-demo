@@ -70,11 +70,12 @@ import { makeStudents, applyNames } from "./students.js";
 import { makeSite } from "./site.js";
 import { makeMypage, APP_URLS } from "./mypage.js";
 import { makeInvite } from "./invite.js";
+import { makeGoals } from "./goals.js";
 import { mailText, mailHtml } from "./mailhtml.js";
 import { makeNews, newsQuery } from "./news.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.57.0-binvite";
+const VERSION = "0.58.0-bgoals";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -172,6 +173,8 @@ const bin4 = makeBin4({ db, addEvent, bin3 });
 const guard = makeGuard({ db, logInbound });
 const explainApprovals = makeExplain({ db });
 const bridge = makeBridge({ db, rawDb, addEvent, secretHeaders });
+// 目標タブ（2026-10-30）：しあらぼの生徒が自分の目標を見ながら日報・週報を付ける（目標の正本はしあらぼ管理）
+const goals = makeGoals({ rawDb });
 // 招待リンク（2026-10-30）：お金を払わずに入る権利（ゲスト・モニター・先行）を、リンクから自分で登録して受け取る
 const invite = makeInvite({
   db, addEvent, logInbound, mailcfg, mailText, mailHtml, appUrls: APP_URLS,
@@ -1019,7 +1022,23 @@ async function handleApi(request, env, url) {
       referral: await refer.mine(env, customer, url.origin),
       // ムダ 2（2026-10-30）：予約は準備中。本物の枠ができたら true にすると左のメニューに出る
       booking_ready: false,
+      // 目標タブ（2026-10-30）：しあらぼ管理の生徒に結ばれた人だけ（ゲストには出ない）
+      goals_ready: await goals.isStudent(env, customer.id).catch(() => false),
     });
+  }
+
+  // 目標タブ（2026-10-30）：自分の目標を読む・日報と週報を書く。マイページの全部が開く人で、しあらぼ管理の生徒に結ばれた人だけ
+  if (path === "/api/me/goals" && (method === "GET" || method === "PUT")) {
+    const v = await verifyUser(request, env);
+    if (v.error) return json({ ok: false, error: v.error }, 401);
+    const customer = await customerByEmail(env, v.email);
+    if (!customer) return json({ ok: false, error: "not_registered" }, 404);
+    if ((await studentAccess(env, customer, v.email)).access !== "full") return json(NOT_MEMBER, 403);
+    if (method === "GET") { const r = await goals.view(env, customer.id); return json(r, r.ok ? 200 : 404); }
+    const body = await request.json().catch(() => ({}));
+    const r = await goals.save(env, customer.id, body);
+    if (r.ok) await addEvent(env, customer.id, "report_saved", { kind: r.report.kind, day: r.report.day }, "site");
+    return json(r, r.ok ? 200 : r.error === "not_student" ? 404 : 400);
   }
 
   // 便 8g-1：生徒のスマホの通知（自分の端末だけ）。GET＝公開の鍵と自分の端末の数／POST＝購読／DELETE＝やめる
