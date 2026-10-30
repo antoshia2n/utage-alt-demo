@@ -17,10 +17,10 @@ test("会員・先行で試す・ゲスト・シアニンは full、それ以外
   assert.equal(appAccess({ member: false, gate_keys: ["consult_single"] }), "contract");
   assert.equal(appAccess(null), "contract");
 });
-test("マイページ・教材の質問とメモ・添削ルームの口は、contract の人に 403 を返す", () => {
+test("マイページ・教材の質問とメモ・添削ルーム・目標の口は、contract の人に 403 を返す", () => {
   const src = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
   const n = (src.match(/studentAccess\(env, customer, v\.email\)\)\.access !== "full"\) return json\(NOT_MEMBER, 403\)/g) || []).length;
-  assert.equal(n, 3, "マイページ・lesson・room の 3 か所");
+  assert.equal(n, 4, "マイページ・lesson・room・目標（2026-10-30）の 4 か所");
   assert.ok(src.includes('access: "contract"'), "/api/me は contract の人に中身を返さない");
 });
 
