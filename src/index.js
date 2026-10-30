@@ -68,11 +68,13 @@ import { makeSalesMark } from "./salesmark.js";
 import { makeFolders } from "./folders.js";
 import { makeStudents, applyNames } from "./students.js";
 import { makeSite } from "./site.js";
-import { makeMypage } from "./mypage.js";
+import { makeMypage, APP_URLS } from "./mypage.js";
+import { makeInvite } from "./invite.js";
+import { mailText, mailHtml } from "./mailhtml.js";
 import { makeNews, newsQuery } from "./news.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.56.2-bappmuda";
+const VERSION = "0.57.0-binvite";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -170,6 +172,13 @@ const bin4 = makeBin4({ db, addEvent, bin3 });
 const guard = makeGuard({ db, logInbound });
 const explainApprovals = makeExplain({ db });
 const bridge = makeBridge({ db, rawDb, addEvent, secretHeaders });
+// 招待リンク（2026-10-30）：お金を払わずに入る権利（ゲスト・モニター・先行）を、リンクから自分で登録して受け取る
+const invite = makeInvite({
+  db, addEvent, logInbound, mailcfg, mailText, mailHtml, appUrls: APP_URLS,
+  rpc: (env, name, args) => rawDb(env, "POST", `rpc/${name}`, args),
+  grantManual: (env, args, actor) => bridge.grantManual(env, args, actor),
+  origin: (env) => env.PUBLIC_ORIGIN || "https://lab.shia2n.jp",
+});
 const sell = makeSell({ db, addEvent, bin3, bridge, logInbound });
 // B の便 8g-2：紹介。紹介者の表は作らず、出来事 referred・referral_reward・referral_paid に積む。率は商品の台帳の affiliate_rate（%）。中身は src/refer.js
 const refer = makeRefer({ db, addEvent, logInbound });
@@ -901,6 +910,21 @@ async function handleApi(request, env, url) {
     return json(r.ok ? { ok: true, is_new: r.is_new } : r, r.ok ? 200 : 400);
   }
 
+  // 招待リンク（2026-10-30）：リンクの中身を見る・Google で登録して受け取る（ログイン不要。Google の印をサーバーで確かめる）
+  if (path === "/api/invite" && method === "GET") {
+    const stop = await guardPublic(request, env, "invite", { ip: "public" });
+    if (stop) return stop;
+    const r = await invite.publicView(env, url.searchParams.get("t") || "");
+    return json(r, r.ok ? 200 : 404);
+  }
+  if (path === "/api/invite/accept" && method === "POST") {
+    const stop = await guardPublic(request, env, "invite", { ip: "public" });
+    if (stop) return stop;
+    const body = await request.json().catch(() => ({}));
+    const r = await invite.accept(env, { token: body.t, id_token: body.id_token });
+    return json(r, r.ok ? 200 : r.error === "not_found" ? 404 : 400);
+  }
+
   // 便 14b：LINE の友だちが「メールを登録」のリンクの頁から送る（ログイン不要・リンクの印で確かめる）
   if (path === "/api/line/link" && method === "POST") {
     const body = await request.json().catch(() => ({}));
@@ -1149,6 +1173,19 @@ async function handleApi(request, env, url) {
     const a = await requireAdmin(request, env);
     if (a.error) return json({ ok: false, error: a.error }, a.status);
     if (path === "/api/admin/whoami") return json({ ok: true, email: a.email });
+    // 招待リンク（2026-10-30）：作る・一覧（使った人つき）・止める・メールで送る
+    if (path === "/api/admin/invites" && method === "GET") return json(await invite.list(env));
+    if (path === "/api/admin/invites" && method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      const r = await invite.create(env, body, a.email);
+      return json(r, r.ok ? 200 : 400);
+    }
+    const inv = path.match(/^[/]api[/]admin[/]invites[/]([0-9a-f-]{36})[/](stop|send)$/i);
+    if (inv && method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      const r = inv[2] === "stop" ? await invite.stop(env, inv[1]) : await invite.send(env, inv[1], body, a.email);
+      return json(r, r.ok ? 200 : 400);
+    }
     // 便 7a：オプチャの招待リンク（読む・差し替える）
     if (path === "/api/admin/community" && method === "GET") return json({ ok: true, store: "production", ...(await communityLink(env)) });
     if (path === "/api/admin/community" && method === "PUT") {

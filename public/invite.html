@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f5c4d">
+<link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css">
+<title>招待｜シアラボ</title>
+<style>
+  .inv-apps { display: grid; gap: 8px; margin: 12px 0 0; padding: 0; list-style: none; }
+  .inv-apps a { display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 10px 14px; border: 1px solid var(--line, #e6dfd6); border-radius: 8px; text-decoration: none; color: inherit; font-weight: 700; }
+  .inv-steps { margin: 8px 0 0; padding-left: 1.4em; line-height: 1.9; }
+  .gbtn { display: inline-flex; align-items: center; justify-content: center; gap: 10px; }
+  .gbtn svg { flex: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top"><a class="brand" href="/" id="brand">シアラボ</a></header>
+  <main style="padding:24px 0 8px">
+    <h1 style="font-size:26px" id="h">招待</h1>
+    <!-- 読み込み中・使えないとき・使えるとき・済んだとき、のどれか 1 つだけを出す -->
+    <section id="s-load" class="card"><p class="note" role="status">招待の中身を読み込んでいます…</p></section>
+
+    <section id="s-bad" class="card stack hidden">
+      <p id="bad-msg" role="alert"></p>
+      <p class="note">招待してくれた人に、新しいリンクをお願いしてください。すでに登録が済んでいる方は <a href="/login">ログイン</a> へ。</p>
+    </section>
+
+    <section id="s-ok" class="card stack hidden">
+      <p id="ok-lead"></p>
+      <ol class="inv-steps">
+        <li>下のボタンを押して、Google のアカウントを選ぶ</li>
+        <li>登録が済むと、使えるアプリの一覧がこの画面に出る</li>
+      </ol>
+      <p class="note">アプリには、ここで選んだ Google のアカウントで入ります。ふだんアプリで使う Google を選んでください。パスワードは要りません。</p>
+      <button class="btn block gbtn" id="go" type="button">
+        <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2c-2 1.5-4.5 2.4-7.2 2.4-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>
+        <span>Google で登録</span>
+      </button>
+      <p class="note">押すと、<a href="/legal/terms">利用規約</a>と<a href="/legal/privacy">プライバシーポリシー</a>に同意したことになります。</p>
+      <div id="msg" class="msg hidden" role="status"></div>
+    </section>
+
+    <section id="s-done" class="card stack hidden">
+      <p id="done-lead" role="status" tabindex="-1"></p>
+      <ul class="inv-apps" id="apps"></ul>
+      <p class="note" id="done-mail"></p>
+      <a class="btn block ghost" href="/login" id="to-login">マイページへ移動 →</a>
+    </section>
+  </main>
+</div>
+<footer class="site wrap">
+  <a href="/legal/tokushoho">特定商取引法に基づく表記</a><a href="/legal/privacy">プライバシーポリシー</a><a href="/legal/terms">利用規約</a>
+  <div style="margin-top:8px">© シアラボ（株式会社Best Life Consulting）</div>
+</footer>
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+  import { getClient } from "/js/common.js";
+
+  // 5 つのアプリと同じ Google ログイン（公開してよい値。どのアプリの画面にも載っている）
+  const fb = initializeApp({
+    apiKey: "AIzaSyDKj5rhN6wg0k0OhCmY8J1r_8_2WfeBfYA",
+    authDomain: "gen-lang-client-0371348401.firebaseapp.com",
+    projectId: "gen-lang-client-0371348401",
+    appId: "1:36557223222:web:135a89fa5250e25af96f97",
+  });
+  const auth = getAuth(fb);
+
+  const $ = (id) => document.getElementById(id);
+  const only = (id) => { for (const s of ["s-load", "s-bad", "s-ok", "s-done"]) $(s).classList.toggle("hidden", s !== id); };
+  const show = (text, ok) => { const m = $("msg"); m.textContent = text; m.className = "msg " + (ok ? "ok" : "err"); };
+  const day = (iso) => iso ? new Date(iso).toLocaleDateString("ja-JP", { timeZone: "Asia/Tokyo" }) : "";
+  const STATE = {
+    not_found: "このリンクは使えません。打ち間違いか、もう消されたリンクです。",
+    stopped: "このリンクは止められています。",
+    expired: "このリンクの期限が過ぎています。",
+    used_up: "このリンクは決まった人数が使い終わりました。",
+  };
+  const ERR = {
+    ...STATE,
+    bad_token: "Google の確認がうまくいきませんでした。もう一度押してください。",
+    token_expired: "Google の確認の期限が切れました。もう一度押してください。",
+    email_not_verified: "この Google のアカウントは、メールアドレスの確認が済んでいません。別のアカウントを選んでください。",
+    no_email: "この Google のアカウントからメールアドレスが読めませんでした。別のアカウントを選んでください。",
+    google_keys_unavailable: "Google の確認の仕組みにつながりませんでした。時間をおいてもう一度押してください。",
+    too_many: "短い間に何度も押されました。1 分ほど待ってからもう一度押してください。",
+    grant_failed: "登録はできましたが、使えるようにする所で止まりました。招待してくれた人に知らせてください。",
+  };
+  const errText = (e) => ERR[e] || "うまくいきませんでした。時間をおいてもう一度押してください。";
+
+  const t = new URLSearchParams(location.search).get("t") || "";
+  let info = null;
+  try {
+    const r = await fetch("/api/invite?t=" + encodeURIComponent(t)).then((r) => r.json());
+    info = r;
+  } catch (_) { info = { ok: false, error: "network" }; }
+  if (!info.ok || info.state !== "ok") {
+    $("bad-msg").textContent = STATE[info.state || info.error] || "このリンクは今は使えません。";
+    only("s-bad");
+  } else {
+    $("h").textContent = `${info.name}への招待`;
+    $("ok-lead").textContent = `「${info.key_label}」として、シアラボのアプリを使えるようになります${info.grant_until ? `（${day(info.grant_until)} まで）` : ""}。`;
+    only("s-ok");
+    $("go").focus();
+  }
+
+  $("go").addEventListener("click", async () => {
+    const b = $("go");
+    b.disabled = true; show("Google のアカウントを選んでください…", true);
+    let idToken;
+    try {
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: "select_account" });
+      const cred = await signInWithPopup(auth, provider);
+      idToken = await cred.user.getIdToken();
+    } catch (e) {
+      b.disabled = false;
+      const code = String((e && e.code) || "");
+      if (code.includes("popup-closed") || code.includes("cancelled-popup")) return show("Google の画面が閉じられました。もう一度押してください。", false);
+      if (code.includes("popup-blocked")) return show("ブラウザが Google の画面を止めました。ポップアップを許可して、もう一度押してください。", false);
+      console.warn("[invite] google", code);
+      return show(errText(""), false);
+    }
+    show("登録しています…", true);
+    let r;
+    try {
+      r = await fetch("/api/invite/accept", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ t, id_token: idToken }) }).then((x) => x.json());
+    } catch (_) { r = { ok: false, error: "network" }; }
+    // この画面での Google のログインは登録のためだけ。終わったら閉じる（各アプリでは各アプリが Google に聞く）
+    signOut(auth).catch(() => {});
+    if (!r.ok) { b.disabled = false; console.warn("[invite] accept", r.error); return show(errText(r.error), false); }
+
+    $("h").textContent = "登録が済みました";
+    $("done-lead").textContent = `${r.email} で「${r.key_label}」が使えるようになりました${r.grant_until ? `（${day(r.grant_until)} まで）` : ""}。アプリは同じ Google のアカウントで入ります。`;
+    $("apps").innerHTML = (r.apps || []).map((a) => `<li><a href="${a.url}" target="_blank" rel="noopener">${a.name.replace(/[&<>"]/g, "")}<span aria-hidden="true">別タブで開く ↗</span></a></li>`).join("") || `<li class="note">開けるアプリの準備ができたら、ここに出ます。</li>`;
+    only("s-done");
+    $("done-lead").focus();
+
+    // マイページ（教材・お知らせ）に入るためのログインのリンクを、同じメールへ送る
+    $("done-mail").textContent = "マイページに入るためのリンクを、このメールに送っています…";
+    try {
+      await fetch("/api/login/prepare", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: r.email }) });
+      const sb = await getClient();
+      const { error } = await sb.auth.signInWithOtp({ email: r.email, options: { emailRedirectTo: location.origin + "/app", shouldCreateUser: true } });
+      $("done-mail").textContent = error ? "マイページのリンクは送れませんでした。「マイページへ移動 →」から同じメールで入れます。" : `マイページに入るためのリンクを ${r.email} に送りました。`;
+      if (error) console.warn("[invite] otp", error.message);
+    } catch (e) {
+      console.warn("[invite] otp", e && e.message);
+      $("done-mail").textContent = "マイページのリンクは送れませんでした。「マイページへ移動 →」から同じメールで入れます。";
+    }
+  });
+</script>
+</body>
+</html>

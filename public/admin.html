@@ -99,6 +99,7 @@
         <button class="it" type="button" data-view="ai" aria-selected="false">AI と承認<span class="badge hidden" id="ai-badge"></span></button>
         <button class="it" type="button" data-view="settings" aria-selected="false">決済・メール・オプチャ</button>
         <button class="it" type="button" data-view="access" aria-selected="false">アプリの公開</button>
+        <button class="it" type="button" data-view="invites" aria-selected="false">招待リンク</button>
       </div>
     </div>
   </nav>
@@ -360,6 +361,15 @@
           <div class="ent-box" id="acc-list"><p class="note">読み込んでいます…</p></div>
           <p class="note" id="acc-status" role="status"></p>
           <p class="note acc-foot">ここに出るのは、会員公開の 7 つの関門が全部通ったアプリだけです。</p>
+        </section>
+      </div>
+      <!-- 招待リンク（2026-10-30）：お金を払わずに入る権利（ゲスト・モニター・先行）のリンクを作る・送る・止める・使った人を見る -->
+      <div id="view-invites" style="display:none">
+        <section class="card acc-card">
+          <h2 class="acc-h">招待リンク</h2>
+          <p class="note">リンクを開いた人が「Google で登録」を押すと、選んだ権利が期限つきで付きます。アプリには同じ Google で入ります。付けられるのはお金を払わずに入る権利だけです（しあらぼ・NEXT は決済で付きます）。</p>
+          <div class="ent-box" id="inv-list"><p class="note">読み込んでいます…</p></div>
+          <p class="note" id="inv-status" role="status" aria-live="polite"></p>
         </section>
       </div>
       <div id="view-people-wrap" style="display:none">
