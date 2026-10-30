@@ -719,7 +719,7 @@ const pill = (t, kind = "") => `<span class="pill ${kind}">${esc(t)}</span>`;
 // ---------- 添削ルーム ----------
 let currentRoom = null;
 // 便 8c：左のメニュー。押した項目の画面だけを出し、上のナビにその名前を出す
-const VIEWS = ["home", "blueprint", "people", "rooms", "deals", "ai", "products", "deliver", "settings", "refer", "guide", "forms", "pages", "line", "access", "site"];
+const VIEWS = ["home", "blueprint", "people", "rooms", "deals", "ai", "products", "deliver", "settings", "refer", "guide", "forms", "pages", "line", "access", "invites", "site"];
 // 会員サイト（2026-10-29）：影の DOM の中に描く。顧客管理のその人の画面へは openPerson で移る
 let siteUi = null;
 // 便 20：コネクタだけの画面は無くした。"connect" は行き先の名前としてだけ残す。
@@ -762,6 +762,7 @@ function setupViews() {
     if (b.dataset.view === "deliver" || b.dataset.view === "blueprint") loadDeliver();
     if (b.dataset.view === "products") loadProducts();
     if (b.dataset.view === "access") loadAccess();
+    if (b.dataset.view === "invites") loadInvites();
     if (b.dataset.view === "deals") loadDeals();
     if (b.dataset.view === "ai") loadAi();
     if (b.dataset.view === "refer") loadReferrals();
@@ -2666,4 +2667,105 @@ async function loadAccess() {
   const r = await api("/api/admin/access?key=" + encodeURIComponent(accKey), { token });
   if (!r.ok) { $("acc-list").innerHTML = `<p class="note">読めませんでした（${esc(ACC_ERR[r.error] || r.error || r.status || "")}）</p>`; return; }
   accData = r; drawAccess();
+}
+
+// ---------- 招待リンク（2026-10-30） ----------
+// 作る（権利・権利の期限・人数・リンクの期限）・リンクを写す・メールで送る・止める・使った人を見る
+let invData = null, invOpen = false, invAsk = null, invSend = null;
+const INV_STATE = { ok: "使える", stopped: "止めた", expired: "期限切れ", used_up: "人数を使い切った" };
+const INV_ERR = {
+  name_required: "名前を入れてください", name_too_long: "名前は 40 字までです", key_not_allowed: "その権利はリンクでは付けられません",
+  bad_max_uses: "人数は 1〜100 で入れてください", link_until_required: "リンクの期限を入れてください", link_until_past: "リンクの期限が過ぎた日になっています",
+  link_until_too_far: "リンクの期限は 180 日以内にしてください", grant_until_required: "この権利は期限が必要です", grant_until_past: "権利の期限が過ぎた日になっています",
+  emails_required: "メールアドレスを入れてください", too_many: "一度に送れるのは 20 人までです", bad_email: "読めないメールアドレスがあります",
+  mail_not_configured: "メールの送り元が決まっていません（決済・メール・オプチャ）", stopped: "このリンクは止めてあります", expired: "このリンクは期限切れです", used_up: "このリンクは人数を使い切っています",
+};
+const invErr = (r) => INV_ERR[r && r.error] || "時間をおいてもう一度お試しください";
+const invDay = (iso) => iso ? new Date(iso).toLocaleDateString("ja-JP", { timeZone: "Asia/Tokyo" }) : "";
+const invDateIn = (days) => new Date(Date.now() + days * 86400000).toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
+function invSay(t) { $("inv-status").textContent = t; }
+function invRow(i) {
+  const asking = invAsk === i.id, sending = invSend === i.id;
+  const uses = i.uses.length ? `<details><summary>使った人を見る ▼（${i.uses.length} 人）</summary><ul style="margin:6px 0 0;padding-left:1.2em">${i.uses.map((u) => `<li>${esc(u.name || "（名前なし）")}　${esc(u.email)}　${esc(invDay(u.used_at))}</li>`).join("")}</ul></details>` : "まだ誰も使っていません";
+  return `<div class="er" data-invrow="${esc(i.id)}">
+    <div style="min-width:0"><div class="k">${esc(i.name)}</div><div class="d">${esc(i.key_label)}${i.grant_until ? `・権利は ${esc(invDay(i.grant_until))} まで` : "・権利は期限なし"}・${i.used} / ${i.max_uses} 人・リンクは ${esc(invDay(i.link_until))} まで</div></div>
+    <span class="acc-state${i.state === "ok" ? " on" : ""}">${esc(INV_STATE[i.state] || i.state)}</span>
+    <div class="why">${uses}</div>
+    <div class="er-act">
+      <button class="btn ghost small" type="button" data-invcopy="${esc(i.id)}" aria-label="『${esc(i.name)}』のリンクを写す">リンクを写す</button>
+      ${i.state === "ok" ? `<button class="btn ghost small" type="button" data-invsend="${esc(i.id)}" aria-label="『${esc(i.name)}』をメールで送る">メールで送る</button>
+      ${asking ? "" : `<button class="btn ghost small" type="button" data-invask="${esc(i.id)}" aria-label="『${esc(i.name)}』を止める">止める</button>`}` : ""}
+    </div>
+    ${asking ? `<div class="conf"><span>止めると、このリンクからはもう登録できません（付いた権利はそのまま）。よいですか</span><button class="btn ghost small" type="button" data-invcancel>やめる</button><button class="btn small danger" type="button" data-invstop="${esc(i.id)}" aria-label="『${esc(i.name)}』を止める（確定）">止める</button></div>` : ""}
+    ${sending ? `<div class="conf" style="flex-direction:column;align-items:stretch"><label for="inv-to" style="font-size:12px;font-weight:700">送る相手のメール（改行かカンマで区切る・20 人まで）</label><textarea id="inv-to" rows="2" placeholder="例 a@example.com"></textarea>
+      <label for="inv-note" style="font-size:12px;font-weight:700">ひとこと（なくてよい）</label><input id="inv-note" type="text" maxlength="500" placeholder="例 11/4 の定例でお話しした件です">
+      <div class="er-act"><button class="btn ghost small" type="button" data-invsendcancel>やめる</button><button class="btn small" type="button" data-invsendgo="${esc(i.id)}">送る</button></div></div>` : ""}
+  </div>`;
+}
+function invAddBox(keys) {
+  if (!invOpen) return `<div class="addbox"><button class="btn ghost small" type="button" data-invopen>＋ 招待リンクを作る</button></div>`;
+  return `<div class="addbox open">
+    <div class="f"><label for="inv-name">名前（相手には見出しで出ます）</label><input id="inv-name" type="text" maxlength="40" placeholder="例 おかぜりさん・るりさん（ゲスト）"></div>
+    <div class="row2"><div class="f"><label for="inv-key">付ける権利</label><select id="inv-key" class="inline">${keys.map((k) => `<option value="${esc(k.key)}">${esc(k.label)}</option>`).join("")}</select></div>
+    <div class="f"><label for="inv-grant">権利の期限</label><input id="inv-grant" type="date" value="2026-12-31"><small id="inv-grant-note">ゲスト・モニターは必須です</small></div></div>
+    <div class="row2"><div class="f"><label for="inv-max">使える人数</label><input id="inv-max" type="number" min="1" max="100" value="2" inputmode="numeric"></div>
+    <div class="f"><label for="inv-until">リンクの期限</label><input id="inv-until" type="date" value="${esc(invDateIn(14))}"></div></div>
+    <div class="er-act"><button class="btn ghost small" type="button" data-invclose>やめる</button><button class="btn small" type="button" data-invgo>作る</button></div>
+  </div>`;
+}
+function drawInvites(focusSel) {
+  const box = $("inv-list");
+  if (!invData) return;
+  box.innerHTML = invAddBox(invData.keys) + (invData.invites.length ? invData.invites.map(invRow).join("") : '<p class="note">まだ招待リンクはありません</p>');
+  const redraw = (sel) => drawInvites(sel);
+  box.querySelector("[data-invopen]")?.addEventListener("click", () => { invOpen = true; redraw("#inv-name"); });
+  box.querySelector("[data-invclose]")?.addEventListener("click", () => { invOpen = false; redraw("[data-invopen]"); });
+  box.querySelector("[data-invgo]")?.addEventListener("click", async (e) => {
+    const body = { name: $("inv-name").value.trim(), key: $("inv-key").value, grant_until: $("inv-grant").value || null, max_uses: Number($("inv-max").value), link_until: $("inv-until").value };
+    if (!body.name) { $("inv-name").focus(); return invSay("名前を入れてください"); }
+    e.target.disabled = true; invSay("作っています…");
+    const r = await api("/api/admin/invites", { method: "POST", token, body });
+    e.target.disabled = false;
+    if (!r.ok) return invSay("作れませんでした（" + invErr(r) + "）");
+    invOpen = false;
+    try { await navigator.clipboard.writeText(r.invite.url); invSay(`『${r.invite.name}』を作り、リンクを写しました`); } catch { invSay(`『${r.invite.name}』を作りました`); }
+    await loadInvites(`[data-invcopy="${r.invite.id}"]`);
+  });
+  box.querySelectorAll("[data-invcopy]").forEach((b) => b.addEventListener("click", async () => {
+    const i = invData.invites.find((x) => x.id === b.dataset.invcopy);
+    try { await navigator.clipboard.writeText(i.url); invSay(`『${i.name}』のリンクを写しました`); } catch { invSay("写せませんでした。リンク：" + i.url); }
+  }));
+  box.querySelectorAll("[data-invask]").forEach((b) => b.addEventListener("click", () => { invAsk = b.dataset.invask; invSend = null; redraw(`[data-invstop="${invAsk}"]`); }));
+  box.querySelectorAll("[data-invcancel]").forEach((b) => b.addEventListener("click", () => { const id = invAsk; invAsk = null; redraw(`[data-invask="${id}"]`); }));
+  box.querySelectorAll("[data-invstop]").forEach((b) => b.addEventListener("click", async () => {
+    b.disabled = true; invSay("止めています…");
+    const r = await api(`/api/admin/invites/${b.dataset.invstop}/stop`, { method: "POST", token, body: {} });
+    if (!r.ok) { b.disabled = false; return invSay("止められませんでした（" + invErr(r) + "）"); }
+    const id = invAsk; invAsk = null; invSay("止めました"); await loadInvites(`[data-invcopy="${id}"]`);
+  }));
+  box.querySelectorAll("[data-invsend]").forEach((b) => b.addEventListener("click", () => { invSend = b.dataset.invsend; invAsk = null; redraw("#inv-to"); }));
+  box.querySelectorAll("[data-invsendcancel]").forEach((b) => b.addEventListener("click", () => { const id = invSend; invSend = null; redraw(`[data-invsend="${id}"]`); }));
+  box.querySelectorAll("[data-invsendgo]").forEach((b) => b.addEventListener("click", async () => {
+    const emails = $("inv-to").value.trim();
+    if (!emails) { $("inv-to").focus(); return invSay("送る相手のメールを入れてください"); }
+    b.disabled = true; invSay("送っています…");
+    const r = await api(`/api/admin/invites/${b.dataset.invsendgo}/send`, { method: "POST", token, body: { emails, note: $("inv-note").value } });
+    b.disabled = false;
+    if (!r.ok) return invSay("送れませんでした（" + invErr(r) + (r.bad ? "：" + r.bad.join("、") : "") + "）");
+    const id = invSend; invSend = null;
+    invSay(`${r.sent} 人に送りました${r.failed ? `（${r.failed} 人は送れませんでした）` : ""}`);
+    redraw(`[data-invsend="${id}"]`);
+  }));
+  box.querySelectorAll(".conf").forEach((c) => c.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    const id = invAsk || invSend, sel = invAsk ? `[data-invask="${id}"]` : `[data-invsend="${id}"]`;
+    invAsk = null; invSend = null; redraw(sel);
+  }));
+  if (focusSel) box.querySelector(focusSel)?.focus();
+}
+async function loadInvites(focusSel) {
+  invAsk = null; invSend = null;
+  const r = await api("/api/admin/invites", { token });
+  if (!r.ok) { $("inv-list").innerHTML = `<p class="note">読めませんでした（${esc(invErr(r))}）</p>`; return; }
+  invData = r; drawInvites(focusSel);
 }
