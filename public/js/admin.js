@@ -83,6 +83,14 @@ async function openConsole() {
   }
   show("console");
   $("who-admin").textContent = who.email;
+  // 2026-10-31：共通の外枠（？・アプリ一覧・アカウント）。生徒の画面（/app）と同じ部品。読めなかったときは今までの名前とログアウトのまま
+  try {
+    const { mountAdminShell } = await import("/js/admin-shell.js");
+    mountAdminShell($("shell-slot"), { who, sb, session: data.session });
+    $("shell-slot").classList.remove("hidden");
+    $("who-admin").classList.add("hidden");
+    $("logout").classList.add("hidden");
+  } catch (e) { console.warn("shell", e); }
   // ムダ 1（2026-10-29）：開くときに読むのはホームに要るものだけ。顧客の一覧と数は「顧客管理」、
   // 決済・メール・通知・カレンダー・オプチャは「決済・メール・オプチャ」を開いたときに読む（setupViews）
   setupViews();
