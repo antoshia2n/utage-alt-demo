@@ -75,7 +75,7 @@ import { mailText, mailHtml } from "./mailhtml.js";
 import { makeNews, newsQuery } from "./news.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.59.0-bws";
+const VERSION = "0.60.0-bwsops";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -1203,6 +1203,13 @@ async function handleApi(request, env, url) {
     if (inv && method === "POST") {
       const body = await request.json().catch(() => ({}));
       const r = inv[2] === "stop" ? await invite.stop(env, inv[1]) : await invite.send(env, inv[1], body, a.email);
+      return json(r, r.ok ? 200 : 400);
+    }
+    // 場所から人を外す・元に戻す（2026-11-02 後始末）
+    const wsm = path.match(/^[/]api[/]admin[/]workspaces[/](ws_[0-9a-f]{32})[/]members[/](remove|restore)$/);
+    if (wsm && method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      const r = wsm[2] === "remove" ? await invite.removeMember(env, wsm[1], body.uid, a.email) : await invite.restoreMember(env, wsm[1], body, a.email);
       return json(r, r.ok ? 200 : 400);
     }
     // 便 7a：オプチャの招待リンク（読む・差し替える）

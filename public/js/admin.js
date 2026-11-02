@@ -2685,7 +2685,7 @@ async function loadAccess() {
 
 // ---------- 招待リンク（2026-10-30） ----------
 // 作る（権利・権利の期限・人数・リンクの期限）・リンクを写す・メールで送る・止める・使った人を見る
-let invData = null, invOpen = false, invAsk = null, invSend = null;
+let invData = null, invOpen = false, invAsk = null, invSend = null, wsUndo = null;
 const INV_STATE = { ok: "使える", stopped: "止めた", expired: "期限切れ", used_up: "人数を使い切った" };
 const INV_ERR = {
   name_required: "名前を入れてください", name_too_long: "名前は 40 字までです", key_not_allowed: "その権利はリンクでは付けられません",
@@ -2694,6 +2694,7 @@ const INV_ERR = {
   emails_required: "メールアドレスを入れてください", too_many: "一度に送れるのは 20 人までです", bad_email: "読めないメールアドレスがあります",
   mail_not_configured: "メールの送り元が決まっていません（決済・メール・オプチャ）",
   bad_workspace: "場所の選び方が正しくありません", workspace_not_found: "その場所が見つかりません", workspace_name_too_long: "場所の名前は 40 字までです",
+  is_owner: "持ち主は外せません", not_member: "もうこの場所にいません", bad_uid: "外す人の選び方が正しくありません", create_failed: "作れませんでした。もう一度お試しください",
   owner_not_bound: "あなたの Google のログインがまだ結ばれていないため、場所を作れません（一度 X攻略くんなどへ Google で入ってから）", stopped: "このリンクは止めてあります", expired: "このリンクは期限切れです", used_up: "このリンクは人数を使い切っています",
 };
 const invErr = (r) => INV_ERR[r && r.error] || "時間をおいてもう一度お試しください";
@@ -2734,7 +2735,11 @@ function invAddBox(keys) {
 function drawInvites(focusSel) {
   const box = $("inv-list");
   if (!invData) return;
-  const wsBox = (invData.workspaces || []).length ? `<div class="card" style="margin:0 0 12px"><h3 class="home-h" style="margin:0 0 6px">みんなの場所</h3>${invData.workspaces.map((w) => `<div class="er"><div style="min-width:0"><div class="k">${esc(w.name)}</div><div class="d">${w.members.map((m) => `${esc(m.name || m.email || "（名前なし）")}${m.role === "owner" ? "（持ち主）" : ""}`).join("・") || "まだ誰もいません"}</div></div></div>`).join("")}</div>` : "";
+  // 場所ごとに入っている人。参加者には「外す」（持ち主は外せない）。外したら「元に戻す」の帯を出す（確かめの窓は増やさない）
+  const wsWho = (m) => m.name || m.email || "（名前なし）";
+  const wsMember = (w, m) => `<li class="ws-m"><span>${esc(wsWho(m))}${m.role === "owner" ? "（持ち主）" : ""}</span>${m.role === "owner" ? "" : `<button class="btn ghost small" type="button" data-wsrm="${esc(w.id)}" data-wsuid="${esc(m.uid)}" aria-label="『${esc(wsWho(m))}』を『${esc(w.name)}』から外す">外す</button>`}</li>`;
+  const undoBar = wsUndo ? `<div class="conf" role="group" aria-label="元に戻す"><span>『${esc(wsUndo.who)}』を『${esc(wsUndo.wsName)}』から外しました（権利と場所のデータはそのまま）</span><button class="btn small" type="button" data-wsundo>元に戻す</button></div>` : "";
+  const wsBox = (invData.workspaces || []).length ? `<div class="card" style="margin:0 0 12px"><h3 class="home-h" style="margin:0 0 6px">みんなの場所</h3>${undoBar}${invData.workspaces.map((w) => `<div class="er"><div style="min-width:0"><div class="k">${esc(w.name)}</div>${w.members.length ? `<ul class="ws-ms">${w.members.map((m) => wsMember(w, m)).join("")}</ul>` : '<div class="d">まだ誰もいません</div>'}</div></div>`).join("")}</div>` : "";
   box.innerHTML = wsBox + invAddBox(invData.keys) + (invData.invites.length ? invData.invites.map(invRow).join("") : '<p class="note">まだ招待リンクはありません</p>');
   const redraw = (sel) => drawInvites(sel);
   box.querySelector("[data-invopen]")?.addEventListener("click", () => { invOpen = true; redraw("#inv-name"); });
@@ -2753,6 +2758,24 @@ function drawInvites(focusSel) {
     invOpen = false;
     try { await navigator.clipboard.writeText(r.invite.url); invSay(`『${r.invite.name}』を作り、リンクを写しました`); } catch { invSay(`『${r.invite.name}』を作りました`); }
     await loadInvites(`[data-invcopy="${r.invite.id}"]`);
+  });
+  box.querySelectorAll("[data-wsrm]").forEach((b) => b.addEventListener("click", async () => {
+    const w = invData.workspaces.find((x) => x.id === b.dataset.wsrm), m = w && w.members.find((x) => x.uid === b.dataset.wsuid);
+    if (!m) return;
+    b.disabled = true; invSay("外しています…");
+    const r = await api(`/api/admin/workspaces/${w.id}/members/remove`, { method: "POST", token, body: { uid: m.uid } });
+    if (!r.ok) { b.disabled = false; return invSay("外せませんでした（" + invErr(r) + "）"); }
+    wsUndo = { ws: w.id, wsName: w.name, who: wsWho(m), removed: r.removed };
+    invSay(`『${wsWho(m)}』を『${w.name}』から外しました`);
+    await loadInvites("[data-wsundo]");
+  }));
+  box.querySelector("[data-wsundo]")?.addEventListener("click", async (e) => {
+    const u = wsUndo; if (!u) return;
+    e.target.disabled = true; invSay("元に戻しています…");
+    const r = await api(`/api/admin/workspaces/${u.ws}/members/restore`, { method: "POST", token, body: u.removed });
+    if (!r.ok) { e.target.disabled = false; return invSay("元に戻せませんでした（" + invErr(r) + "）"); }
+    wsUndo = null; invSay(`『${u.who}』を『${u.wsName}』に戻しました`);
+    await loadInvites(`[data-wsuid="${u.removed.uid}"]`);
   });
   box.querySelectorAll("[data-invcopy]").forEach((b) => b.addEventListener("click", async () => {
     const i = invData.invites.find((x) => x.id === b.dataset.invcopy);

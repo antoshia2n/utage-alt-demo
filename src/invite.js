@@ -180,7 +180,8 @@ export function makeInvite(h) {
     // 5. 場所に入れる（リンクに場所があるときだけ。同じ人の 2 回目は今の役割のまま）
     // 2026-11-02 確認役のレビュー：止めた・期限切れのリンクの 2 回目では入れ直さない（場所から外した人が古いリンクで戻れないように）
     let workspace = null;
-    if (inv.workspace_id && (took === "ok" || inviteState(inv) === "ok")) {
+    // 2026-11-02 後始末：画面で外した人は、同じリンクの 2 回目では戻らない（入れ直すのは新しいリンクか「元に戻す」）
+    if (inv.workspace_id && (took === "ok" || (inviteState(inv) === "ok" && !(await leftWorkspace(env, m.id, inv.workspace_id))))) {
       const [ws] = await h.db(env, "GET", `ws_workspaces?select=id,name&id=eq.${encodeURIComponent(inv.workspace_id)}`);
       if (ws) {
         await h.db(env, "POST", "ws_members?on_conflict=workspace_id,firebase_uid", [{ workspace_id: ws.id, firebase_uid: g.uid, member_id: m.id, role: "editor", via_invite: inv.id }], "resolution=ignore-duplicates,return=minimal");
@@ -210,13 +211,13 @@ export function makeInvite(h) {
     const uses = invs.length ? await h.db(env, "GET", `b_invite_uses?select=invite_id,member_id,used_at&invite_id=in.(${invs.map((i) => i.id).join(",")})&order=used_at.desc&limit=2000`) : [];
     const ids = [...new Set(uses.map((u) => u.member_id))];
     const wss = await h.db(env, "GET", "ws_workspaces?select=id,name,created_at&order=created_at.asc&limit=100");
-    const wsm = wss.length ? await h.db(env, "GET", `ws_members?select=workspace_id,member_id,role,created_at&workspace_id=in.(${wss.map((w) => w.id).join(",")})&limit=1000`) : [];
+    const wsm = wss.length ? await h.db(env, "GET", `ws_members?select=workspace_id,firebase_uid,member_id,role,created_at&workspace_id=in.(${wss.map((w) => w.id).join(",")})&limit=1000`) : [];
     const ids2 = [...new Set([...ids, ...wsm.map((x) => x.member_id).filter(Boolean)])];
     const people = ids2.length ? await h.db(env, "GET", `customers?select=id,name,email&id=in.(${ids2.join(",")})`) : [];
     const who = new Map(people.map((p) => [p.id, p]));
     const wsName = new Map(wss.map((w) => [w.id, w.name]));
     return {
-      workspaces: wss.map((w) => ({ id: w.id, name: w.name, members: wsm.filter((x) => x.workspace_id === w.id).map((x) => ({ person_id: x.member_id, name: (who.get(x.member_id) || {}).name || "", email: (who.get(x.member_id) || {}).email || "", role: x.role })) })),
+      workspaces: wss.map((w) => ({ id: w.id, name: w.name, members: wsm.filter((x) => x.workspace_id === w.id).map((x) => ({ uid: x.firebase_uid, person_id: x.member_id, name: (who.get(x.member_id) || {}).name || "", email: (who.get(x.member_id) || {}).email || "", role: x.role })) })),
       ok: true, keys: INVITE_KEYS.map((k) => ({ key: k, label: INVITE_KEY_LABEL[k], grant_until_required: GRANT_UNTIL_REQUIRED.includes(k) })),
       invites: invs.map((i) => ({
         id: i.id, name: i.name, key: i.key, key_label: INVITE_KEY_LABEL[i.key] || i.key, grant_until: i.grant_until,
@@ -240,12 +241,52 @@ export function makeInvite(h) {
       // 新しい場所：作った管理者（Google の番号が結ばれた会員の行）を持ち主にする。番号が無ければ作らない（誰も開けない場所になるため）
       const [me] = by ? await h.db(env, "GET", `member?select=id,auth_uid&email=eq.${encodeURIComponent(String(by).toLowerCase())}`) : [];
       if (!me || !me.auth_uid) return { ok: false, error: "owner_not_bound" };
-      const [ws] = await h.db(env, "POST", "ws_workspaces", [{ name: c.workspace.name, created_by: by || null }], "return=representation");
-      await h.db(env, "POST", "ws_members", [{ workspace_id: ws.id, firebase_uid: me.auth_uid, member_id: me.id, role: "owner" }], "return=minimal");
-      workspaceId = ws.id;
+      // 2026-11-02 後始末：場所・持ち主・リンクの 3 つを関数 1 本で書く（途中で失敗したら全部書かない・supabase/b33_workspace_ops.sql）
+      const r = await h.rpc(env, "b_invite_create_with_ws", {
+        p_ws_name: c.workspace.name, p_owner_uid: me.auth_uid, p_owner_member: me.id, p_created_by: by || null, p_token: newToken(),
+        p_name: c.row.name, p_key: c.row.key, p_grant_until: c.row.grant_until, p_max_uses: c.row.max_uses, p_link_until: c.row.link_until,
+      });
+      if (!r || !r.id) return { ok: false, error: "create_failed" };
+      return { ok: true, invite: { id: r.id, name: r.name, url: linkOf(env, r.token) }, workspace: { id: r.workspace_id } };
     }
     const [row] = await h.db(env, "POST", "b_invites", [{ ...c.row, workspace_id: workspaceId, token: newToken(), created_by: by || null }], "return=representation");
     return { ok: true, invite: { id: row.id, name: row.name, url: linkOf(env, row.token) } };
+  }
+
+  // ---------- 場所から人を外す・元に戻す（2026-11-02 後始末・/admin だけ） ----------
+  // 外すのは参加者（editor）だけ。持ち主は外さない（誰も開けない場所になるため）。場所のデータと権利はそのまま
+  async function leftWorkspace(env, memberId, wsId) {
+    const [e] = await h.db(env, "GET", `events?select=type&customer_id=eq.${memberId}&type=in.(workspace_left,workspace_restored)&payload->>workspace=eq.${encodeURIComponent(wsId)}&order=id.desc&limit=1`);
+    return !!(e && e.type === "workspace_left");
+  }
+  function checkMemberArgs(wsId, uid) {
+    if (!WS_RE.test(String(wsId || ""))) return "bad_workspace";
+    if (!uid || typeof uid !== "string" || uid.length > 128 || !/^[A-Za-z0-9_-]+$/.test(uid)) return "bad_uid";
+    return null;
+  }
+  async function removeMember(env, wsId, uid, by) {
+    const bad = checkMemberArgs(wsId, uid);
+    if (bad) return { ok: false, error: bad };
+    const q = `ws_members?workspace_id=eq.${wsId}&firebase_uid=eq.${encodeURIComponent(uid)}`;
+    const [row] = await h.db(env, "GET", `${q}&select=workspace_id,firebase_uid,member_id,role,via_invite`);
+    if (!row) return { ok: false, error: "not_member" };
+    if (row.role === "owner") return { ok: false, error: "is_owner" };
+    await h.db(env, "DELETE", `${q}&role=eq.editor`, undefined, "return=minimal");
+    if (row.member_id) await h.addEvent(env, row.member_id, "workspace_left", { workspace: wsId, by: by || null }, "admin");
+    await h.logInbound(env, "workspace", { op: "remove", workspace: wsId, member_id: row.member_id || null, by: by || null }, { ok: true }, 200);
+    return { ok: true, removed: { uid: row.firebase_uid, person_id: row.member_id || null, via_invite: row.via_invite || null } };
+  }
+  async function restoreMember(env, wsId, { uid, person_id, via_invite } = {}, by) {
+    const bad = checkMemberArgs(wsId, uid);
+    if (bad) return { ok: false, error: bad };
+    const pid = /^[0-9a-f-]{36}$/i.test(String(person_id || "")) ? person_id : null;
+    const vid = /^[0-9a-f-]{36}$/i.test(String(via_invite || "")) ? via_invite : null;
+    const [ws] = await h.db(env, "GET", `ws_workspaces?select=id&id=eq.${wsId}`);
+    if (!ws) return { ok: false, error: "workspace_not_found" };
+    await h.db(env, "POST", "ws_members?on_conflict=workspace_id,firebase_uid", [{ workspace_id: wsId, firebase_uid: uid, member_id: pid, role: "editor", via_invite: vid }], "resolution=ignore-duplicates,return=minimal");
+    if (pid) await h.addEvent(env, pid, "workspace_restored", { workspace: wsId, by: by || null }, "admin");
+    await h.logInbound(env, "workspace", { op: "restore", workspace: wsId, member_id: pid, by: by || null }, { ok: true }, 200);
+    return { ok: true };
   }
 
   async function stop(env, id) {
@@ -299,5 +340,5 @@ export function makeInvite(h) {
     return { ok: true, sent: results.filter((r) => r.result === "sent").length, failed: results.filter((r) => r.result !== "sent").length, results };
   }
 
-  return { publicView, accept, list, create, stop, send, appsFor };
+  return { publicView, accept, list, create, stop, send, appsFor, removeMember, restoreMember };
 }

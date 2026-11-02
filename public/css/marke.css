@@ -142,3 +142,8 @@ body { font-family: "Geist", "Noto Sans JP", "Hiragino Sans", "Hiragino Kaku Got
 .ap-done { margin-top: 8px; }
 .ap-done > summary { cursor: pointer; list-style: none; min-height: 44px; display: flex; align-items: center; font-size: 14px; color: var(--muted); }
 .ap-done > summary::-webkit-details-marker { display: none; }
+/* 2026-11-02 場所の後始末：場所に入っている人の並びと「外す」 */
+.card > .conf { margin-bottom: 8px; }
+.ws-ms { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.ws-m { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--muted); min-height: 32px; }
+@media (max-width: 640px) { .ws-m .btn { min-height: 44px; min-width: 44px; } }
