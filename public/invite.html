@@ -106,7 +106,7 @@
     only("s-bad");
   } else {
     $("h").textContent = `${info.name}への招待`;
-    $("ok-lead").textContent = `「${info.key_label}」として、シアラボのアプリを使えるようになります${info.grant_until ? `（${day(info.grant_until)} まで）` : ""}。`;
+    $("ok-lead").textContent = `「${info.key_label}」として、シアラボのアプリを使えるようになります${info.grant_until ? `（${day(info.grant_until)} まで）` : ""}。${info.workspace_name ? `あわせて、みんなの場所「${info.workspace_name}」に入ります（入っている人だけが見られるデータです）。` : ""}`;
     only("s-ok");
     $("go").focus();
   }
@@ -138,7 +138,7 @@
     if (!r.ok) { b.disabled = false; console.warn("[invite] accept", r.error); return show(errText(r.error), false); }
 
     $("h").textContent = "登録が済みました";
-    $("done-lead").textContent = `${r.email} で「${r.key_label}」が使えるようになりました${r.grant_until ? `（${day(r.grant_until)} まで）` : ""}。アプリは同じ Google のアカウントで入ります。`;
+    $("done-lead").textContent = `${r.email} で「${r.key_label}」が使えるようになりました${r.grant_until ? `（${day(r.grant_until)} まで）` : ""}。アプリは同じ Google のアカウントで入ります。${r.workspace ? `X攻略くんでは、左上の場所の切り替えから「${r.workspace.name}」を選ぶと、みんなのデータが開きます。` : ""}`;
     $("apps").innerHTML = (r.apps || []).map((a) => `<li><a href="${a.url}" target="_blank" rel="noopener">${a.name.replace(/[&<>"]/g, "")}<span aria-hidden="true">別タブで開く ↗</span></a></li>`).join("") || `<li class="note">開けるアプリの準備ができたら、ここに出ます。</li>`;
     only("s-done");
     $("done-lead").focus();
