@@ -64,7 +64,12 @@ function fake() {
   const q = (path) => { const [tbl, qs = ""] = path.split("?"); const f = {}; for (const part of qs.split("&")) { const m = part.match(/^([a-z_]+)=(eq|is)\.(.*)$/); if (m) f[m[1]] = m[2] === "is" ? null : decodeURIComponent(m[3]); } return { tbl, f }; };
   const hit = (r, f) => Object.entries(f).every(([k, v]) => v === null ? r[k] == null : String(r[k]) === v);
   const db = async (env, method, path, body) => {
+    if (path.startsWith("events?")) { // 外した・戻したの最後の 1 件
+      const id = path.match(/customer_id=eq\.([^&]+)/)[1], ws = decodeURIComponent(path.match(/payload->>workspace=eq\.([^&]+)/)[1]);
+      return ev.filter((e) => e.id === id && ["workspace_left", "workspace_restored"].includes(e.type) && e.p.workspace === ws).reverse().slice(0, 1).map((e) => ({ type: e.type }));
+    }
     let { tbl, f } = q(path);
+    if (method === "DELETE") { const keep = t[tbl].filter((r) => !hit(r, f)); const n = t[tbl].length - keep.length; t[tbl].splice(0, t[tbl].length, ...keep); return n ? null : null; }
     if (tbl === "customers" && method === "POST") { const id = "m-new-" + (t.member.length); t.member.push({ id, email: body[0].email, auth_uid: null, name: body[0].name }); return [{ id }]; }
     if (tbl === "customers") tbl = "member";
     const rows = t[tbl];
@@ -74,7 +79,15 @@ function fake() {
     if (method === "POST") { const out = body.map((b) => ({ id: tbl === "ws_workspaces" ? "ws_" + String(rows.length).padStart(32, "0") : tbl + "-" + rows.length, ...b })); rows.push(...out); return out; }
     throw new Error("no " + method);
   };
-  const rpc = async (env, name, { p_token, p_member }) => {
+  const rpc = async (env, name, args) => {
+    if (name === "b_invite_create_with_ws") { // 3 つを 1 回で（失敗の試しは t.failCreate）
+      if (t.failCreate) throw new Error("db POST rpc/b_invite_create_with_ws 500");
+      const ws = { id: "ws_" + String(t.ws_workspaces.length + 1).padStart(32, "0"), name: args.p_ws_name, created_by: args.p_created_by };
+      const inv = { id: "inv-" + t.b_invites.length, token: args.p_token, name: args.p_name, key: args.p_key, grant_until: args.p_grant_until, max_uses: args.p_max_uses, used: 0, link_until: args.p_link_until, active: true, workspace_id: ws.id };
+      t.ws_workspaces.push(ws); t.ws_members.push({ workspace_id: ws.id, firebase_uid: args.p_owner_uid, member_id: args.p_owner_member, role: "owner" }); t.b_invites.push(inv);
+      return { id: inv.id, name: inv.name, token: inv.token, workspace_id: ws.id };
+    }
+    const { p_token, p_member } = args;
     const v = t.b_invites.find((i) => i.token === p_token);
     if (!v) return "not_found";
     if (t.b_invite_uses.some((u) => u.invite_id === v.id && u.member_id === p_member)) return "already";
@@ -166,6 +179,12 @@ test("場所：新しい場所を作ると、作った管理者が持ち主に�
   assert.equal(t.ws_workspaces.length, 1);
   assert.deepEqual(t.ws_members.map((m) => [m.firebase_uid, m.role]), [["uid-naoki", "owner"]]);
   assert.equal(t.b_invites[0].workspace_id, t.ws_workspaces[0].id);
+  assert.equal(r.invite.url, `https://lab.shia2n.jp/invite?t=${t.b_invites[0].token}`);
+  // 途中で失敗したら 3 つとも書かない（関数 1 本の中で取引になる）
+  t.failCreate = true;
+  await assert.rejects(inv.create({}, { name: "z", key: "guest", max_uses: 1, link_until: "2026-11-15", grant_until: "2026-12-31", workspace_name: "z" }, "naoki@example.com"));
+  assert.deepEqual([t.ws_workspaces.length, t.ws_members.length, t.b_invites.length], [1, 1, 1]);
+  t.failCreate = false;
   const bad = await inv.create({}, { name: "x", key: "guest", max_uses: 1, link_until: "2026-11-15", grant_until: "2026-12-31", workspace_name: "y" }, "nobody@example.com");
   assert.equal(bad.error, "owner_not_bound");
   assert.equal(t.ws_workspaces.length, 1, "持ち主がいない場所は作らない");
@@ -198,4 +217,34 @@ test("場所：リンクで登録した人は場所の参加者（editor）に�
   const b = await f2.inv.accept({}, { token: TOK, id_token: "g" });
   assert.equal(b.workspace, null);
   assert.equal(f2.t.ws_members.length, 0);
+});
+
+test("場所：参加者は外せる・持ち主は外せない・外した人は同じリンクの 2 回目で戻らない・元に戻すと入り直す", async () => {
+  const { t, ev, inv, tokens } = fake();
+  t.ws_workspaces.push({ id: WSID, name: "おかぜり案件" });
+  t.ws_members.push({ workspace_id: WSID, firebase_uid: "uid-naoki", member_id: "m-naoki", role: "owner" });
+  t.b_invites.push(guestInvite({ workspace_id: WSID }));
+  tokens.r = { ok: true, uid: "uid-ruri", email: "ruri@example.com", name: "るり" };
+  await inv.accept({}, { token: TOK, id_token: "r" });
+  const l = await inv.list({});
+  assert.deepEqual(l.workspaces[0].members.map((m) => [m.uid, m.role]), [["uid-naoki", "owner"], ["uid-ruri", "editor"]]);
+  assert.equal((await inv.removeMember({}, WSID, "uid-naoki", "naoki@example.com")).error, "is_owner");
+  assert.equal((await inv.removeMember({}, WSID, "uid-nobody", "naoki@example.com")).error, "not_member");
+  assert.equal((await inv.removeMember({}, "ws_bad", "uid-ruri")).error, "bad_workspace");
+  assert.equal((await inv.removeMember({}, WSID, "a b")).error, "bad_uid");
+  const r = await inv.removeMember({}, WSID, "uid-ruri", "naoki@example.com");
+  assert.equal(r.ok, true);
+  assert.deepEqual(t.ws_members.map((m) => m.firebase_uid), ["uid-naoki"]);
+  assert.ok(ev.some((e) => e.type === "workspace_left" && e.p.workspace === WSID));
+  // リンクがまだ使える状態でも、2 回目では戻らない
+  await inv.accept({}, { token: TOK, id_token: "r" });
+  assert.deepEqual(t.ws_members.map((m) => m.firebase_uid), ["uid-naoki"]);
+  // 元に戻す
+  const back = await inv.restoreMember({}, WSID, r.removed, "naoki@example.com");
+  assert.equal(back.ok, true);
+  assert.deepEqual(t.ws_members.map((m) => [m.firebase_uid, m.role]), [["uid-naoki", "owner"], ["uid-ruri", "editor"]]);
+  // 戻したあとは、2 回目で消えたりしない（重ならない）
+  await inv.accept({}, { token: TOK, id_token: "r" });
+  assert.equal(t.ws_members.length, 2);
+  assert.equal((await inv.restoreMember({}, "ws_" + "f".repeat(32), r.removed)).error, "workspace_not_found");
 });
