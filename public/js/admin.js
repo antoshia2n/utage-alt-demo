@@ -2,6 +2,7 @@ import { getClient, api as apiRaw, esc, fmtTime, SOURCE_LABEL, EVENT_LABEL, auth
 import { correctionHtml, wireNotes } from "/js/correction.js";
 import { makeBlueprint } from "/js/blueprint.js";
 import { mountSite } from "/js/site.js";
+import { watchEdges, revealSelected } from "/js/fbar-edges.js";
 
 // ムダ 12（2026-10-29）：フォーム・人の項目・ページ・配信の一覧は、画面ごとに読み直さず 20 秒だけ使い回す（シナリオの一覧と同じ）。
 // 何かを書いた（GET 以外を送った）ら、使い回しを全部捨てて次は必ず読み直す
@@ -477,6 +478,7 @@ function setupFuncBar() {
     (f.box.querySelector(`[data-view="${lastView[f.key]}"]`) || f.box.querySelector("[data-view]")).click();
   }));
   document.querySelectorAll(".side [data-view]").forEach((b) => b.addEventListener("click", () => setFunc(b)));
+  watchEdges($("fbar"));
   const cur = document.querySelector('.side [data-view][aria-selected="true"]') || document.querySelector(".side [data-view]");
   if (cur) setFunc(cur);
 }
@@ -486,6 +488,7 @@ function setFunc(item) {
   lastView[f.key] = item.dataset.view;
   FUNCS.forEach((x) => x.box.classList.toggle("on", x === f));
   $("fbar").querySelectorAll("[data-func]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.func === f.key)));
+  revealSelected($("fbar"));
   $("side-title").textContent = f.label;
   $("console").classList.toggle("no-side", f.box.querySelectorAll("[data-view]").length < 2);
 }
