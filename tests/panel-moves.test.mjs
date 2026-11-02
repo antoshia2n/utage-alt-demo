@@ -21,6 +21,7 @@ test("5 種類を数え、テストの決済と対象外の出来事は数えな
   assert.equal(r.items[0].time, "10:21");
   assert.equal(r.items[2].detail, "11/05 13:00 の枠");
   assert.equal(r.items[4].detail, "X から");
+  assert.equal(r.sales, 98000); // テストの決済の 98,000 円は足さない
 });
 
 test("名前とメールは返さない（人を開くための番号だけ）", () => {

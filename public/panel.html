@@ -22,15 +22,16 @@
     <p class="mp-note">ログインしたら、上の「↻ 読み直す」を押してください。</p>
   </section>
   <div id="mp-body" hidden>
+    <section class="mp-hero" id="mp-hero" aria-live="polite"></section>
     <div class="mp-counts" id="mp-counts" role="tablist" aria-label="今日の数で絞る"></div>
     <section class="mp-card">
       <div class="mp-h2">やること</div>
       <div class="mp-todo" id="mp-todo"></div>
     </section>
-    <section class="mp-card">
+    <section class="mp-feedhead">
       <div class="mp-h2"><span id="mp-lt">今日の動き</span><span class="mp-sub">押すとその人の画面が開く ↗</span></div>
-      <div id="mp-list" aria-live="polite"></div>
     </section>
+    <div class="mp-feed" id="mp-list" aria-live="polite"></div>
   </div>
   <a class="mp-open" href="/admin" target="_blank" rel="noopener">マーケくんを開く ↗</a>
 </main>

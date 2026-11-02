@@ -20,11 +20,13 @@ const hm = (iso) => new Date(Date.parse(iso) + JST).toISOString().slice(11, 16);
 export function summarizeMoves(events = []) {
   const counts = Object.fromEntries(Object.keys(MOVE_TYPES).map((k) => [k, 0]));
   const items = [];
+  let sales = 0;
   for (const e of events) {
     const p = e.payload || {};
     if (!(e.type in MOVE_TYPES)) continue;
     if (e.type === "purchase_completed" && p.mode === "test") continue;
     counts[e.type]++;
+    if (e.type === "purchase_completed" && Number.isFinite(Number(p.amount))) sales += Number(p.amount);
     let detail = "";
     if (e.type === "registered") detail = p.via === "invite" ? "招待から" : SRC_JA[p.source] ? `${SRC_JA[p.source]} から` : "";
     else if (e.type === "purchase_completed") detail = [yen(p.amount), p.product_name ? `「${String(p.product_name).slice(0, 30)}」` : ""].filter(Boolean).join(" "); // 金額を先に（狭い幅でも切れないように）
@@ -34,7 +36,7 @@ export function summarizeMoves(events = []) {
     items.push({ type: e.type, label: MOVE_TYPES[e.type], detail, at: e.occurred_at, time: hm(e.occurred_at), person_id: e.customer_id });
   }
   items.sort((a, b) => String(b.at).localeCompare(String(a.at)));
-  return { counts, items: items.slice(0, 30) };
+  return { counts, sales, items: items.slice(0, 30) };
 }
 
 
@@ -343,9 +345,9 @@ export function makeToday(h) {
       bin4.listConsults(env, {}),
       db(env, "GET", `events?select=id&type=eq.admin_notified&occurred_at=gte.${encodeURIComponent(from)}&limit=200`),
     ]);
-    const { counts, items } = summarizeMoves(events);
+    const { counts, sales, items } = summarizeMoves(events);
     return {
-      ok: true, day, counts, items,
+      ok: true, day, counts, sales, items,
       todo: {
         approvals: (approvals.approvals || []).length,
         rooms: rooms.unreplied_total || 0,
