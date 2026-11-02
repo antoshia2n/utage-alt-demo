@@ -137,6 +137,9 @@ function routeHash() {
   // 便 12a：Claude が下書きを置いたときに返す住所（/admin#page/番号）
   const pm = h.match(/^#page[/]([0-9a-f-]{36})$/i);
   if (pm) { openView("pages"); openPage(pm[1]); return true; }
+  // 2026-11-02 シアニンパネルの「今日の動き」から（/admin#person/人の番号）：顧客管理のその人の画面を開く
+  const ps = h.match(/^#person[/]([0-9a-f-]{36})$/i);
+  if (ps) { openView("people"); detail(ps[1]); return true; }
   return false;
 }
 

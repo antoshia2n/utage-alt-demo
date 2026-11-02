@@ -1544,6 +1544,8 @@ async function handleApi(request, env, url) {
     }
     if (path === "/api/admin/today" && method === "GET") { const r = await today.today(env); return json(r, r.ok === false ? 400 : 200); }
     if (path === "/api/admin/board" && method === "GET") return json(await today.board(env));
+    // シアニンパネルの細い画面（/panel・2026-11-02）：今日の動き。名前とメールは返さない
+    if (path === "/api/admin/moves" && method === "GET") { const r = await today.moves(env); return json(r, r.ok === false ? 400 : 200); }
     if (path === "/api/admin/calendar" && method === "GET") return json({ ok: true, calendars: await today.calendarStatus(env) });
     if (path === "/api/admin/calendar" && method === "PUT") {
       const body = await request.json().catch(() => ({}));

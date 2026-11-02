@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<link rel="icon" href="/icons/marke/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono&family=Geist:wght@400;500;600;700;800&family=Noto+Sans+JP:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/panel.css">
+<title>マーケくん</title>
+</head>
+<body>
+<!-- シアニンパネル（拡張機能のサイドパネル）の細い画面（2026-11-02）。今日の動きとやることの数だけ。名前とメールは出さない -->
+<main class="mp" id="mp">
+  <div class="mp-head"><b id="mp-day">今日</b><button type="button" class="mp-re" id="mp-re" aria-label="読み直す">↻ 読み直す</button></div>
+  <div class="mp-err" id="mp-err" hidden></div>
+  <section id="mp-login" class="mp-card mp-login" hidden>
+    <p>マーケくんにログインすると、ここに今日の動きが出ます。</p>
+    <a class="mp-go" href="/admin" target="_blank" rel="noopener">ログイン画面を開く ↗</a>
+    <p class="mp-note">ログインしたら、上の「↻ 読み直す」を押してください。</p>
+  </section>
+  <div id="mp-body" hidden>
+    <section class="mp-hero" id="mp-hero" aria-live="polite"></section>
+    <div class="mp-counts" id="mp-counts" role="tablist" aria-label="今日の数で絞る"></div>
+    <section class="mp-card">
+      <div class="mp-h2">やること</div>
+      <div class="mp-todo" id="mp-todo"></div>
+    </section>
+    <section class="mp-feedhead">
+      <div class="mp-h2"><span id="mp-lt">今日の動き</span><span class="mp-sub">押すとその人の画面が開く ↗</span></div>
+    </section>
+    <div class="mp-feed" id="mp-list" aria-live="polite"></div>
+  </div>
+  <a class="mp-open" href="/admin" target="_blank" rel="noopener">マーケくんを開く ↗</a>
+</main>
+<script type="module" src="/js/panel.js"></script>
+</body>
+</html>

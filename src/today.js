@@ -9,6 +9,37 @@
 
 import { LANES } from "./plan.js";
 
+// シアニンパネルの細い画面（2026-11-02）：今日の動き。名前とメールは返さない（Naoki「個人情報なので名前は出さない」）。
+// 数えるのは 5 種類。購入はテストの決済を除く。定期の開始は購入と同じ時に積まれるので数えない
+export const MOVE_TYPES = {
+  registered: "登録", purchase_completed: "購入", form_submitted: "フォーム", consult_booked: "相談の予約", seminar_registered: "セミナー申込",
+};
+const SRC_JA = { x: "X", note: "note", youtube: "YouTube", direct: "直接", other: "その他" };
+const yen = (n) => (Number.isFinite(Number(n)) ? Number(n).toLocaleString("ja-JP") + " 円" : "");
+const hm = (iso) => new Date(Date.parse(iso) + JST).toISOString().slice(11, 16);
+export function summarizeMoves(events = []) {
+  const counts = Object.fromEntries(Object.keys(MOVE_TYPES).map((k) => [k, 0]));
+  const items = [];
+  let sales = 0;
+  for (const e of events) {
+    const p = e.payload || {};
+    if (!(e.type in MOVE_TYPES)) continue;
+    if (e.type === "purchase_completed" && p.mode === "test") continue;
+    counts[e.type]++;
+    if (e.type === "purchase_completed" && Number.isFinite(Number(p.amount))) sales += Number(p.amount);
+    let detail = "";
+    if (e.type === "registered") detail = p.via === "invite" ? "招待から" : SRC_JA[p.source] ? `${SRC_JA[p.source]} から` : "";
+    else if (e.type === "purchase_completed") detail = [yen(p.amount), p.product_name ? `「${String(p.product_name).slice(0, 30)}」` : ""].filter(Boolean).join(" "); // 金額を先に（狭い幅でも切れないように）
+    else if (e.type === "form_submitted") detail = p.title ? `「${String(p.title).slice(0, 30)}」` : "";
+    else if (e.type === "consult_booked") detail = p.slot ? `${new Date(Date.parse(p.slot) + JST).toISOString().slice(5, 16).replace("-", "/").replace("T", " ")} の枠` : "";
+    else if (e.type === "seminar_registered") detail = p.title ? `「${String(p.title).slice(0, 30)}」` : "";
+    items.push({ type: e.type, label: MOVE_TYPES[e.type], detail, at: e.occurred_at, time: hm(e.occurred_at), person_id: e.customer_id });
+  }
+  items.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  return { counts, sales, items: items.slice(0, 30) };
+}
+
+
 export const CALENDAR_KEY = "calendar_ics";
 // 読み元のカレンダー。key は表 b_settings の行の名前
 export const CALENDARS = [
@@ -302,6 +333,30 @@ export function makeToday(h) {
     };
   }
 
+  // シアニンパネルの「今日の動き」：今日の 5 種類の出来事（名前なし）と、やることの数
+  async function moves(env, now = Date.now()) {
+    const day = jstDay(now);
+    const from = new Date(jstMidnightUtc(day)).toISOString();
+    const types = Object.keys(MOVE_TYPES).join(",");
+    const [events, approvals, rooms, consults, notices] = await Promise.all([
+      db(env, "GET", `events?select=type,customer_id,payload,occurred_at&type=in.(${types})&occurred_at=gte.${encodeURIComponent(from)}&order=occurred_at.desc&limit=500`),
+      guard.listApprovals(env, { status: "pending" }),
+      listRooms(env, { only_unreplied: true }),
+      bin4.listConsults(env, {}),
+      db(env, "GET", `events?select=id&type=eq.admin_notified&occurred_at=gte.${encodeURIComponent(from)}&limit=200`),
+    ]);
+    const { counts, sales, items } = summarizeMoves(events);
+    return {
+      ok: true, day, counts, sales, items,
+      todo: {
+        approvals: (approvals.approvals || []).length,
+        rooms: rooms.unreplied_total || 0,
+        consults: (consults.consults || []).filter((c) => jstDay(Date.parse(c.slot)) === day).length,
+        notices: notices.length,
+      },
+    };
+  }
+
   // 便 13b：予約の空き時間に使う「予定が入っている時間」。2 つの読み元を合わせ、終日の予定は入れない。
   // state：ok（どれか読めた）／unset（どちらも入っていない）／error（入っているのに読めなかった）
   async function busyBetween(env, fromMs, toMs) {
@@ -324,5 +379,5 @@ export function makeToday(h) {
     return { state: !anySet ? "unset" : anyOk ? "ok" : "error", error: anyOk ? undefined : error, busy };
   }
 
-  return { today, board, calendarUrl, calendarStatus, setCalendarUrl, maskUrl, busyBetween };
+  return { today, moves, board, calendarUrl, calendarStatus, setCalendarUrl, maskUrl, busyBetween };
 }
