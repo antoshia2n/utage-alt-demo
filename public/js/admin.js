@@ -2692,7 +2692,9 @@ const INV_ERR = {
   bad_max_uses: "人数は 1〜100 で入れてください", link_until_required: "リンクの期限を入れてください", link_until_past: "リンクの期限が過ぎた日になっています",
   link_until_too_far: "リンクの期限は 180 日以内にしてください", grant_until_required: "この権利は期限が必要です", grant_until_past: "権利の期限が過ぎた日になっています",
   emails_required: "メールアドレスを入れてください", too_many: "一度に送れるのは 20 人までです", bad_email: "読めないメールアドレスがあります",
-  mail_not_configured: "メールの送り元が決まっていません（決済・メール・オプチャ）", stopped: "このリンクは止めてあります", expired: "このリンクは期限切れです", used_up: "このリンクは人数を使い切っています",
+  mail_not_configured: "メールの送り元が決まっていません（決済・メール・オプチャ）",
+  bad_workspace: "場所の選び方が正しくありません", workspace_not_found: "その場所が見つかりません", workspace_name_too_long: "場所の名前は 40 字までです",
+  owner_not_bound: "あなたの Google のログインがまだ結ばれていないため、場所を作れません（一度 X攻略くんなどへ Google で入ってから）", stopped: "このリンクは止めてあります", expired: "このリンクは期限切れです", used_up: "このリンクは人数を使い切っています",
 };
 const invErr = (r) => INV_ERR[r && r.error] || "時間をおいてもう一度お試しください";
 const invDay = (iso) => iso ? new Date(iso).toLocaleDateString("ja-JP", { timeZone: "Asia/Tokyo" }) : "";
@@ -2702,7 +2704,7 @@ function invRow(i) {
   const asking = invAsk === i.id, sending = invSend === i.id;
   const uses = i.uses.length ? `<details><summary>使った人を見る ▼（${i.uses.length} 人）</summary><ul style="margin:6px 0 0;padding-left:1.2em">${i.uses.map((u) => `<li>${esc(u.name || "（名前なし）")}　${esc(u.email)}　${esc(invDay(u.used_at))}</li>`).join("")}</ul></details>` : "まだ誰も使っていません";
   return `<div class="er" data-invrow="${esc(i.id)}">
-    <div style="min-width:0"><div class="k">${esc(i.name)}</div><div class="d">${esc(i.key_label)}${i.grant_until ? `・権利は ${esc(invDay(i.grant_until))} まで` : "・権利は期限なし"}・${i.used} / ${i.max_uses} 人・リンクは ${esc(invDay(i.link_until))} まで</div></div>
+    <div style="min-width:0"><div class="k">${esc(i.name)}</div><div class="d">${esc(i.key_label)}${i.grant_until ? `・権利は ${esc(invDay(i.grant_until))} まで` : "・権利は期限なし"}・${i.used} / ${i.max_uses} 人・リンクは ${esc(invDay(i.link_until))} まで${i.workspace_name ? `・場所「${esc(i.workspace_name)}」に入る` : ""}</div></div>
     <span class="acc-state${i.state === "ok" ? " on" : ""}">${esc(INV_STATE[i.state] || i.state)}</span>
     <div class="why">${uses}</div>
     <div class="er-act">
@@ -2722,6 +2724,8 @@ function invAddBox(keys) {
     <div class="f"><label for="inv-name">名前（相手には見出しで出ます）</label><input id="inv-name" type="text" maxlength="40" placeholder="例 おかぜりさん・るりさん（ゲスト）"></div>
     <div class="row2"><div class="f"><label for="inv-key">付ける権利</label><select id="inv-key" class="inline">${keys.map((k) => `<option value="${esc(k.key)}">${esc(k.label)}</option>`).join("")}</select></div>
     <div class="f"><label for="inv-grant">権利の期限</label><input id="inv-grant" type="date" value="2026-12-31"><small id="inv-grant-note">ゲスト・モニターは必須です</small></div></div>
+    <div class="row2"><div class="f"><label for="inv-ws">入る場所（任意）</label><select id="inv-ws" class="inline"><option value="">場所に入れない</option>${(invData.workspaces || []).map((w) => `<option value="${esc(w.id)}">${esc(w.name)}</option>`).join("")}<option value="__new">＋ 新しい場所を作る</option></select><small>場所に入った人どうしで、X攻略くんのデータを一緒に見られます</small></div>
+    <div class="f" id="inv-wsnew-f" hidden><label for="inv-wsnew">新しい場所の名前</label><input id="inv-wsnew" type="text" maxlength="40" placeholder="例 おかぜり案件"><small>作ったあなたが持ち主になります</small></div></div>
     <div class="row2"><div class="f"><label for="inv-max">使える人数</label><input id="inv-max" type="number" min="1" max="100" value="2" inputmode="numeric"></div>
     <div class="f"><label for="inv-until">リンクの期限</label><input id="inv-until" type="date" value="${esc(invDateIn(14))}"></div></div>
     <div class="er-act"><button class="btn ghost small" type="button" data-invclose>やめる</button><button class="btn small" type="button" data-invgo>作る</button></div>
@@ -2730,13 +2734,18 @@ function invAddBox(keys) {
 function drawInvites(focusSel) {
   const box = $("inv-list");
   if (!invData) return;
-  box.innerHTML = invAddBox(invData.keys) + (invData.invites.length ? invData.invites.map(invRow).join("") : '<p class="note">まだ招待リンクはありません</p>');
+  const wsBox = (invData.workspaces || []).length ? `<div class="card" style="margin:0 0 12px"><h3 class="home-h" style="margin:0 0 6px">みんなの場所</h3>${invData.workspaces.map((w) => `<div class="er"><div style="min-width:0"><div class="k">${esc(w.name)}</div><div class="d">${w.members.map((m) => `${esc(m.name || m.email || "（名前なし）")}${m.role === "owner" ? "（持ち主）" : ""}`).join("・") || "まだ誰もいません"}</div></div></div>`).join("")}</div>` : "";
+  box.innerHTML = wsBox + invAddBox(invData.keys) + (invData.invites.length ? invData.invites.map(invRow).join("") : '<p class="note">まだ招待リンクはありません</p>');
   const redraw = (sel) => drawInvites(sel);
   box.querySelector("[data-invopen]")?.addEventListener("click", () => { invOpen = true; redraw("#inv-name"); });
   box.querySelector("[data-invclose]")?.addEventListener("click", () => { invOpen = false; redraw("[data-invopen]"); });
+  box.querySelector("#inv-ws")?.addEventListener("change", (e) => { const nw = e.target.value === "__new"; $("inv-wsnew-f").hidden = !nw; if (nw) $("inv-wsnew").focus(); });
   box.querySelector("[data-invgo]")?.addEventListener("click", async (e) => {
-    const body = { name: $("inv-name").value.trim(), key: $("inv-key").value, grant_until: $("inv-grant").value || null, max_uses: Number($("inv-max").value), link_until: $("inv-until").value };
+    const wsSel = $("inv-ws").value, wsNew = $("inv-wsnew").value.trim();
+    const body = { name: $("inv-name").value.trim(), key: $("inv-key").value, grant_until: $("inv-grant").value || null, max_uses: Number($("inv-max").value), link_until: $("inv-until").value,
+      ...(wsSel === "__new" ? { workspace_name: wsNew } : wsSel ? { workspace_id: wsSel } : {}) };
     if (!body.name) { $("inv-name").focus(); return invSay("名前を入れてください"); }
+    if (wsSel === "__new" && !wsNew) { $("inv-wsnew").focus(); return invSay("新しい場所の名前を入れてください"); }
     e.target.disabled = true; invSay("作っています…");
     const r = await api("/api/admin/invites", { method: "POST", token, body });
     e.target.disabled = false;

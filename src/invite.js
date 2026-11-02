@@ -6,6 +6,10 @@
 // お金を払う権利（shiarabo_basic・NEXT など）は付けられない。決済を通らずに入る抜け道になるため。
 //
 // 表は supabase/b31_invites.sql（b_invites・b_invite_uses・関数 b_invite_take）。
+//
+// 2026-11-02 場所（ワークスペース）：リンクに「入る場所」を付けられる（supabase/b32_workspaces.sql）。
+// 受け取った人は、その場所の参加者（ws_members・役割 editor）になる。場所を作った人（作った管理者の Google の番号）は持ち主。
+// 場所のデータは、入っている人だけが読み書きできる（判断は shia2n-core の server/workspace.js）。
 
 import { PUBLISH_APPS } from "./bridge.js";
 
@@ -20,6 +24,7 @@ const JWK_URL = "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@
 const TOKEN_RE = /^[A-Za-z0-9_-]{20,40}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DAY = 86400000;
+const WS_RE = /^ws_[0-9a-f]{32}$/;
 
 const b64url = (s) => {
   const t = String(s).replace(/-/g, "+").replace(/_/g, "/");
@@ -62,7 +67,12 @@ export function checkCreate(body = {}, now = Date.now()) {
     if (new Date(grantUntil).getTime() <= now) return { ok: false, error: "grant_until_past" };
   }
   if (!grantUntil && GRANT_UNTIL_REQUIRED.includes(key)) return { ok: false, error: "grant_until_required" };
-  return { ok: true, row: { name, key, max_uses: maxUses, link_until: linkUntil, grant_until: grantUntil } };
+  // 入る場所（任意）：今ある場所の番号か、新しく作る場所の名前のどちらか
+  const wsId = String(body.workspace_id ?? "").trim();
+  const wsNew = String(body.workspace_name ?? "").trim();
+  if (wsId && !WS_RE.test(wsId)) return { ok: false, error: "bad_workspace" };
+  if (wsNew.length > 40) return { ok: false, error: "workspace_name_too_long", max: 40 };
+  return { ok: true, row: { name, key, max_uses: maxUses, link_until: linkUntil, grant_until: grantUntil }, workspace: wsId ? { id: wsId } : wsNew ? { name: wsNew } : null };
 }
 
 // "2026-12-31" → その日の 23:59:59（日本時間）。ISO の日時ならそのまま
@@ -126,7 +136,9 @@ export function makeInvite(h) {
     const inv = await byToken(env, token);
     const state = inviteState(inv);
     if (!inv) return { ok: false, error: "not_found" };
-    return { ok: true, state, name: inv.name, key: inv.key, key_label: INVITE_KEY_LABEL[inv.key] || inv.key, grant_until: inv.grant_until };
+    let workspace_name = "";
+    if (inv.workspace_id) { const [ws] = await h.db(env, "GET", `ws_workspaces?select=name&id=eq.${encodeURIComponent(inv.workspace_id)}`); workspace_name = (ws && ws.name) || ""; }
+    return { ok: true, state, name: inv.name, key: inv.key, key_label: INVITE_KEY_LABEL[inv.key] || inv.key, grant_until: inv.grant_until, workspace_name };
   }
 
   async function accept(env, { token, id_token } = {}) {
@@ -165,9 +177,19 @@ export function makeInvite(h) {
       await h.logInbound(env, "invite", { invite_id: inv.id, member_id: m.id }, { ok: false, error: grant.error, took }, 500);
       return { ok: false, error: "grant_failed", detail: grant.error };
     }
-    await h.addEvent(env, m.id, "invite_accepted", { invite_id: inv.id, key: inv.key, until: inv.grant_until, again: took === "already", bound }, "site");
-    await h.logInbound(env, "invite", { invite_id: inv.id, member_id: m.id }, { ok: true, took, created, bound, grant: grant.how }, 200);
-    return { ok: true, email: g.email, is_new: created, again: took === "already", key: inv.key, key_label: INVITE_KEY_LABEL[inv.key], grant_until: inv.grant_until, bound, apps: await appsFor(env, inv.key) };
+    // 5. 場所に入れる（リンクに場所があるときだけ。同じ人の 2 回目は今の役割のまま）
+    // 2026-11-02 確認役のレビュー：止めた・期限切れのリンクの 2 回目では入れ直さない（場所から外した人が古いリンクで戻れないように）
+    let workspace = null;
+    if (inv.workspace_id && (took === "ok" || inviteState(inv) === "ok")) {
+      const [ws] = await h.db(env, "GET", `ws_workspaces?select=id,name&id=eq.${encodeURIComponent(inv.workspace_id)}`);
+      if (ws) {
+        await h.db(env, "POST", "ws_members?on_conflict=workspace_id,firebase_uid", [{ workspace_id: ws.id, firebase_uid: g.uid, member_id: m.id, role: "editor", via_invite: inv.id }], "resolution=ignore-duplicates,return=minimal");
+        workspace = { id: ws.id, name: ws.name };
+      }
+    }
+    await h.addEvent(env, m.id, "invite_accepted", { invite_id: inv.id, key: inv.key, until: inv.grant_until, again: took === "already", bound, workspace: workspace && workspace.id }, "site");
+    await h.logInbound(env, "invite", { invite_id: inv.id, member_id: m.id }, { ok: true, took, created, bound, grant: grant.how, workspace: workspace && workspace.id }, 200);
+    return { ok: true, email: g.email, is_new: created, again: took === "already", key: inv.key, key_label: INVITE_KEY_LABEL[inv.key], grant_until: inv.grant_until, bound, workspace, apps: await appsFor(env, inv.key) };
   }
 
   async function grantOrExtend(env, memberId, inv) {
@@ -187,13 +209,19 @@ export function makeInvite(h) {
     const invs = await h.db(env, "GET", "b_invites?select=*&order=created_at.desc&limit=200");
     const uses = invs.length ? await h.db(env, "GET", `b_invite_uses?select=invite_id,member_id,used_at&invite_id=in.(${invs.map((i) => i.id).join(",")})&order=used_at.desc&limit=2000`) : [];
     const ids = [...new Set(uses.map((u) => u.member_id))];
-    const people = ids.length ? await h.db(env, "GET", `customers?select=id,name,email&id=in.(${ids.join(",")})`) : [];
+    const wss = await h.db(env, "GET", "ws_workspaces?select=id,name,created_at&order=created_at.asc&limit=100");
+    const wsm = wss.length ? await h.db(env, "GET", `ws_members?select=workspace_id,member_id,role,created_at&workspace_id=in.(${wss.map((w) => w.id).join(",")})&limit=1000`) : [];
+    const ids2 = [...new Set([...ids, ...wsm.map((x) => x.member_id).filter(Boolean)])];
+    const people = ids2.length ? await h.db(env, "GET", `customers?select=id,name,email&id=in.(${ids2.join(",")})`) : [];
     const who = new Map(people.map((p) => [p.id, p]));
+    const wsName = new Map(wss.map((w) => [w.id, w.name]));
     return {
+      workspaces: wss.map((w) => ({ id: w.id, name: w.name, members: wsm.filter((x) => x.workspace_id === w.id).map((x) => ({ person_id: x.member_id, name: (who.get(x.member_id) || {}).name || "", email: (who.get(x.member_id) || {}).email || "", role: x.role })) })),
       ok: true, keys: INVITE_KEYS.map((k) => ({ key: k, label: INVITE_KEY_LABEL[k], grant_until_required: GRANT_UNTIL_REQUIRED.includes(k) })),
       invites: invs.map((i) => ({
         id: i.id, name: i.name, key: i.key, key_label: INVITE_KEY_LABEL[i.key] || i.key, grant_until: i.grant_until,
         max_uses: i.max_uses, used: i.used, link_until: i.link_until, state: inviteState(i), created_at: i.created_at, created_by: i.created_by,
+        workspace_id: i.workspace_id || null, workspace_name: i.workspace_id ? wsName.get(i.workspace_id) || "" : "",
         url: linkOf(env, i.token),
         uses: uses.filter((u) => u.invite_id === i.id).map((u) => ({ person_id: u.member_id, name: (who.get(u.member_id) || {}).name || "", email: (who.get(u.member_id) || {}).email || "", used_at: u.used_at })),
       })),
@@ -203,7 +231,20 @@ export function makeInvite(h) {
   async function create(env, body, by) {
     const c = checkCreate(body);
     if (!c.ok) return c;
-    const [row] = await h.db(env, "POST", "b_invites", [{ ...c.row, token: newToken(), created_by: by || null }], "return=representation");
+    let workspaceId = null;
+    if (c.workspace && c.workspace.id) {
+      const [ws] = await h.db(env, "GET", `ws_workspaces?select=id&id=eq.${c.workspace.id}`);
+      if (!ws) return { ok: false, error: "workspace_not_found" };
+      workspaceId = ws.id;
+    } else if (c.workspace && c.workspace.name) {
+      // 新しい場所：作った管理者（Google の番号が結ばれた会員の行）を持ち主にする。番号が無ければ作らない（誰も開けない場所になるため）
+      const [me] = by ? await h.db(env, "GET", `member?select=id,auth_uid&email=eq.${encodeURIComponent(String(by).toLowerCase())}`) : [];
+      if (!me || !me.auth_uid) return { ok: false, error: "owner_not_bound" };
+      const [ws] = await h.db(env, "POST", "ws_workspaces", [{ name: c.workspace.name, created_by: by || null }], "return=representation");
+      await h.db(env, "POST", "ws_members", [{ workspace_id: ws.id, firebase_uid: me.auth_uid, member_id: me.id, role: "owner" }], "return=minimal");
+      workspaceId = ws.id;
+    }
+    const [row] = await h.db(env, "POST", "b_invites", [{ ...c.row, workspace_id: workspaceId, token: newToken(), created_by: by || null }], "return=representation");
     return { ok: true, invite: { id: row.id, name: row.name, url: linkOf(env, row.token) } };
   }
 
