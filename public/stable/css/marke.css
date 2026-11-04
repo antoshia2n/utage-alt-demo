@@ -1,0 +1,149 @@
+/* マーケくん便 1（2026-10-24）：シアニン用の画面（/admin）だけの見た目の値。
+   生徒の画面（シアラボ）は style.css のまま。このファイルは admin.html だけが読む。
+   値はスワイプくん・思考整理くん・コンテンツくんと同じ（正本は content-os の CK_CSS・プロジェクト資料 claude/app-design-rules.md の 5 節）。 */
+:root {
+  --bg: #f5f0eb;
+  --surface: #ffffff;
+  --ink: #1a1a1a;
+  --muted: #6b6259;
+  --line: #e6dfd6;
+  --accent: #b45309;
+  --accent-ink: #ffffff;
+  --accent-soft: #fef3c7;
+  --warn: #b91c1c;
+  --warn-soft: #fdecec;
+  --radius: 12px;
+  --shadow: 0 1px 2px rgba(60,40,20,.05), 0 8px 24px rgba(60,40,20,.09);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1b1916; --surface: #24211d; --ink: #f1ece6; --muted: #b0a69b; --line: #38332c;
+    --accent: #fbbf24; --accent-ink: #1b1916; --accent-soft: rgba(251,191,36,.14); --warn: #f87171; --warn-soft: rgba(248,113,113,.12);
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.4); color-scheme: dark;
+  }
+}
+body { font-family: "Geist", "Noto Sans JP", "Hiragino Sans", "Hiragino Kaku Gothic ProN", system-ui, sans-serif; }
+.btn { border-radius: 8px; }
+.brand { display: inline-flex; align-items: center; gap: 8px; letter-spacing: -.01em; font-weight: 800; }
+.brand img, .side-logo img { flex: none; }
+/* マーケくん便 3（2026-10-24）：名札は上の帯へ移したので、左の名札は出さない */
+.side-logo { display: none !important; }
+
+/* マーケくん便 2（2026-10-24）：権利の列・タブ。出どころの色は 3 つ（支払い＝青・手で付けた＝紫・マーケくんで購入＝青緑） */
+:root { --ent-pay: #2563eb; --ent-pay-bg: #dbeafe; --ent-man: #a21caf; --ent-man-bg: #fae8ff; --ent-lab: #0f766e; --ent-lab-bg: #ccfbf1; }
+@media (prefers-color-scheme: dark) {
+  :root { --ent-pay: #60a5fa; --ent-pay-bg: rgba(96,165,250,.14); --ent-man: #e879f9; --ent-man-bg: rgba(232,121,249,.14); --ent-lab: #2dd4bf; --ent-lab-bg: rgba(45,212,191,.14); }
+}
+.ents { display: flex; gap: 4px; flex-wrap: wrap; }
+.ent, .ent-src { --c: var(--ent-pay); --cb: var(--ent-pay-bg); color: var(--c); background: var(--cb); white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
+.ent { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; font-weight: 600; padding: 1px 7px; border-radius: 6px; }
+.ent i { width: 6px; height: 6px; border-radius: 50%; background: var(--c); }
+.ent-manual { --c: var(--ent-man); --cb: var(--ent-man-bg); }
+.ent-lab { --c: var(--ent-lab); --cb: var(--ent-lab-bg); }
+.ent-off { opacity: .5; text-decoration: line-through; }
+.ent-soon { color: var(--warn); font-weight: 700; }
+.ent-src { font-size: 12px; font-weight: 700; padding: 1px 8px; border-radius: 99px; }
+.cust-table .c-exp { white-space: nowrap; font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ent-box { display: flex; flex-direction: column; gap: 10px; }
+.er { border: 1px solid var(--line); border-radius: 12px; padding: 11px 12px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 10px; align-items: center; }
+.er-off { opacity: .6; }
+.er .k { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; font-weight: 700; }
+.er .d { font-size: 12px; color: var(--muted); }
+.er .why { grid-column: 1 / -1; font-size: 12px; color: var(--muted); line-height: 1.6; }
+.er-act { grid-column: 1 / -1; display: flex; gap: 6px; justify-content: flex-end; align-items: center; }
+.conf { grid-column: 1 / -1; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; background: var(--warn-soft); border-radius: 9px; padding: 8px 10px; font-size: 12.5px; }
+.conf input { flex: 1; min-width: 140px; min-height: 34px; }
+.btn.danger { background: var(--warn); border-color: var(--warn); color: var(--surface); }
+.addbox { border: 1.5px dashed var(--line); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+.addbox.open { border-style: solid; border-color: var(--accent); align-items: stretch; }
+.addbox .f { display: flex; flex-direction: column; gap: 5px; }
+.addbox .f label { font-size: 12px; font-weight: 700; color: var(--muted); }
+.addbox .f small { font-size: 12px; color: var(--muted); }
+.addbox .row2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.addbox .er-act { grid-column: auto; }
+.addbox select.inline { width: 100%; }
+.addbox input[type=date] { width: 100%; min-height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 0 10px; font: inherit; }
+#ent-status:empty { display: none; }
+@media (max-width: 640px) {
+  .cust-table .c-exp { display: none; }
+  .addbox .row2 { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* マーケくん便 3（2026-10-24）：画面の型。上の帯＝機能の切り替え、左＝その機能の項目、真ん中＝表、右＝1 件の詳細
+   （プロジェクト資料 claude/app-design-rules.md の 4 節。スワイプくん・コンテンツくんと同じ並び） */
+.shell { grid-template-columns: 200px minmax(0, 1fr); grid-template-rows: auto 1fr; grid-template-areas: "top top" "side main"; }
+.shell.no-side { grid-template-columns: minmax(0, 1fr); grid-template-areas: "top" "main"; }
+.shell.no-side .side { display: none; }
+.main { display: contents; }
+.topnav { grid-area: top; gap: 10px; }
+.content { grid-area: main; min-width: 0; }
+.side { grid-area: side; top: 53px; height: calc(100vh - 53px); padding-top: 16px; }
+.side .grp, .side .grp-box, .side .grp-solo { display: none; }
+.side .grp-box.on, .side .grp-solo.on { display: flex; flex-direction: column; gap: 2px; padding-top: 0; }
+.side-title { font-size: 12px; font-weight: 700; color: var(--muted); letter-spacing: .1em; padding: 0 10px 8px; }
+.top-logo { display: inline-flex; align-items: center; gap: 8px; font-weight: 800; letter-spacing: -.01em; color: var(--ink); white-space: nowrap; margin-right: 8px; }
+.top-logo img { flex: none; }
+.fbar { display: flex; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.fbar::-webkit-scrollbar { display: none; }
+.fbar button { background: none; border: 0; border-radius: 8px; padding: 7px 12px; font: inherit; font-size: 14px; font-weight: 700; color: var(--muted); cursor: pointer; white-space: nowrap; }
+.fbar button:hover { color: var(--ink); background: var(--bg); }
+.fbar button[aria-selected="true"] { color: var(--ink); background: var(--accent-soft); box-shadow: inset 0 -2px 0 var(--accent); }
+/* 2026-11-02：帯が収まらないときは、続きがある側の端を薄くする（public/js/fbar-edges.js が印を付ける） */
+.fbar.more-r { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent); }
+.fbar.more-l { -webkit-mask-image: linear-gradient(to right, transparent, #000 36px); mask-image: linear-gradient(to right, transparent, #000 36px); }
+.fbar.more-l.more-r { -webkit-mask-image: linear-gradient(to right, transparent, #000 36px, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(to right, transparent, #000 36px, #000 calc(100% - 36px), transparent); }
+@media (max-width: 640px) { .fbar button { min-height: 44px; } }
+.page-h { font-size: 26px; font-weight: 800; letter-spacing: -.01em; line-height: 1.3; margin: 0 0 16px; overflow-wrap: anywhere; }
+.page-h .crumb-sub { font-size: 16px; font-weight: 500; color: var(--muted); }
+/* 顧客管理：広い画面では表を残したまま右に詳細 */
+#view-people.split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(440px, 42%); gap: 16px; align-items: start; }
+#view-people.split #cust-detail { position: sticky; top: 69px; max-height: calc(100vh - 85px); overflow-y: auto; overscroll-behavior: contain; }
+#view-people.split .cust-table .c-src, #view-people.split .cust-table .c-reg { display: none; }
+#view-people.split .back-link { display: block; width: max-content; margin: 0 0 6px auto; }
+#view-people.split .cust-tabs button { padding-left: 10px; padding-right: 10px; }
+.cust-table td:first-child { min-width: 150px; }
+.cust-table .c-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; }
+.cust-table .sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; overflow-wrap: normal; }
+.cust-table tbody tr.sel { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+@media (max-width: 860px) {
+  .shell, .shell.no-side { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto 1fr; grid-template-areas: "top" "side" "main"; }
+  .side { top: 0; height: auto; padding-top: 6px; }
+  .side-title { display: none; }
+  .side .grp-box.on, .side .grp-solo.on, .side .grp-box.on .grp-items { display: contents; }
+  .top-logo span { display: none; }
+  .top-logo { margin-right: 0; }
+  .fbar { flex: 1 1 0; }
+  .page-h { font-size: 22px; margin-bottom: 12px; }
+}
+/* スマホ：顧客の表は 1 人 1 枚のカードにする（名前と段階・権利・最後に動いた） */
+@media (max-width: 640px) {
+  .top-logo { display: none; }
+  .cust-table thead { display: none; }
+  .cust-table, .cust-table tbody { display: block; }
+  .cust-table tbody tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 10px; align-items: center; padding: 12px 4px; border-bottom: 1px solid var(--line); }
+  .cust-table td { padding: 0; border: 0; min-width: 0; }
+  .cust-table td:first-child { min-width: 0; }
+  .cust-table .c-name, .cust-table .sub { max-width: none; }
+  .cust-table td:nth-child(2) { text-align: right; }
+  .cust-table td.c-ent { grid-column: 1 / -1; }
+  .cust-table td.c-ent:empty, .cust-table td.c-ent:has(.ents:empty) { display: none; }
+  .cust-table td:nth-child(6) { grid-column: 1 / -1; font-size: 12px; color: var(--muted); }
+}
+
+/* マーケくん便 5：アプリの公開スイッチ */
+.acc-card { display: flex; flex-direction: column; gap: 10px; max-width: 720px; }
+.acc-h { font-size: 16px; margin: 0; }
+.acc-row .k { font-family: inherit; font-size: 14px; }
+.acc-state { font-size: 12px; font-weight: 700; padding: 2px 10px; border-radius: 99px; background: var(--line); color: var(--muted); white-space: nowrap; }
+.acc-state.on { background: var(--ent-man-bg); color: var(--ent-man); }
+.acc-foot { font-size: 12px; }
+/* ムダ 9：承認待ちの下の「済んだ依頼を見る ▼」 */
+.ap-done { margin-top: 8px; }
+.ap-done > summary { cursor: pointer; list-style: none; min-height: 44px; display: flex; align-items: center; font-size: 14px; color: var(--muted); }
+.ap-done > summary::-webkit-details-marker { display: none; }
+/* 2026-11-02 場所の後始末：場所に入っている人の並びと「外す」 */
+.card > .conf { margin-bottom: 8px; }
+.ws-ms { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.ws-m { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--muted); min-height: 32px; }
+@media (max-width: 640px) { .ws-m .btn { min-height: 44px; min-width: 44px; } }

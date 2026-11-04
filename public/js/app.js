@@ -3,6 +3,14 @@ import { correctionHtml, wireNotes } from "/js/correction.js";
 import { setupStudentPush } from "/js/pushclient.js";
 import { flatten, homeHtml, libraryHtml, searchHtml } from "/js/home.js";
 
+// シアニン用の版（クッキー lab_ch=next・src/channel.js）で開いているときだけ、そうと分かる印を出す
+if (/(?:^|;\s*)lab_ch=next(?:;|$)/.test(document.cookie)) {
+  document.title = "【シアニン用】" + document.title;
+  const lg = document.querySelector(".side-logo");
+  if (lg) lg.insertAdjacentHTML("beforeend", ' <span class="ch-next">シアニン用</span>');
+}
+
+
 const $ = (id) => document.getElementById(id);
 // 便 8g-1：確認コードで入ったときは /app?fresh=1 で来る（リンクのときは住所の # に access_token）
 const fresh = /access_token=/.test(location.hash) || new URLSearchParams(location.search).get("fresh") === "1";
