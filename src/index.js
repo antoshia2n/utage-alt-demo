@@ -1029,6 +1029,8 @@ async function handleApi(request, env, url) {
       lessons: lib.flat, announcements, viewed: viewedIds, views,
       // 版（ホームの段の並びを決める）：メンシプだけの人は mem、モニターは mon、ほかは lab
       tier: homeTier(sa.admin, ent),
+      // 版ごとのホームの段（管理画面で決めた並び。空なら決まった並び）
+      home_rows: await (async () => { try { const h = await site.homeRows(env); return (h.rows && h.rows[homeTier(sa.admin, ent)]) || null; } catch { return null; } })(),
       library: { source: lib.source, member: lib.member, lesson_count: lib.lesson_count, programs: lib.programs },
       room_unread: room.unreadForStudent,
       entitlement: ent,
@@ -1342,6 +1344,8 @@ async function handleApi(request, env, url) {
       let r = null;
       if (sub === "tree" && method === "GET") r = await site.tree(env);
       else if (sub === "content" && method === "GET") r = await site.content(env, url.searchParams.get("id"));
+      else if (sub === "home" && method === "GET") r = await site.homeRows(env);
+      else if (method === "PUT" && sub === "home") r = await site.saveHomeRows(env, body, by);
       else if (sub === "students" && method === "GET") r = await site.studentsOf(env, { names: (await students.load(env)).byEmail });
       else if (method === "PUT" && sub === "site") r = await site.saveSite(env, body, by);
       else if (method === "PUT" && sub === "curriculum") r = await site.saveCurriculum(env, body, by);

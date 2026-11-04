@@ -169,7 +169,7 @@ async function main() {
   const drawHome = () => {
     if (!flat.length) { $("tab-home").innerHTML = $("tab-lessons").innerHTML; return; }
     let theme = null; try { theme = localStorage.getItem(THEME_KEY); } catch { /* 覚えられなくても動く */ }
-    $("tab-home").innerHTML = homeHtml({ tier: r.tier || "lab", flat, views, seed: r.me.email || "", theme });
+    $("tab-home").innerHTML = homeHtml({ tier: r.tier || "lab", rows: r.home_rows, flat, views, seed: r.me.email || "", theme });
     const sel = $("home-theme");
     if (sel) sel.addEventListener("change", () => { try { localStorage.setItem(THEME_KEY, sel.value); } catch { /* 覚えられなくても今は変わる */ } drawHome(); $("home-theme") && $("home-theme").focus(); });
   };

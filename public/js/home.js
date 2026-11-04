@@ -115,7 +115,7 @@ const rail = (items, seen) => `<div class="rail">${items.map((x) => card(x, seen
 export function homeHtml(ctx) {
   const { flat, views } = ctx;
   const seen = new Set(views.map((v) => v.id));
-  const rows = HOME_ROWS[ctx.tier] || HOME_ROWS.lab;
+  const rows = Array.isArray(ctx.rows) && ctx.rows.length ? ctx.rows : (HOME_ROWS[ctx.tier] || HOME_ROWS.lab); // 管理画面で決めた並び（無ければ決まった並び）
   const cont = continueList(flat, views);
   const out = [];
   for (const k of rows) {

@@ -5,6 +5,22 @@
 //  ・受講生は読むだけ。人の情報の正本は顧客管理としあらぼ管理、開け閉めは権利だけ。
 
 export const STATUSES = ["published", "draft", "scheduled", "drip"];
+// 生徒の画面の種類のラベル（2026-11-04 Naoki OK）。空なら生徒の画面がプログラムとコースから決める
+export const KINDS = ["セミナー", "アーカイブ", "動画講座", "記事", "note記事", "メンシプ限定"];
+// 版ごとのホームの段（2026-11-04）。並びと、出すかどうかを管理画面で決める
+export const HOME_TIERS = ["lab", "mem", "mon", "free"];
+export const HOME_ROWS = ["record", "continue", "picks", "fresh"];
+export function checkHomeRows(b = {}) {
+  const out = {};
+  for (const tier of HOME_TIERS) {
+    const list = Array.isArray(b[tier]) ? b[tier] : null;
+    if (!list) continue;
+    const rows = [...new Set(list.map(String))];
+    if (rows.some((x) => !HOME_ROWS.includes(x))) return { ok: false, error: "bad_row" };
+    out[tier] = rows;
+  }
+  return { ok: true, rows: out };
+}
 const KEY_RE = /^[a-z0-9_]{2,40}$/;
 const ID_RE = /^[0-9a-z_-]{2,40}$/i;
 const TITLE_MAX = 200;
@@ -15,7 +31,7 @@ const T = {
   sites: "b_site_sites", curricula: "b_site_curricula", cprog: "b_site_curriculum_programs", rights: "b_site_curriculum_rights",
   programs: "b_site_programs", courses: "b_site_courses", contents: "b_site_contents", links: "b_site_content_courses",
 };
-const CONTENT_LIST = "id,title,summary,status,active,publish_at,drip_days,minutes,video_url,can_ask,files,updated_at";
+const CONTENT_LIST = "id,title,summary,status,active,publish_at,drip_days,minutes,video_url,can_ask,files,kind,updated_at";
 const CONTENT_FULL = CONTENT_LIST + ",toc,body";
 const inList = (ids) => `in.(${ids.map((x) => `"${encodeURIComponent(String(x))}"`).join(",")})`;
 const now = () => new Date().toISOString();
@@ -39,6 +55,8 @@ export function checkContent(b = {}) {
   }
   const m = b.minutes === "" || b.minutes == null ? null : Number(b.minutes);
   if (m != null && (!Number.isInteger(m) || m < 0 || m > 1440)) return { ok: false, error: "bad_minutes", field: "minutes" };
+  const kind = b.kind == null || b.kind === "" ? null : String(b.kind);
+  if (kind && !KINDS.includes(kind)) return { ok: false, error: "bad_kind", field: "kind" };
   const video_url = str(b.video_url, 500) || null;
   if (video_url && !/^https?:\/\/(www\.|m\.)?(youtube\.com|youtu\.be)\//i.test(video_url)) return { ok: false, error: "bad_video_url", field: "video_url" };
   const toc = [];
@@ -58,7 +76,7 @@ export function checkContent(b = {}) {
   return {
     ok: true,
     // 目次は画面から外した（2026-10-29 11:31 Naoki「一旦なくていい」）。送られてこなければ今の値を変えない
-    row: { title, summary: str(b.summary, TEXT_MAX), status, publish_at, drip_days, minutes: m, video_url, ...(Array.isArray(b.toc) ? { toc } : {}), files, can_ask: b.can_ask !== false, active: true },
+    row: { title, summary: str(b.summary, TEXT_MAX), status, publish_at, drip_days, minutes: m, video_url, kind, ...(Array.isArray(b.toc) ? { toc } : {}), files, can_ask: b.can_ask !== false, active: true },
   };
 }
 
@@ -294,5 +312,18 @@ export function makeSite({ db }) {
     return { ok: true, count: rows.length, ids: rows.map((r) => r.id) };
   }
 
-  return { tree, content, fromVideos, saveSite, saveCurriculum, saveProgram, saveCourse, orderCourses, setCourseContents, saveContent, setStatus, studentsOf };
+  // 版ごとのホームの段（b_site_sites.home_rows）。サイトは今 1 つなので、並び順のいちばん上
+  async function homeRows(env) {
+    const [s] = await get(env, `${T.sites}?select=id,home_rows&order=sort.asc&limit=1`);
+    return { ok: true, rows: (s && s.home_rows) || null, tiers: HOME_TIERS, kinds: HOME_ROWS };
+  }
+  async function saveHomeRows(env, b = {}, by) {
+    const c = checkHomeRows(b.rows || {});
+    if (!c.ok) return c;
+    const [s] = await get(env, `${T.sites}?select=id&order=sort.asc&limit=1`);
+    if (!s) return { ok: false, error: "not_found" };
+    await db(env, "PATCH", `${T.sites}?id=eq.${encodeURIComponent(s.id)}`, { home_rows: c.rows, updated_at: now(), updated_by: by }, "return=minimal");
+    return { ok: true, rows: c.rows };
+  }
+  return { tree, content, homeRows, saveHomeRows, fromVideos, saveSite, saveCurriculum, saveProgram, saveCourse, orderCourses, setCourseContents, saveContent, setStatus, studentsOf };
 }

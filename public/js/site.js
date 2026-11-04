@@ -14,11 +14,16 @@ const ERR = {
   title_required: "名前が空です", name_required: "名前が空です", publish_at_required: "公開する日時が空です",
   bad_drip_days: "日数は 0 以上の整数で入れてください", bad_minutes: "見る時間は 0〜1440 の整数で入れてください",
   bad_video_url: "YouTube の住所ではないようです（youtube.com か youtu.be）", bad_toc_time: "目次の時間は 12:30 や 1:02:30 の形で入れてください",
-  bad_file_url: "資料の住所は https:// から始まる形で入れてください", course_required: "所属するコースを 1 つ以上選んでください",
+  bad_file_url: "資料の住所は https:// から始まる形で入れてください", bad_kind: "種類を一覧から選んでください", bad_row: "ホームの段の名前が違います", course_required: "所属するコースを 1 つ以上選んでください",
   list_mismatch: "並びが読み直す前のものでした。もう一度試してください",
   not_found: "見つかりませんでした（ほかの画面で消えたかもしれません）", bad_urls: "YouTube の住所ではない行があります",
 };
 const STL = { published: "公開", draft: "下書き", scheduled: "予約", drip: "入会から日数" };
+// 生徒の画面の種類（src/site.js の KINDS と同じ並び）と、ホームの段・版（2026-11-04）
+const KINDS = ["セミナー", "アーカイブ", "動画講座", "記事", "note記事", "メンシプ限定"];
+const ROW_NAME = { record: ["学びの記録", "見た教材・今週見た本数・続いている日数・12 週の学んだ日"], continue: ["続きから", "最近開いたコースの、まだ見ていない次の 1 本"], picks: ["今日のおすすめ", "テーマ（プログラム）からまだ見ていないものを毎日 4 本"], fresh: ["新しく入った", "セミナーのいちばん新しい回から 4 本"] };
+const TIER_NAME = { lab: "シアラボ会員（しあらぼ・NEXT・先行・ゲスト）", mem: "メンシプ会員", mon: "モニター", free: "無料会員" };
+const ROW_DEFAULT = { lab: ["record", "continue", "picks", "fresh"], mem: ["record", "continue", "picks", "fresh"], mon: ["record", "continue", "picks"], free: ["continue", "picks"] };
 const PALETTE = ["#b45309", "#7c3aed", "#0f766e", "#be123c", "#1d4ed8", "#4d7c0f", "#c2410c", "#0369a1", "#a21caf", "#15803d", "#9f1239", "#334155"];
 
 export function mountSite(host, { getToken, openPerson }) {
@@ -41,7 +46,7 @@ export function mountSite(host, { getToken, openPerson }) {
     for (const c of t.contents) {
       lessons.set(c.id, {
         id: c.id, title: c.title || "", summary: c.summary || "", status: c.status || "draft", active: c.active !== false,
-        at: c.publish_at || "", days: c.drip_days ?? 7, minutes: c.minutes || 0, video: c.video_url || "",
+        at: c.publish_at || "", days: c.drip_days ?? 7, minutes: c.minutes || 0, video: c.video_url || "", kind: c.kind || "",
         files: Array.isArray(c.files) ? c.files : [], qa: c.can_ask !== false, toc: null,
       });
     }
@@ -118,7 +123,7 @@ export function mountSite(host, { getToken, openPerson }) {
     if (V.lid && V.cid && V.chid) { const ch = course().chapters.find((x) => x.id === V.chid); if (ch) p.push([ch.title, { kind: "course", sid: V.sid, cid: V.cid, focus: ch.id }]); }
     if (V.lid && !V.cid) p.push(["コンテンツ", { kind: "contents", sid: V.sid }]);
     if (V.lid) p.push([(findL(V.lid) || {}).title || "新しいコンテンツ", null]);
-    const tail = { contents: "コンテンツ", students: "受講生", curricula: "カリキュラム", programs: "プログラム", mypage: "マイページ", news: "お知らせ", siteset: "サイトの設定" }[V.kind];
+    const tail = { contents: "コンテンツ", students: "受講生", curricula: "カリキュラム", programs: "プログラム", mypage: "マイページ", home: "生徒のホーム", news: "お知らせ", siteset: "サイトの設定" }[V.kind];
     if (tail && !V.lid && !V.kid) p.push([tail, null]);
     return `<nav class="crumbs" aria-label="いまの場所">${p.map((x, i) => i < p.length - 1 && x[1] ? `<button data-go='${esc(JSON.stringify(x[1]))}'>${esc(x[0])}</button><span aria-hidden="true">›</span>` : `<span>${esc(x[0])}</span>${i < p.length - 1 ? '<span aria-hidden="true">›</span>' : ""}`).join("")}</nav>`;
   }
@@ -133,7 +138,7 @@ export function mountSite(host, { getToken, openPerson }) {
     ${S.sites.map((st) => st === cur ? "" : `<button class="site-now site-pick" ${goAttr({ kind: "curricula", sid: st.id })}>${esc(st.name)}</button>`).join("")}
     ${cur ? `<button class="site-now site-pick" ${goAttr({ kind: "curricula", sid: cur.id })} aria-expanded="true">${esc(cur.name)}</button>${item("curricula", "カリキュラム")}
       <div class="tn"><button class="sub" style="flex:1" ${goAttr({ kind: "programs", sid: cur.id })} ${k === "programs" && V.kind === "programs" ? 'aria-current="page"' : ""}>プログラム</button><button class="tgl" data-sopen="programs" aria-expanded="${sideOpen.programs}" aria-label="プログラムの一覧を${sideOpen.programs ? "たたむ" : "開く"}">${sideOpen.programs ? "▾" : "▸"}</button></div>${tree}
-      ${item("contents", "コンテンツ")}${item("students", "受講生")}${item("mypage", "マイページ")}${item("news", "お知らせ")}${item("siteset", "サイトの設定")}` : ""}`;
+      ${item("contents", "コンテンツ")}${item("students", "受講生")}${item("home", "生徒のホーム")}${item("news", "お知らせ")}${item("siteset", "サイトの設定")}` : ""}`;
     $$("[data-sopen]").forEach((b) => (b.onclick = () => { const key = b.dataset.sopen; sideOpen[key] = !sideOpen[key]; renderSide(); $$("#side [data-go]").forEach((x) => (x.onclick = () => go(JSON.parse(x.dataset.go)))); $(`[data-sopen="${key}"]`).focus(); }));
   }
   function render() {
@@ -141,7 +146,7 @@ export function mountSite(host, { getToken, openPerson }) {
     if (V.sid && !site()) V = { kind: "sites" };
     renderSide();
     const m = $("#main");
-    ({ sites: renderSites, curricula: renderCurricula, curriculum: renderCurriculum, programs: renderPrograms, contents: renderContents, course: renderCourse, lesson: renderLesson, mypage: renderMypage, news: renderNews, students: renderStudents, siteset: renderSiteSet })[V.kind](m);
+    ({ sites: renderSites, curricula: renderCurricula, curriculum: renderCurriculum, programs: renderPrograms, contents: renderContents, course: renderCourse, lesson: renderLesson, mypage: renderMypage, home: renderHome, news: renderNews, students: renderStudents, siteset: renderSiteSet })[V.kind](m);
     $$(".st-t").forEach((t) => { const hs = [...t.querySelectorAll("thead th")].map((x) => x.textContent); t.querySelectorAll("tbody tr").forEach((r) => [...r.children].forEach((td, i) => { if (!td.hasAttribute("colspan")) td.dataset.l = i === 0 ? "" : hs[i] || ""; })); });
     $$("[data-go]").forEach((b) => (b.onclick = () => go(JSON.parse(b.dataset.go))));
     try { const sd = $("#side"), cb = sd.querySelector("[aria-current]"); if (cb && sd.scrollWidth > sd.clientWidth) sd.scrollLeft = cb.offsetLeft - sd.clientWidth / 2 + cb.clientWidth / 2; } catch { /* 横に並ばない幅では何もしない */ }
@@ -266,7 +271,7 @@ export function mountSite(host, { getToken, openPerson }) {
     $("#addl2").onclick = () => newLesson({ kind: "lesson", sid: s.id, lid: "new", isNew: true }, pf && allCh().some((x) => x.ch.id === pf) ? [pf] : []);
   }
   function newLesson(v, mem) {
-    v.draft = { id: "new", title: "", summary: "", status: "draft", at: "", days: 7, minutes: 0, video: "", files: [], toc: [], qa: true };
+    v.draft = { id: "new", title: "", summary: "", status: "draft", at: "", days: 7, minutes: 0, kind: "", video: "", files: [], toc: [], qa: true };
     v.mem = mem; go(v);
   }
 
@@ -293,7 +298,7 @@ export function mountSite(host, { getToken, openPerson }) {
         <button class="btn sm" data-chset="${ch.id}" aria-label="コース『${esc(ch.title)}』を編集">編集</button><button class="btn sm" data-addl="${ch.id}">＋ コンテンツ</button></div>
       ${ch.open ? (ch.lessons.length ? ch.lessons.map((l, li) => `<div class="lsrow">${bulk ? `<input type="checkbox" data-pick="${l.id}" ${picked.has(l.id) ? "checked" : ""} aria-label="『${esc(l.title)}』を選ぶ" style="width:20px;height:20px;accent-color:var(--ink)">` : `<span class="num">${li + 1}</span>`}
         <span class="dot ${dotCls(l.status)}" title="${STL[l.status]}"></span>
-        <div class="tt">${esc(l.title || "（題名なし）")}<small>${[l.status === "scheduled" ? `${fmtDT(l.at)} に公開` : l.status === "drip" ? `入会 ${l.days} 日後` : STL[l.status], l.video ? "動画あり" : "動画なし", l.minutes ? `約 ${l.minutes} 分` : "", l.files.length ? `資料 ${l.files.length}` : "", memOf(l).length > 1 ? `ほかのコースにも並ぶ（${memOf(l).length - 1}）` : ""].filter(Boolean).join("・")}</small></div>
+        <div class="tt">${esc(l.title || "（題名なし）")}<small>${[l.status === "scheduled" ? `${fmtDT(l.at)} に公開` : l.status === "drip" ? `入会 ${l.days} 日後` : STL[l.status], l.kind || "", l.video ? "動画あり" : "動画なし", l.minutes ? `約 ${l.minutes} 分` : "", l.files.length ? `資料 ${l.files.length}` : "", memOf(l).length > 1 ? `ほかのコースにも並ぶ（${memOf(l).length - 1}）` : ""].filter(Boolean).join("・")}</small></div>
         <span class="mv"><button data-mvl="${ch.id}|${li}" data-d="-1" ${li === 0 ? "disabled" : ""} aria-label="『${esc(l.title)}』を上へ">▲</button><button data-mvl="${ch.id}|${li}" data-d="1" ${li === ch.lessons.length - 1 ? "disabled" : ""} aria-label="『${esc(l.title)}』を下へ">▼</button></span>
         <span class="act"><button class="btn sm" data-edit="${ch.id}|${l.id}">編集</button></span></div>`).join("")
         : `<div class="lsrow" style="grid-template-columns:1fr"><span class="hint">まだコンテンツがありません。「＋ コンテンツ」から作ります</span></div>`) : ""}</section>`).join("") : '<div class="empty">まだコースがありません。「＋ コースを足す」から作ります</div>'}</div>
@@ -400,7 +405,8 @@ export function mountSite(host, { getToken, openPerson }) {
     ${pv ? (ch ? preview(c, ch, l, pv) : '<div class="empty">所属するコースを決めると、生徒の見え方を出せます</div>') : `<div class="lpage"><div class="ed">
       <div class="sec"><h3>基本</h3><div class="f"><label for="t">題名</label><input type="text" id="t" value="${esc(l.title)}"><span class="err" id="te"></span></div>
         <div class="f"><label for="sm">要約 <span class="hint">生徒の画面で題名の下に出る</span></label><textarea id="sm" style="min-height:70px">${esc(l.summary)}</textarea></div>
-        <div class="f" style="max-width:240px"><label for="mn">見る時間のめやす（分）</label><input type="number" id="mn" min="0" value="${l.minutes || ""}"><span class="err" id="mne"></span></div></div>
+        <div class="frow2"><div class="f" style="max-width:240px"><label for="kd">種類 <span class="hint">生徒の画面の札と棚</span></label><select id="kd"><option value="">自動（プログラムとコースから）</option>${KINDS.map((k) => `<option${l.kind === k ? " selected" : ""}>${k}</option>`).join("")}</select><span class="err" id="kde"></span></div>
+        <div class="f" style="max-width:240px"><label for="mn">見る時間のめやす（分）</label><input type="number" id="mn" min="0" value="${l.minutes || ""}"><span class="err" id="mne"></span></div></div></div>
       <div class="sec"><h3>動画</h3><div class="f"><label for="v">YouTube の住所</label><input type="url" id="v" value="${esc(l.video)}" placeholder="https://www.youtube.com/watch?v=…"><span class="err" id="ve"></span></div>
 </div>
       <div class="sec"><h3>資料 <span class="hint">生徒が開ける。PDF・スライド・マインドマップの住所</span></h3>
@@ -435,7 +441,7 @@ export function mountSite(host, { getToken, openPerson }) {
       const stv = $("[name=st]:checked").value;
       if (stv === "scheduled" && !$("#at").value) { $("#ste").textContent = "公開する日時が空です"; $("#at").focus(); return; }
       grab(l);
-      const body = { id: l.id === "new" ? undefined : l.id, title: l.title, summary: l.summary, minutes: l.minutes || null, video_url: l.video, files: l.files, status: l.status,
+      const body = { id: l.id === "new" ? undefined : l.id, title: l.title, summary: l.summary, minutes: l.minutes || null, kind: l.kind || null, video_url: l.video, files: l.files, status: l.status,
         publish_at: l.status === "scheduled" ? new Date(l.at).toISOString() : null, drip_days: l.status === "drip" ? l.days : null, can_ask: l.qa, courses: V.mem };
       const wasNew = l.id === "new";
       const r = await act("content", body, null, (res) => {
@@ -446,7 +452,7 @@ export function mountSite(host, { getToken, openPerson }) {
         render(); toast(`「${nl.title}」を${wasNew ? "作りました" : "保存しました"}（${where}）`); $("#save")?.focus();
       });
       if (r && !r.ok) {
-        const map = { title: "#te", video_url: "#ve", courses: "#me", publish_at: "#ste", drip_days: "#ste", files: "#fle", minutes: "#mne" };
+        const map = { title: "#te", video_url: "#ve", courses: "#me", publish_at: "#ste", drip_days: "#ste", files: "#fle", minutes: "#mne", kind: "#kd" };
         if (map[r.field]) { $(map[r.field]).textContent = errText(r); }
       }
     };
@@ -462,7 +468,7 @@ export function mountSite(host, { getToken, openPerson }) {
   }
   function grab(l) {
     if (!$("#t")) return;
-    l.title = $("#t").value.trim(); l.summary = $("#sm").value; l.minutes = +$("#mn").value || 0; l.video = $("#v").value.trim();
+    l.title = $("#t").value.trim(); l.summary = $("#sm").value; l.minutes = +$("#mn").value || 0; l.kind = $("#kd").value; l.video = $("#v").value.trim();
     l.files = $$("#files .rowx").map((r) => { const [a, b] = [...r.querySelectorAll("input")].map((x) => x.value.trim()); return { label: a, url: b }; }).filter((x) => x.label || x.url);
     l.status = $("[name=st]:checked").value; l.at = $("#at").value ? new Date($("#at").value).toISOString() : ""; l.days = $("#days").value === "" ? 0 : +$("#days").value; l.qa = $("#qa").checked;
   }
@@ -622,6 +628,26 @@ export function mountSite(host, { getToken, openPerson }) {
   let NEWS = null, newsEdit = null;
   const NST = { live: ["pub", "● 公開中"], scheduled: ["sch", "⏱ 予約"], draft: ["draft", "○ 下書き"], withdrawn: ["draft", "取り下げ"] };
   async function loadNews() { const r = await call("/api/admin/news"); if (!r.ok) { toast(errText(r)); NEWS = []; return; } NEWS = r.news; }
+  // ---------- 生徒のホーム：版ごとの段の並び（2026-11-04） ----------
+  let HR = null, hrDirty = false;
+  function renderHome(m) {
+    if (!HR) { m.innerHTML = `${crumbs()}<h1>生徒のホーム</h1><p class="hint">読み込んでいます…</p>`;
+      call("home").then((r) => { if (!r.ok) { m.innerHTML = `${crumbs()}<h1>生徒のホーム</h1><p class="err">${esc(errText(r))}</p>`; return; }
+        HR = {}; Object.keys(ROW_DEFAULT).forEach((k) => { const on = (r.rows && r.rows[k]) || ROW_DEFAULT[k]; HR[k] = [...on.map((x) => ({ k: x, on: true })), ...Object.keys(ROW_NAME).filter((x) => !on.includes(x)).map((x) => ({ k: x, on: false }))]; });
+        if (V.kind === "home") render(); }); return; }
+    m.innerHTML = `${crumbs()}<div class="hrow"><h1>生徒のホーム</h1>${hrDirty ? '<span class="hint">保存していない変更があります</span>' : ""}<span class="grow"></span><button class="btn pri" id="hrsave">保存する</button></div>
+    <p class="lead">生徒がログインして最初に開く画面です。版（権利）ごとに、上から出す段と、出すかどうかを決めます。教材の棚と札は、コンテンツの「種類」で決まります。</p>
+    ${Object.keys(ROW_DEFAULT).map((tier) => `<div class="sec"><h3>${esc(TIER_NAME[tier])}</h3><ol class="hrows">${HR[tier].map((x, i) => `<li class="${x.on ? "" : "off"}"><label><input type="checkbox" data-hon="${tier}:${i}" ${x.on ? "checked" : ""}> <b>${ROW_NAME[x.k][0]}</b><span class="hint sub">${ROW_NAME[x.k][1]}</span></label>
+      <span class="grow"></span><button class="btn sm ghost" data-hmv="${tier}:${i}:-1" ${i === 0 ? "disabled" : ""} aria-label="『${ROW_NAME[x.k][0]}』を上へ">▲</button><button class="btn sm ghost" data-hmv="${tier}:${i}:1" ${i === HR[tier].length - 1 ? "disabled" : ""} aria-label="『${ROW_NAME[x.k][0]}』を下へ">▼</button></li>`).join("")}</ol></div>`).join("")}`;
+    $$("[data-hon]").forEach((c) => (c.onchange = () => { const [tier, i] = c.dataset.hon.split(":"); HR[tier][+i].on = c.checked; hrDirty = true; render(); $(`[data-hon="${tier}:${i}"]`).focus(); }));
+    $$("[data-hmv]").forEach((b) => (b.onclick = () => { const [tier, i, d] = b.dataset.hmv.split(":"); const a = HR[tier], j = +i + +d; [a[+i], a[j]] = [a[j], a[+i]]; hrDirty = true; render(); const nb = $(`[data-hmv="${tier}:${j}:${d}"]`) || $(`[data-hmv="${tier}:${j}:${-d}"]`); nb && nb.focus(); }));
+    $("#hrsave").onclick = async () => {
+      const rows = {}; Object.keys(HR).forEach((tier) => { rows[tier] = HR[tier].filter((x) => x.on).map((x) => x.k); });
+      const r = await call("home", "PUT", { rows });
+      if (!r.ok) { toast(errText(r)); return; }
+      hrDirty = false; render(); toast("生徒のホームの並びを保存しました"); $("#hrsave").focus();
+    };
+  }
   function renderNews(m) {
     if (!NEWS) { m.innerHTML = `${crumbs()}<h1>お知らせ</h1><p class="hint">読み込んでいます…</p>`; loadNews().then(() => V.kind === "news" && render()); return; }
     if (newsEdit) return renderNewsEdit(m);
