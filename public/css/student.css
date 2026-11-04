@@ -149,5 +149,3 @@ body.student a.v:focus-visible, body.student .chips button:focus-visible, body.s
   body.student .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 12px; }
   body.student .chips button, body.student .rh .more, body.student .rh a { min-height: 44px; }
 }
-/* シアニン用の版の印（src/channel.js） */
-body.student .ch-next { font-size: 12px; font-weight: 600; color: var(--accent, #5e5ce6); border: 1px solid currentColor; border-radius: 999px; padding: 1px 8px; margin-left: 6px; vertical-align: middle; letter-spacing: 0; }
