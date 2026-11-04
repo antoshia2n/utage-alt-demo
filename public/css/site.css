@@ -230,3 +230,10 @@ a.btn{text-decoration:none;color:inherit}
 @media (max-width:760px){.side button.site-pick{margin:0 4px;border-top:0;border-left:1px solid var(--line);white-space:nowrap;padding:10px 8px}}
 .how5{grid-template-columns:repeat(5,minmax(0,1fr))}
 @media (max-width:760px){.how5{grid-template-columns:1fr 1fr}}
+/* 生徒のホームの段（2026-11-04）とコンテンツの種類の欄 */
+.frow2 { display: flex; gap: 12px; flex-wrap: wrap; }
+.hrows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.hrows li { display: flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--panel, #fff); }
+.hrows li.off { opacity: .75; border-style: dashed; }
+.hrows label { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; cursor: pointer; }
+.hrows .sub { font-size: 12px; }

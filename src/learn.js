@@ -36,6 +36,7 @@ export function groupLessons(rows) {
       youtube_id: r.youtube_id || null, mindmap_url: safeUrl(r.mindmap_url),
       // 会員サイトの管理（便 22）：見る時間・目次・資料・質問を受け付けるか
       minutes: Number.isInteger(r.minutes) ? r.minutes : null,
+      kind: r.kind || null, // 種類のラベル（2026-11-04）。空なら生徒の画面がプログラムとコースから決める
       toc: Array.isArray(r.toc) ? r.toc.filter((x) => x && x.at).map((x) => ({ at: String(x.at), label: String(x.label || "") })) : [],
       files: Array.isArray(r.files) ? r.files.map((x) => ({ label: String((x && x.label) || ""), url: safeUrl(x && x.url) })).filter((x) => x.url) : [],
       can_ask: r.can_ask !== false,
@@ -89,7 +90,7 @@ export function makeLearn(h) {
       curricula = [...new Set(acc.map((a) => a.curriculum_id))];
       if (!curricula.length) return { source: "manabu", member: false, programs: [], lesson_count: 0, flat: [] };
     }
-    let q = "mn_lessons?select=curriculum_id,program_id,program_title,program_sort,course_id,course_title,course_sort,lesson_id,sort,title,summary,youtube_id,mindmap_url,minutes,toc,files,can_ask,status,drip_days&limit=5000";
+    let q = "mn_lessons?select=curriculum_id,program_id,program_title,program_sort,course_id,course_title,course_sort,lesson_id,sort,title,summary,youtube_id,mindmap_url,minutes,toc,files,can_ask,status,drip_days,kind&limit=5000";
     if (curricula) q += `&curriculum_id=in.(${curricula.map(encodeURIComponent).join(",")})`;
     let rows = await db(env, "GET", q);
     // 便 22：入会から日数で開くものは、その人がそのプログラムを開けるようになった日から数える（シアニンは全部見える）
