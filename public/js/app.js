@@ -69,7 +69,7 @@ async function main() {
   {
     try {
       const { mountStudentShell } = await import("/js/student-shell.js");
-      mountStudentShell($("shell-slot"), { me: r, sb, session });
+      mountStudentShell($("shell-slot"), { me: r, sb, session, onContract: () => { location.hash = "#contract"; } });
       $("shell-slot").classList.remove("hidden");
       $("who-line").classList.add("hidden");
       $("logout").classList.add("hidden");
@@ -78,8 +78,9 @@ async function main() {
   // 関門 1（2026-10-29）：会員でない人（無料の登録・会員でない買い手）は「ご契約」だけ。ほかのタブは出さない
   if (r.access === "contract") {
     document.querySelectorAll(".side [data-tab]").forEach((b) => b.classList.toggle("hidden", b.dataset.tab !== "contract"));
-    document.querySelectorAll(".side .grp").forEach((g) => g.classList.toggle("hidden", g.textContent.trim() !== "契約"));
-    ["mypage", "goals", "lessons", "lesson", "news", "room", "review", "booking"].forEach((t) => $("tab-" + t).classList.add("hidden"));
+    const cb = document.querySelector('.side [data-tab="contract"]'); cb.innerHTML = '<span class="lbl">ご契約</span>'; cb.removeAttribute("data-quiet");
+    $("news-btn").classList.add("hidden");
+    ["mypage", "goals", "lessons", "lesson", "news", "room", "review", "booking", "apps"].forEach((t) => $("tab-" + t).classList.add("hidden"));
     $("tab-contract").classList.remove("hidden");
     $("tab-contract").insertAdjacentHTML("afterbegin", r.member_waiting
       ? '<div class="card"><h3>マイページは準備中です</h3><p class="note" style="margin:0">教材は今までどおり <a href="https://manabu.shia2n.jp/" target="_blank" rel="noopener">学ぶくん ↗</a> で見られます。ご契約の内容と、定期の停止はここからできます。</p></div>'
@@ -138,7 +139,7 @@ async function main() {
     $("rf-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText(rf.link); $("rf-copy").textContent = "写しました"; } catch (_) { $("rf-copy").textContent = "写せませんでした"; } });
   }
 
-  const sections = ["mypage", "goals", "lessons", "lesson", "news", "room", "review", "booking", "contract"];
+  const sections = ["mypage", "goals", "lessons", "lesson", "news", "room", "review", "booking", "contract", "apps"];
   const showTab = (name) => {
     sections.forEach((s) => $("tab-" + s).classList.toggle("hidden", s !== name));
     if (name === "room") room.open();
@@ -146,11 +147,13 @@ async function main() {
     if (name === "goals") loadGoals(token);
     if (name === "booking") loadBooking(token);
     if (name === "contract") loadContract(token);
+    if (name === "apps") renderApps(r);
+    if (name === "news") markNewsSeen(r);
     // 便 8c：左のメニューの印と、上のナビの名前
     document.querySelectorAll(".side [data-tab]").forEach((b) => {
       const on = b.dataset.tab === name || (name === "lesson" && b.dataset.tab === "lessons");
       b.setAttribute("aria-selected", String(on));
-      if (on) $("crumb").textContent = b.firstChild.textContent.trim();
+      if (on) $("crumb").textContent = b.dataset.label || b.textContent.trim();
       // 5b：スマホの上の帯では、今いるタブを見える位置へ送る
       if (on && window.matchMedia("(max-width: 860px)").matches) b.scrollIntoView({ block: "nearest", inline: "center" });
     });
@@ -261,7 +264,10 @@ async function main() {
     return false;
   };
   routeLesson();
+  $("news-btn").addEventListener("click", () => { location.hash = "#news"; showTab("news"); });
+  paintNewsDot(r);
   if (location.hash === "#news") showTab("news");
+  if (location.hash === "#apps") showTab("apps");
   if (location.hash === "#review") showTab("review");
   // ムダ 2（2026-10-30）：予約は、サーバーが準備できたと返すまで左のメニューに出さない
   const bookingReady = r.booking_ready === true;
@@ -270,7 +276,6 @@ async function main() {
   // 目標タブ（2026-10-30）：しあらぼの生徒だけ
   const goalsReady = r.goals_ready === true;
   document.querySelector('.side [data-tab="goals"]').classList.toggle("hidden", !goalsReady);
-  $("grp-goals").classList.toggle("hidden", !goalsReady);
   if (goalsReady) wireGoals(token);
   if (location.hash === "#goals" && goalsReady) showTab("goals");
   if (location.hash === "#contract") showTab("contract");
@@ -278,7 +283,7 @@ async function main() {
   window.addEventListener("hashchange", () => {
     const [h, pane] = location.hash.slice(1).split("/");
     if (h === "room") room.setPane(pane);
-    if (["room", "review", "contract", "news", "mypage"].includes(h) || (h === "booking" && bookingReady) || (h === "goals" && goalsReady)) showTab(h);
+    if (["room", "review", "contract", "news", "mypage", "apps"].includes(h) || (h === "booking" && bookingReady) || (h === "goals" && goalsReady)) showTab(h);
     routeLesson();
   });
   setupStudentPush({ box: $("push-box"), status: $("push-status"), on: $("push-on"), off: $("push-off") }, token);
@@ -692,4 +697,36 @@ function wireGoals(token) {
   $("g-daily").addEventListener("submit", (e) => { e.preventDefault(); gSave("daily"); });
   $("g-weekly").addEventListener("submit", (e) => { e.preventDefault(); gSave("weekly"); });
   for (const [id, kind] of [["g-body", "daily"], ["g-wbody", "weekly"]]) $(id).addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); gSave(kind); } });
+}
+
+// ---------- 生徒の画面の枠（2026-11-04）：アプリの一覧・お知らせのベル ----------
+// アプリ：使えるもの（権利で開けるもの）と、シアラボ会員で使えるもの（開けないものは案内として枠だけ）
+const APP_DESC = {
+  "x-koryaku": "X の投稿を分析して、次の一手を決める", "note-koryaku": "note の記事の伸びを見て、計画を立てる",
+  "content-os": "ネタをためて、投稿の予定を組む", "swipe-file": "参考にしたいポストを集めて分ける", mindmap: "マップと箇条書きで考えを広げる",
+};
+function renderApps(r) {
+  const box = $("tab-apps");
+  const list = Array.isArray(r.app_catalog) ? r.app_catalog : [];
+  const icon = (url) => { try { return `<img class="ap-ic" alt="" src="https://${new URL(url).host}/favicon.svg" onerror="this.style.visibility='hidden'">`; } catch { return ""; } };
+  const tile = (a) => a.open
+    ? `<a class="ap" href="${esc(a.url)}" target="_blank" rel="noopener">${icon(a.url)}<span class="an"><b>${esc(a.name)}</b><small>${esc(APP_DESC[a.target] || "")}</small></span><span class="ao">別タブで開く ↗</span></a>`
+    : `<div class="ap off">${icon(a.url)}<span class="an"><b>${esc(a.name)}</b><small>${esc(APP_DESC[a.target] || "")}</small><em>シアラボ会員で使えます</em></span></div>`;
+  const mine = list.filter((a) => a.open), rest = list.filter((a) => !a.open);
+  box.innerHTML = `<h1 class="lt">アプリ</h1>`
+    + (mine.length ? `<section><h2 class="ah">使えるアプリ<span class="cnt">${mine.length}</span></h2><div class="apg">${mine.map(tile).join("")}</div></section>` : `<p class="note">いま使えるアプリはありません。</p>`)
+    + (rest.length ? `<section><h2 class="ah">シアラボ会員で使えるアプリ</h2><div class="apg">${rest.map(tile).join("")}</div></section>` : "");
+}
+const NEWS_SEEN = "lab:news-seen";
+function paintNewsDot(r) {
+  const top = (r.announcements || [])[0];
+  let seen = ""; try { seen = localStorage.getItem(NEWS_SEEN) || ""; } catch { /* 覚えられないブラウザでは点を出さない */ return; }
+  const on = !!top && String(top.published_at || "") > seen;
+  $("news-dot").classList.toggle("hidden", !on);
+  $("news-btn").setAttribute("aria-label", on ? "お知らせ（新しいお知らせがあります）" : "お知らせ");
+}
+function markNewsSeen(r) {
+  const top = (r.announcements || [])[0];
+  if (top) { try { localStorage.setItem(NEWS_SEEN, String(top.published_at || "")); } catch { /* 覚えられなくても見られる */ } }
+  paintNewsDot(r);
 }

@@ -45,13 +45,16 @@ const FULL_TOURS = [
 const CONTRACT_TOURS = [FULL_TOURS[2]];
 
 /** 外枠を作って el（上の帯の右端）に置く。me は /api/me の答え、sb は Supabase の client */
-export function mountStudentShell(el, { me, sb, session }) {
+export function mountStudentShell(el, { me, sb, session, onContract }) {
   const contract = me.access === "contract";
   const u = session.user || {};
   const user = { uid: u.id, email: u.email, displayName: (me.me && me.me.name) || "" };
   const shell = mountAppShell({
     appId: "marke-app",
-    appName: "マーケくん",
+    appName: "シアラボ",
+    portal: false, // ポータルは閉じる（窓口はこの画面 1 つ）
+    self: false, // アプリ一覧に「いま開いています」を出さない（生徒にとってはアプリではなく自分の画面）
+    account: onContract ? [{ label: "ご契約とお支払い", icon: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5.5" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/></svg>', run: onContract }] : [],
     host: "lab.shia2n.jp",
     manual: {
       intro: contract ? "この画面はご契約の確認用です。教材・添削ルームは、しあらぼの会員向けです。" : "しあらぼの教材・添削・相談・ご契約が、この画面にまとまっています。",

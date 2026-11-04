@@ -45,7 +45,7 @@ import { makeGuard } from "./guard.js";
 import { makeSell } from "./sell.js";
 import { makeDeliver } from "./deliver.js";
 import { makeLearn, normalizeNotes, LESSON_ID_RE } from "./learn.js";
-import { makeBridge, appAccess, memberWaiting } from "./bridge.js";
+import { makeBridge, appAccess, memberWaiting, PUBLISH_APPS } from "./bridge.js";
 import { makePlan } from "./plan.js";
 import { makeMailCfg } from "./mailcfg.js";
 import { makeChanges } from "./changes.js";
@@ -1011,6 +1011,9 @@ async function handleApi(request, env, url) {
     const community = await communityFor(env, ent, v.email);
     return json({
       ok: true, access: "full", admin: sa.admin, apps: sa.admin ? [] : await openAppTargets(env, ent),
+      // 生徒の画面の「アプリ」（2026-11-04）：公開しているアプリの全部と、その人が開けるか。管理者は全部開ける
+      app_catalog: await (async () => { const open = sa.admin ? null : new Set(await openAppTargets(env, ent));
+        return PUBLISH_APPS.filter((a) => APP_URLS[a.target]).map((a) => ({ target: a.target, name: a.name, url: APP_URLS[a.target], open: !open || open.has(a.target) })); })(),
       me: { name: customer.name, email: customer.email, source: customer.source },
       lessons: lib.flat, announcements, viewed: viewedIds,
       library: { source: lib.source, member: lib.member, lesson_count: lib.lesson_count, programs: lib.programs },
