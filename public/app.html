@@ -14,32 +14,30 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono&family=Geist:wght@400;600;700;800&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/css/style.css">
 <link rel="stylesheet" href="/css/student.css">
-<title>マイページ｜シアラボ</title>
+<title>シアラボ</title>
 </head>
 <body class="student">
 <div class="shell">
+  <!-- 生徒の画面の枠（2026-11-04 Naoki OK）：左のメニューは 5 つ（ホーム・教材・添削・記録・アプリ）。お知らせは上の帯のベル、ご契約は右上のアカウントの中、振り返りは添削の中。
+       スマホでは下のタブになる。名前は data-label（上の帯の題名とタブの名前に使う） -->
   <nav class="side" aria-label="メニュー">
     <a class="side-logo" href="/app">シアラボ</a>
-    <!-- マイページ（2026-10-29）：公開中の版があるときだけ出す。中身は区切った枠（sandbox）に出す -->
-    <button class="it hidden" id="side-mypage" type="button" aria-selected="false" data-tab="mypage">マイページ</button>
-    <!-- 目標タブ（2026-10-30）：しあらぼの生徒だけ（サーバーが goals_ready を返したときに出す） -->
-    <div class="grp hidden" id="grp-goals">目標</div>
-    <button class="it hidden" type="button" aria-selected="false" data-tab="goals">目標と日報</button>
-    <div class="grp">学ぶ</div>
-    <button class="it" type="button" aria-selected="true" data-tab="lessons">教材</button>
-    <button class="it" type="button" aria-selected="false" data-tab="news">お知らせ</button>
-    <div class="grp">添削</div>
-    <button class="it" type="button" aria-selected="false" data-tab="room">添削ルーム<span class="badge hidden" id="room-badge"></span></button>
-    <button class="it" type="button" aria-selected="false" data-tab="review">振り返り</button>
-    <div class="grp">相談</div>
-    <button class="it hidden" type="button" aria-selected="false" data-tab="booking">予約</button>
-    <div class="grp">契約</div>
-    <button class="it" type="button" aria-selected="false" data-tab="contract">ご契約</button>
+    <button class="it hidden" id="side-mypage" type="button" aria-selected="false" data-tab="mypage" data-label="ホーム"><svg class="si" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11l8-7 8 7v9a1 1 0 0 1-1 1h-4v-6h-6v6H5a1 1 0 0 1-1-1z"/></svg><span class="lbl">ホーム</span></button>
+    <button class="it" type="button" aria-selected="true" data-tab="lessons" data-label="教材"><svg class="si" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6.8C10 5.3 7.2 4.8 4 5.3v13c3.2-.5 6 0 8 1.5 2-1.5 4.8-2 8-1.5v-13c-3.2-.5-6 0-8 1.5zM12 6.8v13"/></svg><span class="lbl">教材</span></button>
+    <button class="it" type="button" aria-selected="false" data-tab="room" data-label="添削"><svg class="si" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 19.5h4l10.2-10.2a2.1 2.1 0 0 0-3-3L5.5 16.5zM14 7.5l3 3"/></svg><span class="lbl">添削</span><span class="badge hidden" id="room-badge"></span></button>
+    <button class="it hidden" type="button" aria-selected="false" data-tab="goals" data-label="記録"><svg class="si" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19.5h16M7 16v-5M12 16V7M17 16v-8"/></svg><span class="lbl">記録</span></button>
+    <button class="it" type="button" aria-selected="false" data-tab="apps" data-label="アプリ"><svg class="si" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6.5" height="6.5" rx="1.8"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.8"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.8"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.8"/></svg><span class="lbl">アプリ</span></button>
+    <!-- メニューには出さないが、題名に使う画面 -->
+    <button class="it hidden" type="button" aria-selected="false" data-tab="news" data-label="お知らせ" data-quiet="1"></button>
+    <button class="it hidden" type="button" aria-selected="false" data-tab="review" data-label="振り返り" data-quiet="1"></button>
+    <button class="it hidden" type="button" aria-selected="false" data-tab="booking" data-label="予約"><span class="lbl">予約</span></button>
+    <button class="it hidden" type="button" aria-selected="false" data-tab="contract" data-label="ご契約" data-quiet="1"></button>
   </nav>
   <div class="main">
   <div class="topnav">
     <span class="crumb" id="crumb">教材</span>
     <span class="grow"></span>
+    <button type="button" class="ib" id="news-btn" aria-label="お知らせ"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20.5h4"/></svg><span class="dot hidden" id="news-dot"></span></button>
     <span class="note" id="who-line">こんにちは、<b id="who"></b> さん</span>
     <a href="#" id="logout" class="note">ログアウト</a>
     <!-- 便 2（関門 5）：共通の外枠（？・アプリ一覧・アカウント）の置き場 -->
@@ -96,6 +94,7 @@
       </section>
     </section>
 
+    <section id="tab-apps" class="stack hidden"></section>
     <section id="tab-review" class="hidden">
       <p class="note" style="margin-top:0">返ってきた添削だけを、新しい順に並べています。番号の付いた色の範囲を押すと、右の指摘が光ります。</p>
       <p class="note" id="review-count"></p>
@@ -130,6 +129,7 @@
     </section>
 
     <section id="tab-room" class="hidden">
+      <p class="room-sub"><a href="#review" id="to-review">返ってきた添削の振り返り →</a></p>
       <p class="note" style="margin-top:0">シアニンと 1 対 1 の部屋です。「添削」で文章（と画像）を出すと、原文・添削後・コメントの 3 欄で返ってきます。質問や連絡、予約や申し込みの知らせは「やり取り」に出ます。</p>
       <!-- 便 8g-1：スマホの通知（シアニンからのメッセージ・添削が返ってきたとき） -->
       <div id="push-box" class="card stack hidden" style="margin-bottom:12px">
