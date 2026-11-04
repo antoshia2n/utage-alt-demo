@@ -42,6 +42,7 @@ test("印を付けるときはクッキーを付けて /app へ戻す", async ()
   assert.equal(r.status, 302);
   assert.match(r.headers.get("set-cookie"), /^lab_ch=next;/);
   assert.equal(r.headers.get("location"), "/app");
+  assert.match(r.headers.get("set-cookie"), /Domain=shia2n\.jp$/);
 });
 
 test("写しの中の部品の住所は写しの方を向く（/api・絵は共通のまま）", () => {
