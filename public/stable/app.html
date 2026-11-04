@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f5f0eb">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono&family=Geist:wght@400;600;700;800&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/stable/css/style.css">
+<link rel="stylesheet" href="/stable/css/student.css">
+<title>シアラボ</title>
+</head>
+<body class="student">
+<div class="shell">
+  <!-- 生徒の画面の枠（2026-11-04 Naoki OK）：左のメニューは 5 つ（ホーム・教材・添削・記録・アプリ）。お知らせは上の帯のベル、ご契約は右上のアカウントの中、振り返りは添削の中。
+       スマホでは下のタブになる。名前は data-label（上の帯の題名とタブの名前に使う） -->
+  <nav class="side" aria-label="メニュー">
+    <a class="side-logo" href="/app">シアラボ</a>
+    <button class="it" type="button" aria-selected="true" data-tab="home" data-label="ホーム"><svg class="si" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11l8-7 8 7v9a1 1 0 0 1-1 1h-4v-6h-6v6H5a1 1 0 0 1-1-1z"/></svg><span class="lbl">ホーム</span></button>
+    <button class="it" type="button" aria-selected="false" data-tab="lessons" data-label="教材"><svg class="si" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6.8C10 5.3 7.2 4.8 4 5.3v13c3.2-.5 6 0 8 1.5 2-1.5 4.8-2 8-1.5v-13c-3.2-.5-6 0-8 1.5zM12 6.8v13"/></svg><span class="lbl">教材</span></button>
+    <button class="it" type="button" aria-selected="false" data-tab="room" data-label="添削"><svg class="si" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 19.5h4l10.2-10.2a2.1 2.1 0 0 0-3-3L5.5 16.5zM14 7.5l3 3"/></svg><span class="lbl">添削</span><span class="badge hidden" id="room-badge"></span></button>
+    <button class="it hidden" type="button" aria-selected="false" data-tab="goals" data-label="記録"><svg class="si" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19.5h16M7 16v-5M12 16V7M17 16v-8"/></svg><span class="lbl">記録</span></button>
+    <button class="it" type="button" aria-selected="false" data-tab="apps" data-label="アプリ"><svg class="si" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6.5" height="6.5" rx="1.8"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.8"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.8"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.8"/></svg><span class="lbl">アプリ</span></button>
+    <!-- メニューには出さないが、題名に使う画面 -->
+    <button class="it hidden" id="side-mypage" type="button" aria-selected="false" data-tab="mypage" data-label="マイページ" data-quiet="1"></button>
+    <button class="it hidden" type="button" aria-selected="false" data-tab="news" data-label="お知らせ" data-quiet="1"></button>
+    <button class="it hidden" type="button" aria-selected="false" data-tab="review" data-label="振り返り" data-quiet="1"></button>
+    <button class="it hidden" type="button" aria-selected="false" data-tab="booking" data-label="予約"><span class="lbl">予約</span></button>
+    <button class="it hidden" type="button" aria-selected="false" data-tab="contract" data-label="ご契約" data-quiet="1"></button>
+  </nav>
+  <div class="main">
+  <div class="topnav">
+    <span class="crumb" id="crumb">ホーム</span>
+    <span class="grow"></span>
+    <button type="button" class="ib" id="news-btn" aria-label="お知らせ"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20.5h4"/></svg><span class="dot hidden" id="news-dot"></span></button>
+    <span class="note" id="who-line">こんにちは、<b id="who"></b> さん</span>
+    <a href="#" id="logout" class="note">ログアウト</a>
+    <!-- 便 2（関門 5）：共通の外枠（？・アプリ一覧・アカウント）の置き場 -->
+    <span id="shell-slot" class="hidden"></span>
+  </div>
+  <div class="content" style="max-width:880px">
+  <div id="loading" class="note">読み込んでいます…</div>
+  <div id="err" class="msg err hidden"></div>
+
+  <main id="main" class="hidden">
+
+    <div id="member" class="card member hidden"></div>
+    <section id="tab-home" class="hidden"></section>
+    <section id="tab-mypage" class="hidden"><iframe id="mypage-frame" title="マイページ" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation" style="width:100%;border:0;min-height:480px;display:block;background:transparent"></iframe></section>
+    <section id="tab-goals" class="stack hidden">
+      <div class="card stack" id="g-goal"><p class="note" style="margin:0">読み込んでいます…</p></div>
+      <form class="card stack" id="g-daily" novalidate>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><h3 style="margin:0">日報</h3><label class="note" style="display:flex;gap:6px;align-items:center;margin:0">日付 <select id="g-day" aria-label="日報の日付"></select></label></div>
+        <div id="g-nums" class="stack"></div>
+        <div><label for="g-body">今日やったこと・気づき</label><textarea id="g-body" rows="4" maxlength="2000" placeholder="例：X に 2 本投稿。反応が良かったのは〇〇の型。明日は〇〇を試す"></textarea></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><span class="note" style="margin:0">⌘／Ctrl＋Enter でも保存できます</span><button class="btn" id="g-save" type="submit">日報を保存</button></div>
+        <p class="note" id="g-msg" role="status" aria-live="polite" style="margin:0"></p>
+      </form>
+      <form class="card stack" id="g-weekly" novalidate>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><h3 style="margin:0">週の振り返り</h3><label class="note" style="display:flex;gap:6px;align-items:center;margin:0">週 <select id="g-week" aria-label="振り返る週"></select></label></div>
+        <div id="g-sum" class="note" style="margin:0"></div>
+        <div><label for="g-wbody">よかったこと・うまくいかなかったこと・次の週にやること</label><textarea id="g-wbody" rows="5" maxlength="2000" placeholder="シアニンは面談の前にここを読みます"></textarea></div>
+        <div style="display:flex;justify-content:flex-end"><button class="btn" id="g-wsave" type="submit">振り返りを保存</button></div>
+        <p class="note" id="g-wmsg" role="status" aria-live="polite" style="margin:0"></p>
+      </form>
+      <details class="card" id="g-past"><summary>これまでの日報を見る ▼</summary><div id="g-list" class="stack" style="margin-top:10px"></div></details>
+    </section>
+    <section id="tab-lessons" class="stack"></section>
+
+    <section id="tab-lesson" class="stack hidden">
+      <a href="#" id="back" class="note">← 教材の一覧へ</a>
+      <h2 id="l-title"></h2>
+      <div class="player" id="l-player"></div>
+      <p id="l-summary" class="pre"></p>
+      <div id="l-mindmap"></div>
+      <div id="l-extra" class="stack"></div>
+      <!-- 便 15：教材の下の質問と自分のメモ -->
+      <section class="card stack hidden" id="l-qa">
+        <h3 style="margin:0">この教材について質問する</h3>
+        <p class="note" style="margin:0">シアニンに届きます。答えはここと「添削ルーム」に出ます。</p>
+        <div id="l-questions" class="stack"></div>
+        <label for="l-q" class="sr">質問</label><textarea id="l-q" rows="3" maxlength="4000" placeholder="わからなかったところ・試してみたこと"></textarea>
+        <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="button" id="l-ask">質問を送る</button><span class="note" id="l-q-status"></span></div>
+      </section>
+      <section class="card stack hidden" id="l-memo-box">
+        <h3 style="margin:0">自分のメモ</h3>
+        <p class="note" style="margin:0">あなただけが見られます。</p>
+        <label for="l-memo" class="sr">メモ</label><textarea id="l-memo" rows="4" maxlength="4000"></textarea>
+        <div style="display:flex;gap:8px;align-items:center"><button class="btn ghost small" type="button" id="l-memo-save">メモを保存</button><span class="note" id="l-memo-status"></span></div>
+      </section>
+    </section>
+
+    <section id="tab-apps" class="stack hidden"></section>
+    <section id="tab-review" class="hidden">
+      <p class="note" style="margin-top:0">返ってきた添削だけを、新しい順に並べています。番号の付いた色の範囲を押すと、右の指摘が光ります。</p>
+      <p class="note" id="review-count"></p>
+      <div id="review-list" class="stack"></div>
+    </section>
+
+    <section id="tab-news" class="stack hidden"></section>
+
+    <section id="tab-booking" class="stack hidden">
+      <div class="card stack">
+        <h3>個別相談を予約する（30 分）</h3>
+        <div id="bk-mine"></div>
+        <div id="bk-slots" class="slots"></div>
+        <div id="bk-form" class="hidden stack">
+          <div class="note" id="bk-picked"></div>
+          <label for="bk-topic" class="sr">相談したいこと</label>
+          <textarea id="bk-topic" rows="3" placeholder="相談したいこと（任意）" maxlength="1000"></textarea>
+          <button class="btn" id="bk-go" type="button">この日時で予約する</button>
+        </div>
+        <div class="note" id="bk-status"></div>
+      </div>
+      <h3 style="margin:8px 0 0">セミナー</h3>
+      <div id="bk-seminars" class="stack"></div>
+    </section>
+
+    <!-- 便 R3：自分の契約と、定期を止める -->
+    <section id="tab-contract" class="stack hidden">
+      <div class="card"><h3>ご契約</h3><p class="note" style="margin:0">続いている定期のお支払いと、分割のお支払いの残りが見られます。定期は、ここから止められます。止めたあとも、お支払い済みの期間の終わりまでお使いいただけます。</p></div>
+      <div id="ct-list" class="stack"></div>
+      <div id="ct-status" class="note" aria-live="polite"></div>
+      <p class="note" style="margin:0">分割のお支払いを途中で止めたいときや、ご不明な点は bestlifeconsulting.inc@gmail.com までご連絡ください。<a href="/legal/tokushoho">特定商取引法に基づく表記</a></p>
+    </section>
+
+    <section id="tab-room" class="hidden">
+      <p class="room-sub"><a href="#review" id="to-review">返ってきた添削の振り返り →</a></p>
+      <p class="note" style="margin-top:0">シアニンと 1 対 1 の部屋です。「添削」で文章（と画像）を出すと、原文・添削後・コメントの 3 欄で返ってきます。質問や連絡、予約や申し込みの知らせは「やり取り」に出ます。</p>
+      <!-- 便 8g-1：スマホの通知（シアニンからのメッセージ・添削が返ってきたとき） -->
+      <div id="push-box" class="card stack hidden" style="margin-bottom:12px">
+        <div class="note" id="push-status">読み込んでいます…</div>
+        <div><button class="btn small" id="push-on" type="button">この端末で受け取る</button> <button class="btn ghost small hidden" id="push-off" type="button">この端末で受け取らない</button></div>
+      </div>
+      <!-- 便 15b：部屋の 2 つの枠 -->
+      <div class="rtabs" role="tablist" aria-label="部屋の枠">
+        <button type="button" role="tab" data-pane="corr" aria-selected="true">添削<span class="badge hidden" data-pane-n="corr"></span></button>
+        <button type="button" role="tab" data-pane="chat" aria-selected="false">やり取り<span class="badge hidden" data-pane-n="chat"></span></button>
+      </div>
+      <div id="room-list" class="room" aria-live="polite"></div>
+      <form id="composer" class="composer card">
+        <label for="c-text" class="sr">出す文章</label>
+        <textarea id="c-text" rows="5" placeholder="添削してほしい文章を貼ってください" maxlength="8000"></textarea>
+        <div id="c-thumbs" class="thumbs"></div>
+        <div class="composer-row">
+          <label class="btn ghost small" id="c-pick-label">画像を足す<input id="c-pick" type="file" accept="image/*" multiple hidden></label>
+          <span class="note" id="c-status"></span>
+          <button class="btn" id="c-send" type="submit">出す</button>
+        </div>
+      </form>
+      <div class="card community" id="community"></div>
+    </section>
+  </main>
+  </div>
+  </div>
+</div>
+
+<div id="a2hs" class="sheet-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="a2hs-t">
+  <div class="sheet">
+    <h2 id="a2hs-t">ホーム画面に追加すると、アプリのように開けます</h2>
+    <div id="a2hs-ios" class="hidden">
+      <ol><li>画面下の共有のボタンを押す</li><li>「ホーム画面に追加」を押す</li></ol>
+    </div>
+    <div id="a2hs-android" class="hidden"><p class="note">下のボタンを押すと、ホーム画面に追加できます。</p><button class="btn block" id="a2hs-install">ホーム画面に追加</button></div>
+    <div id="a2hs-other" class="hidden"><p class="note">スマホで開くと、ホーム画面に追加できます。</p></div>
+    <button class="btn ghost block" id="a2hs-close" style="margin-top:8px">あとで</button>
+  </div>
+</div>
+<footer class="site wrap">
+  <a href="/legal/tokushoho">特定商取引法に基づく表記</a><a href="/legal/privacy">プライバシーポリシー</a><a href="/legal/terms">利用規約</a>
+  <div style="margin-top:8px">© シアラボ（株式会社Best Life Consulting）</div>
+</footer>
+<script type="module" src="/stable/js/app.js"></script>
+</body>
+</html>

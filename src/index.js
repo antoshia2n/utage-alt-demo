@@ -39,6 +39,7 @@
 // B の便 13b：個別相談の予約。予約の種類は b_booking_types、予約は今までどおり出来事 consult_booked。中身は src/booking.js。
 //   空き時間は Naoki の Google カレンダーの予定を避けて出す。窓口はページの中の印 data-lab-part="booking:slug"（lp の住所・ログイン不要）
 
+import { appChannel, serveApp } from "./channel.js";
 import { makeBin3 } from "./bin3.js";
 import { makeBin4 } from "./bin4.js";
 import { makeGuard } from "./guard.js";
@@ -144,6 +145,9 @@ async function route(request, env, ctx, url, path) {
   // B の便 11b：メールを開いたかを数える画像
   const ro = path.match(/^[/]o[/](step|broadcast)[/]([0-9a-f-]{36}|[0-9]{1,9})$/);
   if (ro && !missingConfig(env).length) return await deliver.handleOpen(env, url, ro[1], ro[2]);
+  // 生徒の画面は版を出し分ける（src/channel.js）
+  const ch = appChannel(path, url.search, request.headers.get("cookie"));
+  if (ch) return await serveApp(request, env, url, ch);
   return env.ASSETS.fetch(request);
 }
 
