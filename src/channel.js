@@ -17,9 +17,12 @@ export function appChannel(path, search, cookie) {
 
 export async function serveApp(request, env, url, ch) {
   if (ch.set) {
+    // 印は shia2n.jp の下の全部のアプリで共通（shia2n-core の server/channel.js と同じ形・2026-11-04）
+    const h = url.hostname.toLowerCase();
+    const dom = h === "shia2n.jp" || h.endsWith(".shia2n.jp") ? "; Domain=shia2n.jp" : "";
     const cookie = ch.set === "next"
-      ? `${CH_COOKIE}=next; Path=/; Max-Age=31536000; Secure; SameSite=Lax`
-      : `${CH_COOKIE}=; Path=/; Max-Age=0; Secure; SameSite=Lax`;
+      ? `${CH_COOKIE}=next; Path=/; Max-Age=31536000; Secure; SameSite=Lax${dom}`
+      : `${CH_COOKIE}=; Path=/; Max-Age=0; Secure; SameSite=Lax${dom}`;
     return new Response(null, { status: 302, headers: { location: "/app", "set-cookie": cookie, "cache-control": "no-store" } });
   }
   let res = null;
