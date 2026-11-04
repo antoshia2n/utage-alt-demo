@@ -1,6 +1,7 @@
 import { getClient, api, esc, fmtTime, authImage, shrinkImage, noticeHtml } from "/js/common.js";
 import { correctionHtml, wireNotes } from "/js/correction.js";
 import { setupStudentPush } from "/js/pushclient.js";
+import { flatten, homeHtml, libraryHtml, searchHtml } from "/js/home.js";
 
 const $ = (id) => document.getElementById(id);
 // 便 8g-1：確認コードで入ったときは /app?fresh=1 で来る（リンクのときは住所の # に access_token）
@@ -93,6 +94,8 @@ async function main() {
   }
 
   const viewed = new Set(r.viewed);
+  const views = Array.isArray(r.views) ? r.views : r.viewed.map((id) => ({ id, at: "1970-01-01T00:00:00Z" }));
+  let flat = [], libKind = "すべて";
   const lib = r.library || { source: "demo", member: true, programs: [] };
   // 便 6a：学ぶくんの本物の教材（プログラム → コース → 教材）
   const lessons = {};
@@ -107,21 +110,21 @@ async function main() {
   if (lib.source === "manabu" && !lib.member) {
     $("tab-lessons").innerHTML = '<div class="card"><h3>教材は会員向けです</h3><p class="note" style="margin:0">しあらぼの会員になると、セミナーのアーカイブと講座の教材がここで見られます。</p></div>';
   } else if (lib.source === "manabu") {
-    $("tab-lessons").innerHTML = `
-      <div class="lib-head"><span class="note">教材 ${lib.lesson_count} 本</span>
-        <label for="lib-q" class="sr">教材を探す</label><input id="lib-q" type="search" placeholder="題名で探す" autocomplete="off"></div>
-      ${lib.programs.map((p, pi) => `<details class="prog" data-pid="${esc(p.id)}"${pi === 0 ? " open" : ""}><summary><b>${esc(p.title)}</b><span class="note">${p.courses.reduce((a, c) => a + c.lessons.length, 0)} 本</span></summary>
-        ${p.courses.map((c) => `<div class="course"><div class="course-h">${esc(c.title)}<span class="note">${c.lessons.length} 本</span></div><div class="stack">${c.lessons.map(lessonRow).join("")}</div></div>`).join("")}
-      </details>`).join("") || '<p class="note">教材はまだありません。</p>'}
-      <p class="note hidden" id="lib-none">見つかりませんでした。</p>`;
-    $("lib-q").addEventListener("input", (e) => {
-      const q = e.target.value.trim().toLowerCase();
-      let hits = 0;
-      document.querySelectorAll("#tab-lessons .lesson").forEach((el) => { const ok = !q || el.dataset.q.includes(q); el.classList.toggle("hidden", !ok); if (ok) hits++; });
-      document.querySelectorAll("#tab-lessons .course").forEach((c) => c.classList.toggle("hidden", !c.querySelector(".lesson:not(.hidden)")));
-      document.querySelectorAll("#tab-lessons details.prog").forEach((d) => { const has = !!d.querySelector(".lesson:not(.hidden)"); d.classList.toggle("hidden", !has); if (q && has) d.open = true; });
-      $("lib-none").classList.toggle("hidden", hits > 0);
-    });
+    // 生徒のホームと教材の図書館（2026-11-04）：種類ごとの棚・絞り込み・探す
+    flat = flatten(lib.programs);
+    flat.forEach((x) => { lessons[x.id] = x; });
+    const drawLib = (kind) => {
+      libKind = kind || "すべて";
+      $("tab-lessons").innerHTML = libraryHtml(flat, views, libKind);
+      $("tab-lessons").querySelectorAll("[data-kind]").forEach((b) => b.addEventListener("click", () => { drawLib(b.dataset.kind); $("tab-lessons").scrollIntoView({ block: "start" }); }));
+      $("lib-q").addEventListener("input", (e) => {
+        const q = e.target.value;
+        $("lib-body").classList.toggle("hidden", !!q.trim());
+        $("lib-found").classList.toggle("hidden", !q.trim());
+        if (q.trim()) $("lib-found").innerHTML = searchHtml(flat, views, q, libKind);
+      });
+    };
+    drawLib("すべて");
   } else {
     $("tab-lessons").innerHTML = r.lessons.map(lessonRow).join("") || '<p class="note">教材はまだありません。</p>';
   }
@@ -139,7 +142,7 @@ async function main() {
     $("rf-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText(rf.link); $("rf-copy").textContent = "写しました"; } catch (_) { $("rf-copy").textContent = "写せませんでした"; } });
   }
 
-  const sections = ["mypage", "goals", "lessons", "lesson", "news", "room", "review", "booking", "contract", "apps"];
+  const sections = ["home", "mypage", "goals", "lessons", "lesson", "news", "room", "review", "booking", "contract", "apps"];
   const showTab = (name) => {
     sections.forEach((s) => $("tab-" + s).classList.toggle("hidden", s !== name));
     if (name === "room") room.open();
@@ -148,10 +151,11 @@ async function main() {
     if (name === "booking") loadBooking(token);
     if (name === "contract") loadContract(token);
     if (name === "apps") renderApps(r);
+    if (name === "home") drawHome();
     if (name === "news") markNewsSeen(r);
     // 便 8c：左のメニューの印と、上のナビの名前
     document.querySelectorAll(".side [data-tab]").forEach((b) => {
-      const on = b.dataset.tab === name || (name === "lesson" && b.dataset.tab === "lessons");
+      const on = b.dataset.tab === name || (name === "lesson" && b.dataset.tab === "lessons") || (name === "mypage" && b.dataset.tab === "home");
       b.setAttribute("aria-selected", String(on));
       if (on) $("crumb").textContent = b.dataset.label || b.textContent.trim();
       // 5b：スマホの上の帯では、今いるタブを見える位置へ送る
@@ -160,6 +164,23 @@ async function main() {
   };
   document.querySelectorAll(".side [data-tab]").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
   $("back").addEventListener("click", (e) => { e.preventDefault(); showTab("lessons"); });
+  // ホーム：版ごとの段。テーマはこのブラウザに覚える
+  const THEME_KEY = "lab:theme";
+  const drawHome = () => {
+    if (!flat.length) { $("tab-home").innerHTML = $("tab-lessons").innerHTML; return; }
+    let theme = null; try { theme = localStorage.getItem(THEME_KEY); } catch { /* 覚えられなくても動く */ }
+    $("tab-home").innerHTML = homeHtml({ tier: r.tier || "lab", flat, views, seed: r.me.email || "", theme });
+    const sel = $("home-theme");
+    if (sel) sel.addEventListener("change", () => { try { localStorage.setItem(THEME_KEY, sel.value); } catch { /* 覚えられなくても今は変わる */ } drawHome(); $("home-theme") && $("home-theme").focus(); });
+  };
+  // 絵を押したら、その教材を開く（同じ教材をもう一度押したときも開くように、住所の変化を待たない）
+  document.addEventListener("click", (e) => {
+    const a = e.target.closest && e.target.closest("#tab-home a.v[data-id], #tab-lessons a.v[data-id]");
+    if (!a || e.metaKey || e.ctrlKey) return;
+    e.preventDefault();
+    history.pushState(null, "", "#lesson/" + encodeURIComponent(a.dataset.id));
+    openLesson(a.dataset.id);
+  });
 
   const openLesson = async (id) => {
     const l = lessons[id]; if (!l) return;
@@ -242,13 +263,12 @@ async function main() {
   const mp = await mpWait;
   if (mp.ok && mp.html) {
     const fr = $("mypage-frame");
-    $("side-mypage").classList.remove("hidden");
     window.addEventListener("message", (e) => {
       if (e.source !== fr.contentWindow || !e.data || typeof e.data.labMypageHeight !== "number") return;
       fr.style.height = Math.min(Math.max(e.data.labMypageHeight, 200), 20000) + "px";
     });
     fr.srcdoc = mp.html;
-    if (!location.hash && mp.landing !== "lessons") showTab("mypage"); // サイトの設定「ログインしたあと最初に出す画面」
+    // 前のマイページ（HTML の版）は、住所 #mypage で開いたときだけ出す（最初の画面はホーム・2026-11-04）
   }
   // マイページの枠の中のリンク：#lesson/<番号> はそのコンテンツ、#news はお知らせ
   const routeLesson = () => {
@@ -268,6 +288,8 @@ async function main() {
   paintNewsDot(r);
   if (location.hash === "#news") showTab("news");
   if (location.hash === "#apps") showTab("apps");
+  if (location.hash === "#lessons") showTab("lessons");
+  if (!location.hash || location.hash === "#home") showTab("home");
   if (location.hash === "#review") showTab("review");
   // ムダ 2（2026-10-30）：予約は、サーバーが準備できたと返すまで左のメニューに出さない
   const bookingReady = r.booking_ready === true;
@@ -283,7 +305,7 @@ async function main() {
   window.addEventListener("hashchange", () => {
     const [h, pane] = location.hash.slice(1).split("/");
     if (h === "room") room.setPane(pane);
-    if (["room", "review", "contract", "news", "mypage", "apps"].includes(h) || (h === "booking" && bookingReady) || (h === "goals" && goalsReady)) showTab(h);
+    if (["home", "lessons", "room", "review", "contract", "news", "mypage", "apps"].includes(h) || (h === "booking" && bookingReady) || (h === "goals" && goalsReady)) showTab(h);
     routeLesson();
   });
   setupStudentPush({ box: $("push-box"), status: $("push-status"), on: $("push-on"), off: $("push-off") }, token);

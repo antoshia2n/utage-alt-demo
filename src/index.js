@@ -808,6 +808,15 @@ async function studentAccess(env, customer, email) {
   return { ent, admin, access: appAccess(ent, admin) };
 }
 // 便 2（関門 5）：右上の「アプリ一覧」に出す、この人が開けるアプリの名前（権利 × 開くものの表 member_access）。共通の外枠の門番の答えと同じ形
+// 生徒のホームの版（2026-11-04）。権利の名前は門番の member_entitlement のキー
+export function homeTier(admin, ent) {
+  if (admin) return "lab";
+  const g = new Set((ent && ent.grants) || []);
+  if ([...g].some((k) => /^shiarabo_(basic|pilot|next_)/.test(k) || k === "guest")) return "lab";
+  if (g.has("shiarabo_monitor")) return "mon";
+  if (g.has("note_membership")) return "mem";
+  return "lab";
+}
 async function openAppTargets(env, ent) {
   const keys = (ent && ent.grants) || [];
   if (!keys.length) return [];
@@ -1004,8 +1013,10 @@ async function handleApi(request, env, url) {
     }
     const lib = await learn.lessonsFor(env, customer, v.email);
     const announcements = await db(env, "GET", newsQuery(env, 20)); // 便 25：下書き・取り下げ・まだ日時の来ていないものは出さない
-    const viewed = await db(env, "GET", `events?select=payload&customer_id=eq.${customer.id}&type=eq.lesson_viewed`);
+    const viewed = await db(env, "GET", `events?select=payload,occurred_at&customer_id=eq.${customer.id}&type=eq.lesson_viewed&order=occurred_at.desc&limit=3000`);
     const viewedIds = [...new Set(viewed.map((e) => e.payload && e.payload.lesson_id).filter(Boolean))];
+    // 生徒のホーム（2026-11-04）：見た記録を新しい順に（学びの記録・続きから・おすすめに使う）
+    const views = viewed.filter((e) => e.payload && e.payload.lesson_id).slice(0, 1000).map((e) => ({ id: e.payload.lesson_id, at: e.occurred_at }));
     const room = roomState(await roomEvents(env, customer.id));
     const ent = sa.ent;
     const community = await communityFor(env, ent, v.email);
@@ -1015,7 +1026,9 @@ async function handleApi(request, env, url) {
       app_catalog: await (async () => { const open = sa.admin ? null : new Set(await openAppTargets(env, ent));
         return PUBLISH_APPS.filter((a) => APP_URLS[a.target]).map((a) => ({ target: a.target, name: a.name, url: APP_URLS[a.target], open: !open || open.has(a.target) })); })(),
       me: { name: customer.name, email: customer.email, source: customer.source },
-      lessons: lib.flat, announcements, viewed: viewedIds,
+      lessons: lib.flat, announcements, viewed: viewedIds, views,
+      // 版（ホームの段の並びを決める）：メンシプだけの人は mem、モニターは mon、ほかは lab
+      tier: homeTier(sa.admin, ent),
       library: { source: lib.source, member: lib.member, lesson_count: lib.lesson_count, programs: lib.programs },
       room_unread: room.unreadForStudent,
       entitlement: ent,
