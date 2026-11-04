@@ -2378,18 +2378,6 @@ async function loadHome() {
       + row(t.notices.count, "今日の知らせ", "connect", t.notices.items.length ? `<span class="sub">${t.notices.items.map((x) => esc(x.connector) + "：" + esc(x.name)).join("・")}</span>` : "")
       + `</ul>`;
     document.querySelectorAll("#hm-todo [data-open]").forEach((x) => x.addEventListener("click", () => openView(x.dataset.open)));
-    // 便 8f-2 のタスクマスターの枠は 2026-11-04 に外した（haAku のホームで見る）
-    if (false) {
-    const k = r.tasks || { state: "unset" };
-    const PRI = { high: "高", medium: "中", low: "低" };
-    const taskLi = (x, late) => `<li><span class="tm">${late ? esc(x.deadline || "") : PRI[x.priority] || ""}</span><span>${esc(x.title)}${x.project ? `<span class="sub">${esc(x.project)}</span>` : ""}</span></li>`;
-    $("hm-task-n").textContent = k.state === "ok" ? `今日 ${k.due_count} 件・過ぎている ${k.overdue_count} 件` : "";
-    $("hm-tasks").innerHTML = k.state === "unset" ? "タスクマスターとまだつながっていません"
-      : k.state === "error" ? `タスクマスターを読めませんでした（${esc(k.error)}）`
-      : (k.due.length ? `<ul class="home-list">${k.due.map((x) => taskLi(x, false)).join("")}</ul>` : "期限が今日のタスクはありません")
-        + (k.overdue.length ? `<details class="tasks-late"><summary>期限が過ぎている ${k.overdue_count} 件</summary><ul class="home-list">${k.overdue.map((x) => taskLi(x, true)).join("")}</ul></details>` : "")
-        + (k.due_count > k.due.length ? `<p class="note">ほか ${k.due_count - k.due.length} 件はタスクマスターで</p>` : "");
-    }
   }
   if (!b.ok) { $("hm-board").innerHTML = `<p class="note">読めませんでした（${esc(b.error || b.status)}）</p>`; return; }
   $("hm-total").textContent = `${b.total} 人`;
