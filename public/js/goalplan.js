@@ -2,6 +2,7 @@
 // 正本はサーバーの b_goal_plans（生徒が書く）。ここは描くのと、直したら保存を頼むだけ。
 // 2 便目（2026-11-05 12:29 OK）：④ 戦術（状態ごとのリサーチ・仮説・この週の KPI・やること）。
 // 3 便目（2026-11-05 12:40 OK）：⑤ 実行・⑥ 記録（記録タブ）と ⑦ 評価・⑧ 修正（振り返りタブ・週報を出す）。
+// 4 便目（2026-11-05 13:05 OK）：成長レポート（週ごとの行動と時間の実行率・届いた状態・KGI の伸び）。
 export const WEEKS = 13;
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const D = 864e5;
@@ -196,7 +197,7 @@ export function recHtml(plan, today, n) {
 export function reportFor(plan, n) {
   const x = msAt(plan, n), m = x ? plan.ms[x[0]] : null, w = weekRec(plan, n), t = timeRate(plan, n), a = actRate(plan, n);
   const d = weekDate(plan, n), e = new Date(d.getTime() + 6 * D);
-  const r = { state: stateLine(plan, n), done: m && msDone(m) ? 1 : 0, kpi: m ? m.kpi.map((k) => ({ ...k })) : [], hours: { used: usedHours(plan, n), cap: goalHours(plan) },
+  const r = { state: stateLine(plan, n), done: m && msDone(m) ? 1 : 0, kpi: m ? m.kpi.map((k) => ({ ...k })) : [], kgi: plan.kgi.map((k) => ({ ...k })), hours: { used: usedHours(plan, n), cap: goalHours(plan) },
     rates: { time: t, act: a ?? 0 }, tasks: { done: m ? m.tasks.filter((k) => k.d).length : 0, all: m ? m.tasks.length : 0 }, reason: w.reason, why: w.why, next: w.next, tryy: w.tryy, memo: w.memo };
   r.text = `【週報】${monthWeek(plan, n)}（${md(d)}〜${md(e)}）第${n}週／13\n今週の状態：${r.state}（${r.done ? "届いた" : "まだ"}）\n時間 ${r.hours.used}/${r.hours.cap}h（${t}%）・行動 ${a ?? "―"}%\n`
     + (r.kpi.length ? r.kpi.map((k) => `${k.n} ${fmt(k.v)}/${fmt(k.to)}${k.u}`).join("・") + "\n" : "")
@@ -258,6 +259,54 @@ export function carryTry(plan, n) {
   const w = weekRec(plan, n), x = place(plan).w.slice(n + 1).find((y) => Array.isArray(y));
   if (!w.tryy.trim() || w.tryAdded || !x) return false;
   plan.ms[x[0]].tasks.push({ t: w.tryy.trim(), when: "", hr: 0, d: 0, from: 1 }); ensureWeek(plan, n).tryAdded = 1; return true;
+}
+
+// ---------- 4 便目：成長レポート ----------
+const ST_FILL = { done: "#15803d", now: "#5e5ce6", next: "#c9c8f3", late: "#d97706", cont: "#d97706", spare: "#c7c7cf", empty: "#d4d4dc" };
+function barsSvg(vals, opts) {
+  const W = 560, H = 170, p = 28, bw = (W - p * 2) / WEEKS, max = opts.max, y = (v) => H - 22 - (Math.min(v, max) / max) * (H - 40);
+  let s = `<svg class="gk-ch" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opts.label)}">`;
+  if (opts.line != null) s += `<line x1="${p}" x2="${W - p}" y1="${y(opts.line)}" y2="${y(opts.line)}" stroke="#15803d" stroke-dasharray="4 4"/><text x="${W - p}" y="${y(opts.line) - 4}" font-size="10" text-anchor="end" fill="#15803d">${opts.lineLabel}</text>`;
+  vals.forEach((v, i) => {
+    const x = p + i * bw + 3, w = bw - 6;
+    if (v == null) s += `<rect x="${x}" y="${H - 24}" width="${w}" height="2" fill="currentColor" opacity=".2"/>`;
+    else s += `<rect x="${x}" y="${y(v.v)}" width="${w}" height="${Math.max(1, H - 22 - y(v.v))}" rx="4" fill="${v.c}"/><text x="${x + w / 2}" y="${y(v.v) - 4}" font-size="10" text-anchor="middle" fill="currentColor">${v.t ?? v.v}</text>`;
+    s += `<text x="${x + w / 2}" y="${H - 6}" font-size="10" text-anchor="middle" fill="currentColor" opacity=".55">${i + 1}</text>`;
+  });
+  return s + "</svg>";
+}
+function lineSvg(k, pts, now) {
+  const W = 560, H = 160, p = 28, vals = pts.map((q) => q.v).concat([k.to]), lo = Math.min(...vals, 0), hi = Math.max(...vals, 1);
+  const x = (n) => p + ((n - 1) / (WEEKS - 1)) * (W - p * 2), y = (v) => H - 22 - ((v - lo) / (hi - lo || 1)) * (H - 44);
+  let s = `<svg class="gk-ch" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(k.n)}の伸び"><line x1="${p}" x2="${W - p}" y1="${y(k.to)}" y2="${y(k.to)}" stroke="currentColor" opacity=".3" stroke-dasharray="4 4"/><text x="${W - p}" y="${y(k.to) - 5}" font-size="10" text-anchor="end" fill="currentColor" opacity=".6">目標 ${fmt(k.to)}${esc(k.u)}</text>`;
+  if (pts.length > 1) s += `<polyline fill="none" stroke="#5e5ce6" stroke-width="3" points="${pts.map((q) => `${x(q.n)},${y(q.v)}`).join(" ")}"/>`;
+  s += pts.map((q) => `<circle cx="${x(q.n)}" cy="${y(q.v)}" r="4" fill="#5e5ce6"/><text x="${x(q.n)}" y="${y(q.v) - 8}" font-size="10" text-anchor="middle" fill="currentColor">${fmt(q.v)}</text>`).join("");
+  for (let n = 1; n <= WEEKS; n++) s += `<text x="${x(n)}" y="${H - 4}" font-size="10" text-anchor="middle" fill="currentColor" opacity="${n === now ? 1 : 0.5}">${n}</text>`;
+  return s + "</svg>";
+}
+export function growHtml(plan, today, reviews) {
+  const now = Math.min(weekNo(plan, today), WEEKS);
+  if (now < 1) return `<div class="gk-step">${head("◎", "成長レポート", "13 週が始まると、ここに週ごとの伸びが出ます")}</div>`;
+  const rv = (n) => (reviews || []).find((x) => x.week_no === n) || null;
+  const act = Array.from({ length: WEEKS }, (_, i) => { const n = i + 1, r = rv(n), v = r && r.rates ? r.rates.act : n === now ? actRate(plan, n) : null; return v == null ? null : { v, c: ST_FILL[weekState(plan, n, now)] || "#c9c8f3" }; });
+  const cap = goalHours(plan);
+  const tm = Array.from({ length: WEEKS }, (_, i) => { const n = i + 1; if (n > now) return null; const u = usedHours(plan, n); return { v: u, t: `${u}`, c: u >= cap * 0.7 ? "#5e5ce6" : "#9b99e6" }; });
+  const sent = Array.from({ length: now }, (_, i) => rv(i + 1)).filter(Boolean).length;
+  const reached = plan.ms.filter(msDone).length;
+  const acts = act.filter(Boolean).map((a) => a.v), avg = acts.length ? Math.round(acts.reduce((a, b) => a + b, 0) / acts.length) : null;
+  const kgi = plan.kgi.map((k) => {
+    const pts = [];
+    for (let n = 1; n <= now; n++) { const r = rv(n), h = r && Array.isArray(r.kgi) ? r.kgi.find((x) => x.n === k.n) : null; if (h) pts.push({ n, v: +h.v || 0 }); }
+    const last = pts.find((q) => q.n === now); if (last) last.v = +k.v || 0; else pts.push({ n: now, v: +k.v || 0 });
+    return `<div class="gk-step">${head("◎", `KGI の伸び：${esc(k.n || "（名前なし）")}`, "週報を出した週の値と、いまの値")}${lineSvg(k, pts, now)}</div>`;
+  }).join("");
+  return `<div class="gk-tiles">
+      <div class="gk-tile"><b>${reached}<small> / ${plan.ms.length}</small></b><span>届いた状態</span></div>
+      <div class="gk-tile"><b>${sent}<small> / ${now}</small></b><span>週報を出した週</span></div>
+      <div class="gk-tile"><b>${avg ?? "―"}<small>${avg == null ? "" : "%"}</small></b><span>行動の実行率（平均）</span></div></div>
+    <div class="gk-step">${head("◎", "週ごとの行動の実行率", "色＝その週の状態に届いたか（緑 達成・オレンジ 未達・紫 今週）。線は 85%")}${barsSvg(act, { max: 100, line: 85, lineLabel: "85%", label: "週ごとの行動の実行率" })}</div>
+    <div class="gk-step">${head("◎", "週ごとに目標へ使った時間", `② リソース予算の「目標に使う時間」は週 ${cap} 時間（線）`)}${barsSvg(tm, { max: Math.max(cap, ...tm.filter(Boolean).map((t) => t.v), 1), line: cap || null, lineLabel: `${cap}h`, label: "週ごとに目標へ使った時間" })}</div>
+    ${kgi}`;
 }
 
 // ホームのカード（今週の状態と全体像）

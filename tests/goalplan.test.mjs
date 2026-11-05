@@ -1,7 +1,7 @@
 // 目標達成くん（2026-11-05）1 便目：画面の計算（週の並び・今週・状態の色・直し方）と、描いたものに大事な言葉が出るか
 import test from "node:test";
 import assert from "node:assert/strict";
-import { weekNo, place, weekState, goal13Text, goalHours, budSum, monthWeek, setPath, applyAction, applyField, planHtml, chainHtml, homeCardHtml, popHtml, tacHtml, nowMs, tasksHours, recHtml, reviewHtml, reportFor, applyWeek, applyNext, carryTry, timeRate, actRate, verdict } from "../public/js/goalplan.js";
+import { weekNo, place, weekState, goal13Text, goalHours, budSum, monthWeek, setPath, applyAction, applyField, planHtml, chainHtml, homeCardHtml, popHtml, tacHtml, nowMs, tasksHours, recHtml, reviewHtml, growHtml, reportFor, applyWeek, applyNext, carryTry, timeRate, actRate, verdict } from "../public/js/goalplan.js";
 import { seedPlan } from "../src/goals.js";
 
 const plan = () => {
@@ -163,4 +163,17 @@ test("⑦⑧ 週報：理由と来週を選ぶと出せる。コピーの文と�
   assert.equal(carryTry(p, 4), false);
   assert.deepEqual(p.ms[4].tasks.at(-1), { t: "火曜の朝に書く", when: "", hr: 0, d: 0, from: 1 });
   assert.match(reviewHtml(p, "2026-11-05", 4, { week_no: 4, approved_at: "2026-11-06", comment: "いいね" }), /シアニンが承認 ✓[\s\S]*いいね/);
+});
+
+test("成長レポート：出した週報の実行率と KGI の値で伸びを描く。今週はいまの値", () => {
+  const p = plan();
+  const reviews = [{ week_no: 2, rates: { act: 71 }, kgi: [{ n: "フォロワー", v: 340, to: 1000, u: "人" }] }, { week_no: 3, rates: { act: 88 }, kgi: [{ n: "フォロワー", v: 380, to: 1000, u: "人" }] }];
+  const h = growHtml(p, "2026-11-05", reviews);
+  assert.match(h, /2<small> \/ 4<\/small><\/b><span>週報を出した週/);
+  assert.match(h, />71<\/text>/);
+  assert.match(h, />88<\/text>/);
+  assert.match(h, />420<\/text>/);
+  assert.match(h, /KGI の伸び：フォロワー/);
+  assert.match(reportFor(p, 4).kgi[0].n, /フォロワー/);
+  assert.match(growHtml(p, "2026-10-01", []), /13 週が始まると/);
 });

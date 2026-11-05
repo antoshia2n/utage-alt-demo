@@ -364,3 +364,11 @@ body.student .btn.ghost { background: transparent; color: var(--accent); border:
 @media (max-width: 560px) { .gk-pipe { font-size: 10.5px; } .gk-pipe div { padding: 6px 3px; } .gk-pipe div b { font-size: 11px; } }
 /* 目標達成くん（2026-11-05 12:50 Naoki）：KPI の数は＋−のほかに、数字でも直接入れられる */
 .gk-stp .c .gk-in.mid { width: 64px; text-align: center; font-size: 20px; font-weight: 800; padding: 6px 4px; }
+/* 目標達成くん 4 便目（2026-11-05 13:05 OK）：成長レポート */
+.gk-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.gk-tile { border-radius: 14px; background: var(--surface); border: 1px solid var(--line); padding: 14px; display: grid; gap: 2px; }
+.gk-tile b { font-size: 26px; font-weight: 800; line-height: 1.1; } .gk-tile b small { font-size: 13px; color: var(--muted); }
+.gk-tile span { font-size: 12px; color: var(--muted); }
+svg.gk-ch { width: 100%; height: auto; display: block; color: var(--ink); }
+#gk-v-grow .gk-no { background: #d97706; font-size: 11px; }
+@media (max-width: 560px) { .gk-tile b { font-size: 21px; } .gk-seg button { font-size: 12.5px; } .gk-long { display: none; } }

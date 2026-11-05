@@ -2,7 +2,7 @@ import { getClient, api, esc, fmtTime, authImage, shrinkImage, noticeHtml } from
 import { correctionHtml, wireNotes } from "/js/correction.js";
 import { setupStudentPush } from "/js/pushclient.js";
 import { flatten, homeHtml, libraryHtml, searchHtml } from "/js/home.js";
-import { planHtml, chainHtml, popHtml, homeCardHtml, tacHtml, recHtml, reviewHtml, reportFor, applyAction, applyField, applyWeek, applyNext, carryTry, setPath, weekNo, weekInfo, WEEKS } from "/js/goalplan.js";
+import { planHtml, chainHtml, popHtml, homeCardHtml, tacHtml, recHtml, reviewHtml, growHtml, reportFor, applyAction, applyField, applyWeek, applyNext, carryTry, setPath, weekNo, weekInfo, WEEKS } from "/js/goalplan.js";
 
 
 
@@ -680,11 +680,12 @@ function drawPlan() {
   $("gk-v-tac").innerHTML = tacHtml(gData.plan, gData.today, gSel);
   $("gk-v-rec").innerHTML = recHtml(gData.plan, gData.today, gWk());
   $("gk-v-rev").innerHTML = reviewHtml(gData.plan, gData.today, gWk(), gRev(gWk()));
+  $("gk-v-grow").innerHTML = growHtml(gData.plan, gData.today, gData.reviews);
 }
 function gShow(v) {
   gView = v;
   document.querySelectorAll("#tab-goals .gk-seg [data-gv]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.gv === v)));
-  for (const x of ["plan", "tac", "rec", "rev"]) $("gk-v-" + x).classList.toggle("hidden", x !== v);
+  for (const x of ["plan", "tac", "rec", "rev", "grow"]) $("gk-v-" + x).classList.toggle("hidden", x !== v);
 }
 function openTac(i) { gSel = i; drawPlan(); gShow("tac"); $("s4").scrollIntoView({ behavior: "smooth", block: "start" }); }
 function planChanged(msg) { drawPlan(); paintGoalCard(); gSavedLine("保存を待っています…"); clearTimeout(gSaveTimer); gSaveTimer = setTimeout(gSavePlan, 700); if (msg) gToast(msg); }
