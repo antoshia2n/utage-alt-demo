@@ -1406,6 +1406,17 @@ function approvalRef(x) {
   if (a.form_slug !== undefined) rows.push(["申込のフォーム", a.form_slug || "（結ばない）"]);
   if (a.thanks_page_slug !== undefined) rows.push(["サンクスページ", a.thanks_page_slug || "（移さない）"]);
   if (a.key && a.seminar_id) rows.push(["知らせ", a.key + (a.offset_minutes === undefined ? "" : a.offset_minutes === null ? "・申込の直後" : a.offset_minutes >= 0 ? `・開催の ${a.offset_minutes} 分前` : `・開催の ${-a.offset_minutes} 分あと`)]);
+  // 目標達成くん 6 便目：生徒の設計の下書き（生徒の名前と週の並びは頼んだ時点で足してある）
+  if (a.draft && typeof a.draft === "object") {
+    const d = a.draft, n = (v) => Number(v || 0).toLocaleString("ja-JP");
+    rows.push(["生徒", `${a.student_name || "（名前なし）"}（しあらぼ管理の番号 ${a.student_id}）`]);
+    if (a.source) rows.push(["もとにしたもの", a.source]);
+    rows.push(["① 理想", (d.ideal || "（空）") + (d.idealWhen ? `（${d.idealWhen}）` : "")]);
+    rows.push(["② KGI", (d.kgi || []).length ? d.kgi.map((k) => `${k.n} ${n(k.v)}→${n(k.to)}${k.u || ""}`).join("\n") : "（空）"]);
+    rows.push(["③ 13 週", `${d.start} から・状態 ${(d.ms || []).length} 個・予備の週 ${(d.spare || []).length} つ${(d.spare || []).length ? `（第 ${d.spare.join("・")} 週）` : ""}${d.goal13 ? "\n13 週の目標：" + d.goal13 : ""}`]);
+    if (Array.isArray(a.weeks)) rows.push(["週ごとの状態と KPI", a.weeks.join("\n")]);
+    rows.push(["入れないもの", "リソース予算（生活の時間は生徒が入れる）・④ 戦術。生徒が「この設計で始める」を押すまで、生徒の設計は変わらない"]);
+  }
   if (!rows.length) return "";
   return `<dl class="ap-ref">${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd class="pre">${esc(v)}</dd>`).join("")}</dl>`;
 }
@@ -2357,11 +2368,14 @@ async function loadHome() {
   if (!r.ok) { $("hm-cal").textContent = "読めませんでした（" + (r.error || r.status) + "）"; $("hm-todo").textContent = ""; }
   else {
     $("hm-day").textContent = r.day;
-    const c = r.calendar;
+    // 2026-11-04 Naoki OK：Google カレンダーの予定と TaskMaster の今日の分は haAku のホームで見る。ここは UTAGE のカレンダー（個別相談・セミナーの予約）だけ
+    const c0 = r.calendar || {};
+    const uSrc = (c0.sources || []).find((x) => x.which === "utage") || { state: "unset" };
+    const c = { ...c0, state: uSrc.state, error: uSrc.error, events: (c0.events || []).filter((e) => e.source === "utage"), sources: [], not_expanded: 0 };
     $("hm-cal").innerHTML = c.state === "unset"
-      ? `カレンダーがまだつながっていません。<a href="#" id="hm-cal-set">決済・メール・オプチャ</a> の「Google カレンダー」に非公開 URL を貼ると、ここに今日の予定が出ます`
+      ? `UTAGE のカレンダーがまだつながっていません。<a href="#" id="hm-cal-set">決済・メール・オプチャ</a> の「Google カレンダー」の中の「UTAGE のカレンダー」に非公開 URL を貼ると、ここに今日の予約が出ます`
       : c.state === "error" ? `カレンダーを読めませんでした（${esc(c.error)}）`
-      : (c.events.length ? `<ul class="home-list">${c.events.map((e) => `<li><span class="tm">${e.all_day ? "終日" : esc(fmtHm(e.start)) + "–" + esc(fmtHm(e.end))}</span><span>${e.source === "utage" ? `<span class="src-tag">UTAGE</span>` : ""}${esc(e.title)}${e.location ? `<span class="sub">${esc(e.location)}</span>` : ""}</span></li>`).join("")}</ul>` : "今日の予定はありません")
+      : (c.events.length ? `<ul class="home-list">${c.events.map((e) => `<li><span class="tm">${e.all_day ? "終日" : esc(fmtHm(e.start)) + "–" + esc(fmtHm(e.end))}</span><span>${e.source === "utage" ? `<span class="src-tag">UTAGE</span>` : ""}${esc(e.title)}${e.location ? `<span class="sub">${esc(e.location)}</span>` : ""}</span></li>`).join("")}</ul>` : "今日の予約はありません")
         + (c.sources || []).filter((x) => x.state === "error").map((x) => `<p class="note">${esc(x.label)}を読めませんでした（${esc(x.error)}）</p>`).join("")
         + (c.sources || []).filter((x) => x.state === "unset").map((x) => `<p class="note">${esc(x.label)}はまだつながっていません</p>`).join("")
         + (c.not_expanded ? `<p class="note">広げられない繰り返しの予定が ${c.not_expanded} 件あります（${esc((c.not_expanded_shapes || []).join("・"))}）</p>` : "");
@@ -2375,16 +2389,6 @@ async function loadHome() {
       + row(t.notices.count, "今日の知らせ", "connect", t.notices.items.length ? `<span class="sub">${t.notices.items.map((x) => esc(x.connector) + "：" + esc(x.name)).join("・")}</span>` : "")
       + `</ul>`;
     document.querySelectorAll("#hm-todo [data-open]").forEach((x) => x.addEventListener("click", () => openView(x.dataset.open)));
-    // 便 8f-2：タスクマスターの今日の分（期限が今日・過ぎている未完了）。中身は shia2n-mcp から読む
-    const k = r.tasks || { state: "unset" };
-    const PRI = { high: "高", medium: "中", low: "低" };
-    const taskLi = (x, late) => `<li><span class="tm">${late ? esc(x.deadline || "") : PRI[x.priority] || ""}</span><span>${esc(x.title)}${x.project ? `<span class="sub">${esc(x.project)}</span>` : ""}</span></li>`;
-    $("hm-task-n").textContent = k.state === "ok" ? `今日 ${k.due_count} 件・過ぎている ${k.overdue_count} 件` : "";
-    $("hm-tasks").innerHTML = k.state === "unset" ? "タスクマスターとまだつながっていません"
-      : k.state === "error" ? `タスクマスターを読めませんでした（${esc(k.error)}）`
-      : (k.due.length ? `<ul class="home-list">${k.due.map((x) => taskLi(x, false)).join("")}</ul>` : "期限が今日のタスクはありません")
-        + (k.overdue.length ? `<details class="tasks-late"><summary>期限が過ぎている ${k.overdue_count} 件</summary><ul class="home-list">${k.overdue.map((x) => taskLi(x, true)).join("")}</ul></details>` : "")
-        + (k.due_count > k.due.length ? `<p class="note">ほか ${k.due_count - k.due.length} 件はタスクマスターで</p>` : "");
   }
   if (!b.ok) { $("hm-board").innerHTML = `<p class="note">読めませんでした（${esc(b.error || b.status)}）</p>`; return; }
   $("hm-total").textContent = `${b.total} 人`;
