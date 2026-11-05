@@ -340,3 +340,15 @@ body { font-family: "Geist", "Noto Sans JP", "Hiragino Sans", "Hiragino Kaku Got
 .bt-phone .ph-h span { font-size: 11px; color: var(--muted); }
 .bt-phone .ph-b { padding: 14px; font-size: 13px; line-height: 1.8; white-space: pre-wrap; word-break: break-word; max-height: 460px; overflow: auto; }
 @media (max-width: 900px) { .bt-mcols { grid-template-columns: 1fr; } }
+/* 2026-11-06 予約の便⑤：Google カレンダー */
+.bt-gc { display: flex; flex-direction: column; gap: 6px; }
+.bt-gc .bt-tog { margin-top: 0; }
+.bt-gc .bt-tog input { width: 18px; height: 18px; accent-color: var(--accent); }
+.bt-gcst { margin-top: 10px; }
+.bt-gcok { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.bt-gcok b { color: #15803d; }
+.bt-gcok span { flex: 1; color: var(--muted); font-size: 14px; }
+.bt-gcsteps { border: 1px dashed var(--line); border-radius: 12px; padding: 14px 16px; }
+.bt-gcsteps ol { margin: 10px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 10px; font-size: 14px; }
+.bt-gcin { display: flex; gap: 8px; margin-top: 6px; }
+.bt-gcin input { flex: 1; min-width: 0; }
