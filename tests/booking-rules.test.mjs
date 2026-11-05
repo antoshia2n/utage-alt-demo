@@ -131,3 +131,18 @@ test("変更・キャンセルの期限を過ぎた予約は、本人が変更�
   assert.equal((await bk.memberCancel(env, stu, { slot: s[3].slot })).error, "too_late");
   assert.equal((await bk.memberBook(env, stu, basic, false, { slug: "consult", slot: s[8].slot, from: s[3].slot })).error, "too_late");
 });
+
+// ---- 便③：予約フォームの回答形式 ----
+import { cleanQuestions, cleanAnswers } from "../src/booking.js";
+test("回答形式：単一選択・複数選択は選択肢が 2 つ以上要る。数値は数だけ", () => {
+  assert.equal(cleanQuestions([{ label: "形式", kind: "radio", options: ["A"] }]).error, "bad_question_options");
+  const { questions: qs } = cleanQuestions([{ label: "形式", kind: "radio", options: ["Zoom", "対面", "Zoom"], required: true }, { label: "テーマ", kind: "check", options: ["X", "note", "LP"] }, { label: "売上", kind: "number", hint: "ignored?" }]);
+  assert.deepEqual(qs[0].options, ["Zoom", "対面"]); assert.equal(qs[0].hint, "");
+  assert.equal(cleanAnswers(qs, { q1: "電話" }).error, "bad_answer");
+  assert.equal(cleanAnswers(qs, { q1: "" }).error, "answer_required");
+  assert.equal(cleanAnswers(qs, { q1: "Zoom", q2: ["X", "その他"] }).error, "bad_answer");
+  assert.equal(cleanAnswers(qs, { q1: "Zoom", q3: "十万" }).error, "bad_number");
+  const r = cleanAnswers(qs, { q1: "対面", q2: ["X", "LP"], q3: "１２０,０００" });
+  assert.deepEqual(r.answers.map((a) => a.value), ["対面", "X、LP", "120000"]);
+  assert.deepEqual(r.answers[1].values, ["X", "LP"]);
+});

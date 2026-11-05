@@ -28,7 +28,9 @@ const now = () => new Date().toISOString();
 const KEY_RE = /^[a-z0-9][a-z0-9_-]{0,40}$/;
 export const AUDIENCES = ["public", "member"];
 export const AFTER_ACTIONS = ["shr_next_mtg"];
-const Q_KINDS = ["text", "textarea"];
+// 回答形式：短文・長文・単一選択・複数選択・数値（選択式は options に選択肢）
+export const Q_KINDS = ["text", "textarea", "radio", "check", "number"];
+const CHOICE = new Set(["radio", "check"]);
 
 // 質問の並びを確かめて整える。合わなければ { error }
 export function cleanQuestions(list) {
@@ -42,7 +44,13 @@ export function cleanQuestions(list) {
     if (!KEY_RE.test(key) || keys.has(key)) return { error: "bad_question_key", note: `${i + 1} 問目の key` };
     keys.add(key);
     const kind = Q_KINDS.includes(q.kind) ? q.kind : "textarea";
-    out.push({ key, label, kind, required: !!q.required, hint: String(q.hint || "").slice(0, 1000) });
+    const row = { key, label, kind, required: !!q.required, hint: CHOICE.has(kind) ? "" : String(q.hint || "").slice(0, 1000) };
+    if (CHOICE.has(kind)) {
+      const opts = [...new Set((Array.isArray(q.options) ? q.options : []).map((o) => String(o || "").trim()).filter(Boolean))];
+      if (opts.length < 2 || opts.length > 20 || opts.some((o) => o.length > 60)) return { error: "bad_question_options", note: `${i + 1} 問目の選択肢（2〜20 個・1 つ 60 字まで）` };
+      row.options = opts;
+    }
+    out.push(row);
   }
   return { questions: out };
 }
@@ -52,8 +60,22 @@ export function cleanAnswers(questions, answers) {
   const a = answers && typeof answers === "object" ? answers : {};
   const out = [];
   for (const q of questions || []) {
-    const v = String(a[q.key] ?? "").trim().slice(0, q.kind === "text" ? 200 : 4000);
+    const raw = a[q.key];
+    if (q.kind === "check") {
+      const vals = [...new Set((Array.isArray(raw) ? raw : raw == null || raw === "" ? [] : [raw]).map((x) => String(x).trim()))];
+      if (vals.some((x) => !(q.options || []).includes(x))) return { error: "bad_answer", key: q.key, label: q.label };
+      if (q.required && !vals.length) return { error: "answer_required", key: q.key, label: q.label };
+      out.push({ key: q.key, label: q.label, value: vals.join("、"), values: vals });
+      continue;
+    }
+    let v = String(raw ?? "").trim().slice(0, q.kind === "text" ? 200 : 4000);
     if (q.required && !v) return { error: "answer_required", key: q.key, label: q.label };
+    if (v && q.kind === "radio" && !(q.options || []).includes(v)) return { error: "bad_answer", key: q.key, label: q.label };
+    if (v && q.kind === "number") {
+      const n = v.replace(/[,，\s]/g, "").replace(/[０-９．－]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
+      if (!/^-?\d+(\.\d+)?$/.test(n) || n.length > 20) return { error: "bad_number", key: q.key, label: q.label };
+      v = n;
+    }
     out.push({ key: q.key, label: q.label, value: v });
   }
   return { answers: out };
@@ -421,7 +443,7 @@ export function makeBooking(h) {
     const t = await typeBySlug(env, slug);
     if (!t || !t.active || t.archived_at || (t.audience || "public") !== "public") return { ok: false, error: "not_found" };
     const r = await slots(env, t);
-    return { ok: true, type: { title: t.title, minutes: t.minutes }, questions: (t.questions || []).map(({ key, label, kind, required, hint }) => ({ key, label, kind, required, hint })),
+    return { ok: true, type: { title: t.title, minutes: t.minutes }, questions: (t.questions || []).map(({ key, label, kind, required, hint, options }) => ({ key, label, kind, required, hint, ...(options ? { options } : {}) })),
       slots: r.slots.map((s) => ({ slot: s, label: fmtJst(s), day: fmtJst(s).split("（")[0] })) };
   }
 
@@ -504,7 +526,7 @@ export function makeBooking(h) {
       const options = lens.length > 1 ? lens.map((m) => ({ minutes: m, slots: mk(m === t.minutes ? r.slots : freeSlots(t, { booked: r.booked, busy: r.busy }, at, m), m) })) : null;
       const mineT = mine.filter((b) => b.type_id === t.id);
       out.push({ slug: t.slug, title: t.title, minutes: t.minutes, ...(options ? { options } : {}), max_per_person: t.max_per_person || 1, cancel_hours: t.cancel_hours ?? null, description: t.description || "", color: t.color || "", zoom: !!t.zoom_url, ...(t.active ? {} : { paused: true }),
-        questions: (t.questions || []).map(({ key, label, kind, required, hint }) => ({ key, label, kind, required, hint })),
+        questions: (t.questions || []).map(({ key, label, kind, required, hint, options }) => ({ key, label, kind, required, hint, ...(options ? { options } : {}) })),
         booked: mineT.length >= (t.max_per_person || 1), slots: mk(r.slots, t.minutes) });
     }
     return { ok: true, ready: out.length > 0, types: out,
@@ -528,7 +550,7 @@ export function makeBooking(h) {
     if (fromIso && !moving) return { ok: false, error: "not_found" };
     if (moving && tooLate(t, moving.slot)) return { ok: false, error: "too_late", cancel_hours: t.cancel_hours };
     if (mine.length >= (t.max_per_person || 1) && !moving) return { ok: false, error: "already_booked", slot: mine[0].slot, label: fmtJst(mine[0].slot) };
-    const b = { slot: iso, type_id: t.id, type_title: t.title, minutes: m, topic: "", answers: ans.answers, ...(moving ? { moved_from: moving.slot } : {}) };
+    const b = { slot: iso, type_id: t.id, type_title: t.title, minutes: m, topic: (t.questions || []).length ? "" : String((body.answers && body.answers.topic) || "").trim().slice(0, 1000), answers: ans.answers, ...(moving ? { moved_from: moving.slot } : {}) };
     await addEvent(env, customer.id, "consult_booked", b, "site");
     if (moving) await addEvent(env, customer.id, "consult_canceled", { slot: moving.slot, type_id: t.id, type_title: t.title, moved_to: iso }, "site");
     const mail = await sendNotice(env, t, b, customer, "confirm", "site").catch(() => "failed");
@@ -550,7 +572,7 @@ export function makeBooking(h) {
     if (afterBooked && (t.after_actions || []).length) after = await afterBooked(env, customer.id, t.after_actions, { canceled: b.slot }).catch((e) => ({ error: String(e.message || e) }));
     await logInbound(env, "booking_cancel", { slug: t.slug, slot: b.slot }, { ok: true, after }, 200);
     // 「元に戻す」のために、取り消した予約の中身を返す
-    return { ok: true, slot: b.slot, slug: t.slug, minutes: b.minutes, answers: Object.fromEntries((b.answers || []).map((a) => [a.key, a.value])) };
+    return { ok: true, slot: b.slot, slug: t.slug, minutes: b.minutes, answers: Object.fromEntries((b.answers || []).map((a) => [a.key, a.values || a.value])) };
   }
 
   async function forPlan(env) {
