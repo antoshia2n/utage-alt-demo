@@ -1070,7 +1070,7 @@ async function loadDeals(focusId, msg) {
 // ---------- 便 13b：個別相談の予約の種類（本番の置き場）。一覧 → 詳細（予約・知らせ・中身） ----------
 let btCache = [], btWired = false, currentBt = null;
 const WD_LABEL = ["日", "月", "火", "水", "木", "金", "土"];
-const BT_WHY = {
+const BT_WHY = { bad_audience: "誰が予約できるかを選んでください", bad_entitlements: "権利の名前が合いません", bad_questions: "問いは 12 問までです", bad_question_label: "問いの文を入れてください（80 字まで）", bad_question_key: "問いの並びが合いません", bad_after_actions: "予約のあとに書く先が合いません",
   bad_title: "名前を入れてください（80 字まで）", bad_slug: "住所の名前は英小文字・数字・ハイフンの 2〜41 字（例 consult-30）", slug_taken: "その住所の名前はほかの種類で使っています",
   bad_minutes: "長さは 10〜240 分", bad_weekdays: "曜日を 1 つ以上選んでください", bad_times: "時間帯は「10:00-12:00,20:00-22:00」の形で入れてください",
   bad_days_ahead: "何日先までは 1〜90", bad_min_notice_hours: "何時間前までは 0〜168", bad_remind_minutes: "前日の知らせは 30 分〜7 日前（空なら送らない）",
@@ -1127,14 +1127,16 @@ async function openBookingType(id, opts = {}) {
       <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="submit">保存</button><span class="note" id="bn-status"></span></div>
     </form></section>
     <section class="card" data-pane="edit">${bookingTypeForm(t)}
-      <div class="stack" style="margin-top:16px"><div class="note">ページに埋め込む印（Claude にページを頼むときに伝える）</div><textarea id="bt-embed" rows="2" readonly style="font-size:13px">${esc(t.embed)}</textarea></div></section>`;
+      ${t.embed ? `<div class="stack" style="margin-top:16px"><div class="note">ページに埋め込む印（Claude にページを頼むときに伝える）</div><textarea id="bt-embed" rows="2" readonly style="font-size:13px">${esc(t.embed)}</textarea></div>` : '<p class="note" style="margin-top:16px">会員だけの予約は、マイページの「予約」に出ます（ページには置けません）。</p>'}</section>`;
   wireTabs($("seminar-detail"), tab);
   wireCampPicker($("seminar-detail"), () => loadBookingTypes());
   wireBookingTypeForm(t);
   table("bb-table", [
     { key: "slot", label: "日時", html: (b) => esc(b.label) + (b.past ? ' <span class="sub">（終わった）</span>' : "") },
     { key: "name", label: "名前", sortVal: (b) => b.name || b.email, html: (b) => `<div class="c-name">${esc(b.name || b.email)}</div><div class="sub">${esc(b.email)}</div>` },
-    { key: "topic", label: "相談したいこと", nosort: true, cls: "c-src", html: (b) => `<span class="sub">${esc(b.topic || "（未記入）")}</span>` },
+    { key: "topic", label: "相談したいこと・答え", nosort: true, cls: "c-src", html: (b) => (b.answers && b.answers.length)
+      ? b.answers.filter((x) => x.value).map((x) => `<div class="sub"><b>${esc(x.label)}</b>：${esc(x.value.length > 80 ? x.value.slice(0, 80) + "…" : x.value)}</div>`).join("") || '<span class="sub">（未記入）</span>'
+      : `<span class="sub">${esc(b.topic || "（未記入）")}</span>` },
   ], r.bookings, (b) => { openView("people"); detail(b.person_id); }, "まだ予約はありません。ページの予約の枠から予約した人がここに並びます");
   $("bn").addEventListener("submit", async (ev) => {
     ev.preventDefault();
@@ -1162,12 +1164,61 @@ function bookingTypeForm(t) {
       <div><label for="bt-zoom">参加の URL（Zoom）</label><input id="bt-zoom" type="url" inputmode="url" maxlength="500" placeholder="https://zoom.us/j/..." value="${esc(t ? t.zoom_url : "")}"></div>
       <div><label for="bt-thanks">サンクスページ（予約のあとに移るページ。公開中のときだけ移る）</label><select id="bt-thanks" class="inline"><option value="">（移さない・枠の中に受付の文を出す）</option>${thanksOpts}</select></div>
       ${t ? "" : `<div><label for="bt-camp">シナリオ</label><select id="bt-camp" class="inline"><option value="">（あとで決める）</option>${liveCamps().map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select></div>`}
+      ${btWhoHtml(t)}
       <label class="check"><input type="checkbox" id="bt-active" ${!t || t.active ? "checked" : ""}> <span>受け付ける（外すと枠に「受け付けていません」と出る）</span></label>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn small" type="submit">${t ? "保存" : "作る"}</button><span class="note" id="bt-status"></span></div>
       ${t ? "" : '<p class="note" style="margin:0">作ると、受付のメールと前日の知らせ（1 日前）の文が入ります。あとで直せます。</p>'}
     </form>`;
 }
+// 2026-11-05：誰が予約できるか・聞くこと・予約のあとに書く先（生徒にも生徒以外にも使える形）
+const BT_ENT_KEYS = ["shiarabo_basic", "shiarabo_pilot", "shiarabo_next_premium", "shiarabo_next_standard", "shiarabo_trial", "shiarabo_monitor", "note_membership", "guest"];
+function btQRow(q, i) {
+  return `<div class="bt-q card" data-qi="${i}" style="padding:10px 12px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">
+      <div style="flex:1 1 220px"><label for="btq-l-${i}">問い ${i + 1}</label><input id="btq-l-${i}" data-f="label" type="text" maxlength="80" value="${esc(q.label || "")}"></div>
+      <div><label for="btq-k-${i}">答えの欄</label><select id="btq-k-${i}" data-f="kind" class="inline"><option value="textarea"${q.kind !== "text" ? " selected" : ""}>何行も書く</option><option value="text"${q.kind === "text" ? " selected" : ""}>1 行</option></select></div>
+      <label class="check" style="margin-bottom:10px"><input type="checkbox" data-f="required"${q.required ? " checked" : ""}> <span>必須</span></label>
+      <div style="display:flex;gap:4px;margin-bottom:6px"><button type="button" class="btn ghost small" data-qmove="-1" aria-label="問い ${i + 1} を上へ">▲</button><button type="button" class="btn ghost small" data-qmove="1" aria-label="問い ${i + 1} を下へ">▼</button><button type="button" class="btn ghost small" data-qdel aria-label="問い ${i + 1} を外す">外す</button></div>
+    </div>
+    <div><label for="btq-h-${i}">はじめから入れておく文（書き方の見本・空でよい）</label><textarea id="btq-h-${i}" data-f="hint" rows="2" maxlength="1000">${esc(q.hint || "")}</textarea></div></div>`;
+}
+function btWhoHtml(t) {
+  const aud = t ? t.audience || "public" : "public", ents = new Set(t ? t.entitlements || [] : []), qs = t ? t.questions || [] : [];
+  return `<fieldset class="stack" style="border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:0">
+      <legend class="note" style="padding:0 6px">誰が予約できるか</legend>
+      <label class="check"><input type="radio" name="bt-aud" value="public"${aud === "public" ? " checked" : ""}> <span>だれでも（ページに置く・名前とメールで予約）</span></label>
+      <label class="check"><input type="radio" name="bt-aud" value="member"${aud === "member" ? " checked" : ""}> <span>会員だけ（マイページの「予約」から・ログインして予約）</span></label>
+      <div id="bt-ents" class="${aud === "member" ? "" : "hidden"}"><div class="note" style="margin-bottom:6px">予約できる権利（どれか 1 つを持つ人）</div><div style="display:flex;gap:10px;flex-wrap:wrap">${BT_ENT_KEYS.map((k) => `<label class="check"><input type="checkbox" data-ent="${k}"${ents.has(k) ? " checked" : ""}> <span>${esc(KEY_LABEL[k] || k)}</span></label>`).join("")}</div>
+        <label class="check" style="margin-top:8px"><input type="checkbox" id="bt-shr"${t && (t.after_actions || []).includes("shr_next_mtg") ? " checked" : ""}> <span>予約したら、しあらぼ管理のその生徒の「次の面談」に日付を入れる</span></label></div>
+    </fieldset>
+    <fieldset class="stack" style="border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:0">
+      <legend class="note" style="padding:0 6px">予約のときに聞くこと（12 問まで）</legend>
+      <p class="note" style="margin:0">聞くことが無いときは「相談したいこと」の 1 欄だけが出ます。答えは予約の一覧・やり取り・受付のメール（{{answers}}）で見られます。</p>
+      <div id="bt-qs" class="stack">${qs.map(btQRow).join("")}</div>
+      <div><button type="button" class="btn ghost small" id="bt-qadd">問いを足す</button></div>
+    </fieldset>`;
+}
+function btReadQs() {
+  return [...document.querySelectorAll("#bt-qs .bt-q")].map((r) => ({ label: r.querySelector('[data-f="label"]').value.trim(), kind: r.querySelector('[data-f="kind"]').value, required: r.querySelector('[data-f="required"]').checked, hint: r.querySelector('[data-f="hint"]').value }));
+}
+function btDrawQs(qs, focusIdx) {
+  $("bt-qs").innerHTML = qs.map(btQRow).join("");
+  if (focusIdx != null) { const f = document.querySelector(`#bt-qs [data-qi="${focusIdx}"] [data-f="label"]`); if (f) f.focus(); }
+}
+function wireBtWho() {
+  document.querySelectorAll('[name="bt-aud"]').forEach((x) => x.addEventListener("change", () => $("bt-ents").classList.toggle("hidden", !document.querySelector('[name="bt-aud"][value="member"]').checked)));
+  $("bt-qadd").addEventListener("click", () => { const qs = btReadQs(); if (qs.length >= 12) { $("bt-status").textContent = "問いは 12 問までです"; return; } qs.push({ label: "", kind: "textarea" }); btDrawQs(qs, qs.length - 1); });
+  $("bt-qs").addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    const i = Number(b.closest(".bt-q").dataset.qi), qs = btReadQs();
+    if (b.hasAttribute("data-qdel")) { qs.splice(i, 1); btDrawQs(qs, Math.min(i, qs.length - 1) >= 0 ? Math.min(i, qs.length - 1) : null); if (!qs.length) $("bt-qadd").focus(); return; }
+    const j = i + Number(b.dataset.qmove); if (j < 0 || j >= qs.length) return;
+    [qs[i], qs[j]] = [qs[j], qs[i]]; btDrawQs(qs);
+    const nb = document.querySelector(`#bt-qs [data-qi="${j}"] [data-qmove="${b.dataset.qmove}"]`); if (nb) nb.focus();
+  });
+}
 function wireBookingTypeForm(t) {
+  wireBtWho();
   $("bt").addEventListener("submit", async (ev) => {
     ev.preventDefault();
     const body = {
@@ -1175,7 +1226,12 @@ function wireBookingTypeForm(t) {
       days_ahead: Number($("bt-days").value || 14), min_notice_hours: Number($("bt-notice").value || 0),
       weekdays: [...document.querySelectorAll("#bt [data-wd]:checked")].map((x) => Number(x.dataset.wd)), times: $("bt-times").value.trim(),
       avoid_calendar: $("bt-avoid").checked, zoom_url: $("bt-zoom").value.trim(), thanks_page_slug: $("bt-thanks").value, active: $("bt-active").checked,
+      audience: document.querySelector('[name="bt-aud"]:checked').value,
+      entitlements: [...document.querySelectorAll("#bt [data-ent]:checked")].map((x) => x.dataset.ent),
+      questions: btReadQs().filter((q) => q.label),
+      after_actions: $("bt-shr").checked && document.querySelector('[name="bt-aud"]:checked').value === "member" ? ["shr_next_mtg"] : [],
     };
+    if (body.audience === "member" && !body.entitlements.length) { $("bt-status").textContent = "会員だけのときは、予約できる権利を 1 つ以上選んでください"; document.querySelector("#bt [data-ent]").focus(); return; }
     if (t) body.id = t.id; else if ($("bt-camp") && $("bt-camp").value) body.campaign_id = $("bt-camp").value;
     const r = await api("/api/admin/booking-types", { method: "POST", token, body });
     if (!r.ok) { $("bt-status").textContent = BT_WHY[r.error] || "保存できませんでした（" + (r.error || r.status) + "）"; return; }

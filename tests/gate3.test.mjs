@@ -55,8 +55,6 @@ const GATED = [
   ["POST", "/api/room/read", {}],
   ["POST", "/api/room/images", {}],
   ["GET", "/api/room/image?key=x"],
-  ["POST", "/api/booking", {}],
-  ["POST", "/api/booking/cancel", {}],
   ["POST", "/api/seminars/s1/register", {}],
 ];
 
@@ -75,6 +73,16 @@ test("ご契約だけの人：GET /api/me は access contract で教材も部屋
   const j = await (await call("/api/me", "con")).json();
   assert.equal(j.access, "contract");
   assert.ok(!j.lessons || j.lessons.length === 0);
+});
+
+// 2026-11-05：個別相談の予約は、マイページの関門ではなく「予約の種類ごとの権利」で決める（ご契約だけの画面の生徒も、権利が合えば予約できる）
+test("予約できる種類の権利が無い人：予約・取り消しはできない（ログインしていなければ 401）", async () => {
+  for (const p of ["/api/booking", "/api/booking/cancel"]) {
+    const r = await call(p, "con", { method: "POST", body: { slug: "shiarabo-consult", slot: "2030-01-01T01:00:00.000Z" } });
+    assert.equal(r.status, 404, p);
+    assert.equal((await r.json()).ok, false, p);
+    assert.equal((await call(p, "nobody", { method: "POST", body: {} })).status, 401, p);
+  }
 });
 
 test("ご契約だけの人：GET /api/booking は「準備中」だけ", async () => {

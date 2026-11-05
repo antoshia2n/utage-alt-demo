@@ -8,6 +8,10 @@
 //   を外す。カレンダーは便 8f で入れた iCal の非公開 URL（既定と UTAGE の 2 つ）を読む（today.js の busyBetween）。
 // 予約の窓口はページの中の印 data-lab-part="booking:住所の名前"（lp.shia2n.jp）。ログイン不要で、名前とメールで予約する。
 // 受付のメールはすぐ、前日の知らせは定時の処理（毎時 7 分）で送る。どちらも手続きのメール（kind=booking_notice）。
+// 2026-11-05（Naoki OK）：生徒にも生徒以外にも使える形にした。種類ごとに
+//   audience（public＝ページに置く／member＝マイページで会員が予約）・entitlements（member で予約できる権利）・
+//   questions（予約のときに聞く質問）・after_actions（予約のあとに書く先。shr_next_mtg＝しあらぼ管理の「次の面談」）を持つ。
+//   答えは出来事 consult_booked の answers に [{label, value}] で積む（質問を直しても、その時の問いが残る）。
 
 import { fmtJst, parseStart } from "./seminars.js";
 import { eventActor } from "./connect.js";
@@ -21,6 +25,54 @@ const JST = 9 * 3600e3;
 const DAY = 864e5;
 const WINDOW_MS = 3 * 3600e3;
 const now = () => new Date().toISOString();
+const KEY_RE = /^[a-z0-9][a-z0-9_-]{0,40}$/;
+export const AUDIENCES = ["public", "member"];
+export const AFTER_ACTIONS = ["shr_next_mtg"];
+const Q_KINDS = ["text", "textarea"];
+
+// 質問の並びを確かめて整える。合わなければ { error }
+export function cleanQuestions(list) {
+  if (list == null) return { questions: [] };
+  if (!Array.isArray(list) || list.length > 12) return { error: "bad_questions", note: "質問は 12 問まで" };
+  const out = [], keys = new Set();
+  for (const [i, q] of list.entries()) {
+    const label = String((q && q.label) || "").trim();
+    if (!label || label.length > 80) return { error: "bad_question_label", note: `${i + 1} 問目の問い（1〜80 字）` };
+    const key = String((q && q.key) || `q${i + 1}`).trim().toLowerCase();
+    if (!KEY_RE.test(key) || keys.has(key)) return { error: "bad_question_key", note: `${i + 1} 問目の key` };
+    keys.add(key);
+    const kind = Q_KINDS.includes(q.kind) ? q.kind : "textarea";
+    out.push({ key, label, kind, required: !!q.required, hint: String(q.hint || "").slice(0, 1000) });
+  }
+  return { questions: out };
+}
+
+// 答えを確かめる。返すのは [{key,label,value}]（問いの並び順）。足りなければ { error, key }
+export function cleanAnswers(questions, answers) {
+  const a = answers && typeof answers === "object" ? answers : {};
+  const out = [];
+  for (const q of questions || []) {
+    const v = String(a[q.key] ?? "").trim().slice(0, q.kind === "text" ? 200 : 4000);
+    if (q.required && !v) return { error: "answer_required", key: q.key, label: q.label };
+    out.push({ key: q.key, label: q.label, value: v });
+  }
+  return { answers: out };
+}
+
+// 会員の予約：その人の権利で予約できる種類か
+// 管理者は止めている種類も見られる（受け付ける前に、マイページでの見え方を確かめるため）
+export function canBook(type, ent, admin) {
+  if (!type || type.audience !== "member" || type.archived_at) return false;
+  if (admin) return true;
+  if (!type.active) return false;
+  const g = new Set((ent && ent.grants) || []);
+  return (type.entitlements || []).some((k) => g.has(k));
+}
+
+// メールの差し込み {{answers}}：問いと答えを並べる
+export function answersText(answers) {
+  return (answers || []).filter((x) => x.value).map((x) => `■ ${x.label}\n${x.value}`).join("\n\n") || "（なし）";
+}
 
 export const DEFAULT_TEXTS = {
   confirm_subject: "【ご予約を受け付けました】{{title}}",
@@ -72,13 +124,13 @@ export function render(text, type, b, person) {
   const map = {
     name: (person && person.name) || "", email: (person && person.email) || "",
     title: type.title, date: fmtJst(b.slot), minutes: String(b.minutes || type.minutes),
-    zoom: type.zoom_url || "（追ってお知らせします）", topic: b.topic || "（未記入）",
+    zoom: type.zoom_url || "（追ってお知らせします）", topic: b.topic || "（未記入）", answers: answersText(b.answers),
   };
   return String(text || "").replace(/\{\{(\w+)\}\}/g, (all, k) => (k in map ? map[k] : all));
 }
 
 export function makeBooking(h) {
-  const { db, addEvent, logInbound, bin3, registerPerson, busyBetween, pagesOrigin } = h;
+  const { db, addEvent, logInbound, bin3, registerPerson, busyBetween, pagesOrigin, afterBooked } = h;
 
   async function typeById(env, id) {
     if (!UUID_RE.test(String(id || ""))) return null;
@@ -100,7 +152,7 @@ export function makeBooking(h) {
       const p = e.payload || {};
       if (!p.slot) continue;
       const k = e.customer_id + "|" + p.slot;
-      if (e.type === "consult_booked") map.set(k, { customer_id: e.customer_id, slot: p.slot, type_id: p.type_id || null, minutes: p.minutes || 30, topic: p.topic || "", at: e.occurred_at });
+      if (e.type === "consult_booked") map.set(k, { customer_id: e.customer_id, slot: p.slot, type_id: p.type_id || null, type_title: p.type_title || "", minutes: p.minutes || 30, topic: p.topic || "", answers: Array.isArray(p.answers) ? p.answers : [], at: e.occurred_at });
       else map.delete(k);
     }
     return [...map.values()];
@@ -111,7 +163,8 @@ export function makeBooking(h) {
     id: t.id, slug: t.slug, title: t.title, minutes: t.minutes, weekdays: t.weekdays, times: t.times, days_ahead: t.days_ahead,
     min_notice_hours: t.min_notice_hours, zoom_url: t.zoom_url, thanks_page_slug: t.thanks_page_slug, avoid_calendar: t.avoid_calendar,
     remind_minutes: t.remind_minutes, confirm_subject: t.confirm_subject, confirm_body: t.confirm_body, remind_subject: t.remind_subject, remind_body: t.remind_body,
-    active: t.active, archived: !!t.archived_at, embed: `<div data-lab-part="booking:${t.slug}"></div>`, ...extra,
+    active: t.active, archived: !!t.archived_at, audience: t.audience || "public", entitlements: t.entitlements || [], questions: t.questions || [], after_actions: t.after_actions || [],
+    embed: (t.audience || "public") === "public" ? `<div data-lab-part="booking:${t.slug}"></div>` : "", ...extra,
   });
 
   async function list(env, { include_archived } = {}) {
@@ -131,8 +184,8 @@ export function makeBooking(h) {
     const t0 = Date.now();
     return {
       ok: true, found: true, type: view(env, t),
-      bookings: bs.map((b) => ({ person_id: b.customer_id, name: (people.get(b.customer_id) || {}).name || "", email: (people.get(b.customer_id) || {}).email || "", slot: b.slot, label: fmtJst(b.slot), topic: b.topic, past: Date.parse(b.slot) < t0 })),
-      placeholders: ["{{name}}", "{{title}}", "{{date}}", "{{minutes}}", "{{zoom}}", "{{topic}}"],
+      bookings: bs.map((b) => ({ person_id: b.customer_id, name: (people.get(b.customer_id) || {}).name || "", email: (people.get(b.customer_id) || {}).email || "", slot: b.slot, label: fmtJst(b.slot), topic: b.topic, answers: b.answers, past: Date.parse(b.slot) < t0 })),
+      placeholders: ["{{name}}", "{{title}}", "{{date}}", "{{minutes}}", "{{zoom}}", "{{topic}}", "{{answers}}"],
     };
   }
 
@@ -203,6 +256,25 @@ export function makeBooking(h) {
       row[k] = v;
     }
     if ("avoid_calendar" in args) row.avoid_calendar = !!args.avoid_calendar;
+    if ("audience" in args) {
+      if (!AUDIENCES.includes(args.audience)) return { ok: false, error: "bad_audience", note: "public（ページに置く）か member（マイページ）" };
+      row.audience = args.audience;
+    }
+    if ("entitlements" in args) {
+      const arr = (Array.isArray(args.entitlements) ? args.entitlements : String(args.entitlements || "").split(",")).map((x) => String(x).trim()).filter(Boolean);
+      if (arr.some((k) => !/^[a-z0-9_]{2,60}$/.test(k))) return { ok: false, error: "bad_entitlements" };
+      row.entitlements = [...new Set(arr)];
+    }
+    if ("questions" in args) {
+      const r = cleanQuestions(args.questions);
+      if (r.error) return { ok: false, error: r.error, note: r.note };
+      row.questions = r.questions;
+    }
+    if ("after_actions" in args) {
+      const arr = (Array.isArray(args.after_actions) ? args.after_actions : []).map(String);
+      if (arr.some((k) => !AFTER_ACTIONS.includes(k))) return { ok: false, error: "bad_after_actions", note: "使えるのは shr_next_mtg（しあらぼ管理の次の面談）" };
+      row.after_actions = [...new Set(arr)];
+    }
     if ("active" in args) row.active = !!args.active;
     if ("archived" in args) row.archived_at = args.archived ? now() : null;
     let out;
@@ -232,9 +304,10 @@ export function makeBooking(h) {
 
   async function publicSlots(env, slug) {
     const t = await typeBySlug(env, slug);
-    if (!t || !t.active || t.archived_at) return { ok: false, error: "not_found" };
+    if (!t || !t.active || t.archived_at || (t.audience || "public") !== "public") return { ok: false, error: "not_found" };
     const r = await slots(env, t);
-    return { ok: true, type: { title: t.title, minutes: t.minutes }, slots: r.slots.map((s) => ({ slot: s, label: fmtJst(s), day: fmtJst(s).split("（")[0] })) };
+    return { ok: true, type: { title: t.title, minutes: t.minutes }, questions: (t.questions || []).map(({ key, label, kind, required, hint }) => ({ key, label, kind, required, hint })),
+      slots: r.slots.map((s) => ({ slot: s, label: fmtJst(s), day: fmtJst(s).split("（")[0] })) };
   }
 
   async function getSlots(env, { type_id, slug } = {}) {
@@ -255,7 +328,7 @@ export function makeBooking(h) {
   // 予約する（lp の住所から。ログイン不要）
   async function book(env, slug, body = {}) {
     const t = await typeBySlug(env, slug);
-    if (!t || !t.active || t.archived_at) return { ok: false, error: "not_found" };
+    if (!t || !t.active || t.archived_at || (t.audience || "public") !== "public") return { ok: false, error: "not_found" };
     const slot = String(body.slot || "");
     const iso = parseStart(slot);
     if (!iso) return { ok: false, error: "bad_slot" };
@@ -263,11 +336,13 @@ export function makeBooking(h) {
     const free = (await slots(env, t)).slots;
     if (!free.includes(iso)) return { ok: false, error: "slot_taken" };
     const topic = String(body.topic || "").trim().slice(0, 1000);
+    const ans = cleanAnswers(t.questions, body.answers);
+    if (ans.error) return { ok: false, error: ans.error, key: ans.key, label: ans.label };
     const reg = await registerPerson(env, { email: body.email, name: body.name, source: body.source, consent: body.consent, via: "booking:" + t.slug, route: body.route, page_id: body.page_id });
     if (!reg.ok) return reg;
     const mine = (await bookings(env)).filter((b) => b.customer_id === reg.id && b.type_id === t.id && Date.parse(b.slot) > Date.now());
     if (mine.length) return { ok: false, error: "already_booked", slot: mine[0].slot, label: fmtJst(mine[0].slot) };
-    const b = { slot: iso, type_id: t.id, type_title: t.title, minutes: t.minutes, topic };
+    const b = { slot: iso, type_id: t.id, type_title: t.title, minutes: t.minutes, topic, ...(ans.answers.length ? { answers: ans.answers } : {}) };
     await addEvent(env, reg.id, "consult_booked", b, "site");
     const [person] = await db(env, "GET", `customers?select=id,name,email&id=eq.${reg.id}`);
     const mail = person ? await sendNotice(env, t, b, person, "confirm", "site") : "failed";
@@ -301,9 +376,56 @@ export function makeBooking(h) {
     return out;
   }
 
+  // ---- 会員の予約（マイページ・ログインした人）----
+  // その人が予約できる種類と空き時間・自分のこれからの予約
+  async function forMember(env, customer, ent, admin, at = Date.now()) {
+    const types = (await db(env, "GET", "b_booking_types?select=*&audience=eq.member&archived_at=is.null&order=created_at.asc")).filter((t) => canBook(t, ent, admin));
+    const mine = (await bookings(env)).filter((b) => b.customer_id === customer.id && Date.parse(b.slot) > at).sort((a, b) => a.slot.localeCompare(b.slot));
+    const out = [];
+    for (const t of types) {
+      const r = await slots(env, t, at);
+      out.push({ slug: t.slug, title: t.title, minutes: t.minutes, ...(t.active ? {} : { paused: true }), questions: (t.questions || []).map(({ key, label, kind, required, hint }) => ({ key, label, kind, required, hint })),
+        booked: mine.some((b) => b.type_id === t.id), slots: r.slots.map((s) => ({ slot: s, label: fmtJst(s), day: fmtJst(s).split("（")[0] })) });
+    }
+    return { ok: true, ready: out.length > 0, types: out,
+      mine: mine.map((b) => ({ slot: b.slot, label: fmtJst(b.slot), title: b.type_title || (types.find((t) => t.id === b.type_id) || {}).title || "個別相談", minutes: b.minutes, answers: b.answers })) };
+  }
+
+  async function memberBook(env, customer, ent, admin, body = {}) {
+    const t = await typeBySlug(env, body.slug);
+    if (!canBook(t, ent, admin)) return { ok: false, error: "not_found" };
+    const iso = parseStart(String(body.slot || ""));
+    if (!iso) return { ok: false, error: "bad_slot" };
+    const ans = cleanAnswers(t.questions, body.answers);
+    if (ans.error) return { ok: false, error: ans.error, key: ans.key, label: ans.label };
+    if (!(await slots(env, t)).slots.includes(iso)) return { ok: false, error: "slot_taken" };
+    const mine = (await bookings(env)).filter((b) => b.customer_id === customer.id && b.type_id === t.id && Date.parse(b.slot) > Date.now());
+    if (mine.length) return { ok: false, error: "already_booked", slot: mine[0].slot, label: fmtJst(mine[0].slot) };
+    const b = { slot: iso, type_id: t.id, type_title: t.title, minutes: t.minutes, topic: "", answers: ans.answers };
+    await addEvent(env, customer.id, "consult_booked", b, "site");
+    const mail = await sendNotice(env, t, b, customer, "confirm", "site").catch(() => "failed");
+    let after = null;
+    if (afterBooked && (t.after_actions || []).length) after = await afterBooked(env, customer.id, t.after_actions, { booked: iso }).catch((e) => ({ error: String(e.message || e) }));
+    await logInbound(env, "booking", { slug: t.slug, slot: iso, member: true }, { ok: true, mail, after }, 200);
+    return { ok: true, slot: iso, label: fmtJst(iso), mail };
+  }
+
+  async function memberCancel(env, customer, body = {}) {
+    const iso = parseStart(String(body.slot || ""));
+    const b = iso && (await bookings(env)).find((x) => x.customer_id === customer.id && x.slot === iso && Date.parse(x.slot) > Date.now());
+    if (!b) return { ok: false, error: "not_found" };
+    const t = b.type_id ? await typeById(env, b.type_id) : null;
+    if (!t || t.audience !== "member") return { ok: false, error: "not_found" };
+    await addEvent(env, customer.id, "consult_canceled", { slot: b.slot, type_id: t.id, type_title: t.title }, "site");
+    let after = null;
+    if (afterBooked && (t.after_actions || []).length) after = await afterBooked(env, customer.id, t.after_actions, { canceled: b.slot }).catch((e) => ({ error: String(e.message || e) }));
+    await logInbound(env, "booking_cancel", { slug: t.slug, slot: b.slot }, { ok: true, after }, 200);
+    return { ok: true };
+  }
+
   async function forPlan(env) {
     return await db(env, "GET", "b_booking_types?select=id,slug,title,active,thanks_page_slug&archived_at=is.null&order=created_at.asc").catch(() => []);
   }
 
-  return { list, get, set, getSlots, publicSlots, book, run, forPlan };
+  return { list, get, set, getSlots, publicSlots, book, run, forPlan, forMember, memberBook, memberCancel };
 }

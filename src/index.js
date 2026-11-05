@@ -205,7 +205,27 @@ const mypage = makeMypage({ db, pages, learn, names: (env) => students.load(env)
 const news = makeNews({ db });
 const seminars = makeSeminars({ db, addEvent, logInbound, bin3, pagesOrigin: (env) => pages.pagesOrigin(env) });
 forms.hooks.onSubmitted = (env, cid, slug) => seminars.onForm(env, cid, slug);
-const booking = makeBooking({ db, addEvent, logInbound, bin3, registerPerson: (env, a) => registerPerson(env, a), busyBetween: (env, a, b) => today.busyBetween(env, a, b), pagesOrigin: (env) => pages.pagesOrigin(env) });
+const booking = makeBooking({ db, addEvent, logInbound, bin3, registerPerson: (env, a) => registerPerson(env, a), busyBetween: (env, a, b) => today.busyBetween(env, a, b), pagesOrigin: (env) => pages.pagesOrigin(env), afterBooked: (env, id, acts, ev) => afterBooked(env, id, acts, ev) });
+
+// 予約のあとに書く先（2026-11-05 Naoki OK）：shr_next_mtg＝しあらぼ管理のその生徒の「次の面談」（日本時間の日付）。
+//   予約したらその日を入れ、取り消したら、その日が入っているときだけ空にする。しあらぼ管理の生徒に結ばれていない人は何もしない
+export function jstDate(iso) { return new Date(Date.parse(iso) + 9 * 3600e3).toISOString().slice(0, 10); }
+async function afterBooked(env, customerId, acts, ev) {
+  if (!(acts || []).includes("shr_next_mtg")) return null;
+  const [a] = await rawDb(env, "GET", `member_alias?select=value&member_id=eq.${customerId}&kind=eq.shr_student_id&limit=1`);
+  if (!a) return { shr_next_mtg: "not_linked" };
+  const sid = encodeURIComponent(a.value);
+  if (ev.booked) {
+    await rawDb(env, "PATCH", `shr_students?id=eq.${sid}`, { next_mtg: jstDate(ev.booked), updated_at: new Date().toISOString() }, "return=minimal");
+    return { shr_next_mtg: "set" };
+  }
+  if (ev.canceled) {
+    const day = jstDate(ev.canceled);
+    await rawDb(env, "PATCH", `shr_students?id=eq.${sid}&next_mtg=eq.${day}`, { next_mtg: "", updated_at: new Date().toISOString() }, "return=minimal");
+    return { shr_next_mtg: "cleared_if_same" };
+  }
+  return null;
+}
 // マーケくん便 4：データのフォルダ（中身は src/folders.js）。シナリオ（旧企画）の一覧と同じ 1 回で画面へ返す
 const folders = makeFolders({ db, logInbound });
 // マーケくん便 6：しあらぼ管理の呼び名を顧客管理に出す（中身は src/students.js・読むだけ）
@@ -813,14 +833,6 @@ async function studentAccess(env, customer, email) {
 }
 // 便 2（関門 5）：右上の「アプリ一覧」に出す、この人が開けるアプリの名前（権利 × 開くものの表 member_access）。共通の外枠の門番の答えと同じ形
 // 生徒のホームの版（2026-11-04）。権利の名前は門番の member_entitlement のキー
-// 相談の予約の行き先（2026-11-05 Naoki OK）：いま生徒が使っている UTAGE の「しあらぼ月次アンケート＋個別相談予約フォーム」。
-// 受け先を変えないので、しあらぼ管理の最終面談日（UTAGE の予定を読む定時の処理）もそのまま入る。マーケくんで予約を受けるのは UTAGE をやめる時期の別の便
-export const CONSULT_BOOKING_URL = "https://utage-system.com/event/eSxP0FgLWHKP/register";
-export function consultBookingUrl(admin, ent) {
-  if (admin) return CONSULT_BOOKING_URL;
-  const g = (ent && ent.grants) || [];
-  return g.some((k) => /^shiarabo_(basic|pilot|next_|monitor)/.test(k)) ? CONSULT_BOOKING_URL : null;
-}
 export function homeTier(admin, ent) {
   if (admin) return "lab";
   const g = new Set((ent && ent.grants) || []);
@@ -1021,7 +1033,9 @@ async function handleApi(request, env, url) {
     if (sa.access !== "full") {
       return json({ ok: true, access: "contract", member_waiting: memberWaiting(sa.ent), admin: false, apps: [], me: { name: customer.name, email: customer.email, source: customer.source },
         lessons: [], announcements: [], viewed: [], library: { source: "manabu", member: false, lesson_count: 0, programs: [] },
-        room_unread: 0, entitlement: sa.ent, community: null, community_url: null, referral: null });
+        room_unread: 0, entitlement: sa.ent, community: null, community_url: null, referral: null,
+        // 2026-11-05：個別相談の予約は、マイページを開く前の生徒（ご契約だけの画面）でも、種類の権利が合えば出す
+        booking_ready: await booking.forMember(env, customer, sa.ent, sa.admin).then((x) => x.ready).catch(() => false) });
     }
     const lib = await learn.lessonsFor(env, customer, v.email);
     const announcements = await db(env, "GET", newsQuery(env, 20)); // 便 25：下書き・取り下げ・まだ日時の来ていないものは出さない
@@ -1050,10 +1064,8 @@ async function handleApi(request, env, url) {
       community_url: community.url,
       // 便 8g-2：自分の紹介のリンクと数（紹介した人の名前は出さない）
       referral: await refer.mine(env, customer, url.origin),
-      // ムダ 2（2026-10-30）：予約は準備中。本物の枠ができたら true にすると左のメニューに出る
-      booking_ready: false,
-      // 相談の予約（2026-11-05 Naoki OK）：しあらぼの生徒・モニターと管理者だけ、UTAGE の予約ページへ飛ぶ。ゲスト・メンシプだけの人には出さない
-      booking_url: consultBookingUrl(sa.admin, ent),
+      // 予約（2026-11-05）：その人の権利で予約できる個別相談の種類（audience=member）が 1 つでもあれば、左のメニューに出る
+      booking_ready: await booking.forMember(env, customer, ent, sa.admin).then((x) => x.ready).catch(() => false),
       // 目標タブ（2026-10-30）：しあらぼ管理の生徒に結ばれた人だけ（ゲストには出ない）
       goals_ready: await goals.isStudent(env, customer.id).catch(() => false),
     });
@@ -1140,8 +1152,18 @@ async function handleApi(request, env, url) {
     if (v.error) return json({ ok: false, error: v.error }, 401);
     const customer = await customerByEmail(env, v.email);
     if (!customer) return json({ ok: false, error: "not_registered" }, 404);
-    // 個別相談の予約とセミナーの申し込みは準備中（ムダ 10 の 3 段目で架空の枠とセミナーを消した。シアニンにも同じ答え）
-    if (method === "GET" && path === "/api/booking") return json({ ok: true, ready: false, note: "個別相談とセミナーの申し込みは準備中です" });
+    // 2026-11-05：個別相談はマーケくんの予約の種類（audience=member）で受ける。セミナーの申し込みは準備中のまま
+    if (path === "/api/booking" || path === "/api/booking/cancel") {
+      // 予約できるかは種類ごとの権利で決める（マイページを開く前の生徒＝ご契約だけの画面の人も、権利が合えば予約できる）
+      const sa = await studentAccess(env, customer, v.email);
+      if (method === "GET" && path === "/api/booking") {
+        const r = await booking.forMember(env, customer, sa.ent, sa.admin);
+        return json({ ...r, seminars: [], note: r.ready ? "" : "いま予約できる個別相談はありません" });
+      }
+      const body = await request.json().catch(() => ({}));
+      if (method === "POST" && path === "/api/booking") { const r = await booking.memberBook(env, { id: customer.id, name: customer.name, email: customer.email }, sa.ent, sa.admin, body); return json(r, r.ok ? 200 : r.error === "not_found" ? 404 : 400); }
+      if (method === "POST" && path === "/api/booking/cancel") { const r = await booking.memberCancel(env, { id: customer.id }, body); return json(r, r.ok ? 200 : 404); }
+    }
     return json({ ok: false, error: "not_ready" }, 403);
   }
 
@@ -1985,8 +2007,8 @@ const TOOLS = [
     name: "set_booking_type",
     screen: "deals",
     say: "個別相談の予約の種類を作る・直す",
-    description: "予約の種類を作る・直す。承認が要る道具。作るときは title と slug が要る。ほかに minutes（長さ・既定 30）・weekdays（0＝日〜6＝土の配列・既定 月〜金）・times（例 10:00-12:00,20:00-22:00・日本時間）・days_ahead（何日先まで・既定 14）・min_notice_hours（何時間前まで・既定 12）・zoom_url・thanks_page_slug（予約のあとに移るページ）・avoid_calendar（Google カレンダーの予定を避けるか・既定 true）・remind_minutes（前日の知らせを何分前に・既定 1440・空で送らない）・confirm_subject・confirm_body・remind_subject・remind_body（{{name}}・{{title}}・{{date}}・{{minutes}}・{{zoom}}・{{topic}}）・active・archived・campaign_id（作るときのシナリオ）。id を渡すと直す。ページに埋め込む印は <div data-lab-part=\"booking:slug\"></div>。",
-    inputSchema: { type: "object", properties: { id: { type: "string" }, title: { type: "string" }, slug: { type: "string" }, minutes: { type: "integer" }, weekdays: { type: "array", items: { type: "integer" } }, times: { type: "string" }, days_ahead: { type: "integer" }, min_notice_hours: { type: "integer" }, zoom_url: { type: "string" }, thanks_page_slug: { type: "string" }, avoid_calendar: { type: "boolean" }, remind_minutes: { type: ["integer", "null"] }, confirm_subject: { type: "string" }, confirm_body: { type: "string" }, remind_subject: { type: "string" }, remind_body: { type: "string" }, active: { type: "boolean" }, archived: { type: "boolean" }, campaign_id: { type: "string" } } },
+    description: "予約の種類を作る・直す。承認が要る道具。作るときは title と slug が要る。ほかに minutes（長さ・既定 30）・weekdays（0＝日〜6＝土の配列・既定 月〜金）・times（例 10:00-12:00,20:00-22:00・日本時間）・days_ahead（何日先まで・既定 14）・min_notice_hours（何時間前まで・既定 12）・zoom_url・thanks_page_slug（予約のあとに移るページ）・avoid_calendar（Google カレンダーの予定を避けるか・既定 true）・remind_minutes（前日の知らせを何分前に・既定 1440・空で送らない）・confirm_subject・confirm_body・remind_subject・remind_body（{{name}}・{{title}}・{{date}}・{{minutes}}・{{zoom}}・{{topic}}）・active・archived・campaign_id（作るときのシナリオ）。2026-11-05 から：audience（public＝ページに置く・既定／member＝マイページでログインした会員が予約）・entitlements（member のとき予約できる権利のキーの配列。例 shiarabo_basic）・questions（予約のときに聞く質問の配列 [{key,label,kind:text|textarea,required,hint}]・12 問まで。答えは本文で {{answers}}）・after_actions（予約のあとに書く先。shr_next_mtg＝しあらぼ管理のその生徒の次の面談）。id を渡すと直す。ページに埋め込む印は <div data-lab-part=\"booking:slug\"></div>（public のときだけ）。",
+    inputSchema: { type: "object", properties: { id: { type: "string" }, title: { type: "string" }, slug: { type: "string" }, minutes: { type: "integer" }, weekdays: { type: "array", items: { type: "integer" } }, times: { type: "string" }, days_ahead: { type: "integer" }, min_notice_hours: { type: "integer" }, zoom_url: { type: "string" }, thanks_page_slug: { type: "string" }, avoid_calendar: { type: "boolean" }, remind_minutes: { type: ["integer", "null"] }, confirm_subject: { type: "string" }, confirm_body: { type: "string" }, remind_subject: { type: "string" }, remind_body: { type: "string" }, active: { type: "boolean" }, archived: { type: "boolean" }, campaign_id: { type: "string" }, audience: { type: "string", enum: ["public", "member"] }, entitlements: { type: "array", items: { type: "string" } }, questions: { type: "array", items: { type: "object" } }, after_actions: { type: "array", items: { type: "string" } } } },
   },
   {
     name: "get_seminar",

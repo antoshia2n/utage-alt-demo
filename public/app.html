@@ -109,27 +109,11 @@
     <section id="tab-news" class="stack hidden"></section>
 
     <section id="tab-booking" class="stack hidden">
-      <!-- 相談の予約（2026-11-05）：予約は UTAGE のページで受ける。booking_url があるときはこの 1 枚だけを出す -->
-      <div class="card stack bk-link hidden" id="bk-link">
-        <h1 class="lt" style="margin:0">相談を予約する</h1>
-        <p style="margin:0">シアニンとの個別相談の日時を選んで申し込めます。申し込みでは、月次アンケート（先月の売上と振り返り・今月の目標・相談したいこと）も書きます。</p>
-        <div><a class="btn" id="bk-link-go" href="#" target="_blank" rel="noopener">予約のページを開く ↗</a></div>
-        <p class="note" style="margin:0">予約のページは別のタブで開きます。</p>
-      </div>
-      <div class="card stack" id="bk-own">
-        <h3>個別相談を予約する（30 分）</h3>
-        <div id="bk-mine"></div>
-        <div id="bk-slots" class="slots"></div>
-        <div id="bk-form" class="hidden stack">
-          <div class="note" id="bk-picked"></div>
-          <label for="bk-topic" class="sr">相談したいこと</label>
-          <textarea id="bk-topic" rows="3" placeholder="相談したいこと（任意）" maxlength="1000"></textarea>
-          <button class="btn" id="bk-go" type="button">この日時で予約する</button>
-        </div>
-        <div class="note" id="bk-status"></div>
-      </div>
-      <h3 style="margin:8px 0 0" id="bk-sem-h">セミナー</h3>
-      <div id="bk-seminars" class="stack"></div>
+      <!-- 個別相談の予約（2026-11-05）：マーケくんの予約の種類（audience=member）のうち、その人の権利で予約できるものを出す -->
+      <h1 class="lt" style="margin:0">個別相談を予約する</h1>
+      <div id="bk-mine" class="stack"></div>
+      <div id="bk-types" class="stack"></div>
+      <div class="note" id="bk-status" aria-live="polite"></div>
     </section>
 
     <!-- 便 R3：自分の契約と、定期を止める -->
