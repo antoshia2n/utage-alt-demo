@@ -392,10 +392,86 @@ svg.gk-ch { width: 100%; height: auto; display: block; color: var(--ink); }
 body.student .bk-line { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--soft); font-size: 14px; color: var(--muted); }
 body.student .bk-line .btn.small { padding: 0 16px; }
 body.student .bk-line a.btn { color: var(--accent-ink); }
-body.student .bk-mine { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-body.student .bk-h { font-size: 20px; font-weight: 700; margin: 0; }
-body.student #tab-booking .req { font-weight: 400; font-size: 12px; color: var(--muted); margin-left: 4px; }
-body.student #tab-booking textarea { width: 100%; box-sizing: border-box; font: inherit; font-size: 14px; line-height: 1.7; border: 1px solid var(--field); border-radius: 10px; padding: 10px 12px; background: var(--surface); color: var(--ink); resize: vertical; }
-body.student #tab-booking input[type=text] { border-color: var(--field); }
-body.student #tab-booking .slot { border-color: var(--field); min-height: 44px; }
-@media (max-width: 860px) { body.student #tab-booking textarea, body.student #tab-booking input[type=text] { font-size: 16px; } }
+/* ---- 個別相談の予約（2026-11-05 デモ v5 に Naoki OK）：Calendly・Cal.com の型。左＝メニューの説明、真ん中＝カレンダー、右＝時間 ---- */
+body.student #tab-booking{display:flex;flex-direction:column;gap:16px}
+body.student #tab-booking.hidden{display:none}
+body.student #tab-booking .bk-title{margin:0}
+body.student #tab-booking .lnk{border:0;background:none;color:var(--accent);font:inherit;font-weight:600;cursor:pointer;min-height:44px;padding:0 10px;border-radius:8px}
+body.student #tab-booking .lnk:hover{background:var(--accent-soft)}
+body.student #tab-booking .bk-mine{display:flex;align-items:center;gap:14px;background:var(--surface);border-radius:18px;padding:14px 16px;flex-wrap:wrap}
+body.student #tab-booking .bk-mine .dt{width:54px;height:58px;border-radius:12px;background:var(--accent-soft);color:var(--accent);display:flex;flex-direction:column;align-items:center;justify-content:center;flex:none}
+body.student #tab-booking .bk-mine .dt small{font-size:12px;font-weight:600}body.student #tab-booking .bk-mine .dt b{font-size:22px;line-height:1}
+body.student #tab-booking .bk-mine .tx{flex:1;min-width:180px}body.student #tab-booking .bk-mine .tx b{display:block;font-size:16px}body.student #tab-booking .bk-mine .tx span{color:var(--muted);font-size:13px}
+body.student #tab-booking .bk-menus{display:flex;gap:8px;flex-wrap:wrap}
+body.student #tab-booking .bk-menus button{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--field);background:var(--surface);color:var(--ink);border-radius:99px;padding:0 16px;min-height:44px;font:inherit;cursor:pointer}
+body.student #tab-booking .bk-menus button[aria-pressed=true]{border-color:var(--accent);background:var(--accent-soft);color:var(--accent);font-weight:700}
+body.student #tab-booking .cdot{width:10px;height:10px;border-radius:99px}
+body.student #tab-booking .booker{display:grid;grid-template-columns:220px minmax(0,1fr) 210px;background:var(--surface);border-radius:20px;overflow:hidden;min-height:480px}
+body.student #tab-booking .booker.form-mode{grid-template-columns:220px minmax(0,1fr)}
+body.student #tab-booking .info{padding:24px;border-right:1px solid var(--line)}
+body.student #tab-booking .host{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+body.student #tab-booking .av{width:40px;height:40px;border-radius:99px;background:linear-gradient(135deg,#5e5ce6,#a78bfa);color:#fff;display:grid;place-items:center;font-weight:700}
+body.student #tab-booking .host span{color:var(--muted);font-size:13px}
+body.student #tab-booking .info h2{font-size:20px;margin:0 0 14px;line-height:1.35}
+body.student #tab-booking .meta{list-style:none;margin:0 0 14px;padding:0;display:grid;gap:10px;color:var(--muted)}
+body.student #tab-booking .meta li{display:flex;gap:8px;align-items:flex-start}
+body.student #tab-booking .meta svg{width:18px;height:18px;flex:none;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;margin-top:1px}
+body.student #tab-booking .meta li.picked{color:var(--ink);font-weight:600}body.student #tab-booking .meta li.moving{font-size:13px}
+body.student #tab-booking .desc{font-size:13px;color:var(--muted);line-height:1.7;margin:0;white-space:pre-wrap}
+body.student #tab-booking .calbox{padding:24px 26px}
+body.student #tab-booking .cal-h{display:flex;align-items:center;gap:6px;margin-bottom:12px}body.student #tab-booking .cal-h b{font-size:17px;flex:1}
+body.student #tab-booking .nav{width:44px;height:44px;border-radius:99px;border:0;background:var(--bg);color:var(--ink);cursor:pointer;font-size:18px}
+body.student #tab-booking .nav:disabled{opacity:.35;cursor:default}
+body.student #tab-booking .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+body.student #tab-booking .cal .wd{text-align:center;font-size:12px;color:var(--muted);padding:2px 0 6px}
+body.student #tab-booking .d{position:relative;aspect-ratio:1/1;min-height:44px;border-radius:99px;border:0;background:transparent;display:grid;place-items:center;font:inherit;font-size:15px;color:var(--muted)}
+body.student #tab-booking .d.open{background:var(--accent-soft);color:var(--accent);font-weight:700;cursor:pointer}
+body.student #tab-booking .d[aria-pressed=true]{background:var(--accent);color:var(--accent-ink)}
+body.student #tab-booking .d.today::after{content:"";position:absolute;bottom:6px;width:4px;height:4px;border-radius:99px;background:currentColor}
+body.student #tab-booking .tz{margin-top:14px;font-size:12px;color:var(--muted)}
+body.student #tab-booking .times{padding:24px 18px 24px 0;display:flex;flex-direction:column}
+body.student #tab-booking .times h3{font-size:15px;margin:0 0 12px}
+body.student #tab-booking .tlist{display:flex;flex-direction:column;gap:8px;overflow:auto;max-height:380px;padding-right:4px}
+body.student #tab-booking .t{min-height:48px;border-radius:10px;border:1px solid var(--accent);background:var(--surface);color:var(--accent);font:inherit;font-weight:600;font-size:15px;cursor:pointer}
+body.student #tab-booking .t small{font-weight:400;font-size:13px}
+body.student #tab-booking .t[aria-pressed=true]{background:var(--accent);color:var(--accent-ink)}
+body.student #tab-booking .pick{margin-top:14px;padding-top:14px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:10px}
+body.student #tab-booking .pk-t{font-size:13px;color:var(--muted)}body.student #tab-booking .pk-t b{display:block;color:var(--ink);font-size:15px}
+body.student #tab-booking .pick .btn{width:100%}body.student #tab-booking .pick.wait .btn{background:var(--bg);color:var(--muted)}
+body.student #tab-booking .err-t{color:#b42318;font-size:13px}
+body.student #tab-booking .formbox{padding:24px 28px;max-width:600px}
+body.student #tab-booking .back{border:0;background:none;color:var(--accent);font:inherit;font-weight:600;cursor:pointer;min-height:44px;padding:0;margin:-8px 0 4px}
+body.student #tab-booking .formbox h3{font-size:20px;margin:0}
+body.student #tab-booking .who{background:var(--bg);border-radius:12px;padding:10px 12px;margin:14px 0 4px;font-size:13px;color:var(--muted)}body.student #tab-booking .who b{color:var(--ink)}
+body.student #tab-booking .f{margin-top:18px}body.student #tab-booking .f label{display:block;font-weight:600;margin-bottom:6px}
+body.student #tab-booking .f .req{font-weight:400;font-size:12px;color:var(--muted);margin-left:6px}
+body.student #tab-booking .f input,body.student #tab-booking .f textarea{width:100%;box-sizing:border-box;font:inherit;font-size:15px;border:1px solid var(--field);border-radius:12px;padding:12px 14px;background:var(--surface);color:var(--ink);line-height:1.7}
+body.student #tab-booking .f textarea{resize:vertical}
+body.student #tab-booking .f.bad input,body.student #tab-booking .f.bad textarea{border-color:#b42318}
+body.student #tab-booking .f-msg{color:#b42318;font-size:13px;margin-top:6px}
+body.student #tab-booking .saved{font-size:12px;color:var(--muted);margin-top:14px}
+body.student #tab-booking .cta{display:flex;gap:12px;margin-top:20px;flex-wrap:wrap}
+body.student #tab-booking .bk-done{background:var(--surface);border-radius:20px;padding:36px 22px;text-align:center;max-width:620px;margin:0 auto;width:100%;box-sizing:border-box}
+body.student #tab-booking .bk-done .ok{width:66px;height:66px;border-radius:99px;background:#e7f6ec;color:#1f7a3d;display:grid;place-items:center;margin:0 auto 14px}
+body.student #tab-booking .bk-done .ok svg{width:32px;height:32px;stroke:currentColor;fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+body.student #tab-booking .bk-done h2{font-size:24px;margin:0 0 6px}body.student #tab-booking .bk-done p{color:var(--muted);margin:0}
+body.student #tab-booking .sum{display:grid;grid-template-columns:auto 1fr;gap:10px 16px;text-align:left;margin:22px auto;max-width:440px;padding:16px 18px;border:1px solid var(--line);border-radius:16px}
+body.student #tab-booking .sum dt{color:var(--muted)}body.student #tab-booking .sum dd{margin:0;font-weight:600}
+body.student #tab-booking .addcal{display:flex;justify-content:center}
+body.student #tab-booking .bk-toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1d1d1f;color:#fff;border-radius:12px;padding:10px 14px;display:flex;gap:14px;align-items:center;z-index:30;font-size:14px}
+body.student #tab-booking .bk-toast.hidden{display:none}
+body.student #tab-booking .bk-toast button{border:0;background:none;color:#a5a4ff;font:inherit;font-weight:700;cursor:pointer;min-height:36px}
+body.student #tab-booking .bk-bar{display:none}
+@media (max-width: 860px) {
+  body.student #tab-booking .booker,body.student #tab-booking .booker.form-mode{grid-template-columns:1fr}
+  body.student #tab-booking .info{border-right:0;border-bottom:1px solid var(--line);padding:18px}
+  body.student #tab-booking .calbox{padding:18px 14px}body.student #tab-booking .times{padding:0 14px 18px}
+  body.student #tab-booking .tlist{display:grid;grid-template-columns:1fr 1fr;max-height:none}
+  body.student #tab-booking .pick{display:none}
+  body.student #tab-booking .formbox{padding:18px 16px}
+  body.student #tab-booking .f input,body.student #tab-booking .f textarea{font-size:16px}
+  body.student #tab-booking .bk-bar:not(.hidden){display:flex;position:fixed;left:0;right:0;bottom:calc(66px + env(safe-area-inset-bottom));z-index:19;gap:10px;align-items:center;padding:10px 16px;background:color-mix(in srgb,var(--surface) 94%,transparent);backdrop-filter:blur(16px);border-top:1px solid var(--line)}
+  body.student #tab-booking .bk-bar span{flex:1;font-size:13px}body.student #tab-booking .bk-bar b{display:block;font-size:15px}
+  body.student #tab-booking .bk-toast{bottom:calc(140px + env(safe-area-inset-bottom))}
+}
+body.student #tab-booking *,body.student #tab-booking *::before,body.student #tab-booking *::after{box-sizing:border-box}

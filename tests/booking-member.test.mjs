@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fakeStore } from "./fake-store.mjs";
-import { makeBooking, parseTimes, candidates, freeSlots, render, cleanQuestions, cleanAnswers, canBook, answersText } from "../src/booking.js";
+import { makeBooking, parseTimes, candidates, freeSlots, render, cleanQuestions, cleanAnswers, canBook, answersText, endLabel } from "../src/booking.js";
 import { jstDate } from "../src/index.js";
 import { parseParts } from "../src/pages.js";
 import { buildParts, buildEdges, partKeyOf, LANES } from "../src/plan.js";
@@ -143,4 +143,52 @@ test("公開の種類にも質問を持たせられる。答えは出来事に�
 test("次の面談の日付は日本時間", () => {
   assert.equal(jstDate("2026-11-10T15:30:00.000Z"), "2026-11-11");
   assert.equal(jstDate("2026-11-10T14:59:00.000Z"), "2026-11-10");
+});
+
+test("個別に許可したユーザーは、会員プランが無くても予約できる", () => {
+  const t = { audience: "member", active: true, entitlements: ["shiarabo_basic"], allowed_members: [stu.id] };
+  assert.equal(canBook(t, { grants: [] }, false, stu.id), true);
+  assert.equal(canBook(t, { grants: [] }, false, "22222222-2222-4222-8222-222222222222"), false);
+});
+
+test("終わりの時刻は日本時間（所要時間ぶん先）", () => {
+  assert.equal(endLabel("2026-11-12T11:00:00.000Z", 30), "20:30");
+  assert.equal(endLabel("2026-11-12T14:30:00.000Z", 120), "01:30");
+});
+
+test("説明・色・個別ユーザーの値の決まり", async () => {
+  const { bk } = setup();
+  assert.equal((await bk.set(env, member({ color: "red" }))).error, "bad_color");
+  assert.equal((await bk.set(env, member({ description: "x".repeat(1001) }))).error, "bad_description");
+  assert.equal((await bk.set(env, member({ allowed_members: ["x"] }))).error, "bad_allowed_members");
+  const r = await bk.set(env, member({ color: "#5E5CE6", description: "月 1 回の面談", allowed_members: [stu.id] }), "mcp");
+  assert.equal(r.type.color, "#5e5ce6");
+  assert.equal(r.type.description, "月 1 回の面談");
+});
+
+test("日時を変更：いまの予約を新しい時刻に入れ替え、終わりの時刻を返す。書く先は新しい日で呼ばれる", async () => {
+  const { st, bk, after } = setup();
+  await bk.set(env, member(), "mcp");
+  const v = await bk.forMember(env, stu, basic, false);
+  const a = v.types[0].slots[0].slot, b2 = v.types[0].slots[5].slot;
+  assert.equal(v.types[0].slots[0].end.length, 5);
+  await bk.memberBook(env, stu, basic, false, { slug: "shiarabo-consult", slot: a, answers: { q1: "@a", q2: "1" } });
+  assert.equal((await bk.memberBook(env, stu, basic, false, { slug: "shiarabo-consult", slot: b2, answers: { q1: "@a", q2: "1" }, from: "2030-01-01T00:00:00.000Z" })).error, "not_found");
+  const r = await bk.memberBook(env, stu, basic, false, { slug: "shiarabo-consult", slot: b2, answers: { q1: "@a", q2: "1" }, from: a });
+  assert.equal(r.ok, true); assert.equal(r.moved, true);
+  const mine = (await bk.forMember(env, stu, basic, false)).mine;
+  assert.deepEqual(mine.map((x) => x.slot), [b2]);
+  assert.equal(mine[0].slug, "shiarabo-consult");
+  assert.deepEqual(after.at(-1).ev, { booked: b2 });
+  assert.ok(st.table("events").some((e) => e.type === "consult_canceled" && e.payload.moved_to === b2));
+});
+
+test("キャンセルは「元に戻す」用に中身を返す", async () => {
+  const { bk } = setup();
+  await bk.set(env, member(), "mcp");
+  const v = await bk.forMember(env, stu, basic, false), slot = v.types[0].slots[0].slot;
+  await bk.memberBook(env, stu, basic, false, { slug: "shiarabo-consult", slot, answers: { q1: "@a", q2: "10 万" } });
+  const c = await bk.memberCancel(env, stu, { slot });
+  assert.deepEqual([c.slug, c.slot, c.answers.q2], ["shiarabo-consult", slot, "10 万"]);
+  assert.equal((await bk.memberBook(env, stu, basic, false, { slug: c.slug, slot: c.slot, answers: c.answers })).ok, true);
 });

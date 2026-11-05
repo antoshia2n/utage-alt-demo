@@ -1451,7 +1451,14 @@ async function handleApi(request, env, url) {
       return json(r, r.ok === false ? 400 : 200);
     }
     // 便 13b：予約の種類（一覧・作る・直す・1 つ）
-    if (path === "/api/admin/booking-types" && method === "GET") return json(await booking.list(env, { include_archived: url.searchParams.get("all") === "1" }));
+    if (path === "/api/admin/booking-types" && method === "GET") {
+      const r = await booking.list(env, { include_archived: url.searchParams.get("all") === "1" });
+      // 公開範囲の画面：会員プランごとの人数（期限の切れていない行）
+      const ents = await rawDb(env, "GET", "member_entitlement?select=key,member_id,expires_at&limit=10000").catch(() => []);
+      const now = Date.now(), ent_counts = {};
+      for (const e of ents) if (!e.expires_at || Date.parse(e.expires_at) > now) (ent_counts[e.key] = ent_counts[e.key] || new Set()).add(e.member_id);
+      return json({ ...r, ent_counts: Object.fromEntries(Object.entries(ent_counts).map(([k, v]) => [k, v.size])) });
+    }
     if (path === "/api/admin/booking-types" && method === "POST") {
       const r = await booking.set(env, await request.json().catch(() => ({})), a.email);
       return json(r, r.ok ? 200 : 400);
@@ -2007,8 +2014,8 @@ const TOOLS = [
     name: "set_booking_type",
     screen: "deals",
     say: "個別相談の予約の種類を作る・直す",
-    description: "予約の種類を作る・直す。承認が要る道具。作るときは title と slug が要る。ほかに minutes（長さ・既定 30）・weekdays（0＝日〜6＝土の配列・既定 月〜金）・times（例 10:00-12:00,20:00-22:00・日本時間）・days_ahead（何日先まで・既定 14）・min_notice_hours（何時間前まで・既定 12）・zoom_url・thanks_page_slug（予約のあとに移るページ）・avoid_calendar（Google カレンダーの予定を避けるか・既定 true）・remind_minutes（前日の知らせを何分前に・既定 1440・空で送らない）・confirm_subject・confirm_body・remind_subject・remind_body（{{name}}・{{title}}・{{date}}・{{minutes}}・{{zoom}}・{{topic}}）・active・archived・campaign_id（作るときのシナリオ）。2026-11-05 から：audience（public＝ページに置く・既定／member＝マイページでログインした会員が予約）・entitlements（member のとき予約できる権利のキーの配列。例 shiarabo_basic）・questions（予約のときに聞く質問の配列 [{key,label,kind:text|textarea,required,hint}]・12 問まで。答えは本文で {{answers}}）・after_actions（予約のあとに書く先。shr_next_mtg＝しあらぼ管理のその生徒の次の面談）。id を渡すと直す。ページに埋め込む印は <div data-lab-part=\"booking:slug\"></div>（public のときだけ）。",
-    inputSchema: { type: "object", properties: { id: { type: "string" }, title: { type: "string" }, slug: { type: "string" }, minutes: { type: "integer" }, weekdays: { type: "array", items: { type: "integer" } }, times: { type: "string" }, days_ahead: { type: "integer" }, min_notice_hours: { type: "integer" }, zoom_url: { type: "string" }, thanks_page_slug: { type: "string" }, avoid_calendar: { type: "boolean" }, remind_minutes: { type: ["integer", "null"] }, confirm_subject: { type: "string" }, confirm_body: { type: "string" }, remind_subject: { type: "string" }, remind_body: { type: "string" }, active: { type: "boolean" }, archived: { type: "boolean" }, campaign_id: { type: "string" }, audience: { type: "string", enum: ["public", "member"] }, entitlements: { type: "array", items: { type: "string" } }, questions: { type: "array", items: { type: "object" } }, after_actions: { type: "array", items: { type: "string" } } } },
+    description: "予約の種類を作る・直す。承認が要る道具。作るときは title と slug が要る。ほかに minutes（長さ・既定 30）・weekdays（0＝日〜6＝土の配列・既定 月〜金）・times（例 10:00-12:00,20:00-22:00・日本時間）・days_ahead（何日先まで・既定 14）・min_notice_hours（何時間前まで・既定 12）・zoom_url・thanks_page_slug（予約のあとに移るページ）・avoid_calendar（Google カレンダーの予定を避けるか・既定 true）・remind_minutes（前日の知らせを何分前に・既定 1440・空で送らない）・confirm_subject・confirm_body・remind_subject・remind_body（{{name}}・{{title}}・{{date}}・{{minutes}}・{{zoom}}・{{topic}}）・active・archived・campaign_id（作るときのシナリオ）。2026-11-05 から：audience（public＝ページに置く・既定／member＝マイページでログインした会員が予約）・entitlements（member のとき予約できる権利のキーの配列。例 shiarabo_basic）・questions（予約のときに聞く質問の配列 [{key,label,kind:text|textarea,required,hint}]・12 問まで。答えは本文で {{answers}}）・after_actions（予約のあとに書く先。shr_next_mtg＝しあらぼ管理のその生徒の次の面談）・description（説明・予約画面の左に出る）・color（#rrggbb）・allowed_members（個別に許可するユーザーの顧客番号の配列）。id を渡すと直す。ページに埋め込む印は <div data-lab-part=\"booking:slug\"></div>（public のときだけ）。",
+    inputSchema: { type: "object", properties: { id: { type: "string" }, title: { type: "string" }, slug: { type: "string" }, minutes: { type: "integer" }, weekdays: { type: "array", items: { type: "integer" } }, times: { type: "string" }, days_ahead: { type: "integer" }, min_notice_hours: { type: "integer" }, zoom_url: { type: "string" }, thanks_page_slug: { type: "string" }, avoid_calendar: { type: "boolean" }, remind_minutes: { type: ["integer", "null"] }, confirm_subject: { type: "string" }, confirm_body: { type: "string" }, remind_subject: { type: "string" }, remind_body: { type: "string" }, active: { type: "boolean" }, archived: { type: "boolean" }, campaign_id: { type: "string" }, audience: { type: "string", enum: ["public", "member"] }, entitlements: { type: "array", items: { type: "string" } }, description: { type: "string" }, color: { type: "string" }, allowed_members: { type: "array", items: { type: "string" } }, questions: { type: "array", items: { type: "object" } }, after_actions: { type: "array", items: { type: "string" } } } },
   },
   {
     name: "get_seminar",

@@ -59,14 +59,21 @@ export function cleanAnswers(questions, answers) {
   return { answers: out };
 }
 
-// 会員の予約：その人の権利で予約できる種類か
+// 会員の予約：その人の会員プラン（権利）か、個別に許可されたユーザーか
 // 管理者は止めている種類も見られる（受け付ける前に、マイページでの見え方を確かめるため）
-export function canBook(type, ent, admin) {
+export function canBook(type, ent, admin, customerId) {
   if (!type || type.audience !== "member" || type.archived_at) return false;
   if (admin) return true;
   if (!type.active) return false;
+  if (customerId && (type.allowed_members || []).includes(customerId)) return true;
   const g = new Set((ent && ent.grants) || []);
   return (type.entitlements || []).some((k) => g.has(k));
+}
+
+// 終わりの時刻（日本時間の「HH:MM」）
+export function endLabel(iso, minutes) {
+  const d = new Date(Date.parse(iso) + (minutes || 30) * 60e3 + 9 * 3600e3);
+  return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
 }
 
 // メールの差し込み {{answers}}：問いと答えを並べる
@@ -124,7 +131,7 @@ export function render(text, type, b, person) {
   const map = {
     name: (person && person.name) || "", email: (person && person.email) || "",
     title: type.title, date: fmtJst(b.slot), minutes: String(b.minutes || type.minutes),
-    zoom: type.zoom_url || "（追ってお知らせします）", topic: b.topic || "（未記入）", answers: answersText(b.answers),
+    zoom: type.zoom_url || "（追ってお知らせします）", end: endLabel(b.slot, b.minutes || type.minutes), topic: b.topic || "（未記入）", answers: answersText(b.answers),
   };
   return String(text || "").replace(/\{\{(\w+)\}\}/g, (all, k) => (k in map ? map[k] : all));
 }
@@ -164,6 +171,7 @@ export function makeBooking(h) {
     min_notice_hours: t.min_notice_hours, zoom_url: t.zoom_url, thanks_page_slug: t.thanks_page_slug, avoid_calendar: t.avoid_calendar,
     remind_minutes: t.remind_minutes, confirm_subject: t.confirm_subject, confirm_body: t.confirm_body, remind_subject: t.remind_subject, remind_body: t.remind_body,
     active: t.active, archived: !!t.archived_at, audience: t.audience || "public", entitlements: t.entitlements || [], questions: t.questions || [], after_actions: t.after_actions || [],
+    description: t.description || "", color: t.color || "", allowed_members: t.allowed_members || [],
     embed: (t.audience || "public") === "public" ? `<div data-lab-part="booking:${t.slug}"></div>` : "", ...extra,
   });
 
@@ -182,10 +190,12 @@ export function makeBooking(h) {
     const ids = [...new Set(bs.map((b) => b.customer_id))];
     const people = ids.length ? new Map((await db(env, "GET", `customers?select=id,name,email&id=in.(${ids.join(",")})`)).map((p) => [p.id, p])) : new Map();
     const t0 = Date.now();
+    const al = (t.allowed_members || []).filter((x) => UUID_RE.test(x));
+    const allowed = al.length ? await db(env, "GET", `customers?select=id,name,email&id=in.(${al.join(",")})`) : [];
     return {
-      ok: true, found: true, type: view(env, t),
+      ok: true, found: true, type: view(env, t), allowed_people: allowed,
       bookings: bs.map((b) => ({ person_id: b.customer_id, name: (people.get(b.customer_id) || {}).name || "", email: (people.get(b.customer_id) || {}).email || "", slot: b.slot, label: fmtJst(b.slot), topic: b.topic, answers: b.answers, past: Date.parse(b.slot) < t0 })),
-      placeholders: ["{{name}}", "{{title}}", "{{date}}", "{{minutes}}", "{{zoom}}", "{{topic}}", "{{answers}}"],
+      placeholders: ["{{name}}", "{{title}}", "{{date}}", "{{minutes}}", "{{zoom}}", "{{topic}}", "{{answers}}", "{{end}}"],
     };
   }
 
@@ -264,6 +274,21 @@ export function makeBooking(h) {
       const arr = (Array.isArray(args.entitlements) ? args.entitlements : String(args.entitlements || "").split(",")).map((x) => String(x).trim()).filter(Boolean);
       if (arr.some((k) => !/^[a-z0-9_]{2,60}$/.test(k))) return { ok: false, error: "bad_entitlements" };
       row.entitlements = [...new Set(arr)];
+    }
+    if ("description" in args) {
+      const v = String(args.description || "").trim();
+      if (v.length > 1000) return { ok: false, error: "bad_description" };
+      row.description = v;
+    }
+    if ("color" in args) {
+      const v = String(args.color || "").trim().toLowerCase();
+      if (v && !/^#[0-9a-f]{6}$/.test(v)) return { ok: false, error: "bad_color" };
+      row.color = v;
+    }
+    if ("allowed_members" in args) {
+      const arr = [...new Set((Array.isArray(args.allowed_members) ? args.allowed_members : []).map(String))];
+      if (arr.length > 200 || arr.some((x) => !UUID_RE.test(x))) return { ok: false, error: "bad_allowed_members" };
+      row.allowed_members = arr;
     }
     if ("questions" in args) {
       const r = cleanQuestions(args.questions);
@@ -379,35 +404,41 @@ export function makeBooking(h) {
   // ---- 会員の予約（マイページ・ログインした人）----
   // その人が予約できる種類と空き時間・自分のこれからの予約
   async function forMember(env, customer, ent, admin, at = Date.now()) {
-    const types = (await db(env, "GET", "b_booking_types?select=*&audience=eq.member&archived_at=is.null&order=created_at.asc")).filter((t) => canBook(t, ent, admin));
+    const types = (await db(env, "GET", "b_booking_types?select=*&audience=eq.member&archived_at=is.null&order=created_at.asc")).filter((t) => canBook(t, ent, admin, customer.id));
     const mine = (await bookings(env)).filter((b) => b.customer_id === customer.id && Date.parse(b.slot) > at).sort((a, b) => a.slot.localeCompare(b.slot));
     const out = [];
     for (const t of types) {
       const r = await slots(env, t, at);
-      out.push({ slug: t.slug, title: t.title, minutes: t.minutes, ...(t.active ? {} : { paused: true }), questions: (t.questions || []).map(({ key, label, kind, required, hint }) => ({ key, label, kind, required, hint })),
-        booked: mine.some((b) => b.type_id === t.id), slots: r.slots.map((s) => ({ slot: s, label: fmtJst(s), day: fmtJst(s).split("（")[0] })) });
+      out.push({ slug: t.slug, title: t.title, minutes: t.minutes, description: t.description || "", color: t.color || "", zoom: !!t.zoom_url, ...(t.active ? {} : { paused: true }),
+        questions: (t.questions || []).map(({ key, label, kind, required, hint }) => ({ key, label, kind, required, hint })),
+        booked: mine.some((b) => b.type_id === t.id), slots: r.slots.map((s) => ({ slot: s, label: fmtJst(s), end: endLabel(s, t.minutes), day: fmtJst(s).split("（")[0] })) });
     }
     return { ok: true, ready: out.length > 0, types: out,
-      mine: mine.map((b) => ({ slot: b.slot, label: fmtJst(b.slot), title: b.type_title || (types.find((t) => t.id === b.type_id) || {}).title || "個別相談", minutes: b.minutes, answers: b.answers })) };
+      mine: mine.map((b) => { const t = types.find((x) => x.id === b.type_id); return { slot: b.slot, label: fmtJst(b.slot), end: endLabel(b.slot, b.minutes), slug: t ? t.slug : null, title: b.type_title || (t || {}).title || "個別相談", minutes: b.minutes, answers: b.answers }; }) };
   }
 
   async function memberBook(env, customer, ent, admin, body = {}) {
     const t = await typeBySlug(env, body.slug);
-    if (!canBook(t, ent, admin)) return { ok: false, error: "not_found" };
+    if (!canBook(t, ent, admin, customer.id)) return { ok: false, error: "not_found" };
     const iso = parseStart(String(body.slot || ""));
     if (!iso) return { ok: false, error: "bad_slot" };
     const ans = cleanAnswers(t.questions, body.answers);
     if (ans.error) return { ok: false, error: ans.error, key: ans.key, label: ans.label };
     if (!(await slots(env, t)).slots.includes(iso)) return { ok: false, error: "slot_taken" };
+    // 日時を変更（from＝いまの予約の時刻）：同じ種類のいまの予約を、新しい時刻に入れ替える
+    const fromIso = body.from ? parseStart(String(body.from)) : null;
     const mine = (await bookings(env)).filter((b) => b.customer_id === customer.id && b.type_id === t.id && Date.parse(b.slot) > Date.now());
-    if (mine.length) return { ok: false, error: "already_booked", slot: mine[0].slot, label: fmtJst(mine[0].slot) };
-    const b = { slot: iso, type_id: t.id, type_title: t.title, minutes: t.minutes, topic: "", answers: ans.answers };
+    const moving = fromIso ? mine.find((b) => b.slot === fromIso) : null;
+    if (fromIso && !moving) return { ok: false, error: "not_found" };
+    if (mine.length && !moving) return { ok: false, error: "already_booked", slot: mine[0].slot, label: fmtJst(mine[0].slot) };
+    const b = { slot: iso, type_id: t.id, type_title: t.title, minutes: t.minutes, topic: "", answers: ans.answers, ...(moving ? { moved_from: moving.slot } : {}) };
     await addEvent(env, customer.id, "consult_booked", b, "site");
+    if (moving) await addEvent(env, customer.id, "consult_canceled", { slot: moving.slot, type_id: t.id, type_title: t.title, moved_to: iso }, "site");
     const mail = await sendNotice(env, t, b, customer, "confirm", "site").catch(() => "failed");
     let after = null;
     if (afterBooked && (t.after_actions || []).length) after = await afterBooked(env, customer.id, t.after_actions, { booked: iso }).catch((e) => ({ error: String(e.message || e) }));
     await logInbound(env, "booking", { slug: t.slug, slot: iso, member: true }, { ok: true, mail, after }, 200);
-    return { ok: true, slot: iso, label: fmtJst(iso), mail };
+    return { ok: true, slot: iso, label: fmtJst(iso), end: endLabel(iso, t.minutes), moved: !!moving, mail };
   }
 
   async function memberCancel(env, customer, body = {}) {
@@ -420,7 +451,8 @@ export function makeBooking(h) {
     let after = null;
     if (afterBooked && (t.after_actions || []).length) after = await afterBooked(env, customer.id, t.after_actions, { canceled: b.slot }).catch((e) => ({ error: String(e.message || e) }));
     await logInbound(env, "booking_cancel", { slug: t.slug, slot: b.slot }, { ok: true, after }, 200);
-    return { ok: true };
+    // 「元に戻す」のために、取り消した予約の中身を返す
+    return { ok: true, slot: b.slot, slug: t.slug, answers: Object.fromEntries((b.answers || []).map((a) => [a.key, a.value])) };
   }
 
   async function forPlan(env) {

@@ -108,12 +108,14 @@
 
     <section id="tab-news" class="stack hidden"></section>
 
-    <section id="tab-booking" class="stack hidden">
-      <!-- 個別相談の予約（2026-11-05）：マーケくんの予約の種類（audience=member）のうち、その人の権利で予約できるものを出す -->
-      <h1 class="lt" style="margin:0">個別相談を予約する</h1>
+    <section id="tab-booking" class="hidden">
+      <!-- 個別相談の予約（2026-11-05 デモ v5 に Naoki OK）：カレンダー → 時間 → 入力 → 完了。予約メニュー（b_booking_types の audience=member）のうち、その人が予約できるもの -->
+      <h1 class="lt bk-title">個別相談を予約する</h1>
       <div id="bk-mine" class="stack"></div>
-      <div id="bk-types" class="stack"></div>
-      <div class="note" id="bk-status" aria-live="polite"></div>
+      <div id="bk-menus"></div>
+      <div id="bk-main"></div>
+      <div class="bk-bar hidden" id="bk-bar"><span id="bk-bar-t"></span><button class="btn small" type="button" id="bk-bar-go">次へ</button></div>
+      <div class="bk-toast hidden" id="bk-toast" role="status" aria-live="polite"><span id="bk-toast-t"></span><button type="button" id="bk-toast-u">元に戻す</button></div>
     </section>
 
     <!-- 便 R3：自分の契約と、定期を止める -->
