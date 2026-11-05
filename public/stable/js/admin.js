@@ -1072,7 +1072,7 @@ async function loadDeals(focusId, msg) {
 let btCache = [], btWired = false, currentBt = null, btEntCounts = {};
 const WD_LABEL = ["日", "月", "火", "水", "木", "金", "土"];
 const BT_WHY = {
-  bad_audience: "公開範囲を選択してください", bad_entitlements: "会員プランの名前が正しくありません", bad_questions: "質問は 12 件までです", bad_question_label: "質問を入力してください（80 字まで）", bad_question_key: "質問の並びが正しくありません", bad_after_actions: "予約後の連携先が正しくありません",
+  bad_audience: "公開範囲を選択してください", bad_entitlements: "会員プランの名前が正しくありません", bad_questions: "質問は 12 件までです", bad_question_label: "質問を入力してください（80 字まで）", bad_question_key: "質問の並びが正しくありません", bad_question_options: "選択肢を 2 つ以上入力してください（1 つ 60 字まで）", bad_after_actions: "予約後の連携先が正しくありません",
   bad_title: "タイトルを入力してください（80 字まで）", bad_slug: "URL 名は英小文字・数字・ハイフンの 2〜41 字（例 consult-30）", slug_taken: "その URL 名はほかのメニューで使われています",
   bad_minutes: "所要時間は 10〜240 分", bad_weekdays: "曜日を 1 つ以上選択してください", bad_times: "受付時間は「10:00-12:00,20:00-22:00」の形で入力してください",
   bad_days_ahead: "予約受付期間は 1〜90 日", bad_min_notice_hours: "予約締切は 0〜168 時間", bad_remind_minutes: "前日のリマインドは 1〜168 時間前（空欄で送らない）",
@@ -1154,14 +1154,36 @@ async function openBookingType(id, opts = {}) {
   document.querySelectorAll("#seminar-detail [data-bl]").forEach((b) => b.addEventListener("click", () => { document.querySelectorAll("#seminar-detail [data-bl]").forEach((x) => x.setAttribute("aria-pressed", String(x === b))); drawList(b.dataset.bl); }));
 }
 // 予約フォームの質問（1 行の一覧 → 押した 1 件だけ開いて編集）
-const BT_QT = { text: ["Aa", "短文"], textarea: ["¶", "長文"] };
+// 予約フォームの質問（便③）：状態は btQS。行を押すと 1 行だけ開いて編集、⋮⋮ を引っぱって並べ替え
+const BT_QT = { text: ["Aa", "短文"], textarea: ["¶", "長文"], radio: ["◉", "単一選択"], check: ["☑", "複数選択"], number: ["#", "数値"] };
+const BT_CHOICE = new Set(["radio", "check"]);
+let btQS = [], btQOpen = null;
 function btQRow(q, i, open) {
-  return `<div class="bt-qi${open ? " open" : ""}" data-qi="${i}"><button type="button" class="bt-qh" data-qopen="${i}" aria-expanded="${open}"><span class="ty" aria-hidden="true">${BT_QT[q.kind === "text" ? "text" : "textarea"][0]}</span><span class="lb">${esc(q.label || "（未入力の質問）")}<small>${BT_QT[q.kind === "text" ? "text" : "textarea"][1]}${q.hint ? "・初期値あり" : ""}</small></span>${q.required ? '<span class="rq">必須</span>' : ""}</button>
-    <div class="bt-qe${open ? "" : " hidden"}"><div><label for="btq-l-${i}">質問</label><input id="btq-l-${i}" data-f="label" type="text" maxlength="80" value="${esc(q.label || "")}"></div>
-      <div><span class="lbl">回答形式</span><div class="segs" role="group" aria-label="回答形式"><button type="button" data-kind="text" aria-pressed="${q.kind === "text"}">Aa 短文</button><button type="button" data-kind="textarea" aria-pressed="${q.kind !== "text"}">¶ 長文</button></div></div>
-      <div><label for="btq-h-${i}">初期値（入力例・空欄可）</label><textarea id="btq-h-${i}" data-f="hint" rows="${Math.max(2, Math.min(6, String(q.hint || "").split("\n").length + 1))}" maxlength="1000">${esc(q.hint || "")}</textarea></div>
+  const [ic, kn] = BT_QT[q.kind] || BT_QT.textarea, choice = BT_CHOICE.has(q.kind);
+  return `<div class="bt-qi${open ? " open" : ""}" data-qi="${i}"><div class="bt-qrow"><span class="grip" draggable="true" data-grip="${i}" title="引っぱって並べ替え" aria-hidden="true">⋮⋮</span><button type="button" class="bt-qh" data-qopen="${i}" aria-expanded="${open}"><span class="ty" aria-hidden="true">${ic}</span><span class="lb">${esc(q.label || "（未入力の質問）")}<small>${kn}${choice ? `・${(q.options || []).length} 択` : q.hint ? "・初期値あり" : ""}</small></span>${q.required ? '<span class="rq">必須</span>' : ""}</button></div>
+    ${open ? `<div class="bt-qe"><div><label for="btq-l">質問</label><input id="btq-l" data-f="label" type="text" maxlength="80" value="${esc(q.label || "")}"></div>
+      <div><span class="lbl">回答形式</span><div class="segs" role="group" aria-label="回答形式">${Object.entries(BT_QT).map(([k, [c, n]]) => `<button type="button" data-kind="${k}" aria-pressed="${q.kind === k}">${c} ${n}</button>`).join("")}</div></div>
+      ${choice ? `<div><span class="lbl">選択肢</span><div class="bt-choices">${(q.options || []).map((o, j) => `<div class="bt-choice"><span class="mk" aria-hidden="true">${q.kind === "radio" ? "○" : "□"}</span><input type="text" data-ch="${j}" maxlength="60" value="${esc(o)}" aria-label="選択肢 ${j + 1}"><button type="button" class="bt-ic" data-rmch="${j}" aria-label="選択肢 ${j + 1} を削除"${(q.options || []).length <= 2 ? " disabled" : ""}>✕</button></div>`).join("")}</div><button type="button" class="btn ghost small" data-addch style="margin-top:6px">＋ 選択肢を追加</button></div>`
+        : `<div><label for="btq-h">初期値（入力例・空欄可）</label>${q.kind === "textarea" ? `<textarea id="btq-h" data-f="hint" rows="${Math.max(2, Math.min(6, String(q.hint || "").split("\n").length + 1))}" maxlength="1000">${esc(q.hint || "")}</textarea>` : `<input id="btq-h" data-f="hint" type="text" maxlength="200" value="${esc(q.hint || "")}">`}</div>`}
       <div class="bt-qa"><label class="check" style="margin:0"><input type="checkbox" data-f="required"${q.required ? " checked" : ""}> <span>必須</span></label><span style="flex:1"></span>
-        <button type="button" class="btn ghost small" data-qmove="-1" aria-label="質問 ${i + 1} を上へ">↑ 上へ</button><button type="button" class="btn ghost small" data-qmove="1" aria-label="質問 ${i + 1} を下へ">↓ 下へ</button><button type="button" class="btn ghost small" data-qdel aria-label="質問 ${i + 1} を削除">削除</button><button type="button" class="btn small" data-qdone>完了</button></div></div></div>`;
+        <button type="button" class="btn ghost small" data-qmove="-1" aria-label="この質問を上へ">↑ 上へ</button><button type="button" class="btn ghost small" data-qmove="1" aria-label="この質問を下へ">↓ 下へ</button><button type="button" class="btn ghost small" data-qdel>削除</button><button type="button" class="btn small" data-qdone>完了</button></div></div>` : ""}</div>`;
+}
+function btDrawQs(focusSel) {
+  const aud = (document.querySelector('[name="bt-aud"]:checked') || {}).value;
+  $("bt-qs").innerHTML = `<div class="bt-qi fixed"><div class="bt-qrow"><span class="grip" aria-hidden="true">🔒</span><div class="bt-qh" style="cursor:default"><span class="ty" aria-hidden="true">@</span><span class="lb">名前・メール<small>${aud === "member" ? "ログイン情報から自動入力（会員限定）" : "予約する人が入力（必須）"}</small></span></div></div></div>`
+    + btQS.map((q, i) => btQRow(q, i, i === btQOpen)).join("");
+  if (focusSel) { const f = document.querySelector("#bt-qs " + focusSel); if (f) f.focus(); }
+  btDrawPv();
+}
+function btDrawPv() {
+  const box = $("bt-pv"); if (!box) return;
+  const aud = (document.querySelector('[name="bt-aud"]:checked') || {}).value;
+  const qs = btQS.length ? btQS : [{ label: "相談したいこと", kind: "textarea", required: false, hint: "" }];
+  box.innerHTML = `<h4>予約内容の入力</h4>${aud === "member" ? '<div class="who">予約者：<b>（ログイン中の名前）</b>・ログイン中のアカウントで予約します</div>' : '<div class="f"><label>名前<span class="req">必須</span></label><input type="text" disabled></div><div class="f"><label>メールアドレス<span class="req">必須</span></label><input type="text" disabled></div>'}`
+    + qs.map((q) => `<div class="f"><label>${esc(q.label || "（未入力の質問）")}<span class="req">${q.required ? "必須" : "任意"}</span></label>${
+      q.kind === "radio" || q.kind === "check" ? `<div class="opts">${(q.options || []).map((o) => `<label class="opt"><input type="${q.kind === "radio" ? "radio" : "checkbox"}" disabled> ${esc(o)}</label>`).join("")}</div>`
+      : q.kind === "textarea" ? `<textarea rows="3" disabled>${esc(q.hint || "")}</textarea>` : `<input type="text" disabled value="${esc(q.hint || "")}"${q.kind === "number" ? ' inputmode="numeric" placeholder="数字"' : ""}>`}</div>`).join("")
+    + '<button type="button" class="btn" disabled>予約を確定</button>';
 }
 // 受付時間の表（30 分 × 6:00〜24:00）。値は曜日ごとの [[開始分, 終了分]]
 const BT_H0 = 6, BT_ROWS = 36, BT_ORDER = [1, 2, 3, 4, 5, 6, 0];
@@ -1242,20 +1264,16 @@ function bookingTypeForm(t, r = {}) {
     <section class="card hidden" data-btpane="rules"><h3 class="bt-h">予約ルール</h3><p class="note bt-hint">予約の受け付け方を調整します。使わないものはオフにできます。</p>
       <div class="bt-lim">${btRulesHtml(t)}</div>
     </section>
-    <section class="card hidden" data-btpane="form"><h3 class="bt-h">予約フォーム</h3><p class="note bt-hint">時間を選んだあとに表示する質問。行をクリックすると編集できます。質問がないときは「相談したいこと」だけ表示します。会員限定のときは名前とメールはログイン情報から自動入力します。</p>
-      <div class="bt-qlist" id="bt-qs">${(t ? t.questions || [] : []).map((q, i) => btQRow(q, i, false)).join("")}</div>
-      <div style="margin-top:12px"><button type="button" class="btn ghost small" id="bt-qadd">＋ 質問を追加</button></div></section>
+    <section class="card hidden" data-btpane="form"><div class="bt-hrow"><h3 class="bt-h">予約フォーム</h3><div class="seg" role="group" aria-label="見方" style="margin:0"><button type="button" data-fv="edit" aria-pressed="true">編集</button><button type="button" data-fv="pv" aria-pressed="false">プレビュー</button></div></div>
+      <p class="note bt-hint">時間を選んだあとに表示する質問。行をクリックすると編集、⋮⋮ を引っぱると並べ替えできます。質問がないときは「相談したいこと」だけ表示します。</p>
+      <div id="bt-fedit"><div class="bt-qlist" id="bt-qs"></div>
+        <div style="margin-top:12px"><button type="button" class="btn ghost small" id="bt-qadd" aria-expanded="false">＋ 質問を追加</button><div class="bt-typepick hidden" id="bt-typepick" role="group" aria-label="回答形式を選択">${Object.entries(BT_QT).map(([k, [c, n]]) => `<button type="button" data-new="${k}"><b aria-hidden="true">${c}</b>${n}</button>`).join("")}</div></div></div>
+      <div id="bt-fpv" class="bt-pv hidden"><div class="bt-pvbox" id="bt-pv"></div></div></section>
     <div class="bt-save hidden" id="bt-savebar" role="region" aria-label="保存"><span id="bt-status">未保存の変更があります</span><button class="btn ghost small" type="button" id="bt-undo">元に戻す</button><button class="btn small" type="submit">${t ? "保存" : "作成"}</button></div>
     ${t ? "" : '<div style="margin-top:12px"><button class="btn" type="submit">作成</button> <span class="note">作成すると、確認メールと前日のリマインドの文が入ります。あとで編集できます。</span></div>'}
   </form>`;
 }
-function btReadQs() {
-  return [...document.querySelectorAll("#bt-qs .bt-qi")].map((r) => ({ label: r.querySelector('[data-f="label"]').value.trim(), kind: r.querySelector('[data-kind][aria-pressed="true"]').dataset.kind, required: r.querySelector('[data-f="required"]').checked, hint: r.querySelector('[data-f="hint"]').value }));
-}
-function btDrawQs(qs, openIdx, focusSel) {
-  $("bt-qs").innerHTML = qs.map((q, i) => btQRow(q, i, i === openIdx)).join("");
-  const f = openIdx != null && document.querySelector(`#bt-qs [data-qi="${openIdx}"] ${focusSel || '[data-f="label"]'}`); if (f) f.focus();
-}
+function btReadQs() { return btQS.map(({ label, kind, required, hint, options }) => ({ label: String(label || "").trim(), kind, required: !!required, hint: hint || "", ...(BT_CHOICE.has(kind) ? { options: (options || []).map((o) => String(o).trim()).filter(Boolean) } : {}) })); }
 function wireBookingTypeForm(t, r = {}) {
   const form = $("bt"); let dirty = false;
   const markDirty = () => { dirty = true; $("bt-savebar").classList.remove("hidden"); $("bt-status").textContent = "未保存の変更があります"; };
@@ -1346,16 +1364,36 @@ function wireBookingTypeForm(t, r = {}) {
     $("bt-psearch").value = ""; $("bt-presults").classList.add("hidden"); $("bt-psearch").focus(); cnt(); markDirty(); });
   $("bt-people").addEventListener("click", (e) => { const b = e.target.closest("[data-rmp]"); if (!b) return; b.closest(".person").remove(); cnt(); markDirty(); $("bt-psearch").focus(); });
   // 予約フォーム
-  $("bt-qadd").addEventListener("click", () => { const qs = btReadQs(); if (qs.length >= 12) { $("bt-status").textContent = "質問は 12 件までです"; $("bt-savebar").classList.remove("hidden"); return; } qs.push({ label: "", kind: "textarea", required: false, hint: "" }); btDrawQs(qs, qs.length - 1); markDirty(); });
+  btQS = JSON.parse(JSON.stringify(t ? t.questions || [] : [])); btQOpen = null; btDrawQs();
+  document.querySelectorAll('[name="bt-aud"]').forEach((x) => x.addEventListener("change", () => btDrawQs()));
+  const qPick = (show) => { $("bt-typepick").classList.toggle("hidden", !show); $("bt-qadd").setAttribute("aria-expanded", String(show)); };
+  $("bt-qadd").addEventListener("click", () => { if (btQS.length >= 12) { $("bt-status").textContent = BT_WHY.bad_questions; $("bt-savebar").classList.remove("hidden"); return; } qPick($("bt-typepick").classList.contains("hidden")); if (!$("bt-typepick").classList.contains("hidden")) $("bt-typepick").querySelector("button").focus(); });
+  $("bt-typepick").addEventListener("click", (e) => { const b = e.target.closest("[data-new]"); if (!b) return; const k = b.dataset.new;
+    btQS.push({ label: "", kind: k, required: false, hint: "", ...(BT_CHOICE.has(k) ? { options: ["はい", "いいえ"] } : {}) }); btQOpen = btQS.length - 1; qPick(false); btDrawQs("#btq-l"); markDirty(); });
+  $("bt-qs").addEventListener("input", (e) => { if (btQOpen == null) return; const q = btQS[btQOpen], f = e.target.dataset.f;
+    if (f === "label" || f === "hint") { q[f] = e.target.value; if (f === "label") { const lb = document.querySelector(`#bt-qs [data-qi="${btQOpen}"] .lb`); if (lb) lb.firstChild.textContent = e.target.value || "（未入力の質問）"; } }
+    if (f === "required") q.required = e.target.checked;
+    if (e.target.dataset.ch != null) q.options[+e.target.dataset.ch] = e.target.value;
+    btDrawPv(); });
+  $("bt-qs").addEventListener("change", (e) => { if (btQOpen != null && e.target.dataset.f === "required") { btQS[btQOpen].required = e.target.checked; btDrawQs(`[data-f="required"]`); } });
   $("bt-qs").addEventListener("click", (e) => {
     const b = e.target.closest("button"); if (!b) return;
-    const row = b.closest(".bt-qi"), i = Number(row.dataset.qi), qs = btReadQs();
-    if (b.dataset.qopen != null) { const open = !row.classList.contains("open"); btDrawQs(qs, open ? i : null); if (!open) row && document.querySelector(`#bt-qs [data-qopen="${i}"]`).focus(); return; }
-    if (b.dataset.kind) { row.querySelectorAll("[data-kind]").forEach((x) => x.setAttribute("aria-pressed", String(x === b))); markDirty(); return; }
-    if (b.hasAttribute("data-qdone")) { btDrawQs(qs, null); document.querySelector(`#bt-qs [data-qopen="${i}"]`).focus(); return; }
-    if (b.hasAttribute("data-qdel")) { const was = qs[i]; qs.splice(i, 1); btDrawQs(qs, null); markDirty(); btUndo(`質問「${was.label || "（未入力）"}」を削除しました`, () => { const q2 = btReadQs(); q2.splice(i, 0, was); btDrawQs(q2, i); }); return; }
-    if (b.dataset.qmove) { const j = i + Number(b.dataset.qmove); if (j < 0 || j >= qs.length) return; [qs[i], qs[j]] = [qs[j], qs[i]]; btDrawQs(qs, j, `[data-qmove="${b.dataset.qmove}"]`); markDirty(); }
+    if (b.dataset.qopen != null) { const i = +b.dataset.qopen; btQOpen = btQOpen === i ? null : i; btDrawQs(btQOpen == null ? `[data-qopen="${i}"]` : "#btq-l"); return; }
+    if (btQOpen == null) return;
+    const i = btQOpen, q = btQS[i];
+    if (b.dataset.kind) { q.kind = b.dataset.kind; if (BT_CHOICE.has(q.kind) && !(q.options || []).length) q.options = ["はい", "いいえ"]; btDrawQs(`[data-kind="${q.kind}"]`); markDirty(); return; }
+    if (b.hasAttribute("data-addch")) { if ((q.options || []).length >= 20) return; q.options.push(""); btDrawQs(`[data-ch="${q.options.length - 1}"]`); markDirty(); return; }
+    if (b.dataset.rmch != null) { if (q.options.length <= 2) return; q.options.splice(+b.dataset.rmch, 1); btDrawQs("[data-addch]"); markDirty(); return; }
+    if (b.hasAttribute("data-qdone")) { btQOpen = null; btDrawQs(`[data-qopen="${i}"]`); return; }
+    if (b.hasAttribute("data-qdel")) { const was = btQS[i]; btQS.splice(i, 1); btQOpen = null; btDrawQs(); markDirty(); btUndo(`質問「${was.label || "（未入力）"}」を削除しました`, () => { btQS.splice(i, 0, was); btDrawQs(); }); return; }
+    if (b.dataset.qmove) { const j = i + Number(b.dataset.qmove); if (j < 0 || j >= btQS.length) return; [btQS[i], btQS[j]] = [btQS[j], btQS[i]]; btQOpen = j; btDrawQs(`[data-qmove="${b.dataset.qmove}"]`); markDirty(); }
   });
+  let dragI = null;
+  $("bt-qs").addEventListener("dragstart", (e) => { const g = e.target.closest("[data-grip]"); if (!g) return; dragI = +g.dataset.grip; g.closest(".bt-qi").classList.add("drag"); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", String(dragI)); });
+  $("bt-qs").addEventListener("dragover", (e) => { const r = e.target.closest(".bt-qi[data-qi]"); if (!r || dragI == null) return; e.preventDefault(); document.querySelectorAll("#bt-qs .over").forEach((x) => x.classList.remove("over")); r.classList.add("over"); });
+  $("bt-qs").addEventListener("drop", (e) => { const r = e.target.closest(".bt-qi[data-qi]"); if (!r || dragI == null) return; e.preventDefault(); const to = +r.dataset.qi; if (to !== dragI) { const [m] = btQS.splice(dragI, 1); btQS.splice(to, 0, m); btQOpen = null; markDirty(); } dragI = null; btDrawQs(`[data-qopen="${to}"]`); });
+  $("bt-qs").addEventListener("dragend", () => { dragI = null; document.querySelectorAll("#bt-qs .drag, #bt-qs .over").forEach((x) => x.classList.remove("drag", "over")); });
+  document.querySelectorAll("#bt [data-fv]").forEach((b) => b.addEventListener("click", () => { document.querySelectorAll("#bt [data-fv]").forEach((x) => x.setAttribute("aria-pressed", String(x === b))); $("bt-fedit").classList.toggle("hidden", b.dataset.fv !== "edit"); $("bt-fpv").classList.toggle("hidden", b.dataset.fv !== "pv"); btDrawPv(); }));
   $("bt-undo").addEventListener("click", () => openBookingType(t ? t.id : null, { tab: document.querySelector("#seminar-detail [data-btp][aria-selected=true]")?.dataset.btp, msg: "変更を元に戻しました" }));
   if (!t) $("bt-undo").classList.add("hidden");
   form.addEventListener("submit", async (ev) => {
@@ -1373,12 +1411,14 @@ function wireBookingTypeForm(t, r = {}) {
       avoid_calendar: $("bt-avoid").checked, zoom_url: $("bt-zoom").value.trim(), thanks_page_slug: $("bt-thanks").value, active: $("bt-active").checked,
       audience: aud, entitlements: [...document.querySelectorAll("#bt [data-ent]:checked")].map((x) => x.dataset.ent),
       allowed_members: [...document.querySelectorAll("#bt-people .person")].map((x) => x.dataset.pid),
-      questions: btReadQs().filter((q) => q.label),
+      questions: btReadQs(),
       after_actions: aud === "member" && $("bt-shr").checked ? ["shr_next_mtg"] : [],
     };
     const go = (pane, sel, msg) => { document.querySelector(`#seminar-detail [data-btp="${pane}"]`)?.click(); $("bt-savebar").classList.remove("hidden"); $("bt-status").textContent = msg; const f = document.querySelector(sel); if (f) f.focus(); };
     if (aud === "member" && !body.entitlements.length && !body.allowed_members.length) return go("who", "#bt [data-ent]", "会員限定のときは、会員プランか個別ユーザーを 1 つ以上選択してください");
     if (!body.title) return go("basic", "#bt-title", BT_WHY.bad_title);
+    const badQ = body.questions.findIndex((q) => !q.label || (BT_CHOICE.has(q.kind) && q.options.length < 2));
+    if (badQ >= 0) { btQOpen = badQ; document.querySelector('#bt [data-fv="edit"]').click(); btDrawQs(body.questions[badQ].label ? "[data-addch]" : "#btq-l"); return go("form", body.questions[badQ].label ? "#bt-qs [data-addch]" : "#btq-l", body.questions[badQ].label ? BT_WHY.bad_question_options : BT_WHY.bad_question_label); }
     if (!Object.values(body.week_hours).some((r) => r.length)) return go("hours", "#bt-wkg .cell[tabindex='0']", BT_WHY.bad_week_hours);
     if (body.durations.length) body.minutes = body.durations[0];
     if (t) body.id = t.id; else if ($("bt-camp") && $("bt-camp").value) body.campaign_id = $("bt-camp").value;

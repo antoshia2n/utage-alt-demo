@@ -600,12 +600,16 @@ export const EMBED_JS = `(() => {
       + '<div><label>お名前</label><input class="lab-input" data-k="name" type="text" maxlength="60" autocomplete="name"></div>'
       + '<div><label>メールアドレス<span class="lab-note">（必須）</span></label><input class="lab-input" data-k="email" type="email" required autocomplete="email"></div>'
       + ((r.questions && r.questions.length) ? r.questions.map((qq) => '<div><label>' + esc(qq.label) + (qq.required ? '<span class="lab-note">（必須）</span>' : '') + '</label>'
-          + (qq.kind === "text" ? '<input class="lab-input" data-q="' + esc(qq.key) + '" type="text" maxlength="200" value="' + esc(qq.hint || "") + '">'
+          + (qq.kind === "radio" || qq.kind === "check" ? (qq.options || []).map((o) => '<label class="lab-check"><input type="' + (qq.kind === "radio" ? "radio" : "checkbox") + '" name="lab-q-' + esc(qq.key) + '" data-qc="' + esc(qq.key) + '" data-kind="' + qq.kind + '" value="' + esc(o) + '"><span>' + esc(o) + '</span></label>').join("")
+            : qq.kind === "text" || qq.kind === "number" ? '<input class="lab-input" data-q="' + esc(qq.key) + '" type="text" maxlength="200"' + (qq.kind === "number" ? ' inputmode="decimal"' : '') + ' value="' + esc(qq.hint || "") + '">'
             : '<textarea class="lab-input" data-q="' + esc(qq.key) + '" rows="3" maxlength="4000">' + esc(qq.hint || "") + '</textarea>') + '</div>').join("")
         : '<div><label>相談したいこと</label><textarea class="lab-input" data-k="topic" rows="3" maxlength="1000"></textarea></div>')
       + '<label class="lab-check"><input type="checkbox" data-k="consent"><span><a href="' + LAB + '/legal/privacy" target="_blank" rel="noopener">プライバシーポリシー</a>と<a href="' + LAB + '/legal/tokushoho" target="_blank" rel="noopener">特定商取引法に基づく表記</a>を確かめました</span></label>'
       + '<button type="button" class="lab-btn" data-go>' + (PREVIEW ? "（見本なので予約できません）" : "この時間で予約する") + '</button><div class="lab-err" data-msg></div>';
     const q = (s) => el.querySelector(s), msg = q("[data-msg]"), go = q("[data-go]");
+    const answersOf = () => { const a = Object.fromEntries([...el.querySelectorAll("[data-q]")].map((x) => [x.dataset.q, x.value]));
+      for (const x of el.querySelectorAll("[data-qc]")) { const k = x.dataset.qc; if (x.dataset.kind === "check") { a[k] = a[k] || []; if (x.checked) a[k].push(x.value); } else if (x.checked) a[k] = x.value; else if (!(k in a)) a[k] = ""; }
+      return a; };
     el.querySelectorAll("[data-slot]").forEach((b) => b.addEventListener("click", () => {
       el.querySelectorAll("[data-slot]").forEach((x) => x.classList.toggle("on", x === b));
       picked = b.dataset.slot;
@@ -622,7 +626,7 @@ export const EMBED_JS = `(() => {
       if (!q('[data-k="consent"]').checked) { msg.textContent = "プライバシーポリシーと表記を確かめて、チェックを入れてください"; return; }
       go.disabled = true; msg.textContent = "予約しています…";
       const res = await fetch("/api/p/booking/" + encodeURIComponent(slug), { method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email, name: q('[data-k="name"]').value.trim(), topic: q('[data-k="topic"]') ? q('[data-k="topic"]').value : "", answers: Object.fromEntries([...el.querySelectorAll("[data-q]")].map((x) => [x.dataset.q, x.value])), consent: true, slot: picked, page: PAGE, r: route, vid, source: store.get("lab_src") || "direct", turnstile: bot ? bot.get() : "" }) })
+        body: JSON.stringify({ email, name: q('[data-k="name"]').value.trim(), topic: q('[data-k="topic"]') ? q('[data-k="topic"]').value : "", answers: answersOf(), consent: true, slot: picked, page: PAGE, r: route, vid, source: store.get("lab_src") || "direct", turnstile: bot ? bot.get() : "" }) })
         .then((x) => x.json()).catch(() => ({ ok: false, error: "network" }));
       go.disabled = false;
       if (!res.ok && bot) bot.reset();
@@ -631,6 +635,7 @@ export const EMBED_JS = `(() => {
       if (res.ok && res.thanks_url && /^https:[/][/]/.test(res.thanks_url)) { location.href = res.thanks_url; return; }
       if (res.ok) { el.innerHTML = '<p class="lab-note" style="white-space:pre-wrap">' + esc(res.label + " で予約を受け付けました。確認のメールをお送りしました。") + "</p>"; return; }
       if (res.error === "answer_required") { msg.textContent = "「" + (res.label || "") + "」を書いてください"; return; }
+      if (res.error === "bad_answer" || res.error === "bad_number") { msg.textContent = "「" + (res.label || "") + "」を確かめてください" + (res.error === "bad_number" ? "（数字で）" : ""); return; }
       msg.textContent = res.error === "slot_taken" ? "その時間はちょうど埋まりました。ほかの時間を選んでください" : res.error === "already_booked" ? "すでに " + (res.label || "") + " で予約があります" : res.error === "bad_email" ? "メールアドレスを確かめてください" : "予約できませんでした。時間をおいてもう一度お試しください";
     });
   }

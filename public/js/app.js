@@ -403,7 +403,7 @@ function paintBookingLine(ready) {
   const old = home.querySelector(".bk-line"); if (old) old.remove();
   home.insertAdjacentHTML("afterbegin", `<div class="bk-line"><span>シアニンに相談したいときは</span><a class="btn small" href="#booking">相談を予約する →</a></div>`);
 }
-const BK_WHY = { slot_taken: "その時間はちょうど埋まりました。ほかの時間を選択してください", already_booked: "このメニューは、すでに予約があります", bad_slot: "その時間は選択できません", answer_required: "入力されていない項目があります", not_found: "この予約はいま受け付けていません", too_late: "変更・キャンセルの期限を過ぎています。ご連絡ください", bad_minutes: "その所要時間は選択できません" };
+const BK_WHY = { bad_answer: "選択肢から選んでください", bad_number: "数字で入力してください", slot_taken: "その時間はちょうど埋まりました。ほかの時間を選択してください", already_booked: "このメニューは、すでに予約があります", bad_slot: "その時間は選択できません", answer_required: "入力されていない項目があります", not_found: "この予約はいま受け付けていません", too_late: "変更・キャンセルの期限を過ぎています。ご連絡ください", bad_minutes: "その所要時間は選択できません" };
 const BK_WD = ["日", "月", "火", "水", "木", "金", "土"];
 // 状態：bk.data＝サーバーの答え・bk.menu＝選んでいるメニュー・bk.day＝選んだ日（YYYY-MM-DD・日本時間）・bk.slot＝選んだ枠・bk.ym＝表示中の月・bk.moving＝日時を変更している予約・bk.draft＝書きかけ
 const bk = { token: null, data: null, menu: null, day: null, slot: null, ym: null, moving: null, draft: {}, step: "pick", len: null };
@@ -437,7 +437,7 @@ function drawMine() {
       ${b.locked ? `<span class="lock">変更・キャンセルは開始の ${esc(b.cancel_hours)} 時間前まで。変更はご連絡ください</span>` : `${b.slug ? `<button class="lnk" type="button" data-move="${esc(b.slot)}" aria-label="${esc(bkDayLabel(k) + " の予約の日時を変更")}">日時を変更</button>` : ""}<button class="lnk" type="button" data-cancel="${esc(b.slot)}" aria-label="${esc(bkDayLabel(k) + " の予約をキャンセル")}">キャンセル</button>`}</div>`; }).join("");
   $("bk-mine").querySelectorAll("[data-move]").forEach((x) => x.addEventListener("click", () => {
     const b = bk.data.mine.find((y) => y.slot === x.dataset.move); bk.moving = b; bk.menu = b.slug; bk.len = b.minutes;
-    bk.draft = Object.fromEntries((b.answers || []).map((a) => [a.key, a.value]));
+    bk.draft = Object.fromEntries((b.answers || []).map((a) => [a.key, a.values || a.value]));
     drawMenus(); startPick(); bkToast("新しい日時を選ぶと、現在の予約と入れ替わります");
     $("bk-main").scrollIntoView({ block: "start", behavior: "smooth" });
   }));
@@ -526,10 +526,23 @@ function bkBar() {
 }
 addEventListener("resize", () => { if (bk.data) bkBar(); });
 function bkQ(q) {
-  const v = bk.draft[q.key] ?? q.hint ?? "", id = "bkq-" + q.key;
-  return `<div class="f" data-key="${esc(q.key)}"><label for="${id}">${esc(q.label)}<span class="req">${q.required ? "必須" : "任意"}</span></label>${q.kind === "text"
-    ? `<input type="text" id="${id}" data-q="${esc(q.key)}" maxlength="200" value="${esc(v)}"${q.required ? ' aria-required="true"' : ""}>`
-    : `<textarea id="${id}" data-q="${esc(q.key)}" rows="${Math.max(3, Math.min(8, String(v).split("\n").length + 1))}" maxlength="4000"${q.required ? ' aria-required="true"' : ""}>${esc(v)}</textarea>`}<div class="f-msg hidden"></div></div>`;
+  const v = bk.draft[q.key] ?? (q.kind === "check" ? [] : q.hint ?? ""), id = "bkq-" + q.key, req = q.required ? ' aria-required="true"' : "";
+  const head = `<div class="f" data-key="${esc(q.key)}" data-kind="${esc(q.kind)}">`;
+  if (q.kind === "radio" || q.kind === "check") {
+    const on = new Set(Array.isArray(v) ? v : [v]);
+    return `${head}<fieldset class="opts"><legend>${esc(q.label)}<span class="req">${q.required ? "必須" : "任意"}</span></legend>${(q.options || []).map((o, j) => `<label class="opt"><input type="${q.kind === "radio" ? "radio" : "checkbox"}" name="${id}" data-q="${esc(q.key)}" value="${esc(o)}"${on.has(o) ? " checked" : ""}${j === 0 ? req : ""}><span>${esc(o)}</span></label>`).join("")}</fieldset><div class="f-msg hidden"></div></div>`;
+  }
+  return `${head}<label for="${id}">${esc(q.label)}<span class="req">${q.required ? "必須" : "任意"}</span></label>${q.kind === "text" || q.kind === "number"
+    ? `<input type="text" id="${id}" data-q="${esc(q.key)}" maxlength="200" value="${esc(v)}"${q.kind === "number" ? ' inputmode="decimal" autocomplete="off" placeholder="数字で入力（例 120000）"' : ""}${req}>`
+    : `<textarea id="${id}" data-q="${esc(q.key)}" rows="${Math.max(3, Math.min(8, String(v).split("\n").length + 1))}" maxlength="4000"${req}>${esc(v)}</textarea>`}<div class="f-msg hidden"></div></div>`;
+}
+// 質問ごとの答え（複数選択は配列）
+function bkAnswer(key) {
+  const f = $("bk-form").querySelector(`.f[data-key="${CSS.escape(key)}"]`); if (!f) return "";
+  const k = f.dataset.kind;
+  if (k === "check") return [...f.querySelectorAll("input:checked")].map((x) => x.value);
+  if (k === "radio") { const c = f.querySelector("input:checked"); return c ? c.value : ""; }
+  return f.querySelector("input,textarea").value;
 }
 function bkForm() {
   const t = bkMenu(), sel = bkSlots(t).find((s) => s.slot === bk.slot); if (!sel) return;
@@ -547,21 +560,24 @@ function bkForm() {
   const firstField = $("bk-form").querySelector("input,textarea"); if (firstField) firstField.focus();
   $("booker").scrollIntoView({ block: "start", behavior: "smooth" });
   $("bk-back").onclick = () => { bk.step = "pick"; $("booker").classList.remove("form-mode"); $("bk-calbox").classList.remove("hidden"); $("bk-times").classList.remove("hidden"); $("bk-form").classList.add("hidden"); $("bk-picked").classList.add("hidden"); drawTimes(); const f = $("bk-tlist").querySelector('[aria-pressed="true"]'); if (f) f.focus(); };
-  $("bk-form").oninput = (e) => { const k = e.target.dataset.q; if (!k) return; bk.draft[k] = e.target.value; const f = e.target.closest(".f"); f.classList.remove("bad"); f.querySelector(".f-msg").classList.add("hidden"); $("bk-saved").textContent = "下書き保存しました"; };
+  $("bk-form").oninput = (e) => { const k = e.target.dataset.q; if (!k) return; bk.draft[k] = bkAnswer(k); const f = e.target.closest(".f"); f.classList.remove("bad"); f.querySelector(".f-msg").classList.add("hidden"); $("bk-saved").textContent = "下書き保存しました"; };
   $("bk-form").onsubmit = async (e) => {
     e.preventDefault();
     let first = null;
     for (const q of t.questions || []) {
-      const f = $("bk-form").querySelector(`.f[data-key="${CSS.escape(q.key)}"]`), el = f.querySelector("input,textarea"), bad = q.required && !el.value.trim();
-      f.classList.toggle("bad", bad); const m = f.querySelector(".f-msg"); m.classList.toggle("hidden", !bad); m.textContent = bad ? "入力してください" : ""; if (bad && !first) first = el;
+      const f = $("bk-form").querySelector(`.f[data-key="${CSS.escape(q.key)}"]`), el = f.querySelector("input,textarea"), v = bkAnswer(q.key);
+      const empty = Array.isArray(v) ? !v.length : !String(v).trim();
+      const msg = q.required && empty ? (q.kind === "radio" || q.kind === "check" ? "選択してください" : "入力してください")
+        : q.kind === "number" && !empty && !/^-?[\d０-９,，.．]+$/.test(String(v).trim()) ? "数字で入力してください" : "";
+      f.classList.toggle("bad", !!msg); const m = f.querySelector(".f-msg"); m.classList.toggle("hidden", !msg); m.textContent = msg; if (msg && !first) first = el;
     }
     if (first) { first.focus(); return; }
-    const answers = Object.fromEntries([...$("bk-form").querySelectorAll("[data-q]")].map((x) => [x.dataset.q, x.value]));
+    const answers = (t.questions || []).length ? Object.fromEntries(t.questions.map((q) => [q.key, bkAnswer(q.key)])) : { topic: bkAnswer("topic") };
     const go = $("bk-form").querySelector("[type=submit]"); go.disabled = true; $("bk-err").textContent = "予約しています…";
     const res = await api("/api/booking", { method: "POST", token: bk.token, body: { slug: t.slug, slot: bk.slot, minutes: bkLen(t), answers, ...(bk.moving ? { from: bk.moving.slot } : {}) } });
     go.disabled = false;
     if (!res.ok) {
-      $("bk-err").textContent = (res.error === "answer_required" ? `「${res.label}」を入力してください` : BK_WHY[res.error]) || "予約できませんでした。" + errText(res);
+      $("bk-err").textContent = (res.error === "answer_required" ? `「${res.label}」を入力してください` : res.label && BK_WHY[res.error] ? `「${res.label}」：${BK_WHY[res.error]}` : BK_WHY[res.error]) || "予約できませんでした。" + errText(res);
       if (res.error === "slot_taken") { const keep = bk.draft; await loadBooking(bk.token); bk.draft = keep; }
       return;
     }
