@@ -2,6 +2,9 @@ import { getClient, api, esc, fmtTime, authImage, shrinkImage, noticeHtml } from
 import { correctionHtml, wireNotes } from "/stable/js/correction.js";
 import { setupStudentPush } from "/stable/js/pushclient.js";
 import { flatten, homeHtml, libraryHtml, searchHtml } from "/stable/js/home.js";
+import { planHtml, chainHtml, popHtml, homeCardHtml, tacHtml, recHtml, reviewHtml, growHtml, reportFor, applyAction, applyField, applyWeek, applyNext, carryTry, setPath, weekNo, weekInfo, WEEKS, draftHtml } from "/stable/js/goalplan.js";
+
+
 
 const $ = (id) => document.getElementById(id);
 // 便 8g-1：確認コードで入ったときは /app?fresh=1 で来る（リンクのときは住所の # に access_token）
@@ -65,6 +68,7 @@ async function main() {
   $("main").classList.remove("hidden");
   watchSideEnd();
   $("who").textContent = r.me.name || r.me.email;
+  window.__labMe = r.me; // 予約の入力画面で「予約者」を出す
   $("logout").addEventListener("click", async (e) => { e.preventDefault(); await sb.auth.signOut(); location.replace("/"); });
   // 便 2（関門 5）：共通の外枠（？・アプリ一覧・アカウント）。読めなかったときは今までの名前とログアウトのまま
   {
@@ -78,7 +82,19 @@ async function main() {
   }
   // 関門 1（2026-10-29）：会員でない人（無料の登録・会員でない買い手）は「ご契約」だけ。ほかのタブは出さない
   if (r.access === "contract") {
-    document.querySelectorAll(".side [data-tab]").forEach((b) => b.classList.toggle("hidden", b.dataset.tab !== "contract"));
+    // 2026-11-05：個別相談の予約は、ご契約だけの画面でも権利が合えば出す
+    const bkOn = r.booking_ready === true;
+    document.querySelectorAll(".side [data-tab]").forEach((b) => b.classList.toggle("hidden", !(b.dataset.tab === "contract" || (bkOn && b.dataset.tab === "booking"))));
+    if (bkOn) {
+      const pick = (name) => {
+        ["contract", "booking"].forEach((t) => { $("tab-" + t).classList.toggle("hidden", t !== name); document.querySelector(`.side [data-tab="${t}"]`).setAttribute("aria-selected", String(t === name)); });
+        $("crumb").textContent = name === "booking" ? "予約" : "ご契約";
+        if (name === "booking") loadBooking(session.access_token);
+      };
+      document.querySelector('.side [data-tab="booking"]').addEventListener("click", () => pick("booking"));
+      document.querySelector('.side [data-tab="contract"]').addEventListener("click", () => pick("contract"));
+      if (location.hash === "#booking") setTimeout(() => pick("booking"), 0);
+    }
     const cb = document.querySelector('.side [data-tab="contract"]'); cb.innerHTML = '<span class="lbl">ご契約</span>'; cb.removeAttribute("data-quiet");
     $("news-btn").classList.add("hidden");
     ["mypage", "goals", "lessons", "lesson", "news", "room", "review", "booking", "apps"].forEach((t) => $("tab-" + t).classList.add("hidden"));
@@ -142,6 +158,8 @@ async function main() {
     $("rf-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText(rf.link); $("rf-copy").textContent = "写しました"; } catch (_) { $("rf-copy").textContent = "写せませんでした"; } });
   }
 
+  // 個別相談の予約（2026-11-05）：予約できる種類が 1 つでもあれば、左のメニューとホームの 1 行に出す
+  const bookingReady = r.booking_ready === true;
   const sections = ["home", "mypage", "goals", "lessons", "lesson", "news", "room", "review", "booking", "contract", "apps"];
   const showTab = (name) => {
     sections.forEach((s) => $("tab-" + s).classList.toggle("hidden", s !== name));
@@ -170,6 +188,8 @@ async function main() {
     if (!flat.length) { $("tab-home").innerHTML = $("tab-lessons").innerHTML; return; }
     let theme = null; try { theme = localStorage.getItem(THEME_KEY); } catch { /* 覚えられなくても動く */ }
     $("tab-home").innerHTML = homeHtml({ tier: r.tier || "lab", rows: r.home_rows, flat, views, seed: r.me.email || "", theme });
+    paintBookingLine(bookingReady);
+    paintGoalCard();
     const sel = $("home-theme");
     if (sel) sel.addEventListener("change", () => { try { localStorage.setItem(THEME_KEY, sel.value); } catch { /* 覚えられなくても今は変わる */ } drawHome(); $("home-theme") && $("home-theme").focus(); });
   };
@@ -292,13 +312,12 @@ async function main() {
   if (!location.hash || location.hash === "#home") showTab("home");
   if (location.hash === "#review") showTab("review");
   // ムダ 2（2026-10-30）：予約は、サーバーが準備できたと返すまで左のメニューに出さない
-  const bookingReady = r.booking_ready === true;
   document.querySelector('.side [data-tab="booking"]').classList.toggle("hidden", !bookingReady);
   if (location.hash === "#booking" && bookingReady) showTab("booking");
   // 目標タブ（2026-10-30）：しあらぼの生徒だけ
   const goalsReady = r.goals_ready === true;
   document.querySelector('.side [data-tab="goals"]').classList.toggle("hidden", !goalsReady);
-  if (goalsReady) wireGoals(token);
+  if (goalsReady) { wireGoals(token); gReady = true; paintGoalCard(); }
   if (location.hash === "#goals" && goalsReady) showTab("goals");
   if (location.hash === "#contract") showTab("contract");
   // 便 8g-1：通知を押して開いた画面がもう出ているとき、住所の # だけが変わるので、ここで部屋へ移る
@@ -377,61 +396,188 @@ async function loadContract(token) {
   }));
 }
 
-// ---------- 予約とセミナー（便 4） ----------
-let pickedSlot = null;
+// ---------- 個別相談の予約（2026-11-05）：マーケくんの予約の種類（audience=member） ----------
+// ホームの上に小さく 1 行（学びの記録の上・目標のカードの下）
+function paintBookingLine(ready) {
+  const home = $("tab-home") && $("tab-home").querySelector(".home"); if (!home || !ready) return;
+  const old = home.querySelector(".bk-line"); if (old) old.remove();
+  home.insertAdjacentHTML("afterbegin", `<div class="bk-line"><span>シアニンに相談したいときは</span><a class="btn small" href="#booking">相談を予約する →</a></div>`);
+}
+const BK_WHY = { slot_taken: "その時間はちょうど埋まりました。ほかの時間を選択してください", already_booked: "このメニューは、すでに予約があります", bad_slot: "その時間は選択できません", answer_required: "入力されていない項目があります", not_found: "この予約はいま受け付けていません" };
+const BK_WD = ["日", "月", "火", "水", "木", "金", "土"];
+// 状態：bk.data＝サーバーの答え・bk.menu＝選んでいるメニュー・bk.day＝選んだ日（YYYY-MM-DD・日本時間）・bk.slot＝選んだ枠・bk.ym＝表示中の月・bk.moving＝日時を変更している予約・bk.draft＝書きかけ
+const bk = { token: null, data: null, menu: null, day: null, slot: null, ym: null, moving: null, draft: {}, step: "pick" };
+const jstKey = (iso) => new Date(Date.parse(iso) + 9 * 3600e3).toISOString().slice(0, 10);
+const bkDayLabel = (key) => { const [y, m, d] = key.split("-").map(Number); return `${m}月${d}日（${BK_WD[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]}）`; };
+const bkTime = (iso) => new Date(Date.parse(iso) + 9 * 3600e3).toISOString().slice(11, 16);
+const bkSpan = (s) => `${bkTime(s.slot)}〜${s.end}`;
+let bkToastTimer = null;
+function bkToast(text, undo) {
+  $("bk-toast-t").textContent = text; $("bk-toast-u").classList.toggle("hidden", !undo);
+  $("bk-toast-u").onclick = async () => { $("bk-toast").classList.add("hidden"); if (undo) await undo(); };
+  $("bk-toast").classList.remove("hidden"); clearTimeout(bkToastTimer); bkToastTimer = setTimeout(() => $("bk-toast").classList.add("hidden"), 8000);
+}
 async function loadBooking(token) {
+  bk.token = token;
   const r = await api("/api/booking", { token });
-  if (!r.ok) { $("bk-status").textContent = "読めませんでした。" + errText(r); return; }
-  // B の便 7c-1：本番では、本物の枠ができるまで（便 8f）準備中だけを出す
-  if (r.ready === false) {
-    $("bk-mine").innerHTML = ""; $("bk-slots").innerHTML = `<p class="note" style="margin:0">${esc(r.note || "準備中です")}</p>`;
-    $("bk-form").classList.add("hidden"); $("bk-seminars").innerHTML = ""; $("bk-status").textContent = "";
-    return;
+  if (!r.ok) { $("bk-main").innerHTML = `<p class="note">読み込めませんでした。${esc(errText(r))}</p>`; return; }
+  bk.data = r;
+  drawMine();
+  if (!r.ready) { $("bk-menus").innerHTML = ""; $("bk-main").innerHTML = `<div class="card"><p class="note" style="margin:0">${esc(r.note || "いま予約できる個別相談はありません")}</p></div>`; return; }
+  if (!bk.menu || !r.types.some((t) => t.slug === bk.menu)) bk.menu = (r.types.find((t) => !t.booked) || r.types[0]).slug;
+  drawMenus(); startPick();
+}
+function bkMenu() { return bk.data.types.find((t) => t.slug === bk.menu); }
+function drawMine() {
+  $("bk-mine").innerHTML = (bk.data.mine || []).map((b) => { const k = jstKey(b.slot), [, m, d] = k.split("-").map(Number);
+    return `<div class="bk-mine"><div class="dt" aria-hidden="true"><small>${m}月</small><b>${d}</b></div><div class="tx"><b>${esc(bkDayLabel(k))} ${esc(bkTime(b.slot))}〜${esc(b.end)}</b><span>${esc(b.title)}・予約済み</span></div>
+      ${b.slug ? `<button class="lnk" type="button" data-move="${esc(b.slot)}" aria-label="${esc(bkDayLabel(k) + " の予約の日時を変更")}">日時を変更</button>` : ""}<button class="lnk" type="button" data-cancel="${esc(b.slot)}" aria-label="${esc(bkDayLabel(k) + " の予約をキャンセル")}">キャンセル</button></div>`; }).join("");
+  $("bk-mine").querySelectorAll("[data-move]").forEach((x) => x.addEventListener("click", () => {
+    const b = bk.data.mine.find((y) => y.slot === x.dataset.move); bk.moving = b; bk.menu = b.slug;
+    bk.draft = Object.fromEntries((b.answers || []).map((a) => [a.key, a.value]));
+    drawMenus(); startPick(); bkToast("新しい日時を選ぶと、現在の予約と入れ替わります");
+    $("bk-main").scrollIntoView({ block: "start", behavior: "smooth" });
+  }));
+  $("bk-mine").querySelectorAll("[data-cancel]").forEach((x) => x.addEventListener("click", async () => {
+    x.disabled = true;
+    const res = await api("/api/booking/cancel", { method: "POST", token: bk.token, body: { slot: x.dataset.cancel } });
+    if (!res.ok) { x.disabled = false; bkToast("キャンセルできませんでした。" + errText(res)); return; }
+    await loadBooking(bk.token);
+    bkToast("予約をキャンセルしました", async () => {
+      const again = await api("/api/booking", { method: "POST", token: bk.token, body: { slug: res.slug, slot: res.slot, answers: res.answers } });
+      await loadBooking(bk.token);
+      bkToast(again.ok ? "予約を元に戻しました" : "元に戻せませんでした（その時間は埋まりました）");
+    });
+  }));
+}
+function drawMenus() {
+  const ts = bk.data.types;
+  $("bk-menus").innerHTML = ts.length > 1 ? `<div class="bk-menus" role="group" aria-label="メニュー">${ts.map((t) => `<button type="button" aria-pressed="${t.slug === bk.menu}" data-menu="${esc(t.slug)}"><span class="cdot" style="background:${esc(t.color || "var(--accent)")}"></span>${esc(t.title)}</button>`).join("")}</div>` : "";
+  $("bk-menus").querySelectorAll("[data-menu]").forEach((x) => x.addEventListener("click", () => { bk.menu = x.dataset.menu; bk.moving = null; drawMenus(); startPick(); }));
+}
+function startPick() {
+  const t = bkMenu(); bk.step = "pick"; bk.slot = null;
+  const days = [...new Set(t.slots.map((s) => jstKey(s.slot)))];
+  bk.day = days[0] || null;
+  bk.ym = (bk.day || jstKey(new Date().toISOString())).slice(0, 7);
+  if (t.booked && !bk.moving) {
+    $("bk-main").innerHTML = `<div class="card"><p style="margin:0"><b>${esc(t.title)}</b> は予約済みです。日時を変えるときは、上の「日時を変更」から選んでください。</p></div>`; bkBar(); return;
   }
-  $("bk-mine").innerHTML = r.mine.length
-    ? r.mine.map((b) => `<div class="msg ok booked"><div><b>予約中：${esc(b.label)}</b>${b.topic ? `<div class="note">${esc(b.topic)}</div>` : ""}</div><button class="btn ghost small" data-cancel="${esc(b.slot)}" type="button">取り消す</button></div>`).join("")
-    : "";
-  const hasBooking = r.mine.length > 0;
-  const days = {};
-  for (const s of r.slots) { const d = s.label.split("）")[0] + "）"; (days[d] = days[d] || []).push(s); }
-  $("bk-slots").innerHTML = hasBooking ? '<p class="note" style="margin:0">予約は 1 件までです。別の日時にするときは、上の予約を取り消してから選んでください。</p>'
-    : Object.entries(days).map(([d, list]) => `<div class="slot-day"><div class="slot-date">${esc(d)}</div><div class="slot-row">${list.map((s) => `<button type="button" class="slot" data-slot="${esc(s.slot)}" data-label="${esc(s.label)}" ${s.taken ? "disabled" : ""}>${esc(s.label.split("）")[1])}${s.taken ? "<small>埋まり</small>" : ""}</button>`).join("")}</div></div>`).join("");
-  $("bk-form").classList.add("hidden");
-  document.querySelectorAll("#bk-slots .slot").forEach((b) => b.addEventListener("click", () => {
-    document.querySelectorAll("#bk-slots .slot").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
-    pickedSlot = b.dataset.slot;
-    $("bk-picked").textContent = "選んだ日時：" + b.dataset.label;
-    $("bk-form").classList.remove("hidden");
-  }));
-  document.querySelectorAll("[data-cancel]").forEach((b) => b.addEventListener("click", async () => {
-    b.disabled = true;
-    const res = await api("/api/booking/cancel", { method: "POST", token, body: { slot: b.dataset.cancel } });
-    $("bk-status").textContent = res.ok ? "予約を取り消しました" : "取り消せませんでした。" + errText(res);
-    loadBooking(token);
-  }));
-  $("bk-go").onclick = async () => {
-    if (!pickedSlot) return;
-    $("bk-go").disabled = true;
-    const res = await api("/api/booking", { method: "POST", token, body: { slot: pickedSlot, topic: $("bk-topic").value } });
-    $("bk-go").disabled = false;
-    const why = { slot_taken: "その枠は先に埋まりました", already_booked: "予約は 1 件までです", bad_slot: "その枠は選べません" };
-    $("bk-status").textContent = res.ok ? "予約しました（確認のメールを送りました）" : (why[res.error] || "予約できませんでした。" + errText(res));
-    if (res.ok) { pickedSlot = null; $("bk-topic").value = ""; }
-    loadBooking(token);
+  $("bk-main").innerHTML = `<div class="booker" id="booker">
+    <aside class="info"><div class="host"><div class="av" aria-hidden="true">シ</div><div><b>シアニン</b><br><span>シアラボ</span></div></div>
+      <h2>${esc(t.title)}</h2>
+      <ul class="meta"><li><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>${esc(t.minutes)} 分</li>
+        ${t.zoom ? '<li><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3"/></svg>Zoom（URL は予約後にメールで届きます）</li>' : ""}
+        <li class="picked hidden" id="bk-picked"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M8 3v4M16 3v4M3.5 10h17"/></svg><span id="bk-picked-t"></span></li>
+        ${bk.moving ? `<li class="moving">変更前：${esc(bkDayLabel(jstKey(bk.moving.slot)))} ${esc(bkTime(bk.moving.slot))}〜${esc(bk.moving.end)}</li>` : ""}</ul>
+      ${t.description ? `<p class="desc">${esc(t.description)}</p>` : ""}${t.paused ? '<p class="desc"><span class="pill gray">停止中（管理者だけに表示）</span></p>' : ""}</aside>
+    <div class="calbox" id="bk-calbox"><div class="cal-h"><b id="bk-ym" aria-live="polite"></b><button class="nav" type="button" id="bk-prev" aria-label="前の月">‹</button><button class="nav" type="button" id="bk-next" aria-label="次の月">›</button></div>
+      <div class="cal" id="bk-cal"></div><div class="tz">タイムゾーン：日本時間（GMT+9）</div></div>
+    <div class="times" id="bk-times"><h3 id="bk-t-h"></h3><div class="tlist" id="bk-tlist"></div>
+      <div class="pick wait" id="bk-pick"><div class="pk-t" id="bk-pk-t">時間を選択すると次へ進めます</div><button class="btn" type="button" id="bk-pk-go">次へ</button></div></div>
+    <form class="formbox hidden" id="bk-form" novalidate></form>
+  </div>`;
+  if (!t.slots.length) { $("bk-cal").innerHTML = ""; $("bk-tlist").innerHTML = '<p class="note">いま予約できる空き時間がありません。少し時間をおいてもう一度ご覧ください。</p>'; }
+  $("bk-prev").onclick = () => { bk.ym = bkShift(bk.ym, -1); drawCal(); };
+  $("bk-next").onclick = () => { bk.ym = bkShift(bk.ym, 1); drawCal(); };
+  $("bk-pk-go").onclick = () => { if (!bk.slot) { $("bk-pk-t").innerHTML = '<b class="err-t">時間を選択してください</b>'; const f = $("bk-tlist").querySelector(".t"); if (f) f.focus(); return; } bkForm(); };
+  $("bk-bar-go").onclick = () => bkForm();
+  drawCal(); drawTimes();
+}
+const bkShift = (ym, n) => { const [y, m] = ym.split("-").map(Number), d = new Date(Date.UTC(y, m - 1 + n, 1)); return d.toISOString().slice(0, 7); };
+function drawCal() {
+  const t = bkMenu(), [y, m] = bk.ym.split("-").map(Number);
+  const open = new Map(); for (const s of t.slots) { const k = jstKey(s.slot); open.set(k, (open.get(k) || 0) + 1); }
+  const months = [...new Set([...open.keys()].map((k) => k.slice(0, 7)))].sort();
+  $("bk-ym").textContent = `${y}年${m}月`;
+  $("bk-prev").disabled = !months.length || bk.ym <= months[0];
+  $("bk-next").disabled = !months.length || bk.ym >= months[months.length - 1];
+  const first = new Date(Date.UTC(y, m - 1, 1)).getUTCDay(), n = new Date(Date.UTC(y, m, 0)).getUTCDate(), today = jstKey(new Date().toISOString());
+  let h = BK_WD.map((w) => `<div class="wd">${w}</div>`).join("") + "<div></div>".repeat(first);
+  for (let d = 1; d <= n; d++) {
+    const k = `${bk.ym}-${String(d).padStart(2, "0")}`, c = open.get(k) || 0, cls = (k === today ? " today" : "");
+    h += c ? `<button type="button" class="d open${cls}" data-day="${k}" aria-pressed="${k === bk.day}" aria-label="${bkDayLabel(k)}・空き ${c} 枠">${d}</button>` : `<div class="d${cls}" aria-hidden="true">${d}</div>`;
+  }
+  $("bk-cal").innerHTML = h;
+  $("bk-cal").querySelectorAll("[data-day]").forEach((x) => x.addEventListener("click", () => { bk.day = x.dataset.day; bk.slot = null; drawCal(); drawTimes(); if (matchMedia("(max-width: 860px)").matches) $("bk-times").scrollIntoView({ block: "start", behavior: "smooth" }); }));
+}
+function drawTimes() {
+  const t = bkMenu();
+  if (!bk.day) { $("bk-t-h").textContent = ""; return; }
+  $("bk-t-h").textContent = bkDayLabel(bk.day);
+  const list = t.slots.filter((s) => jstKey(s.slot) === bk.day);
+  $("bk-tlist").innerHTML = list.map((s) => `<button type="button" class="t" data-slot="${esc(s.slot)}" aria-pressed="${bk.slot === s.slot}" aria-label="${esc(bkSpan(s))}">${esc(bkTime(s.slot))}<small> – ${esc(s.end)}</small></button>`).join("");
+  $("bk-tlist").querySelectorAll("[data-slot]").forEach((x) => x.addEventListener("click", () => { bk.slot = x.dataset.slot; drawTimes(); const f = $("bk-tlist").querySelector(`[data-slot="${CSS.escape(bk.slot)}"]`); if (f) f.focus(); }));
+  const sel = list.find((s) => s.slot === bk.slot);
+  $("bk-pick").classList.toggle("wait", !sel);
+  $("bk-pk-t").innerHTML = sel ? `選択中の日時<b>${esc(bkDayLabel(bk.day))} ${esc(bkSpan(sel))}</b>` : "時間を選択すると次へ進めます";
+  bkBar();
+}
+function bkBar() {
+  const t = bk.data && bk.menu && bkMenu(), sel = t && t.slots.find((s) => s.slot === bk.slot);
+  const show = !!sel && bk.step === "pick" && matchMedia("(max-width: 860px)").matches && !$("tab-booking").classList.contains("hidden");
+  $("bk-bar").classList.toggle("hidden", !show);
+  if (show) $("bk-bar-t").innerHTML = `<b>${esc(bkDayLabel(bk.day))} ${esc(bkSpan(sel))}</b>${esc(t.minutes)} 分`;
+}
+addEventListener("resize", () => { if (bk.data) bkBar(); });
+function bkQ(q) {
+  const v = bk.draft[q.key] ?? q.hint ?? "", id = "bkq-" + q.key;
+  return `<div class="f" data-key="${esc(q.key)}"><label for="${id}">${esc(q.label)}<span class="req">${q.required ? "必須" : "任意"}</span></label>${q.kind === "text"
+    ? `<input type="text" id="${id}" data-q="${esc(q.key)}" maxlength="200" value="${esc(v)}"${q.required ? ' aria-required="true"' : ""}>`
+    : `<textarea id="${id}" data-q="${esc(q.key)}" rows="${Math.max(3, Math.min(8, String(v).split("\n").length + 1))}" maxlength="4000"${q.required ? ' aria-required="true"' : ""}>${esc(v)}</textarea>`}<div class="f-msg hidden"></div></div>`;
+}
+function bkForm() {
+  const t = bkMenu(), sel = t.slots.find((s) => s.slot === bk.slot); if (!sel) return;
+  bk.step = "form";
+  $("booker").classList.add("form-mode"); $("bk-calbox").classList.add("hidden"); $("bk-times").classList.add("hidden");
+  $("bk-picked").classList.remove("hidden"); $("bk-picked-t").textContent = `${bkDayLabel(bk.day)} ${bkSpan(sel)}`;
+  const me = (window.__labMe || {});
+  $("bk-form").innerHTML = `<button class="back" type="button" id="bk-back">‹ 戻る</button><h3>予約内容の入力</h3>
+    <div class="who">予約者：<b>${esc(me.name || "")}</b>${me.email ? `（${esc(me.email)}）` : ""}・ログイン中のアカウントで予約します</div>
+    ${(t.questions || []).map(bkQ).join("") || bkQ({ key: "topic", label: "相談したいこと", kind: "textarea", required: false, hint: "" })}
+    <div class="saved" id="bk-saved">入力内容は自動で下書き保存されます</div>
+    <div class="err-t" id="bk-err" aria-live="polite"></div>
+    <div class="cta"><button class="btn" type="submit">${bk.moving ? "この日時に変更" : "予約を確定"}</button></div>`;
+  $("bk-form").classList.remove("hidden"); bkBar();
+  const firstField = $("bk-form").querySelector("input,textarea"); if (firstField) firstField.focus();
+  $("booker").scrollIntoView({ block: "start", behavior: "smooth" });
+  $("bk-back").onclick = () => { bk.step = "pick"; $("booker").classList.remove("form-mode"); $("bk-calbox").classList.remove("hidden"); $("bk-times").classList.remove("hidden"); $("bk-form").classList.add("hidden"); $("bk-picked").classList.add("hidden"); drawTimes(); const f = $("bk-tlist").querySelector('[aria-pressed="true"]'); if (f) f.focus(); };
+  $("bk-form").oninput = (e) => { const k = e.target.dataset.q; if (!k) return; bk.draft[k] = e.target.value; const f = e.target.closest(".f"); f.classList.remove("bad"); f.querySelector(".f-msg").classList.add("hidden"); $("bk-saved").textContent = "下書き保存しました"; };
+  $("bk-form").onsubmit = async (e) => {
+    e.preventDefault();
+    let first = null;
+    for (const q of t.questions || []) {
+      const f = $("bk-form").querySelector(`.f[data-key="${CSS.escape(q.key)}"]`), el = f.querySelector("input,textarea"), bad = q.required && !el.value.trim();
+      f.classList.toggle("bad", bad); const m = f.querySelector(".f-msg"); m.classList.toggle("hidden", !bad); m.textContent = bad ? "入力してください" : ""; if (bad && !first) first = el;
+    }
+    if (first) { first.focus(); return; }
+    const answers = Object.fromEntries([...$("bk-form").querySelectorAll("[data-q]")].map((x) => [x.dataset.q, x.value]));
+    const go = $("bk-form").querySelector("[type=submit]"); go.disabled = true; $("bk-err").textContent = "予約しています…";
+    const res = await api("/api/booking", { method: "POST", token: bk.token, body: { slug: t.slug, slot: bk.slot, answers, ...(bk.moving ? { from: bk.moving.slot } : {}) } });
+    go.disabled = false;
+    if (!res.ok) {
+      $("bk-err").textContent = (res.error === "answer_required" ? `「${res.label}」を入力してください` : BK_WHY[res.error]) || "予約できませんでした。" + errText(res);
+      if (res.error === "slot_taken") { const keep = bk.draft; await loadBooking(bk.token); bk.draft = keep; }
+      return;
+    }
+    const moved = !!bk.moving;
+    bk.moving = null; bk.draft = {}; bk.step = "done";
+    $("bk-main").innerHTML = `<div class="bk-done" id="bk-done" tabindex="-1"><div class="ok" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
+      <h2>${moved ? "日時を変更しました" : "予約が完了しました"}</h2><p>確認メールを送信しました。前日にリマインドをお送りします。</p>
+      <dl class="sum"><dt>日時</dt><dd>${esc(bkDayLabel(jstKey(res.slot)))} ${esc(bkTime(res.slot))}〜${esc(res.end)}（日本時間）</dd><dt>メニュー</dt><dd>${esc(t.title)}</dd>${t.zoom ? "<dt>場所</dt><dd>Zoom（URL は確認メールに記載）</dd>" : ""}</dl>
+      <div class="addcal"><a class="btn ghost small" target="_blank" rel="noopener" href="${esc(bkGcal(t, res))}">Google カレンダーに追加 ↗</a></div>
+      <div class="cta" style="justify-content:center"><button class="btn small" type="button" id="bk-again">予約画面に戻る</button></div>
+      <p class="note">日時の変更・キャンセルは「予約」画面からいつでもできます</p></div>`;
+    $("bk-done").focus(); bkBar();
+    $("bk-again").onclick = () => loadBooking(bk.token);
+    api("/api/booking", { token: bk.token }).then((r) => { if (r.ok) { bk.data = r; drawMine(); } });
   };
-  $("bk-seminars").innerHTML = r.seminars.map((s) => `<div class="card seminar">
-      <div class="note">${esc(s.label)}・${s.minutes} 分${s.past ? "・終了" : ""}</div>
-      <h3>${esc(s.title)}</h3>
-      ${s.past
-        ? (s.archive_url ? `<a class="btn ghost small" href="${esc(s.archive_url)}" target="_blank" rel="noopener">アーカイブを見る</a>` : '<span class="note">申し込んだ人だけアーカイブが見られます</span>')
-        : (s.registered ? `<span class="pill">申込済</span> <a class="note" href="${esc(s.zoom_url)}" target="_blank" rel="noopener">Zoom の URL</a>` : `<button class="btn small" data-sem="${esc(s.id)}" type="button">申し込む</button>`)}
-    </div>`).join("");
-  document.querySelectorAll("[data-sem]").forEach((b) => b.addEventListener("click", async () => {
-    b.disabled = true;
-    const res = await api(`/api/seminars/${b.dataset.sem}/register`, { method: "POST", token });
-    $("bk-status").textContent = res.ok ? "セミナーに申し込みました（Zoom の URL をメールで送りました）" : "申し込めませんでした。" + errText(res);
-    loadBooking(token);
-  }));
+}
+// Google カレンダーの「予定を作成」の住所（予約した人が自分のカレンダーに入れる）
+function bkGcal(t, res) {
+  const f = (iso) => new Date(iso).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  const end = new Date(Date.parse(res.slot) + t.minutes * 60e3).toISOString();
+  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(t.title)}&dates=${f(res.slot)}/${f(end)}&details=${encodeURIComponent("参加の URL は確認メールに記載しています")}`;
 }
 
 // ---------- 会員の権利（便 3）と、商品を買う（B の便 4） ----------
@@ -649,76 +795,154 @@ function maybeShowA2hs() {
 main().catch((e) => fail("読み込めませんでした：" + e.message));
 
 
-// ---------- 目標と日報（2026-10-30）：目標はしあらぼ管理が正本（読むだけ）。日報・週報はここで書く ----------
-const G_ERR = { empty: "数字か文のどちらかを入れてください", bad_number: "数字の欄に数でないものが入っています", body_too_long: "2000 字までです", day_out_of_range: "その日はもう直せません（7 日前まで）", not_student: "この画面はしあらぼの生徒向けです" };
+// ---------- 目標（2026-10-30・2026-11-05 に目標達成くんへ）：目標はしあらぼ管理が正本（読むだけ）。日報・週報はここで書く ----------
+const G_ERR = { empty: "数字か文のどちらかを入れてください", bad_number: "数字の欄に数でないものが入っています", body_too_long: "2000 字までです", day_out_of_range: "その日はもう直せません（7 日前まで）", bad_plan: "送った中身が読めませんでした。画面を読み直してください", plan_too_large: "書いた量が多すぎます。少し短くしてください", not_student: "この画面はしあらぼの生徒向けです", report_incomplete: "理由と来週の進め方を選んでください", week_out_of_range: "その週はまだ出せません", plan_not_saved: "先に設計を保存してください", no_draft: "下書きが見つかりませんでした。画面を読み直してください", draft_closed: "この下書きはもう使いました。画面を読み直してください", bad_report: "送った中身が読めませんでした。画面を読み直してください" };
 const gErr = (r) => G_ERR[r && r.error] || errText(r);
 let gData = null, gToken = null;
-const gDayLabel = (d) => { const t = new Date(d + "T00:00:00Z"); return `${t.getUTCMonth() + 1}/${t.getUTCDate()}（${"日月火水木金土"[t.getUTCDay()]}）`; };
-const gAdd = (d, n) => new Date(Date.parse(d + "T00:00:00Z") + n * 86400000).toISOString().slice(0, 10);
-function gDaily(day) { return (gData.daily || []).find((x) => x.day === day) || null; }
-function gWeekly(day) { return (gData.weekly || []).find((x) => x.day === day) || null; }
-function gFillDaily() {
-  const day = $("g-day").value, rep = gDaily(day), track = gData.goal.track;
-  $("g-nums").innerHTML = track.length
-    ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px">${track.map((n, i) => `<div><label for="g-n${i}">${esc(n)}</label><input id="g-n${i}" data-name="${esc(n)}" type="number" inputmode="decimal" value="${rep && rep.numbers && rep.numbers[n] != null ? esc(String(rep.numbers[n])) : ""}"></div>`).join("")}</div>`
-    : '<p class="note" style="margin:0">追う数字は、次の面談でシアニンと決めます。それまでは文だけで大丈夫です。</p>';
-  $("g-body").value = rep ? rep.body || "" : "";
-  $("g-msg").textContent = rep ? `${gDayLabel(day)}の日報は保存してあります（直して保存し直せます）` : "";
-}
-function gFillWeekly() {
-  const wk = $("g-week").value, rep = gWeekly(wk), track = gData.goal.track;
-  const days = Array.from({ length: 7 }, (_, i) => gAdd(wk, i));
-  const reps = days.map(gDaily).filter(Boolean);
-  const sums = track.map((n) => `${n} ${reps.reduce((a, r) => a + (Number(r.numbers && r.numbers[n]) || 0), 0)}`);
-  $("g-sum").textContent = `この週の日報 ${reps.length} / 7 日${sums.length ? "・合計 " + sums.join("・") : ""}`;
-  $("g-wbody").value = rep ? rep.body || "" : "";
-  $("g-wmsg").textContent = rep ? "この週の振り返りは保存してあります（直して保存し直せます）" : "";
-}
-function gDraw() {
-  const g = gData.goal;
-  $("g-goal").innerHTML = `<h3 style="margin:0">いまの目標</h3>
-    <p style="margin:0;white-space:pre-wrap">${g.text ? esc(g.text) : '<span class="note">次の面談でシアニンと一緒に決めます</span>'}</p>
-    ${g.next_action ? `<div><div class="note" style="margin:0 0 2px">次の一手</div><p style="margin:0;white-space:pre-wrap">${esc(g.next_action)}</p></div>` : ""}
-    <p class="note" style="margin:0">${g.next_mtg ? `次の面談 ${esc(gDayLabel(g.next_mtg))}` : "次の面談はまだ決まっていません"}${g.last_mtg ? `・前回 ${esc(gDayLabel(g.last_mtg))}` : ""}</p>`;
-  const keepDay = $("g-day").value, keepWeek = $("g-week").value;
-  $("g-day").innerHTML = Array.from({ length: 8 }, (_, i) => gAdd(gData.today, -i)).map((d, i) => `<option value="${d}">${i === 0 ? "今日 " : i === 1 ? "昨日 " : ""}${gDayLabel(d)}${gDaily(d) ? " ✓" : ""}</option>`).join("");
-  $("g-week").innerHTML = [[gData.week, "今週"], [gData.last_week, "先週"]].map(([d, l]) => `<option value="${d}">${l}（${gDayLabel(d)}〜）${gWeekly(d) ? " ✓" : ""}</option>`).join("");
-  if (keepDay) $("g-day").value = keepDay;
-  if (keepWeek) $("g-week").value = keepWeek;
-  gFillDaily(); gFillWeekly();
-  const past = (gData.daily || []).slice(0, 14);
-  $("g-list").innerHTML = past.length ? past.map((r) => `<div><div class="note" style="margin:0">${esc(gDayLabel(r.day))}${Object.keys(r.numbers || {}).length ? "・" + Object.entries(r.numbers).map(([k, v]) => `${esc(k)} ${esc(String(v))}`).join("・") : ""}</div><p style="margin:2px 0 0;white-space:pre-wrap">${esc(r.body || "")}</p></div>`).join("") : '<p class="note" style="margin:0">まだありません</p>';
-}
+function gDraw() { drawPlan(); }
 async function loadGoals(token) {
   gToken = token;
   const r = await api("/api/me/goals", { token });
-  if (!r.ok) { $("g-goal").innerHTML = `<p class="note" style="margin:0">読めませんでした。${esc(gErr(r))}</p>`; return; }
+  if (!r.ok) { $("gk-v-plan").innerHTML = `<p class="note" style="margin:0">読めませんでした。${esc(gErr(r))}</p>`; return; }
+  if (gData && gPlanBusy()) r.plan = gData.plan; // 保存の途中なら、手元の設計を残す
   gData = r; gDraw();
 }
-async function gSave(kind) {
-  const isD = kind === "daily", btn = $(isD ? "g-save" : "g-wsave"), msg = $(isD ? "g-msg" : "g-wmsg");
-  const body = isD
-    ? { kind, day: $("g-day").value, body: $("g-body").value, numbers: Object.fromEntries([...document.querySelectorAll("#g-nums input[data-name]")].map((i) => [i.dataset.name, i.value])) }
-    : { kind, day: $("g-week").value, body: $("g-wbody").value };
-  btn.disabled = true; msg.textContent = "保存しています…";
-  const r = await api("/api/me/goals", { method: "PUT", token: gToken, body });
-  btn.disabled = false;
-  if (!r.ok) { msg.textContent = "保存できませんでした。" + gErr(r); return; }
-  const list = isD ? gData.daily : gData.weekly;
-  const at = list.findIndex((x) => x.day === r.report.day);
-  if (at >= 0) list[at] = r.report; else list.unshift(r.report);
-  gDraw();
-  $(isD ? "g-msg" : "g-wmsg").textContent = isD ? `${gDayLabel(r.report.day)}の日報を保存しました` : "週の振り返りを保存しました";
+// ---------- 目標達成くん（2026-11-05）：設計（①理想 ②条件 ③戦略）。直したら少し待ってまとめて保存する ----------
+let gReady = false, gSaveTimer = null, gSaving = false, gAgain = false;
+const gPlanBusy = () => !!gSaveTimer || gSaving;
+const gNow = () => weekNo(gData.plan, gData.today);
+function gToast(t) { const e = $("gk-toast"); e.textContent = t; e.classList.add("on"); clearTimeout(gToast.t); gToast.t = setTimeout(() => e.classList.remove("on"), 1800); }
+let gDraftOpen = false, gDraftDone = ""; // 6 便目：下書きの中を開いているか・直前に押したもの（start / keep）
+let gSel = null, gView = "plan", gWeek = null; // ④ で開いている状態の番号・いま見ている画面・記録と振り返りの週
+const gWk = () => gWeek || Math.max(1, Math.min(WEEKS, gNow()));
+const gRev = (n) => (gData.reviews || []).find((x) => x.week_no === n) || null;
+function drawPlan() {
+  if (!gData || !gData.plan) return;
+  $("gk-chain").innerHTML = chainHtml(gData.plan, gData.today);
+  $("gk-draft").innerHTML = draftHtml(gData.draft, gDraftOpen, gDraftDone);
+  $("gk-v-plan").innerHTML = planHtml(gData.plan, gData.today);
+  $("gk-v-tac").innerHTML = tacHtml(gData.plan, gData.today, gSel);
+  $("gk-v-rec").innerHTML = recHtml(gData.plan, gData.today, gWk());
+  $("gk-v-rev").innerHTML = reviewHtml(gData.plan, gData.today, gWk(), gRev(gWk()));
+  $("gk-v-grow").innerHTML = growHtml(gData.plan, gData.today, gData.reviews);
+}
+function gShow(v) {
+  gView = v;
+  document.querySelectorAll("#tab-goals .gk-seg [data-gv]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.gv === v)));
+  for (const x of ["plan", "tac", "rec", "rev", "grow"]) $("gk-v-" + x).classList.toggle("hidden", x !== v);
+}
+function openTac(i) { gSel = i; drawPlan(); gShow("tac"); $("s4").scrollIntoView({ behavior: "smooth", block: "start" }); }
+function planChanged(msg) { drawPlan(); paintGoalCard(); gSavedLine("保存を待っています…"); clearTimeout(gSaveTimer); gSaveTimer = setTimeout(gSavePlan, 700); if (msg) gToast(msg); }
+function gSavedLine(t, err) { const e = $("gk-saved"); e.textContent = t; e.classList.toggle("err", !!err); }
+async function gSavePlan() {
+  gSaveTimer = null;
+  if (gSaving) { gAgain = true; return; }
+  gSaving = true;
+  const { saved_at: _drop, ...plan } = gData.plan;
+  const r = await api("/api/me/goals/plan", { method: "PUT", token: gToken, body: { plan } });
+  gSaving = false;
+  if (!r.ok) { gSavedLine("保存できませんでした。" + gErr(r) + "（もう一度直すと、保存し直します）", true); }
+  else { gData.plan.saved_at = r.plan.saved_at; gSavedLine(`保存しました（${new Date(r.plan.saved_at).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}）`); }
+  if (gAgain) { gAgain = false; gSavePlan(); }
+}
+function showPop(c) {
+  const pop = $("gk-pop"); if (!pop) return;
+  pop.innerHTML = popHtml(gData.plan, +c.dataset.wk, gNow()); pop.hidden = false;
+  const r = c.getBoundingClientRect(), pr = pop.offsetParent.getBoundingClientRect();
+  pop.style.left = Math.max(0, Math.min(r.left - pr.left + r.width / 2 - pop.offsetWidth / 2, pr.width - pop.offsetWidth)) + "px";
+  pop.style.top = (r.bottom - pr.top + 8) + "px";
+}
+// 6 便目：シアニンと決めた下書き。start＝この設計で始める・keep＝今のままにする・undo＝元に戻す・open＝中を見る
+async function gDraft(action, btn) {
+  if (action === "open") { gDraftOpen = !gDraftOpen; drawPlan(); const b = document.querySelector('#gk-draft [data-draft="open"]'); if (b) b.focus(); return; }
+  btn.disabled = true;
+  const pending = !!gSaveTimer; clearTimeout(gSaveTimer); gSaveTimer = null;
+  if (pending) await gSavePlan(); // 保存を待っている書きかけを先に出し切る（元に戻すとき、その時点の設計に戻るように）
+  const r = await api("/api/me/goals/draft", { method: "POST", token: gToken, body: { action } });
+  if (!r.ok) { btn.disabled = false; gToast("できませんでした。" + gErr(r)); return; }
+  if (action === "start") { gData.plan = r.plan; gDraftDone = "start"; gToast("下書きで ①〜③ を入れて保存しました"); }
+  else if (action === "keep") { gDraftDone = "keep"; gToast("下書きはしまいました"); }
+  else { gData.plan = r.plan; gData.draft = r.draft; gDraftDone = ""; gToast("元に戻しました"); }
+  gSel = null; gWeek = null; drawPlan(); paintGoalCard(); gShow("plan");
+  const next = document.querySelector("#gk-draft button"); if (next) next.focus();
+}
+// 週報を出す：手元の設計を先に保存してから、その週の控えを送る
+async function gSubmit(btn) {
+  const n = gWk();
+  btn.disabled = true;
+  clearTimeout(gSaveTimer); gSaveTimer = null;
+  await gSavePlan();
+  if (!gData.plan.saved_at) { btn.disabled = false; return; }
+  const r = await api("/api/me/goals/review", { method: "POST", token: gToken, body: { week_no: n, report: reportFor(gData.plan, n) } });
+  if (!r.ok) { btn.disabled = false; gToast("出せませんでした。" + gErr(r)); return; }
+  gData.reviews = [r.review, ...(gData.reviews || []).filter((x) => x.week_no !== n)];
+  if (carryTry(gData.plan, n)) planChanged("週報を出しました。来週変えることを ④ に入れました");
+  else { drawPlan(); gToast("週報を出しました。シアニンが読みます"); }
+}
+const hoverOK = () => window.matchMedia("(hover: hover)").matches;
+function wirePlan() {
+  const root = $("tab-goals");
+  root.addEventListener("focusout", (e) => {
+    const t = e.target;
+    if (!(t.dataset && t.dataset.ed && gData && setPath(gData.plan, t.dataset.ed, t.textContent))) return;
+    const next = e.relatedTarget && e.relatedTarget.dataset && e.relatedTarget.dataset.ed; // 次に押した欄へ、描き直したあとも戻る
+    planChanged(t.dataset.ed.startsWith("kgi") && !gData.plan.goal13Own ? "13 週の目標も直りました" : "");
+    if (next) { const el = root.querySelector(`[data-ed="${next}"]`); if (el) el.focus(); }
+  });
+  root.addEventListener("keydown", (e) => { const t = e.target; if (t.dataset && t.dataset.ed && e.key === "Enter" && !e.isComposing) { e.preventDefault(); t.blur(); } });
+  root.addEventListener("change", (e) => {
+    const t = e.target;
+    if (!gData) return;
+    if (t.dataset && t.dataset.sel != null) { gSel = +t.value; drawPlan(); return; }
+    if (t.dataset && t.dataset.wsel != null) { gWeek = +t.value; drawPlan(); return; }
+    if (t.name === "gk-nx") { if (applyNext(gData.plan, gWk(), t.value)) planChanged(t.value === "cont" ? `第 ${gWk() + 1} 週も同じ状態を続けます。③ に反映しました` : "来週は次の状態へ進みます"); return; }
+    if (applyWeek(gData.plan, gWk(), t)) { planChanged(""); return; }
+    if (applyField(gData.plan, t)) { planChanged(""); return; }
+    if (t.dataset && t.dataset.start != null && /^\d{4}-\d{2}-\d{2}$/.test(t.value)) { const d = new Date(t.value + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); gData.plan.start = d.toISOString().slice(0, 10); planChanged("始めた週を直しました"); }
+  });
+  root.addEventListener("click", (e) => {
+    const t = e.target.closest("button, a[data-to]"); if (!t || !gData) return;
+    const d = t.dataset;
+    if (d.gv) { gShow(d.gv); return; }
+    if (d.draft) { gDraft(d.draft, t); return; }
+    if (d.to) { e.preventDefault(); if (d.to === "s4") { openTac(gSel); return; } gShow({ s5: "rec", s6: "rec", s7: "rev", s8: "rev" }[d.to] || "plan"); $(d.to).scrollIntoView({ behavior: "smooth", block: "start" }); return; }
+    if (d.kv || d.rs) { if (applyWeek(gData.plan, gWk(), t)) planChanged(""); return; }
+    if (d.copy != null) { const txt = reportFor(gData.plan, gWk()).text; (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => gToast("コピーしました。LINE にそのまま貼れます"), () => gToast("コピーできませんでした")); return; }
+    if (d.submit != null) { gSubmit(t); return; }
+    if (d.wk) { // マウスなら押すとその状態の戦術へ。指なら 1 回目は中身、2 回目で戦術へ
+      if (!hoverOK() && !t.classList.contains("pinned")) { root.querySelectorAll(".gk-road .pinned").forEach((x) => x.classList.remove("pinned")); t.classList.add("pinned"); showPop(t); return; }
+      const f = weekInfo(gData.plan, +d.wk, gNow()); if (f.i != null) openTac(f.i); return;
+    }
+    if (d.ms != null) { openTac(+d.ms); return; }
+    if (d.back != null) { gShow("plan"); const o = root.querySelector(".gk-overview"); if (o) o.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
+    if (applyAction(gData.plan, d, gNow())) {
+      const msg = d.add === "ms" ? "状態を足しました。空いている週に並びます" : d.del ? "消しました" : d.spare ? (gData.plan.spare.includes(+d.spare) ? `第 ${d.spare} 週を予備にしました` : `第 ${d.spare} 週に状態を戻しました`) : d.bmv != null ? "時間の置き場所を移しました" : "";
+      planChanged(msg);
+      if (d.add) { const sel = { kgi: "kgi", ms: "ms", bud: "bud" }[d.add]; const els = root.querySelectorAll(`[data-ed^="${sel}.${gData.plan[sel].length - 1}."]`); if (els[0]) els[0].focus(); }
+      if (d.addk != null) { const el = root.querySelector(`[data-kf="${d.addk}.${gData.plan.ms[d.addk].kpi.length - 1}.n"]`); if (el) el.focus(); }
+      if (d.addt != null) { const el = root.querySelector(`[data-ed="ms.${d.addt}.tasks.${gData.plan.ms[d.addt].tasks.length - 1}.t"]`); if (el) el.focus(); }
+    }
+  });
+  root.addEventListener("mouseover", (e) => { const c = e.target.closest && e.target.closest(".gk-road .c.big"); if (c && hoverOK()) showPop(c); });
+  root.addEventListener("mouseout", (e) => {
+    const c = e.target.closest && e.target.closest(".gk-road .c.big, #gk-pop"); if (!c || !hoverOK()) return;
+    const to = e.relatedTarget; if (to && to.closest && to.closest("#gk-pop, .gk-road .c.big")) return;
+    const p = $("gk-pop"); if (p) p.hidden = true;
+  });
+}
+// ホームの「今週の目標の進み」カード（目標達成くんを使う生徒だけ）
+async function paintGoalCard() {
+  if (!gReady) return;
+  const home = $("tab-home") && $("tab-home").querySelector(".home"); if (!home) return;
+  if (!gData) { const r = await api("/api/me/goals", { token: gToken }); if (!r.ok || gData) { if (gData) paintGoalCard(); return; } gData = r; }
+  const old = home.querySelector("a.gk"); if (old) old.remove();
+  home.insertAdjacentHTML("afterbegin", homeCardHtml(gData.plan, gData.today));
 }
 let gWired = false;
 function wireGoals(token) {
   gToken = token;
   if (gWired) return; gWired = true;
-  $("g-day").addEventListener("change", gFillDaily);
-  $("g-week").addEventListener("change", gFillWeekly);
-  $("g-daily").addEventListener("submit", (e) => { e.preventDefault(); gSave("daily"); });
-  $("g-weekly").addEventListener("submit", (e) => { e.preventDefault(); gSave("weekly"); });
-  for (const [id, kind] of [["g-body", "daily"], ["g-wbody", "weekly"]]) $(id).addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); gSave(kind); } });
+  wirePlan();
 }
 
 // ---------- 生徒の画面の枠（2026-11-04）：アプリの一覧・お知らせのベル ----------

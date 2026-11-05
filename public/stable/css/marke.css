@@ -147,3 +147,68 @@ body { font-family: "Geist", "Noto Sans JP", "Hiragino Sans", "Hiragino Kaku Got
 .ws-ms { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .ws-m { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--muted); min-height: 32px; }
 @media (max-width: 640px) { .ws-m .btn { min-height: 44px; min-width: 44px; } }
+
+/* ---- 予約メニューの編集（2026-11-05 デモ v5 に Naoki OK）：左に設定の並び、右に中身 ---- */
+.bt-dot { display: inline-block; width: 10px; height: 10px; border-radius: 99px; margin-right: 8px; vertical-align: 0; }
+.bt-lay { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 16px; align-items: start; margin-top: 14px; }
+.bt-nav { position: sticky; top: 12px; display: flex; flex-direction: column; gap: 2px; }
+.bt-nav button { display: flex; align-items: center; gap: 10px; text-align: left; border: 0; background: none; border-radius: 10px; padding: 9px 10px; cursor: pointer; color: var(--muted); font: inherit; min-height: 44px; }
+.bt-nav .ico { width: 30px; height: 30px; border-radius: 8px; background: var(--surface); border: 1px solid var(--line); display: grid; place-items: center; flex: none; }
+.bt-nav .ico svg { width: 16px; height: 16px; stroke: var(--ink); fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.bt-nav b { display: block; color: var(--ink); font-weight: 600; font-size: 14px; }
+.bt-nav small { font-size: 12px; }
+.bt-nav .cnt { font-weight: 600; color: var(--accent); margin-left: 4px; }
+.bt-nav button[aria-selected=true] { background: var(--surface); box-shadow: 0 1px 2px rgba(0,0,0,.05); }
+.bt-nav button[aria-selected=true] .ico { background: var(--accent-soft); border-color: var(--accent); }
+.bt-h { font-size: 18px; margin: 0 0 4px; }
+.bt-hint { margin: 0 0 16px; }
+.segs { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.segs button { border: 1px solid var(--field, #a39a90); background: var(--surface); color: var(--ink); border-radius: 8px; min-height: 40px; padding: 0 12px; cursor: pointer; font: inherit; }
+.segs button[aria-pressed=true] { background: var(--ink); border-color: var(--ink); color: var(--surface); font-weight: 600; }
+.segs .sw-c { width: 40px; padding: 0; border-color: transparent; }
+.segs .sw-c[aria-pressed=true] { outline: 3px solid var(--ink); outline-offset: 2px; background-clip: padding-box; }
+.bt-free { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; margin-left: 4px; font-weight: 400; }
+.bt-free input { width: 84px; }
+.bt-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+.bt-opt { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--line); border-radius: 10px; padding: 12px; cursor: pointer; font-weight: 400; }
+.bt-opt input { margin-top: 3px; width: 18px; height: 18px; accent-color: var(--accent); }
+.bt-opt b { display: block; } .bt-opt small { font-size: 13px; color: var(--muted); }
+.bt-opt:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.bt-rule { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.bt-rule > b { display: block; margin-bottom: 8px; }
+.bt-or { text-align: center; font-size: 12px; color: var(--muted); margin: 8px 0; }
+.chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.chipc { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--field, #a39a90); border-radius: 99px; padding: 6px 12px; cursor: pointer; font-size: 13px; min-height: 36px; font-weight: 400; margin: 0; }
+.chipc small { color: var(--muted); }
+.chipc:has(input:checked) { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.person { display: inline-flex; align-items: center; gap: 4px; background: var(--accent-soft); border-radius: 99px; padding: 4px 4px 4px 12px; font-size: 13px; }
+.person button { border: 0; background: none; cursor: pointer; min-width: 28px; min-height: 28px; border-radius: 99px; color: var(--muted); }
+.bt-search { position: relative; margin-top: 8px; }
+.bt-presults { position: absolute; left: 0; right: 0; top: 100%; z-index: 5; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.1); padding: 4px; display: flex; flex-direction: column; }
+.bt-presults button { border: 0; background: none; text-align: left; padding: 8px 10px; border-radius: 8px; cursor: pointer; font: inherit; color: var(--ink); min-height: 40px; }
+.bt-presults button:hover, .bt-presults button:focus-visible { background: var(--accent-soft); }
+.bt-presults small { color: var(--muted); }
+.bt-count { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: var(--bg); font-size: 13px; }
+.bt-count b { font-size: 18px; }
+.bt-qlist { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.bt-qlist:empty { display: none; }
+.bt-qi { border-bottom: 1px solid var(--line); }
+.bt-qi:last-child { border-bottom: 0; }
+.bt-qh { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border: 0; background: var(--surface); cursor: pointer; text-align: left; font: inherit; color: var(--ink); min-height: 52px; }
+.bt-qi.open .bt-qh { background: var(--accent-soft); }
+.bt-qh .ty { width: 30px; height: 30px; border-radius: 8px; background: var(--bg); display: grid; place-items: center; font-size: 13px; flex: none; }
+.bt-qh .lb { flex: 1; min-width: 0; font-weight: 600; }
+.bt-qh .lb small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; }
+.bt-qh .rq { font-size: 12px; border-radius: 99px; padding: 2px 8px; background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.bt-qe { padding: 12px 14px 14px 52px; display: flex; flex-direction: column; gap: 12px; background: var(--accent-soft); }
+.bt-qa { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.bt-save { position: sticky; bottom: 12px; margin-top: 14px; display: flex; align-items: center; gap: 10px; background: #1c1917; color: #fff; border-radius: 12px; padding: 8px 10px 8px 16px; box-shadow: 0 8px 30px rgba(0,0,0,.15); z-index: 4; }
+.bt-save span { flex: 1; font-size: 13px; }
+.bt-save .btn.ghost { background: transparent; color: #fff; border-color: #57534e; }
+.seg { display: inline-flex; background: var(--bg); border-radius: 10px; padding: 3px; margin: 8px 0 12px; }
+.seg button { border: 0; background: none; border-radius: 8px; padding: 6px 14px; cursor: pointer; min-height: 36px; font: inherit; color: var(--ink); }
+.seg button[aria-pressed=true] { background: var(--surface); box-shadow: 0 1px 2px rgba(0,0,0,.06); font-weight: 600; }
+.bt-toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #1c1917; color: #fff; border-radius: 12px; padding: 10px 14px; display: flex; gap: 14px; align-items: center; z-index: 40; font-size: 14px; }
+.bt-toast.hidden { display: none; }
+.bt-toast button { border: 0; background: none; color: #fbbf24; font: inherit; font-weight: 700; cursor: pointer; min-height: 36px; }
+@media (max-width: 900px) { .bt-lay { grid-template-columns: 1fr; } .bt-nav { position: static; flex-direction: row; overflow-x: auto; } .bt-nav small { display: none; } .bt-opts { grid-template-columns: 1fr; } .bt-qe { padding-left: 14px; } }
