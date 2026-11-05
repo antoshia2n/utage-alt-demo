@@ -129,6 +129,9 @@ test("⑤⑥ 記録：KPI の数・やることのチェック・使った時間
   assert.equal(actRate(p, 5), null);
   const h = recHtml(p, "2026-11-05", 4);
   assert.match(h, /data-used="X" value="6"/);
+  assert.match(h, /data-kin="3\.0" value="2"/);
+  applyWeek(p, 4, { dataset: { kin: "3.0" }, value: "46" });
+  assert.equal(p.ms[3].kpi[0].v, 46);
   assert.match(h, /第 4 週（11月1週）・今週/);
 });
 
