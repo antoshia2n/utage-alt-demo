@@ -1077,6 +1077,8 @@ const BT_WHY = {
   bad_minutes: "所要時間は 10〜240 分", bad_weekdays: "曜日を 1 つ以上選択してください", bad_times: "受付時間は「10:00-12:00,20:00-22:00」の形で入力してください",
   bad_days_ahead: "予約受付期間は 1〜90 日", bad_min_notice_hours: "予約締切は 0〜168 時間", bad_remind_minutes: "前日のリマインドは 1〜168 時間前（空欄で送らない）",
   bad_zoom_url: "Zoom の URL は https:// から入力してください", thanks_page_not_found: "そのページが見つかりません", bad_description: "説明は 1000 字までです", bad_color: "色が正しくありません", bad_allowed_members: "個別ユーザーは 200 人までです",
+  bad_week_hours: "受付時間を 1 つ以上選択してください", bad_date_overrides: "特定日の時間は「10:00-12:00,15:00-16:00」の形で入力してください（5 分刻み・重ならない）", bad_durations: "所要時間は 10〜240 分（5 分刻み）を 6 つまで",
+  bad_slot_step: "開始時刻の間隔が正しくありません", bad_buffer_before: "前のバッファは 0〜120 分", bad_buffer_after: "後のバッファは 0〜120 分", bad_max_per_day: "1 日の上限件数は 1〜50 件", bad_max_per_person: "1 人あたりの予約上限は 1〜10 件", bad_cancel_hours: "キャンセル・変更の期限は 0〜168 時間前",
 };
 const BT_ENT = [["shiarabo_basic", "シアラボ"], ["shiarabo_pilot", "先行"], ["shiarabo_next_premium", "NEXT プレミアム"], ["shiarabo_next_standard", "NEXT スタンダード"], ["shiarabo_trial", "お試しライト"], ["shiarabo_monitor", "モニター"], ["note_membership", "メンシプ"], ["guest", "ゲスト"]];
 const BT_COLORS = ["#5e5ce6", "#b45309", "#0d9488", "#be123c", "#2563eb", "#4d7c0f"];
@@ -1103,7 +1105,8 @@ async function loadBookingTypes() {
 const BT_NAV = [
   ["basic", "基本設定", "タイトル・所要時間・場所", '<path d="M4 6h16M4 12h10M4 18h7"/>'],
   ["who", "公開範囲", "会員プラン・個別ユーザー", '<circle cx="9" cy="8" r="3"/><path d="M3.5 19c0-3 2.5-5.5 5.5-5.5s5.5 2.5 5.5 5.5M16 11l2 2 4-4"/>'],
-  ["hours", "受付時間", "曜日・時間帯・締切", '<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M8 3v4M16 3v4M3.5 10h17"/>'],
+  ["hours", "受付時間", "基本の受付時間・特定日", '<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M8 3v4M16 3v4M3.5 10h17"/>'],
+  ["rules", "予約ルール", "締切・上限・バッファ", '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 1.5M9.5 2.8h5"/>'],
   ["form", "予約フォーム", "予約時の質問", '<rect x="5" y="3.5" width="14" height="17" rx="2"/><path d="M8.5 8h7M8.5 12h7M8.5 16h4"/>'],
   ["remind", "リマインド", "確認メール・前日のメール", '<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20.5h4"/>'],
   ["list", "予約一覧", "今後・過去", '<path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/>'],
@@ -1160,15 +1163,51 @@ function btQRow(q, i, open) {
       <div class="bt-qa"><label class="check" style="margin:0"><input type="checkbox" data-f="required"${q.required ? " checked" : ""}> <span>必須</span></label><span style="flex:1"></span>
         <button type="button" class="btn ghost small" data-qmove="-1" aria-label="質問 ${i + 1} を上へ">↑ 上へ</button><button type="button" class="btn ghost small" data-qmove="1" aria-label="質問 ${i + 1} を下へ">↓ 下へ</button><button type="button" class="btn ghost small" data-qdel aria-label="質問 ${i + 1} を削除">削除</button><button type="button" class="btn small" data-qdone>完了</button></div></div></div>`;
 }
+// 受付時間の表（30 分 × 6:00〜24:00）。値は曜日ごとの [[開始分, 終了分]]
+const BT_H0 = 6, BT_ROWS = 36, BT_ORDER = [1, 2, 3, 4, 5, 6, 0];
+const btTm = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+const btCellMin = (i) => BT_H0 * 60 + i * 30;
+function btGridFrom(wk) {
+  const g = {};
+  for (let w = 0; w <= 6; w++) g[w] = Array.from({ length: BT_ROWS }, (_, i) => (wk[w] || []).some(([a, b]) => a <= btCellMin(i) && btCellMin(i) + 30 <= b));
+  return g;
+}
+function btRangesOf(col) { const out = []; let s = -1; for (let i = 0; i <= BT_ROWS; i++) { const on = i < BT_ROWS && col[i]; if (on && s < 0) s = i; if (!on && s >= 0) { out.push([btCellMin(s), btCellMin(i)]); s = -1; } } return out; }
+const btRangesText = (rs) => rs.map(([a, b]) => `${btTm(a)}–${btTm(b)}`).join("・");
+function btParseRanges(txt) {
+  const out = [];
+  for (const part of String(txt || "").split(/[,、・\s]+/).filter(Boolean)) {
+    const m = part.match(/^(\d{1,2}):(\d{2})[-–〜~](\d{1,2}):(\d{2})$/); if (!m) return null;
+    const a = +m[1] * 60 + +m[2], b = +m[3] * 60 + +m[4]; if (a >= b || b > 1440 || a % 5 || b % 5) return null; out.push([a, b]);
+  }
+  return out.sort((x, y) => x[0] - y[0]);
+}
+const btOpt = (vals, cur, lab) => { const v = vals.includes(cur) ? vals : [...vals, cur].sort((a, b) => a - b); return v.map((x) => `<option value="${x}"${x === cur ? " selected" : ""}>${lab(x)}</option>`).join(""); };
+const btSw = (id, on, label) => `<button type="button" class="sw" role="switch" id="${id}" aria-checked="${on}" aria-label="${label}"></button>`;
+function btRulesHtml(t) {
+  const notice = t ? t.min_notice_hours : 12, days = t ? t.days_ahead : 14, pre = t ? t.buffer_before || 0 : 0, post = t ? t.buffer_after || 0 : 0;
+  const perDay = t ? t.max_per_day : null, perPerson = t ? t.max_per_person || 1 : 1, step = t ? t.slot_step : null, cancel = t ? t.cancel_hours ?? null : null;
+  const hLab = (h) => (h >= 24 && h % 24 === 0 ? `${h / 24} 日前` : `${h} 時間前`);
+  const card = (title, desc, sw, body) => `<div class="bt-c2"><div class="h"><b>${title}</b>${sw || ""}</div><p>${desc}</p>${body}</div>`;
+  return card("予約締切", "開始の何時間前まで受け付けるか", btSw("bt-r-notice", notice > 0, "予約締切"), `<select id="bt-notice" aria-label="予約締切"${notice > 0 ? "" : " disabled"}>${btOpt([1, 2, 3, 6, 12, 24, 48], notice || 12, hLab)}</select>`)
+    + card("予約受付期間", "何日先まで受け付けるか", "", `<select id="bt-days" aria-label="予約受付期間">${btOpt([7, 14, 21, 30, 60, 90], days, (d) => `${d} 日先まで`)}</select>`)
+    + card("前後のバッファ", "予約の前後に空き時間を確保する（ほかの予約・予定とのあいだ）", btSw("bt-r-buf", pre + post > 0, "前後のバッファ"), `<div class="bt-g2"><select id="bt-pre" aria-label="前のバッファ"${pre + post > 0 ? "" : " disabled"}>${btOpt([0, 5, 10, 15, 30, 60], pre, (m) => (m ? `前：${m} 分` : "前：なし"))}</select><select id="bt-post" aria-label="後のバッファ"${pre + post > 0 ? "" : " disabled"}>${btOpt([0, 5, 10, 15, 30, 60], post || (pre ? 0 : 15), (m) => (m ? `後：${m} 分` : "後：なし"))}</select></div>`)
+    + card("1 日の上限件数", "このメニューで 1 日に受ける件数", btSw("bt-r-day", !!perDay, "1 日の上限件数"), `<select id="bt-perday" aria-label="1 日の上限件数"${perDay ? "" : " disabled"}>${btOpt([1, 2, 3, 4, 5, 8, 10], perDay || 3, (n) => `${n} 件まで`)}</select>`)
+    + card("1 人あたりの予約上限", "同じ人が同時に持てる予約の件数", "", `<select id="bt-perperson" aria-label="1 人あたりの予約上限">${btOpt([1, 2, 3, 5], perPerson, (n) => `${n} 件`)}</select>`)
+    + card("開始時刻の間隔", "予約枠を何分ごとに表示するか", "", `<select id="bt-step" aria-label="開始時刻の間隔"><option value=""${step ? "" : " selected"}>所要時間ごと</option>${[15, 30, 60].map((m) => `<option value="${m}"${m === step ? " selected" : ""}>${m} 分ごと</option>`).join("")}</select>`)
+    + card("キャンセル・変更の期限", "期限を過ぎると、予約者は自分で変更・キャンセルできない（会員限定のメニュー）", btSw("bt-r-cancel", cancel != null, "キャンセル・変更の期限"), `<select id="bt-cancel" aria-label="キャンセル・変更の期限"${cancel != null ? "" : " disabled"}>${btOpt([1, 3, 6, 12, 24, 48, 72], cancel ?? 24, (h) => hLab(h) + "まで")}</select>`);
+}
 function bookingTypeForm(t, r = {}) {
   const wds = new Set((t ? t.weekdays : [1, 2, 3, 4, 5]).map(Number)), aud = t ? t.audience || "public" : "public", ents = new Set(t ? t.entitlements || [] : []);
   const thanksOpts = pagesCache.map((p) => `<option value="${esc(p.slug)}" ${t && t.thanks_page_slug === p.slug ? "selected" : ""}>${esc(p.title)}${p.status === "published" ? "" : "（非公開）"}</option>`).join("");
   const min = t ? t.minutes : 30, color = t && t.color ? t.color : BT_COLORS[0];
+  const durs = t && (t.durations || []).length > 1 ? t.durations : [min], multi = durs.length > 1;
   return `<form id="bt" novalidate>
     <section class="card" data-btpane="basic"><h3 class="bt-h">基本設定</h3><p class="note bt-hint">予約する人に表示されるタイトル・所要時間・場所。</p>
       <div class="stack">
       <div><label for="bt-title">タイトル</label><input id="bt-title" type="text" maxlength="80" placeholder="例 しあらぼの個別相談" value="${esc(t ? t.title : "")}"></div>
-      <div><span class="lbl">所要時間</span><div class="segs" role="group" aria-label="所要時間" id="bt-dur">${BT_DUR.map((m) => `<button type="button" data-min="${m}" aria-pressed="${m === min}">${m} 分</button>`).join("")}<label class="bt-free">ほか<input id="bt-min" type="number" min="10" max="240" step="5" value="${min}" aria-label="所要時間（分）"> 分</label></div></div>
+      <div><span class="lbl">所要時間</span><div class="segs" role="group" aria-label="所要時間" id="bt-dur">${BT_DUR.map((m) => `<button type="button" data-min="${m}" aria-pressed="${multi ? durs.includes(m) : m === min}">${m} 分</button>`).join("")}<label class="bt-free${multi ? " hidden" : ""}" id="bt-free">ほか<input id="bt-min" type="number" min="10" max="240" step="5" value="${min}" aria-label="所要時間（分）"> 分</label></div>
+        <label class="bt-tog"><button type="button" class="sw" role="switch" id="bt-multi" aria-checked="${multi}" aria-label="予約する人が所要時間を選べる"></button><span>予約する人が所要時間を選べる（選択した中から。いちばん短いものが最初に表示）</span></label></div>
       <div><label for="bt-desc">説明（予約画面の左に表示）</label><textarea id="bt-desc" rows="3" maxlength="1000" placeholder="例 月に 1 回の面談です。先月の振り返りと今月の目標を入力してから、日時を選択してください。">${esc(t ? t.description || "" : "")}</textarea></div>
       <div><label for="bt-zoom">場所（Zoom の URL）</label><input id="bt-zoom" type="url" inputmode="url" maxlength="500" placeholder="https://zoom.us/j/..." value="${esc(t ? t.zoom_url : "")}"></div>
       <div><span class="lbl">色（一覧とカレンダーで区別）</span><div class="segs" role="group" aria-label="色" id="bt-color">${BT_COLORS.map((c, i) => `<button type="button" class="sw-c" data-color="${c}" aria-pressed="${c === color}" aria-label="色 ${i + 1}" style="background:${c}"></button>`).join("")}</div></div>
@@ -1190,15 +1229,19 @@ function bookingTypeForm(t, r = {}) {
       </div>
       <div id="bt-public" class="${aud === "public" ? "" : "hidden"}">${t && t.embed ? `<div class="stack" style="margin-top:12px"><label for="bt-embed">ページに埋め込むコード（Claude にページを依頼するときに伝える）</label><textarea id="bt-embed" rows="2" readonly style="font-size:13px">${esc(t.embed)}</textarea></div>` : '<p class="note">保存すると、ページに埋め込むコードが表示されます。</p>'}</div>
     </section>
-    <section class="card hidden" data-btpane="hours"><h3 class="bt-h">受付時間</h3><p class="note bt-hint">Google カレンダーに予定がある時間は空き時間から除外します。</p>
-      <div class="stack">
-      <div><span class="lbl">受付曜日</span><div style="display:flex;gap:10px;flex-wrap:wrap">${WD_LABEL.map((w, i) => `<label class="check"><input type="checkbox" data-wd="${i}" ${wds.has(i) ? "checked" : ""}> <span>${w}</span></label>`).join("")}</div></div>
-      <div><label for="bt-times">受付時間帯（日本時間・カンマ区切り）</label><input id="bt-times" type="text" maxlength="200" placeholder="例 10:00-12:00,20:00-22:00" value="${esc(t ? t.times : "10:00-12:00,20:00-22:00")}"></div>
-      <div style="display:flex;gap:12px;flex-wrap:wrap">
-        <div style="flex:1 1 140px"><label for="bt-days">予約受付期間（何日先まで）</label><input id="bt-days" type="number" min="1" max="90" value="${t ? t.days_ahead : 14}"></div>
-        <div style="flex:1 1 140px"><label for="bt-notice">予約締切（開始の何時間前まで）</label><input id="bt-notice" type="number" min="0" max="168" value="${t ? t.min_notice_hours : 12}"></div></div>
-      <label class="check"><input type="checkbox" id="bt-avoid" ${!t || t.avoid_calendar ? "checked" : ""}> <span>Google カレンダーの予定と重なる時間は表示しない</span></label>
-      </div></section>
+    <section class="card hidden" data-btpane="hours"><h3 class="bt-h">基本の受付時間</h3><p class="note bt-hint">マスをドラッグして受付時間を選択します。選択済みの所をドラッグすると解除されます（キーボードは矢印キーと Space）。</p>
+      <div class="bt-toolbar"><button type="button" class="btn ghost small" id="bt-cpweek">月曜を平日にコピー</button><button type="button" class="btn ghost small" id="bt-clrweek">すべてクリア</button><span class="sp"></span><span class="note">30 分ごと・${BT_H0}:00〜24:00（日本時間）</span></div>
+      <div class="bt-wkwrap" id="bt-wkwrap"><div class="bt-wkg" id="bt-wkg" role="grid" aria-label="基本の受付時間"></div></div>
+      <div class="bt-sum" id="bt-wksum"></div>
+      <label class="check" style="margin-top:14px"><input type="checkbox" id="bt-avoid" ${!t || t.avoid_calendar ? "checked" : ""}> <span>Google カレンダーの予定と重なる時間は表示しない</span></label>
+    </section>
+    <section class="card hidden" data-btpane="hours" style="margin-top:16px"><h3 class="bt-h">特定日の設定</h3><p class="note bt-hint">日付をクリックすると、その日を休業日にできます（斜線＝休業日）。その日だけ受付時間を変えるときは、一覧の「編集」。</p>
+      <div class="bt-two"><div><div class="bt-mhead"><button type="button" class="bt-ic" id="bt-mprev" aria-label="前の月">‹</button><b id="bt-mlabel"></b><button type="button" class="bt-ic" id="bt-mnext" aria-label="次の月">›</button></div><div class="bt-mini" id="bt-mini"></div></div>
+        <div><div class="bt-ov" id="bt-ovlist"></div></div></div>
+    </section>
+    <section class="card hidden" data-btpane="rules"><h3 class="bt-h">予約ルール</h3><p class="note bt-hint">予約の受け付け方を調整します。使わないものはオフにできます。</p>
+      <div class="bt-lim">${btRulesHtml(t)}</div>
+    </section>
     <section class="card hidden" data-btpane="form"><h3 class="bt-h">予約フォーム</h3><p class="note bt-hint">時間を選んだあとに表示する質問。行をクリックすると編集できます。質問がないときは「相談したいこと」だけ表示します。会員限定のときは名前とメールはログイン情報から自動入力します。</p>
       <div class="bt-qlist" id="bt-qs">${(t ? t.questions || [] : []).map((q, i) => btQRow(q, i, false)).join("")}</div>
       <div style="margin-top:12px"><button type="button" class="btn ghost small" id="bt-qadd">＋ 質問を追加</button></div></section>
@@ -1217,8 +1260,75 @@ function wireBookingTypeForm(t, r = {}) {
   const form = $("bt"); let dirty = false;
   const markDirty = () => { dirty = true; $("bt-savebar").classList.remove("hidden"); $("bt-status").textContent = "未保存の変更があります"; };
   form.addEventListener("input", markDirty); form.addEventListener("change", markDirty);
-  // 所要時間
-  $("bt-dur").addEventListener("click", (e) => { const b = e.target.closest("[data-min]"); if (!b) return; $("bt-min").value = b.dataset.min; document.querySelectorAll("#bt-dur [data-min]").forEach((x) => x.setAttribute("aria-pressed", String(x === b))); markDirty(); });
+  // 所要時間（「予約する人が選べる」がオンのときは複数選択）
+  const isMulti = () => $("bt-multi").getAttribute("aria-checked") === "true";
+  $("bt-dur").addEventListener("click", (e) => { const b = e.target.closest("[data-min]"); if (!b) return;
+    if (isMulti()) { const on = b.getAttribute("aria-pressed") === "true"; if (on && document.querySelectorAll('#bt-dur [data-min][aria-pressed="true"]').length < 2) return; b.setAttribute("aria-pressed", String(!on)); }
+    else { $("bt-min").value = b.dataset.min; document.querySelectorAll("#bt-dur [data-min]").forEach((x) => x.setAttribute("aria-pressed", String(x === b))); }
+    markDirty(); });
+  $("bt-multi").addEventListener("click", () => { const on = !isMulti(); $("bt-multi").setAttribute("aria-checked", String(on)); $("bt-free").classList.toggle("hidden", on);
+    if (!on) { const first = document.querySelector('#bt-dur [data-min][aria-pressed="true"]'); document.querySelectorAll("#bt-dur [data-min]").forEach((x) => x.setAttribute("aria-pressed", String(x === first))); if (first) $("bt-min").value = first.dataset.min; }
+    markDirty(); });
+  // 予約ルール：スイッチで欄を有効・無効に
+  [["bt-r-notice", ["bt-notice"]], ["bt-r-buf", ["bt-pre", "bt-post"]], ["bt-r-day", ["bt-perday"]], ["bt-r-cancel", ["bt-cancel"]]].forEach(([sw, ids]) => $(sw).addEventListener("click", () => {
+    const on = $(sw).getAttribute("aria-checked") !== "true"; $(sw).setAttribute("aria-checked", String(on)); ids.forEach((id) => { $(id).disabled = !on; }); markDirty(); }));
+  // 基本の受付時間：引っぱって塗る
+  const grid = btGridFrom(t ? t.week_hours || {} : { 1: [[600, 720], [1200, 1320]], 2: [[600, 720], [1200, 1320]], 3: [[600, 720], [1200, 1320]], 4: [[600, 720], [1200, 1320]], 5: [[600, 720], [1200, 1320]] });
+  let focusCell = null;
+  const drawWk = () => {
+    let h = '<div class="hd"></div>' + BT_ORDER.map((w) => { const n = grid[w].filter(Boolean).length; return `<div class="hd">${WD_LABEL[w]}<small>${n ? n / 2 + " 時間" : "休業"}</small></div>`; }).join("");
+    for (let i = 0; i < BT_ROWS; i++) {
+      h += `<div class="tm">${i % 2 === 0 ? btTm(btCellMin(i)) : ""}</div>`;
+      h += BT_ORDER.map((w, c) => `<button type="button" class="cell${grid[w][i] ? " on" : ""}${grid[w][i] && (i === 0 || !grid[w][i - 1]) ? " top" : ""}${i % 2 === 1 ? " hr" : ""}" data-w="${w}" data-i="${i}" data-c="${c}" aria-pressed="${grid[w][i]}" aria-label="${WD_LABEL[w]}曜 ${btTm(btCellMin(i))}–${btTm(btCellMin(i + 1))}" tabindex="${(focusCell ? focusCell[0] === c && focusCell[1] === i : i === 8 && c === 0) ? 0 : -1}"></button>`).join("");
+    }
+    $("bt-wkg").innerHTML = h;
+    $("bt-wksum").innerHTML = BT_ORDER.map((w) => `<span><b>${WD_LABEL[w]}</b> ${btRangesText(btRangesOf(grid[w])) || "休業"}</span>`).join("");
+  };
+  let painting = null;
+  const paintAt = (el) => { if (!el || !el.classList || !el.classList.contains("cell") || !el.closest("#bt-wkg")) return; const w = +el.dataset.w, i = +el.dataset.i; if (grid[w][i] !== painting) { grid[w][i] = painting; el.classList.toggle("on", painting); el.setAttribute("aria-pressed", String(painting)); } };
+  $("bt-wkg").addEventListener("pointerdown", (e) => { const c = e.target.closest(".cell"); if (!c) return; e.preventDefault(); painting = !grid[c.dataset.w][c.dataset.i]; paintAt(c); });
+  const onMove = (e) => { if (painting === null) return; paintAt(document.elementFromPoint(e.clientX, e.clientY)); };
+  const onUp = () => { if (painting === null) return; painting = null; drawWk(); markDirty(); };
+  if (window.__btPaint) { removeEventListener("pointermove", window.__btPaint[0]); removeEventListener("pointerup", window.__btPaint[1]); }
+  window.__btPaint = [onMove, onUp]; addEventListener("pointermove", onMove); addEventListener("pointerup", onUp);
+  $("bt-wkg").addEventListener("keydown", (e) => {
+    const c = e.target.closest(".cell"); if (!c) return; let col = +c.dataset.c, i = +c.dataset.i;
+    if (e.key === " " || e.key === "Enter") { e.preventDefault(); const w = +c.dataset.w; grid[w][i] = !grid[w][i]; focusCell = [col, i]; drawWk(); markDirty(); document.querySelector(`#bt-wkg .cell[data-c="${col}"][data-i="${i}"]`).focus(); return; }
+    if (e.key === "ArrowDown") i = Math.min(BT_ROWS - 1, i + 1); else if (e.key === "ArrowUp") i = Math.max(0, i - 1);
+    else if (e.key === "ArrowRight") col = Math.min(6, col + 1); else if (e.key === "ArrowLeft") col = Math.max(0, col - 1); else return;
+    e.preventDefault(); const n = document.querySelector(`#bt-wkg .cell[data-c="${col}"][data-i="${i}"]`); if (n) { c.tabIndex = -1; n.tabIndex = 0; n.focus(); focusCell = [col, i]; } });
+  $("bt-cpweek").addEventListener("click", () => { const was = JSON.stringify(grid); [2, 3, 4, 5].forEach((w) => { grid[w] = [...grid[1]]; }); drawWk(); markDirty(); btUndo("月曜の受付時間を火〜金にコピーしました", () => { Object.assign(grid, JSON.parse(was)); drawWk(); }); });
+  $("bt-clrweek").addEventListener("click", () => { const was = JSON.stringify(grid); for (let w = 0; w <= 6; w++) grid[w].fill(false); drawWk(); markDirty(); btUndo("受付時間をすべてクリアしました", () => { Object.assign(grid, JSON.parse(was)); drawWk(); }); });
+  drawWk();
+  requestAnimationFrame(() => { const w = $("bt-wkwrap"); if (w) w.scrollTop = 22 * 6; });
+  // 特定日：日付を押すと休業日。一覧の「編集」でその日だけの時間
+  const ov = JSON.parse(JSON.stringify(t ? t.date_overrides || {} : {}));
+  const todayK = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+  let mon = todayK.slice(0, 7), editK = null;
+  const dLab = (k) => { const [y, m, d] = k.split("-").map(Number); return `${m}月${d}日（${WD_LABEL[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]}）`; };
+  const drawOv = () => {
+    const keys = Object.keys(ov).filter((k) => k >= todayK).sort();
+    $("bt-ovlist").innerHTML = keys.length ? keys.map((k) => editK === k
+      ? `<div class="ovr edit"><b>${dLab(k)}</b><input type="text" id="bt-ovin" value="${esc(ov[k].map(([a, b]) => `${btTm(a)}-${btTm(b)}`).join(","))}" placeholder="例 10:00-12:00（空欄で休業日）" aria-label="${dLab(k)} の受付時間"><button type="button" class="btn small" data-ovok="${k}">決定</button></div>`
+      : `<div class="ovr"><b>${dLab(k)}</b><span>${ov[k].length ? btRangesText(ov[k]) + " だけ" : "休業日"}</span><button type="button" class="btn ghost small" data-ove="${k}">編集</button><button type="button" class="bt-ic" data-ovx="${k}" aria-label="${dLab(k)} の設定を削除">✕</button></div>`).join("")
+      : '<div class="ovr"><span>特定日の設定はありません</span></div>';
+    const [y, m] = mon.split("-").map(Number), first = new Date(Date.UTC(y, m - 1, 1)).getUTCDay(), n = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    $("bt-mlabel").textContent = `${y}年${m}月`;
+    $("bt-mprev").disabled = mon <= todayK.slice(0, 7);
+    let h = WD_LABEL.map((w) => `<div class="wd">${w}</div>`).join("") + '<div class="md blank"></div>'.repeat(first);
+    for (let d = 1; d <= n; d++) { const k = `${mon}-${String(d).padStart(2, "0")}`, o = ov[k];
+      h += k < todayK ? `<div class="md past">${d}</div>` : `<button type="button" class="md${o && !o.length ? " x" : ""}" data-k="${k}" aria-pressed="${!!(o && !o.length)}" aria-label="${dLab(k)} ${o && !o.length ? "休業日（クリックで解除）" : o ? "時間を変更中（クリックで休業日）" : "クリックで休業日にする"}">${d}${o && o.length ? "<small>変更</small>" : ""}</button>`; }
+    $("bt-mini").innerHTML = h;
+  };
+  const shiftMon = (dlt) => { const [y, m] = mon.split("-").map(Number), d = new Date(Date.UTC(y, m - 1 + dlt, 1)); mon = d.toISOString().slice(0, 7); drawOv(); };
+  $("bt-mprev").addEventListener("click", () => shiftMon(-1)); $("bt-mnext").addEventListener("click", () => shiftMon(1));
+  $("bt-mini").addEventListener("click", (e) => { const b = e.target.closest(".md[data-k]"); if (!b) return; const k = b.dataset.k; if (ov[k] && !ov[k].length) delete ov[k]; else ov[k] = []; drawOv(); markDirty(); const f = document.querySelector(`#bt-mini [data-k="${k}"]`); if (f) f.focus(); });
+  $("bt-ovlist").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return;
+    if (b.dataset.ovx) { const k = b.dataset.ovx, was = ov[k]; delete ov[k]; drawOv(); markDirty(); btUndo(`${dLab(k)} の設定を削除しました`, () => { ov[k] = was; drawOv(); }); }
+    if (b.dataset.ove) { editK = b.dataset.ove; drawOv(); $("bt-ovin").focus(); }
+    if (b.dataset.ovok) { const r = btParseRanges($("bt-ovin").value); if (!r) { $("bt-savebar").classList.remove("hidden"); $("bt-status").textContent = BT_WHY.bad_date_overrides; $("bt-ovin").focus(); return; } ov[b.dataset.ovok] = r; editK = null; drawOv(); markDirty(); } });
+  $("bt-ovlist").addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.id === "bt-ovin") { e.preventDefault(); document.querySelector("#bt-ovlist [data-ovok]").click(); } if (e.key === "Escape" && e.target.id === "bt-ovin") { editK = null; drawOv(); } });
+  drawOv();
   $("bt-min").addEventListener("input", () => document.querySelectorAll("#bt-dur [data-min]").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.min === $("bt-min").value))));
   $("bt-color").addEventListener("click", (e) => { const b = e.target.closest("[data-color]"); if (!b) return; document.querySelectorAll("#bt-color [data-color]").forEach((x) => x.setAttribute("aria-pressed", String(x === b))); markDirty(); });
   // 公開範囲
@@ -1254,8 +1364,12 @@ function wireBookingTypeForm(t, r = {}) {
     const body = {
       title: $("bt-title").value.trim(), slug: $("bt-slug").value.trim().toLowerCase(), minutes: Number($("bt-min").value || 30),
       description: $("bt-desc").value, color: (document.querySelector('#bt-color [aria-pressed="true"]') || {}).dataset?.color || "",
-      days_ahead: Number($("bt-days").value || 14), min_notice_hours: Number($("bt-notice").value || 0),
-      weekdays: [...document.querySelectorAll("#bt [data-wd]:checked")].map((x) => Number(x.dataset.wd)), times: $("bt-times").value.trim(),
+      days_ahead: Number($("bt-days").value || 14), min_notice_hours: $("bt-notice").disabled ? 0 : Number($("bt-notice").value || 0),
+      week_hours: Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map((w) => [w, btRangesOf(grid[w])])), date_overrides: Object.fromEntries(Object.entries(ov).filter(([k]) => k >= todayK)),
+      durations: isMulti() ? [...document.querySelectorAll('#bt-dur [data-min][aria-pressed="true"]')].map((x) => Number(x.dataset.min)).sort((a, b) => a - b) : [],
+      buffer_before: $("bt-pre").disabled ? 0 : Number($("bt-pre").value), buffer_after: $("bt-post").disabled ? 0 : Number($("bt-post").value),
+      max_per_day: $("bt-perday").disabled ? null : Number($("bt-perday").value), max_per_person: Number($("bt-perperson").value),
+      slot_step: $("bt-step").value ? Number($("bt-step").value) : null, cancel_hours: $("bt-cancel").disabled ? null : Number($("bt-cancel").value),
       avoid_calendar: $("bt-avoid").checked, zoom_url: $("bt-zoom").value.trim(), thanks_page_slug: $("bt-thanks").value, active: $("bt-active").checked,
       audience: aud, entitlements: [...document.querySelectorAll("#bt [data-ent]:checked")].map((x) => x.dataset.ent),
       allowed_members: [...document.querySelectorAll("#bt-people .person")].map((x) => x.dataset.pid),
@@ -1265,9 +1379,11 @@ function wireBookingTypeForm(t, r = {}) {
     const go = (pane, sel, msg) => { document.querySelector(`#seminar-detail [data-btp="${pane}"]`)?.click(); $("bt-savebar").classList.remove("hidden"); $("bt-status").textContent = msg; const f = document.querySelector(sel); if (f) f.focus(); };
     if (aud === "member" && !body.entitlements.length && !body.allowed_members.length) return go("who", "#bt [data-ent]", "会員限定のときは、会員プランか個別ユーザーを 1 つ以上選択してください");
     if (!body.title) return go("basic", "#bt-title", BT_WHY.bad_title);
+    if (!Object.values(body.week_hours).some((r) => r.length)) return go("hours", "#bt-wkg .cell[tabindex='0']", BT_WHY.bad_week_hours);
+    if (body.durations.length) body.minutes = body.durations[0];
     if (t) body.id = t.id; else if ($("bt-camp") && $("bt-camp").value) body.campaign_id = $("bt-camp").value;
     const res = await api("/api/admin/booking-types", { method: "POST", token, body });
-    if (!res.ok) { const where = { bad_title: ["basic", "#bt-title"], bad_slug: ["basic", "#bt-slug"], slug_taken: ["basic", "#bt-slug"], bad_minutes: ["basic", "#bt-min"], bad_zoom_url: ["basic", "#bt-zoom"], bad_description: ["basic", "#bt-desc"], bad_times: ["hours", "#bt-times"], bad_weekdays: ["hours", "#bt [data-wd]"], bad_days_ahead: ["hours", "#bt-days"], bad_min_notice_hours: ["hours", "#bt-notice"] }[res.error] || ["basic", "#bt-title"];
+    if (!res.ok) { const where = { bad_title: ["basic", "#bt-title"], bad_slug: ["basic", "#bt-slug"], slug_taken: ["basic", "#bt-slug"], bad_minutes: ["basic", "#bt-min"], bad_zoom_url: ["basic", "#bt-zoom"], bad_description: ["basic", "#bt-desc"], bad_week_hours: ["hours", "#bt-wkg .cell[tabindex='0']"], bad_date_overrides: ["hours", "#bt-ovlist button"], bad_durations: ["basic", "#bt-dur button"], bad_days_ahead: ["rules", "#bt-days"], bad_min_notice_hours: ["rules", "#bt-notice"], bad_slot_step: ["rules", "#bt-step"], bad_buffer_before: ["rules", "#bt-pre"], bad_buffer_after: ["rules", "#bt-post"], bad_max_per_day: ["rules", "#bt-perday"], bad_max_per_person: ["rules", "#bt-perperson"], bad_cancel_hours: ["rules", "#bt-cancel"] }[res.error] || ["basic", "#bt-title"];
       return go(where[0], where[1], BT_WHY[res.error] || "保存できませんでした（" + (res.error || res.status) + "）"); }
     dirty = false;
     await loadBookingTypes();
@@ -1310,7 +1426,7 @@ async function bookingTypeEditor() {
   await Promise.all([loadCampaigns(true), loadPagesCache()]);
   showPane("deals", "detail", "新しい予約メニュー", "予約メニュー一覧へ");
   $("seminar-detail").innerHTML = headHtml({ title: "新しい予約メニュー", sub: "タイトル・所要時間・受付時間を入力して「作成」を押します。Google カレンダーの予定と重なる時間は自動で除外します" })
-    + `<div class="bt-lay"><nav class="bt-nav" role="tablist" aria-label="設定">${BT_NAV.slice(0, 4).map(([k, n, d, ic]) => `<button type="button" role="tab" data-btp="${k}" aria-selected="${k === "basic"}"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true">${ic}</svg></span><span><b>${n}</b><small>${d}</small></span></button>`).join("")}</nav><div>${bookingTypeForm(null)}</div></div>`;
+    + `<div class="bt-lay"><nav class="bt-nav" role="tablist" aria-label="設定">${BT_NAV.slice(0, 5).map(([k, n, d, ic]) => `<button type="button" role="tab" data-btp="${k}" aria-selected="${k === "basic"}"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true">${ic}</svg></span><span><b>${n}</b><small>${d}</small></span></button>`).join("")}</nav><div>${bookingTypeForm(null)}</div></div>`;
   const show = (k) => { document.querySelectorAll("#seminar-detail [data-btp]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.btp === k))); document.querySelectorAll("#seminar-detail [data-btpane]").forEach((p) => p.classList.toggle("hidden", p.dataset.btpane !== k)); };
   document.querySelectorAll("#seminar-detail [data-btp]").forEach((b) => b.addEventListener("click", () => show(b.dataset.btp)));
   show("basic");

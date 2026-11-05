@@ -403,10 +403,13 @@ function paintBookingLine(ready) {
   const old = home.querySelector(".bk-line"); if (old) old.remove();
   home.insertAdjacentHTML("afterbegin", `<div class="bk-line"><span>シアニンに相談したいときは</span><a class="btn small" href="#booking">相談を予約する →</a></div>`);
 }
-const BK_WHY = { slot_taken: "その時間はちょうど埋まりました。ほかの時間を選択してください", already_booked: "このメニューは、すでに予約があります", bad_slot: "その時間は選択できません", answer_required: "入力されていない項目があります", not_found: "この予約はいま受け付けていません" };
+const BK_WHY = { slot_taken: "その時間はちょうど埋まりました。ほかの時間を選択してください", already_booked: "このメニューは、すでに予約があります", bad_slot: "その時間は選択できません", answer_required: "入力されていない項目があります", not_found: "この予約はいま受け付けていません", too_late: "変更・キャンセルの期限を過ぎています。ご連絡ください", bad_minutes: "その所要時間は選択できません" };
 const BK_WD = ["日", "月", "火", "水", "木", "金", "土"];
 // 状態：bk.data＝サーバーの答え・bk.menu＝選んでいるメニュー・bk.day＝選んだ日（YYYY-MM-DD・日本時間）・bk.slot＝選んだ枠・bk.ym＝表示中の月・bk.moving＝日時を変更している予約・bk.draft＝書きかけ
-const bk = { token: null, data: null, menu: null, day: null, slot: null, ym: null, moving: null, draft: {}, step: "pick" };
+const bk = { token: null, data: null, menu: null, day: null, slot: null, ym: null, moving: null, draft: {}, step: "pick", len: null };
+// 所要時間を選べるメニューは、選んだ長さの空き時間を使う
+const bkLen = (t) => (t.options && t.options.some((o) => o.minutes === bk.len) ? bk.len : t.minutes);
+const bkSlots = (t) => (t.options ? (t.options.find((o) => o.minutes === bkLen(t)) || t.options[0]).slots : t.slots);
 const jstKey = (iso) => new Date(Date.parse(iso) + 9 * 3600e3).toISOString().slice(0, 10);
 const bkDayLabel = (key) => { const [y, m, d] = key.split("-").map(Number); return `${m}月${d}日（${BK_WD[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]}）`; };
 const bkTime = (iso) => new Date(Date.parse(iso) + 9 * 3600e3).toISOString().slice(11, 16);
@@ -431,9 +434,9 @@ function bkMenu() { return bk.data.types.find((t) => t.slug === bk.menu); }
 function drawMine() {
   $("bk-mine").innerHTML = (bk.data.mine || []).map((b) => { const k = jstKey(b.slot), [, m, d] = k.split("-").map(Number);
     return `<div class="bk-mine"><div class="dt" aria-hidden="true"><small>${m}月</small><b>${d}</b></div><div class="tx"><b>${esc(bkDayLabel(k))} ${esc(bkTime(b.slot))}〜${esc(b.end)}</b><span>${esc(b.title)}・予約済み</span></div>
-      ${b.slug ? `<button class="lnk" type="button" data-move="${esc(b.slot)}" aria-label="${esc(bkDayLabel(k) + " の予約の日時を変更")}">日時を変更</button>` : ""}<button class="lnk" type="button" data-cancel="${esc(b.slot)}" aria-label="${esc(bkDayLabel(k) + " の予約をキャンセル")}">キャンセル</button></div>`; }).join("");
+      ${b.locked ? `<span class="lock">変更・キャンセルは開始の ${esc(b.cancel_hours)} 時間前まで。変更はご連絡ください</span>` : `${b.slug ? `<button class="lnk" type="button" data-move="${esc(b.slot)}" aria-label="${esc(bkDayLabel(k) + " の予約の日時を変更")}">日時を変更</button>` : ""}<button class="lnk" type="button" data-cancel="${esc(b.slot)}" aria-label="${esc(bkDayLabel(k) + " の予約をキャンセル")}">キャンセル</button>`}</div>`; }).join("");
   $("bk-mine").querySelectorAll("[data-move]").forEach((x) => x.addEventListener("click", () => {
-    const b = bk.data.mine.find((y) => y.slot === x.dataset.move); bk.moving = b; bk.menu = b.slug;
+    const b = bk.data.mine.find((y) => y.slot === x.dataset.move); bk.moving = b; bk.menu = b.slug; bk.len = b.minutes;
     bk.draft = Object.fromEntries((b.answers || []).map((a) => [a.key, a.value]));
     drawMenus(); startPick(); bkToast("新しい日時を選ぶと、現在の予約と入れ替わります");
     $("bk-main").scrollIntoView({ block: "start", behavior: "smooth" });
@@ -444,7 +447,7 @@ function drawMine() {
     if (!res.ok) { x.disabled = false; bkToast("キャンセルできませんでした。" + errText(res)); return; }
     await loadBooking(bk.token);
     bkToast("予約をキャンセルしました", async () => {
-      const again = await api("/api/booking", { method: "POST", token: bk.token, body: { slug: res.slug, slot: res.slot, answers: res.answers } });
+      const again = await api("/api/booking", { method: "POST", token: bk.token, body: { slug: res.slug, slot: res.slot, minutes: res.minutes, answers: res.answers } });
       await loadBooking(bk.token);
       bkToast(again.ok ? "予約を元に戻しました" : "元に戻せませんでした（その時間は埋まりました）");
     });
@@ -453,20 +456,21 @@ function drawMine() {
 function drawMenus() {
   const ts = bk.data.types;
   $("bk-menus").innerHTML = ts.length > 1 ? `<div class="bk-menus" role="group" aria-label="メニュー">${ts.map((t) => `<button type="button" aria-pressed="${t.slug === bk.menu}" data-menu="${esc(t.slug)}"><span class="cdot" style="background:${esc(t.color || "var(--accent)")}"></span>${esc(t.title)}</button>`).join("")}</div>` : "";
-  $("bk-menus").querySelectorAll("[data-menu]").forEach((x) => x.addEventListener("click", () => { bk.menu = x.dataset.menu; bk.moving = null; drawMenus(); startPick(); }));
+  $("bk-menus").querySelectorAll("[data-menu]").forEach((x) => x.addEventListener("click", () => { bk.menu = x.dataset.menu; bk.moving = null; bk.len = null; drawMenus(); startPick(); }));
 }
 function startPick() {
-  const t = bkMenu(); bk.step = "pick"; bk.slot = null;
-  const days = [...new Set(t.slots.map((s) => jstKey(s.slot)))];
+  const t = bkMenu(); bk.step = "pick"; bk.slot = null; bk.len = bkLen(t);
+  const slots = bkSlots(t), days = [...new Set(slots.map((s) => jstKey(s.slot)))];
   bk.day = days[0] || null;
   bk.ym = (bk.day || jstKey(new Date().toISOString())).slice(0, 7);
   if (t.booked && !bk.moving) {
-    $("bk-main").innerHTML = `<div class="card"><p style="margin:0"><b>${esc(t.title)}</b> は予約済みです。日時を変えるときは、上の「日時を変更」から選んでください。</p></div>`; bkBar(); return;
+    const lockedAll = (bk.data.mine || []).filter((b) => b.slug === t.slug).every((b) => b.locked);
+    $("bk-main").innerHTML = `<div class="card"><p style="margin:0"><b>${esc(t.title)}</b> は予約済みです。${lockedAll ? "変更の期限を過ぎているため、日時を変えるときはご連絡ください。" : "日時を変えるときは、上の「日時を変更」から選んでください。"}</p></div>`; bkBar(); return;
   }
   $("bk-main").innerHTML = `<div class="booker" id="booker">
     <aside class="info"><div class="host"><div class="av" aria-hidden="true">シ</div><div><b>シアニン</b><br><span>シアラボ</span></div></div>
       <h2>${esc(t.title)}</h2>
-      <ul class="meta"><li><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>${esc(t.minutes)} 分</li>
+      <ul class="meta"><li><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>${t.options ? `<span class="lens" role="group" aria-label="所要時間">${t.options.map((o) => `<button type="button" data-len="${o.minutes}" aria-pressed="${o.minutes === bk.len}">${o.minutes} 分</button>`).join("")}</span>` : esc(t.minutes) + " 分"}</li>
         ${t.zoom ? '<li><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3"/></svg>Zoom（URL は予約後にメールで届きます）</li>' : ""}
         <li class="picked hidden" id="bk-picked"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M8 3v4M16 3v4M3.5 10h17"/></svg><span id="bk-picked-t"></span></li>
         ${bk.moving ? `<li class="moving">変更前：${esc(bkDayLabel(jstKey(bk.moving.slot)))} ${esc(bkTime(bk.moving.slot))}〜${esc(bk.moving.end)}</li>` : ""}</ul>
@@ -477,7 +481,8 @@ function startPick() {
       <div class="pick wait" id="bk-pick"><div class="pk-t" id="bk-pk-t">時間を選択すると次へ進めます</div><button class="btn" type="button" id="bk-pk-go">次へ</button></div></div>
     <form class="formbox hidden" id="bk-form" novalidate></form>
   </div>`;
-  if (!t.slots.length) { $("bk-cal").innerHTML = ""; $("bk-tlist").innerHTML = '<p class="note">いま予約できる空き時間がありません。少し時間をおいてもう一度ご覧ください。</p>'; }
+  $("bk-main").querySelectorAll("[data-len]").forEach((x) => x.addEventListener("click", () => { bk.len = Number(x.dataset.len); const keep = bk.day; startPick(); if (keep && bkSlots(t).some((s) => jstKey(s.slot) === keep)) { bk.day = keep; bk.ym = keep.slice(0, 7); drawCal(); drawTimes(); } const f = $("bk-main").querySelector(`[data-len="${bk.len}"]`); if (f) f.focus(); }));
+  if (!slots.length) { $("bk-cal").innerHTML = ""; $("bk-tlist").innerHTML = '<p class="note">いま予約できる空き時間がありません。少し時間をおいてもう一度ご覧ください。</p>'; }
   $("bk-prev").onclick = () => { bk.ym = bkShift(bk.ym, -1); drawCal(); };
   $("bk-next").onclick = () => { bk.ym = bkShift(bk.ym, 1); drawCal(); };
   $("bk-pk-go").onclick = () => { if (!bk.slot) { $("bk-pk-t").innerHTML = '<b class="err-t">時間を選択してください</b>'; const f = $("bk-tlist").querySelector(".t"); if (f) f.focus(); return; } bkForm(); };
@@ -487,7 +492,7 @@ function startPick() {
 const bkShift = (ym, n) => { const [y, m] = ym.split("-").map(Number), d = new Date(Date.UTC(y, m - 1 + n, 1)); return d.toISOString().slice(0, 7); };
 function drawCal() {
   const t = bkMenu(), [y, m] = bk.ym.split("-").map(Number);
-  const open = new Map(); for (const s of t.slots) { const k = jstKey(s.slot); open.set(k, (open.get(k) || 0) + 1); }
+  const open = new Map(); for (const s of bkSlots(t)) { const k = jstKey(s.slot); open.set(k, (open.get(k) || 0) + 1); }
   const months = [...new Set([...open.keys()].map((k) => k.slice(0, 7)))].sort();
   $("bk-ym").textContent = `${y}年${m}月`;
   $("bk-prev").disabled = !months.length || bk.ym <= months[0];
@@ -505,7 +510,7 @@ function drawTimes() {
   const t = bkMenu();
   if (!bk.day) { $("bk-t-h").textContent = ""; return; }
   $("bk-t-h").textContent = bkDayLabel(bk.day);
-  const list = t.slots.filter((s) => jstKey(s.slot) === bk.day);
+  const list = bkSlots(t).filter((s) => jstKey(s.slot) === bk.day);
   $("bk-tlist").innerHTML = list.map((s) => `<button type="button" class="t" data-slot="${esc(s.slot)}" aria-pressed="${bk.slot === s.slot}" aria-label="${esc(bkSpan(s))}">${esc(bkTime(s.slot))}<small> – ${esc(s.end)}</small></button>`).join("");
   $("bk-tlist").querySelectorAll("[data-slot]").forEach((x) => x.addEventListener("click", () => { bk.slot = x.dataset.slot; drawTimes(); const f = $("bk-tlist").querySelector(`[data-slot="${CSS.escape(bk.slot)}"]`); if (f) f.focus(); }));
   const sel = list.find((s) => s.slot === bk.slot);
@@ -514,10 +519,10 @@ function drawTimes() {
   bkBar();
 }
 function bkBar() {
-  const t = bk.data && bk.menu && bkMenu(), sel = t && t.slots.find((s) => s.slot === bk.slot);
+  const t = bk.data && bk.menu && bkMenu(), sel = t && bkSlots(t).find((s) => s.slot === bk.slot);
   const show = !!sel && bk.step === "pick" && matchMedia("(max-width: 860px)").matches && !$("tab-booking").classList.contains("hidden");
   $("bk-bar").classList.toggle("hidden", !show);
-  if (show) $("bk-bar-t").innerHTML = `<b>${esc(bkDayLabel(bk.day))} ${esc(bkSpan(sel))}</b>${esc(t.minutes)} 分`;
+  if (show) $("bk-bar-t").innerHTML = `<b>${esc(bkDayLabel(bk.day))} ${esc(bkSpan(sel))}</b>${esc(bkLen(t))} 分`;
 }
 addEventListener("resize", () => { if (bk.data) bkBar(); });
 function bkQ(q) {
@@ -527,7 +532,7 @@ function bkQ(q) {
     : `<textarea id="${id}" data-q="${esc(q.key)}" rows="${Math.max(3, Math.min(8, String(v).split("\n").length + 1))}" maxlength="4000"${q.required ? ' aria-required="true"' : ""}>${esc(v)}</textarea>`}<div class="f-msg hidden"></div></div>`;
 }
 function bkForm() {
-  const t = bkMenu(), sel = t.slots.find((s) => s.slot === bk.slot); if (!sel) return;
+  const t = bkMenu(), sel = bkSlots(t).find((s) => s.slot === bk.slot); if (!sel) return;
   bk.step = "form";
   $("booker").classList.add("form-mode"); $("bk-calbox").classList.add("hidden"); $("bk-times").classList.add("hidden");
   $("bk-picked").classList.remove("hidden"); $("bk-picked-t").textContent = `${bkDayLabel(bk.day)} ${bkSpan(sel)}`;
@@ -553,7 +558,7 @@ function bkForm() {
     if (first) { first.focus(); return; }
     const answers = Object.fromEntries([...$("bk-form").querySelectorAll("[data-q]")].map((x) => [x.dataset.q, x.value]));
     const go = $("bk-form").querySelector("[type=submit]"); go.disabled = true; $("bk-err").textContent = "予約しています…";
-    const res = await api("/api/booking", { method: "POST", token: bk.token, body: { slug: t.slug, slot: bk.slot, answers, ...(bk.moving ? { from: bk.moving.slot } : {}) } });
+    const res = await api("/api/booking", { method: "POST", token: bk.token, body: { slug: t.slug, slot: bk.slot, minutes: bkLen(t), answers, ...(bk.moving ? { from: bk.moving.slot } : {}) } });
     go.disabled = false;
     if (!res.ok) {
       $("bk-err").textContent = (res.error === "answer_required" ? `「${res.label}」を入力してください` : BK_WHY[res.error]) || "予約できませんでした。" + errText(res);
@@ -561,10 +566,10 @@ function bkForm() {
       return;
     }
     const moved = !!bk.moving;
-    bk.moving = null; bk.draft = {}; bk.step = "done";
+    bk.moving = null; bk.len = null; bk.draft = {}; bk.step = "done";
     $("bk-main").innerHTML = `<div class="bk-done" id="bk-done" tabindex="-1"><div class="ok" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
       <h2>${moved ? "日時を変更しました" : "予約が完了しました"}</h2><p>確認メールを送信しました。前日にリマインドをお送りします。</p>
-      <dl class="sum"><dt>日時</dt><dd>${esc(bkDayLabel(jstKey(res.slot)))} ${esc(bkTime(res.slot))}〜${esc(res.end)}（日本時間）</dd><dt>メニュー</dt><dd>${esc(t.title)}</dd>${t.zoom ? "<dt>場所</dt><dd>Zoom（URL は確認メールに記載）</dd>" : ""}</dl>
+      <dl class="sum"><dt>日時</dt><dd>${esc(bkDayLabel(jstKey(res.slot)))} ${esc(bkTime(res.slot))}〜${esc(res.end)}（日本時間）</dd><dt>メニュー</dt><dd>${esc(t.title)}${t.options ? `（${esc(res.minutes)} 分）` : ""}</dd>${t.zoom ? "<dt>場所</dt><dd>Zoom（URL は確認メールに記載）</dd>" : ""}</dl>
       <div class="addcal"><a class="btn ghost small" target="_blank" rel="noopener" href="${esc(bkGcal(t, res))}">Google カレンダーに追加 ↗</a></div>
       <div class="cta" style="justify-content:center"><button class="btn small" type="button" id="bk-again">予約画面に戻る</button></div>
       <p class="note">日時の変更・キャンセルは「予約」画面からいつでもできます</p></div>`;
@@ -576,7 +581,7 @@ function bkForm() {
 // Google カレンダーの「予定を作成」の住所（予約した人が自分のカレンダーに入れる）
 function bkGcal(t, res) {
   const f = (iso) => new Date(iso).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
-  const end = new Date(Date.parse(res.slot) + t.minutes * 60e3).toISOString();
+  const end = new Date(Date.parse(res.slot) + (res.minutes || t.minutes) * 60e3).toISOString();
   return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(t.title)}&dates=${f(res.slot)}/${f(end)}&details=${encodeURIComponent("参加の URL は確認メールに記載しています")}`;
 }
 
