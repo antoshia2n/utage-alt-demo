@@ -101,19 +101,32 @@ export function parseTimes(s) {
   return out.length ? out : null;
 }
 
-// 受け付ける枠の候補（日本時間で曜日と時間帯を刻む）。t は「いま」
-export function candidates(type, t = Date.now()) {
+// 曜日ごとの受付時間 {0..6: [[開始分, 終了分], ...]}。week_hours が無ければ今までの weekdays＋times から作る
+export function weekHours(type) {
+  const out = {};
+  if (type.week_hours && typeof type.week_hours === "object") {
+    for (let w = 0; w <= 6; w++) out[w] = Array.isArray(type.week_hours[w]) ? type.week_hours[w] : [];
+    return out;
+  }
   const ranges = parseTimes(type.times) || [];
   const wds = new Set((type.weekdays || []).map(Number));
-  const step = type.minutes * 60e3;
+  for (let w = 0; w <= 6; w++) out[w] = wds.has(w) ? ranges : [];
+  return out;
+}
+const jstDay = (ms) => new Date(ms + JST).toISOString().slice(0, 10);
+
+// 受け付ける枠の候補（日本時間）。特定日の設定があればその日はそちら。t は「いま」、minutes は所要時間
+export function candidates(type, t = Date.now(), minutes = type.minutes) {
+  const wk = weekHours(type), ov = type.date_overrides || {};
+  const len = minutes * 60e3, step = (type.slot_step || minutes) * 60e3;
   const earliest = t + (type.min_notice_hours || 0) * 3600e3;
-  const today = Date.parse(new Date(t + JST).toISOString().slice(0, 10) + "T00:00:00Z") - JST; // 今日の 0 時（日本時間）の UTC
+  const today = Date.parse(jstDay(t) + "T00:00:00Z") - JST; // 今日の 0 時（日本時間）の UTC
   const out = [];
   for (let d = 0; d <= (type.days_ahead || 14); d++) {
-    const day0 = today + d * DAY;
-    if (!wds.has(new Date(day0 + JST).getUTCDay())) continue;
+    const day0 = today + d * DAY, key = jstDay(day0);
+    const ranges = Array.isArray(ov[key]) ? ov[key] : wk[new Date(day0 + JST).getUTCDay()];
     for (const [a, b] of ranges) {
-      for (let s = day0 + a * 60e3; s + step <= day0 + b * 60e3; s += step) if (s >= earliest) out.push(s);
+      for (let s = day0 + a * 60e3; s + len <= day0 + b * 60e3; s += step) if (s >= earliest) out.push(s);
     }
   }
   return out;
@@ -121,11 +134,55 @@ export function candidates(type, t = Date.now()) {
 
 const overlaps = (s, e, list) => list.some((x) => s < x.end && x.start < e);
 
-// 空き時間：候補から、ほかの予約と重なる枠・予定と重なる枠を外す
-export function freeSlots(type, { booked = [], busy = [] } = {}, t = Date.now()) {
-  const step = type.minutes * 60e3;
-  return candidates(type, t).filter((s) => !overlaps(s, s + step, booked) && !overlaps(s, s + step, busy)).map((s) => new Date(s).toISOString());
+// 空き時間：候補から、ほかの予約・予定と重なる枠（前後のバッファ込み）と、1 日の上限に達した日を外す
+// booked は {start, end, type_id}。上限は同じメニュー（type.id）の予約で数える
+export function freeSlots(type, { booked = [], busy = [] } = {}, t = Date.now(), minutes = type.minutes) {
+  const len = minutes * 60e3, pre = (type.buffer_before || 0) * 60e3, post = (type.buffer_after || 0) * 60e3;
+  // ほかの予約も、その前後のバッファぶん押さえる（続けて入ると、あいだは「後」＋「前」になる）
+  const held = booked.map((b) => ({ start: b.start - pre, end: b.end + post }));
+  const perDay = new Map();
+  if (type.max_per_day) for (const b of booked) if (b.type_id && b.type_id === type.id) { const k = jstDay(b.start); perDay.set(k, (perDay.get(k) || 0) + 1); }
+  return candidates(type, t, minutes)
+    .filter((s) => !overlaps(s - pre, s + len + post, held) && !overlaps(s - pre, s + len + post, busy))
+    .filter((s) => !type.max_per_day || (perDay.get(jstDay(s)) || 0) < type.max_per_day)
+    .map((s) => new Date(s).toISOString());
 }
+
+// 予約する人が選べる所要時間（いちばん目が既定）
+// 予約者が自分で変更・キャンセルできる期限を過ぎたか
+export const tooLate = (type, slot, at = Date.now()) => type.cancel_hours != null && Date.parse(slot) - at < type.cancel_hours * 3600e3;
+export const lengthsOf = (type) => { const d = (type.durations || []).filter((m) => Number.isInteger(m)); return d.length ? d : [type.minutes]; };
+
+// 受付時間の検査：[[開始分, 終了分], ...]（5 分刻み・重ならない・1 日 8 つまで）
+export function cleanRanges(v) {
+  if (!Array.isArray(v) || v.length > 8) return null;
+  const out = [];
+  for (const r of v) {
+    if (!Array.isArray(r) || r.length !== 2) return null;
+    const [a, b] = r.map(Number);
+    if (!Number.isInteger(a) || !Number.isInteger(b) || a % 5 || b % 5 || a < 0 || b > 1440 || a >= b) return null;
+    out.push([a, b]);
+  }
+  out.sort((x, y) => x[0] - y[0]);
+  for (let i = 1; i < out.length; i++) if (out[i][0] < out[i - 1][1]) return null;
+  return out;
+}
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+export function cleanOverrides(v) {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const keys = Object.keys(v);
+  if (keys.length > 120) return null;
+  const out = {};
+  for (const k of keys.sort()) {
+    if (!DATE_RE.test(k) || Number.isNaN(Date.parse(k + "T00:00:00Z"))) return null;
+    const r = cleanRanges(v[k]);
+    if (!r) return null;
+    out[k] = r;
+  }
+  return out;
+}
+const hm = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+export const rangesText = (rs) => rs.map(([a, b]) => `${hm(a)}-${hm(b)}`).join(",");
 
 export function render(text, type, b, person) {
   const map = {
@@ -164,7 +221,7 @@ export function makeBooking(h) {
     }
     return [...map.values()];
   }
-  const asInterval = (b) => ({ start: Date.parse(b.slot), end: Date.parse(b.slot) + (b.minutes || 30) * 60e3 });
+  const asInterval = (b) => ({ start: Date.parse(b.slot), end: Date.parse(b.slot) + (b.minutes || 30) * 60e3, type_id: b.type_id });
 
   const view = (env, t, extra = {}) => ({
     id: t.id, slug: t.slug, title: t.title, minutes: t.minutes, weekdays: t.weekdays, times: t.times, days_ahead: t.days_ahead,
@@ -172,6 +229,8 @@ export function makeBooking(h) {
     remind_minutes: t.remind_minutes, confirm_subject: t.confirm_subject, confirm_body: t.confirm_body, remind_subject: t.remind_subject, remind_body: t.remind_body,
     active: t.active, archived: !!t.archived_at, audience: t.audience || "public", entitlements: t.entitlements || [], questions: t.questions || [], after_actions: t.after_actions || [],
     description: t.description || "", color: t.color || "", allowed_members: t.allowed_members || [],
+    week_hours: weekHours(t), date_overrides: t.date_overrides || {}, durations: t.durations || [], slot_step: t.slot_step || null,
+    buffer_before: t.buffer_before || 0, buffer_after: t.buffer_after || 0, max_per_day: t.max_per_day || null, max_per_person: t.max_per_person || 1, cancel_hours: t.cancel_hours ?? null,
     embed: (t.audience || "public") === "public" ? `<div data-lab-part="booking:${t.slug}"></div>` : "", ...extra,
   });
 
@@ -230,6 +289,37 @@ export function makeBooking(h) {
       const v = String(args.times ?? "10:00-12:00,20:00-22:00").trim();
       if (!parseTimes(v)) return { ok: false, error: "bad_times", note: "例 10:00-12:00,20:00-22:00（日本時間）" };
       row.times = v;
+    }
+    if ("week_hours" in args) {
+      const src = args.week_hours || {}, wk = {};
+      if (typeof src !== "object" || Array.isArray(src)) return { ok: false, error: "bad_week_hours" };
+      for (let w = 0; w <= 6; w++) { const r = cleanRanges(src[w] || []); if (!r) return { ok: false, error: "bad_week_hours", note: "曜日ごとに [[開始分, 終了分]]（5 分刻み・重ならない）" }; wk[w] = r; }
+      const days = Object.keys(wk).filter((w) => wk[w].length).map(Number);
+      if (!days.length) return { ok: false, error: "bad_week_hours", note: "受付時間を 1 つ以上選択してください" };
+      row.week_hours = wk;
+      // 今までの列も合わせておく（AI の道具や古い読み手のため）
+      row.weekdays = days; row.times = rangesText(wk[days[0]]);
+    }
+    if ("date_overrides" in args) {
+      const v = cleanOverrides(args.date_overrides || {});
+      if (!v) return { ok: false, error: "bad_date_overrides", note: '{"2026-11-20":[]} で休業日、[[600,660]] でその日だけの時間（分）' };
+      row.date_overrides = v;
+    }
+    if ("durations" in args) {
+      const arr = [...new Set((Array.isArray(args.durations) ? args.durations : []).map(Number))];
+      if (arr.length > 6 || arr.some((n) => !Number.isInteger(n) || n < 10 || n > 240 || n % 5)) return { ok: false, error: "bad_durations", note: "10〜240 分（5 分刻み）を 6 つまで" };
+      row.durations = arr.length > 1 ? arr : [];
+      if (arr.length) row.minutes = arr[0];
+    }
+    for (const [k, min, max] of [["slot_step", 5, 240], ["max_per_day", 1, 50], ["cancel_hours", 0, 168]]) if (k in args) {
+      const v = args[k] === null || args[k] === "" ? null : Number(args[k]);
+      if (v !== null && (!Number.isInteger(v) || v < min || v > max)) return { ok: false, error: "bad_" + k };
+      row[k] = v;
+    }
+    for (const [k, min, max] of [["buffer_before", 0, 120], ["buffer_after", 0, 120], ["max_per_person", 1, 10]]) if (k in args) {
+      const v = Number(args[k]);
+      if (!Number.isInteger(v) || v < min || v > max) return { ok: false, error: "bad_" + k };
+      row[k] = v;
     }
     for (const [k, min, max, def] of [["days_ahead", 1, 90, 14], ["min_notice_hours", 0, 168, 12]]) if (k in args || !cur) {
       const n = Number(args[k] ?? def);
@@ -316,7 +406,7 @@ export function makeBooking(h) {
   }
 
   // 空き時間（公開の面と AI の両方）。カレンダーが読めないときは、予定を避けずに出して calendar に理由を返す
-  async function slots(env, t, at = Date.now()) {
+  async function slots(env, t, at = Date.now(), minutes = t.minutes) {
     const range = [at, at + ((t.days_ahead || 14) + 1) * DAY];
     const booked = (await bookings(env)).map(asInterval);
     let busy = [], calendar = "off";
@@ -324,7 +414,7 @@ export function makeBooking(h) {
       const r = await busyBetween(env, range[0], range[1]).catch((e) => ({ state: "error", error: String(e.message), busy: [] }));
       busy = r.busy || []; calendar = r.state;
     }
-    return { slots: freeSlots(t, { booked, busy }, at), calendar };
+    return { slots: freeSlots(t, { booked, busy }, at, minutes), calendar, booked, busy };
   }
 
   async function publicSlots(env, slug) {
@@ -366,7 +456,7 @@ export function makeBooking(h) {
     const reg = await registerPerson(env, { email: body.email, name: body.name, source: body.source, consent: body.consent, via: "booking:" + t.slug, route: body.route, page_id: body.page_id });
     if (!reg.ok) return reg;
     const mine = (await bookings(env)).filter((b) => b.customer_id === reg.id && b.type_id === t.id && Date.parse(b.slot) > Date.now());
-    if (mine.length) return { ok: false, error: "already_booked", slot: mine[0].slot, label: fmtJst(mine[0].slot) };
+    if (mine.length >= (t.max_per_person || 1)) return { ok: false, error: "already_booked", slot: mine[0].slot, label: fmtJst(mine[0].slot) };
     const b = { slot: iso, type_id: t.id, type_title: t.title, minutes: t.minutes, topic, ...(ans.answers.length ? { answers: ans.answers } : {}) };
     await addEvent(env, reg.id, "consult_booked", b, "site");
     const [person] = await db(env, "GET", `customers?select=id,name,email&id=eq.${reg.id}`);
@@ -409,12 +499,16 @@ export function makeBooking(h) {
     const out = [];
     for (const t of types) {
       const r = await slots(env, t, at);
-      out.push({ slug: t.slug, title: t.title, minutes: t.minutes, description: t.description || "", color: t.color || "", zoom: !!t.zoom_url, ...(t.active ? {} : { paused: true }),
+      const lens = lengthsOf(t);
+      const mk = (list, m) => list.map((s) => ({ slot: s, label: fmtJst(s), end: endLabel(s, m), day: fmtJst(s).split("（")[0] }));
+      const options = lens.length > 1 ? lens.map((m) => ({ minutes: m, slots: mk(m === t.minutes ? r.slots : freeSlots(t, { booked: r.booked, busy: r.busy }, at, m), m) })) : null;
+      const mineT = mine.filter((b) => b.type_id === t.id);
+      out.push({ slug: t.slug, title: t.title, minutes: t.minutes, ...(options ? { options } : {}), max_per_person: t.max_per_person || 1, cancel_hours: t.cancel_hours ?? null, description: t.description || "", color: t.color || "", zoom: !!t.zoom_url, ...(t.active ? {} : { paused: true }),
         questions: (t.questions || []).map(({ key, label, kind, required, hint }) => ({ key, label, kind, required, hint })),
-        booked: mine.some((b) => b.type_id === t.id), slots: r.slots.map((s) => ({ slot: s, label: fmtJst(s), end: endLabel(s, t.minutes), day: fmtJst(s).split("（")[0] })) });
+        booked: mineT.length >= (t.max_per_person || 1), slots: mk(r.slots, t.minutes) });
     }
     return { ok: true, ready: out.length > 0, types: out,
-      mine: mine.map((b) => { const t = types.find((x) => x.id === b.type_id); return { slot: b.slot, label: fmtJst(b.slot), end: endLabel(b.slot, b.minutes), slug: t ? t.slug : null, title: b.type_title || (t || {}).title || "個別相談", minutes: b.minutes, answers: b.answers }; }) };
+      mine: mine.map((b) => { const t = types.find((x) => x.id === b.type_id); return { slot: b.slot, label: fmtJst(b.slot), end: endLabel(b.slot, b.minutes), slug: t ? t.slug : null, title: b.type_title || (t || {}).title || "個別相談", minutes: b.minutes, answers: b.answers, ...(t && tooLate(t, b.slot, at) ? { locked: true, cancel_hours: t.cancel_hours } : {}) }; }) };
   }
 
   async function memberBook(env, customer, ent, admin, body = {}) {
@@ -424,21 +518,24 @@ export function makeBooking(h) {
     if (!iso) return { ok: false, error: "bad_slot" };
     const ans = cleanAnswers(t.questions, body.answers);
     if (ans.error) return { ok: false, error: ans.error, key: ans.key, label: ans.label };
-    if (!(await slots(env, t)).slots.includes(iso)) return { ok: false, error: "slot_taken" };
+    const lens = lengthsOf(t), m = body.minutes == null || body.minutes === "" ? lens[0] : Number(body.minutes);
+    if (!lens.includes(m)) return { ok: false, error: "bad_minutes" };
+    if (!(await slots(env, t, Date.now(), m)).slots.includes(iso)) return { ok: false, error: "slot_taken" };
     // 日時を変更（from＝いまの予約の時刻）：同じ種類のいまの予約を、新しい時刻に入れ替える
     const fromIso = body.from ? parseStart(String(body.from)) : null;
     const mine = (await bookings(env)).filter((b) => b.customer_id === customer.id && b.type_id === t.id && Date.parse(b.slot) > Date.now());
     const moving = fromIso ? mine.find((b) => b.slot === fromIso) : null;
     if (fromIso && !moving) return { ok: false, error: "not_found" };
-    if (mine.length && !moving) return { ok: false, error: "already_booked", slot: mine[0].slot, label: fmtJst(mine[0].slot) };
-    const b = { slot: iso, type_id: t.id, type_title: t.title, minutes: t.minutes, topic: "", answers: ans.answers, ...(moving ? { moved_from: moving.slot } : {}) };
+    if (moving && tooLate(t, moving.slot)) return { ok: false, error: "too_late", cancel_hours: t.cancel_hours };
+    if (mine.length >= (t.max_per_person || 1) && !moving) return { ok: false, error: "already_booked", slot: mine[0].slot, label: fmtJst(mine[0].slot) };
+    const b = { slot: iso, type_id: t.id, type_title: t.title, minutes: m, topic: "", answers: ans.answers, ...(moving ? { moved_from: moving.slot } : {}) };
     await addEvent(env, customer.id, "consult_booked", b, "site");
     if (moving) await addEvent(env, customer.id, "consult_canceled", { slot: moving.slot, type_id: t.id, type_title: t.title, moved_to: iso }, "site");
     const mail = await sendNotice(env, t, b, customer, "confirm", "site").catch(() => "failed");
     let after = null;
     if (afterBooked && (t.after_actions || []).length) after = await afterBooked(env, customer.id, t.after_actions, { booked: iso }).catch((e) => ({ error: String(e.message || e) }));
     await logInbound(env, "booking", { slug: t.slug, slot: iso, member: true }, { ok: true, mail, after }, 200);
-    return { ok: true, slot: iso, label: fmtJst(iso), end: endLabel(iso, t.minutes), moved: !!moving, mail };
+    return { ok: true, slot: iso, label: fmtJst(iso), end: endLabel(iso, m), minutes: m, moved: !!moving, mail };
   }
 
   async function memberCancel(env, customer, body = {}) {
@@ -447,12 +544,13 @@ export function makeBooking(h) {
     if (!b) return { ok: false, error: "not_found" };
     const t = b.type_id ? await typeById(env, b.type_id) : null;
     if (!t || t.audience !== "member") return { ok: false, error: "not_found" };
+    if (tooLate(t, b.slot)) return { ok: false, error: "too_late", cancel_hours: t.cancel_hours };
     await addEvent(env, customer.id, "consult_canceled", { slot: b.slot, type_id: t.id, type_title: t.title }, "site");
     let after = null;
     if (afterBooked && (t.after_actions || []).length) after = await afterBooked(env, customer.id, t.after_actions, { canceled: b.slot }).catch((e) => ({ error: String(e.message || e) }));
     await logInbound(env, "booking_cancel", { slug: t.slug, slot: b.slot }, { ok: true, after }, 200);
     // 「元に戻す」のために、取り消した予約の中身を返す
-    return { ok: true, slot: b.slot, slug: t.slug, answers: Object.fromEntries((b.answers || []).map((a) => [a.key, a.value])) };
+    return { ok: true, slot: b.slot, slug: t.slug, minutes: b.minutes, answers: Object.fromEntries((b.answers || []).map((a) => [a.key, a.value])) };
   }
 
   async function forPlan(env) {
