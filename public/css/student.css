@@ -280,3 +280,39 @@ body.student a.gk { display: block; text-decoration: none; color: inherit; margi
   .gk-msgo { grid-template-columns: 1fr auto auto; grid-template-areas: "wk stt x" "nm nm nm" "pp pp pp"; }
   .gk-msgo .wk { grid-area: wk; } .gk-msgo .nm { grid-area: nm; } .gk-msgo .pp { grid-area: pp; } .gk-msgo .stt { grid-area: stt; } .gk-msgo .gk-x { grid-area: x; }
 }
+/* 目標達成くん 2 便目（2026-11-05 12:29 OK）：④ 戦術を考える */
+.gk-step.g2 .gk-no { background: var(--accent); }
+.gk-goal13.now { border-color: var(--accent); }
+.gk-goal13.now .l { color: var(--accent); }
+.gk-pick { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
+.gk-pick select { font: inherit; font-size: 14px; padding: 6px 10px; border-radius: 10px; max-width: 100%; color: var(--ink); background: var(--surface); }
+.gk-sub { display: grid; gap: 8px; border-radius: 14px; background: var(--soft); padding: 12px 14px; }
+.gk-sub h4 { margin: 0; font-size: 13.5px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.gk-sub h4 small { font-weight: 400; color: var(--muted); font-size: 12px; }
+.gk-sub .tag { font-size: 10.5px; font-weight: 800; color: #fff; background: var(--accent); border-radius: 5px; padding: 1px 6px; }
+.gk-ck { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.gk-ck input { width: 18px; height: 18px; accent-color: var(--accent); }
+.gk-bul { width: 100%; box-sizing: border-box; font: inherit; font-size: 14px; line-height: 1.7; border: 1px solid var(--field); border-radius: 12px; padding: 10px 12px; resize: vertical; background: var(--surface); color: var(--ink); }
+.gk-in { font: inherit; font-size: 14px; border: 1px solid var(--field); border-radius: 10px; padding: 8px 10px; background: var(--surface); color: var(--ink); min-width: 0; }
+.gk-kpid { display: grid; grid-template-columns: 1fr 110px 70px 20px; gap: 8px; align-items: center; }
+.gk-kpid .num, .gk-kpid .unit { text-align: center; }
+.gk-tac { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.gk-tac li { display: flex; align-items: center; gap: 10px; font-size: 14px; padding: 8px 10px; border-radius: 10px; background: var(--surface); }
+.gk-tac .tt { display: grid; gap: 1px; flex: 1; }
+.gk-tac .wh { font-size: 11.5px; color: var(--muted); }
+.gk-tac .hr { font-size: 12px; font-weight: 700; white-space: nowrap; color: var(--accent); }
+.gk-cap { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; font-size: 13px; }
+.gk-cap .tr { grid-column: 1 / -1; height: 10px; border-radius: 9px; background: var(--line); overflow: hidden; }
+.gk-cap .tr i { display: block; height: 100%; background: var(--accent); }
+.gk-cap.over .tr i { background: var(--gk-late); }
+.gk-cap .ov { color: var(--gk-late); }
+.gk-act { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+body.student .btn.ghost { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+.gk-go { border: 0; background: transparent; color: var(--accent); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; padding: 0; }
+.gk-msgo { grid-template-columns: 120px 1fr 120px 64px auto 20px; }
+.gk-pop .gk-mini-add + .gk-mini-add { margin-top: 0; }
+@media (max-width: 560px) {
+  .gk-kpid { grid-template-columns: 1fr 84px 48px 18px; gap: 6px; } .gk-kpid .gk-in { padding: 8px 6px; }
+  .gk-msgo { grid-template-columns: 1fr auto auto; grid-template-areas: "wk stt x" "nm nm nm" "pp pp go"; }
+  .gk-msgo .gk-go { grid-area: go; }
+}
