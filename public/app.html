@@ -54,34 +54,20 @@
     <section id="tab-home" class="hidden"></section>
     <section id="tab-mypage" class="hidden"><iframe id="mypage-frame" title="マイページ" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation" style="width:100%;border:0;min-height:480px;display:block;background:transparent"></iframe></section>
     <section id="tab-goals" class="hidden">
-      <!-- 目標達成くん（2026-11-05）：8 段の帯。1 便目は ①〜③（設計）、2 便目は ④（戦術）。⑤〜⑧ は次の便で開く。記録は今の日報・週報のまま -->
+      <!-- 目標達成くん（2026-11-05）：8 段の帯。1 便目は ①〜③（設計）、2 便目は ④（戦術）、3 便目は ⑤⑥（記録）と ⑦⑧（振り返り・週報）。成長レポートは次の便 -->
       <header class="gk-head"><h1>目標達成くん</h1><p>理想から今週の 1 本まで、1 本の線でつなげて回します。文字はさわれば、そのまま直せます。</p></header>
       <nav class="gk-chain" id="gk-chain" aria-label="8 つの段"></nav>
       <div class="gk-seg" role="tablist" aria-label="目標達成くんの画面">
         <button type="button" role="tab" data-gv="plan" aria-selected="true">設計</button>
         <button type="button" role="tab" data-gv="tac" aria-selected="false">戦術</button>
-        <button type="button" role="tab" data-gv="rec" aria-selected="false">日報・週報</button>
+        <button type="button" role="tab" data-gv="rec" aria-selected="false">記録</button>
+        <button type="button" role="tab" data-gv="rev" aria-selected="false">振り返り</button>
       </div>
       <div class="gk-view" id="gk-v-plan"><p class="note" style="margin:0">読み込んでいます…</p></div>
       <div class="gk-view hidden" id="gk-v-tac"></div>
       <p class="note gk-saved" id="gk-saved" role="status" aria-live="polite"></p>
-      <div class="gk-view stack hidden" id="gk-v-rec">
-      <form class="card stack" id="g-daily" novalidate>
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><h3 style="margin:0">日報</h3><label class="note" style="display:flex;gap:6px;align-items:center;margin:0">日付 <select id="g-day" aria-label="日報の日付"></select></label></div>
-        <div id="g-nums" class="stack"></div>
-        <div><label for="g-body">今日やったこと・気づき</label><textarea id="g-body" rows="4" maxlength="2000" placeholder="例：X に 2 本投稿。反応が良かったのは〇〇の型。明日は〇〇を試す"></textarea></div>
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><span class="note" style="margin:0">⌘／Ctrl＋Enter でも保存できます</span><button class="btn" id="g-save" type="submit">日報を保存</button></div>
-        <p class="note" id="g-msg" role="status" aria-live="polite" style="margin:0"></p>
-      </form>
-      <form class="card stack" id="g-weekly" novalidate>
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><h3 style="margin:0">週の振り返り</h3><label class="note" style="display:flex;gap:6px;align-items:center;margin:0">週 <select id="g-week" aria-label="振り返る週"></select></label></div>
-        <div id="g-sum" class="note" style="margin:0"></div>
-        <div><label for="g-wbody">よかったこと・うまくいかなかったこと・次の週にやること</label><textarea id="g-wbody" rows="5" maxlength="2000" placeholder="シアニンは面談の前にここを読みます"></textarea></div>
-        <div style="display:flex;justify-content:flex-end"><button class="btn" id="g-wsave" type="submit">振り返りを保存</button></div>
-        <p class="note" id="g-wmsg" role="status" aria-live="polite" style="margin:0"></p>
-      </form>
-      <details class="card" id="g-past"><summary>これまでの日報を見る ▼</summary><div id="g-list" class="stack" style="margin-top:10px"></div></details>
-      </div>
+      <div class="gk-view hidden" id="gk-v-rec"></div>
+      <div class="gk-view hidden" id="gk-v-rev"></div>
       <div class="gk-toast" id="gk-toast" role="status" aria-live="polite"></div>
     </section>
     <section id="tab-lessons" class="stack"></section>
