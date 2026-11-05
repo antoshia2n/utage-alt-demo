@@ -813,6 +813,14 @@ async function studentAccess(env, customer, email) {
 }
 // 便 2（関門 5）：右上の「アプリ一覧」に出す、この人が開けるアプリの名前（権利 × 開くものの表 member_access）。共通の外枠の門番の答えと同じ形
 // 生徒のホームの版（2026-11-04）。権利の名前は門番の member_entitlement のキー
+// 相談の予約の行き先（2026-11-05 Naoki OK）：いま生徒が使っている UTAGE の「しあらぼ月次アンケート＋個別相談予約フォーム」。
+// 受け先を変えないので、しあらぼ管理の最終面談日（UTAGE の予定を読む定時の処理）もそのまま入る。マーケくんで予約を受けるのは UTAGE をやめる時期の別の便
+export const CONSULT_BOOKING_URL = "https://utage-system.com/event/eSxP0FgLWHKP/register";
+export function consultBookingUrl(admin, ent) {
+  if (admin) return CONSULT_BOOKING_URL;
+  const g = (ent && ent.grants) || [];
+  return g.some((k) => /^shiarabo_(basic|pilot|next_|monitor)/.test(k)) ? CONSULT_BOOKING_URL : null;
+}
 export function homeTier(admin, ent) {
   if (admin) return "lab";
   const g = new Set((ent && ent.grants) || []);
@@ -1044,6 +1052,8 @@ async function handleApi(request, env, url) {
       referral: await refer.mine(env, customer, url.origin),
       // ムダ 2（2026-10-30）：予約は準備中。本物の枠ができたら true にすると左のメニューに出る
       booking_ready: false,
+      // 相談の予約（2026-11-05 Naoki OK）：しあらぼの生徒・モニターと管理者だけ、UTAGE の予約ページへ飛ぶ。ゲスト・メンシプだけの人には出さない
+      booking_url: consultBookingUrl(sa.admin, ent),
       // 目標タブ（2026-10-30）：しあらぼ管理の生徒に結ばれた人だけ（ゲストには出ない）
       goals_ready: await goals.isStudent(env, customer.id).catch(() => false),
     });

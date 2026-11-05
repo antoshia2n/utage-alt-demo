@@ -387,3 +387,8 @@ svg.gk-ch { width: 100%; height: auto; display: block; color: var(--ink); }
 .gk-draft.done { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; font-size: 13px; }
 @media (max-width: 520px) { .gk-draft-body { grid-template-columns: 1fr; } }
 .gk-draft-act .gk-mini-add { min-height: 44px; padding: 0 8px; }
+
+/* 相談の予約（2026-11-05）：ホームの上の 1 行。目立たせすぎず、すぐ見つかる */
+body.student .bk-line { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--soft); font-size: 14px; color: var(--muted); }
+body.student .bk-line .btn.small { padding: 0 16px; }
+body.student .bk-line a.btn, body.student #bk-link-go { color: var(--accent-ink); }

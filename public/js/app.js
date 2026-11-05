@@ -145,13 +145,15 @@ async function main() {
     $("rf-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText(rf.link); $("rf-copy").textContent = "写しました"; } catch (_) { $("rf-copy").textContent = "写せませんでした"; } });
   }
 
+  // 相談の予約（2026-11-05）：しあらぼの生徒・モニターだけ、サーバーが UTAGE の予約ページの住所を返す
+  const bookingUrl = typeof r.booking_url === "string" && /^https:[/][/]utage-system[.]com[/]/.test(r.booking_url) ? r.booking_url : null;
   const sections = ["home", "mypage", "goals", "lessons", "lesson", "news", "room", "review", "booking", "contract", "apps"];
   const showTab = (name) => {
     sections.forEach((s) => $("tab-" + s).classList.toggle("hidden", s !== name));
     if (name === "room") room.open();
     if (name === "review") loadReview(token);
     if (name === "goals") loadGoals(token);
-    if (name === "booking") loadBooking(token);
+    if (name === "booking") { if (bookingUrl) showBookingLink(bookingUrl); else loadBooking(token); }
     if (name === "contract") loadContract(token);
     if (name === "apps") renderApps(r);
     if (name === "home") drawHome();
@@ -173,6 +175,7 @@ async function main() {
     if (!flat.length) { $("tab-home").innerHTML = $("tab-lessons").innerHTML; return; }
     let theme = null; try { theme = localStorage.getItem(THEME_KEY); } catch { /* 覚えられなくても動く */ }
     $("tab-home").innerHTML = homeHtml({ tier: r.tier || "lab", rows: r.home_rows, flat, views, seed: r.me.email || "", theme });
+    paintBookingLine(bookingUrl);
     paintGoalCard();
     const sel = $("home-theme");
     if (sel) sel.addEventListener("change", () => { try { localStorage.setItem(THEME_KEY, sel.value); } catch { /* 覚えられなくても今は変わる */ } drawHome(); $("home-theme") && $("home-theme").focus(); });
@@ -296,7 +299,7 @@ async function main() {
   if (!location.hash || location.hash === "#home") showTab("home");
   if (location.hash === "#review") showTab("review");
   // ムダ 2（2026-10-30）：予約は、サーバーが準備できたと返すまで左のメニューに出さない
-  const bookingReady = r.booking_ready === true;
+  const bookingReady = r.booking_ready === true || !!bookingUrl;
   document.querySelector('.side [data-tab="booking"]').classList.toggle("hidden", !bookingReady);
   if (location.hash === "#booking" && bookingReady) showTab("booking");
   // 目標タブ（2026-10-30）：しあらぼの生徒だけ
@@ -379,6 +382,19 @@ async function loadContract(token) {
       loadContract(token);
     });
   }));
+}
+
+// ---------- 相談の予約（2026-11-05）：UTAGE の予約ページへ飛ぶ ----------
+function showBookingLink(url) {
+  $("bk-link").classList.remove("hidden");
+  $("bk-link-go").href = url;
+  ["bk-own", "bk-sem-h", "bk-seminars"].forEach((id) => $(id).classList.add("hidden"));
+}
+// ホームの上に小さく 1 行（学びの記録の上・目標のカードの下）
+function paintBookingLine(url) {
+  const home = $("tab-home") && $("tab-home").querySelector(".home"); if (!home || !url) return;
+  const old = home.querySelector(".bk-line"); if (old) old.remove();
+  home.insertAdjacentHTML("afterbegin", `<div class="bk-line"><span>シアニンに相談したいときは</span><a class="btn small" href="${esc(url)}" target="_blank" rel="noopener">相談を予約する ↗</a></div>`);
 }
 
 // ---------- 予約とセミナー（便 4） ----------
