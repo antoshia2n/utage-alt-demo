@@ -20,7 +20,7 @@ test("追う数字：空と重なりを外して 3 つまで", () => {
 function fake() {
   const t = { member_alias: [{ member_id: "m1", kind: "shr_student_id", value: "44" }, { member_id: "m2", kind: "email_hash", value: "x" }],
     shr_students: [{ id: 44, name: "ひろ", goal: "月 10 万", next_action: "毎日 1 本", next_mtg: "2026-11-02", last_mtg: "2026-10-23", track: ["投稿数"], archived: false, deleted: false }],
-    b_reports: [], b_goal_plans: [], b_goal_reviews: [] };
+    b_reports: [], b_goal_plans: [], b_goal_reviews: [], b_goal_drafts: [] };
   const rawDb = async (env, method, path, body) => {
     const [tbl, qs = ""] = path.split("?");
     const f = {}; for (const p of qs.split("&")) { const m = p.match(/^([a-z_]+)=(eq|gte)\.(.*)$/); if (m) f[m[1]] = [m[2], decodeURIComponent(m[3])]; }

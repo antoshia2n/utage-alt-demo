@@ -85,6 +85,47 @@ export function checkReview(body, plan, today = jstDay()) {
   return { ok: true, row: { week_start: ws, week_no: n, report } };
 }
 
+
+// ---------- 6 便目（2026-11-05 Naoki 14:55「OK」）：面談の議事録から Claude が作った設計の下書き ----------
+// 下書きは b_goal_drafts（会員ごとに 1 つ）。Claude の道具 set_goal_draft は「承認が要る」で、Naoki が承認して初めて入る。
+// 生徒が「この設計で始める」を押すまで、生徒の設計（b_goal_plans）は変えない。入れるのは ①理想 ②KGI ③13 週（始める日・状態と KPI・予備の週）だけ。
+// リソース予算と ④ 戦術・記録は下書きに入れない（生活の時間は議事録から読めないため）。
+export function checkDraft(input) {
+  const d = input && typeof input === "object" && !Array.isArray(input) ? input : null;
+  if (!d) return { ok: false, error: "bad_draft" };
+  const ms = arr(d.ms).slice(0, LIM.ms).map((m) => ({ n: m && m.n, kpi: arr(m && m.kpi).map((k) => ({ n: k && k.n, v: 0, to: k && k.to, u: k && k.u })) }));
+  const c = checkPlan({ start: d.start, ideal: d.ideal, idealWhen: d.idealWhen, kgi: arr(d.kgi).map((k) => ({ n: k && k.n, v: k && k.v, to: k && k.to, u: k && k.u })),
+    goal13: d.goal13, goal13Own: d.goal13 ? 1 : 0, spare: d.spare, ms });
+  if (!c.ok) return c;
+  const p = c.plan;
+  const draft = { start: p.start, ideal: p.ideal, idealWhen: p.idealWhen, kgi: p.kgi, goal13: p.goal13, goal13Own: p.goal13Own, spare: p.spare, ms: p.ms.filter((m) => m.n).map((m) => ({ n: m.n, kpi: m.kpi.filter((k) => k.n) })) };
+  if (!draft.ideal && !draft.kgi.length && !draft.ms.length) return { ok: false, error: "draft_empty" };
+  return { ok: true, draft };
+}
+
+// 下書きを今の設計に重ねる。リソース予算（bud）と 13 週の記録（wk）・方針（strat）は今の設計のまま残す
+export function mergeDraft(plan, draft, today = jstDay()) {
+  return checkPlan({
+    ...plan,
+    start: draft.start, ideal: draft.ideal, idealWhen: draft.idealWhen, kgi: draft.kgi,
+    goal13: draft.goal13, goal13Own: draft.goal13Own, spare: draft.spare, ext: {},
+    ms: draft.ms.map((m) => ({ n: m.n, kpi: m.kpi.map((k) => ({ ...k, v: 0 })), tasks: [], res: "", hyp: "", resDone: 0, hypDone: 0 })),
+  }, today);
+}
+
+// 承認の画面に出す 1 週ずつの並び（予備の週を飛ばして状態を置く。goalplan.js の place と同じ並べ方）
+export function draftWeeks(draft) {
+  const out = []; let j = 0;
+  const md = (n) => { const t = new Date(Date.parse(draft.start + "T00:00:00Z") + (n - 1) * 7 * 86400000); return `${t.getUTCMonth() + 1}/${t.getUTCDate()}`; };
+  for (let n = 1; n <= WEEKS; n++) {
+    if (draft.spare.includes(n)) { out.push(`第 ${n} 週（${md(n)}〜）予備の週`); continue; }
+    const m = draft.ms[j++];
+    out.push(m ? `第 ${n} 週（${md(n)}〜）${m.n}${m.kpi.length ? "／KPI：" + m.kpi.map((k) => `${k.n} ${Number(k.to || 0).toLocaleString("ja-JP")}${k.u}`).join("・") : ""}` : `第 ${n} 週（${md(n)}〜）（空き）`);
+  }
+  if (j < draft.ms.length) out.push(`並びきらない状態 ${draft.ms.length - j} 個（予備の週を減らすか、状態を減らす）`);
+  return out;
+}
+
 // まだ設計が無い生徒の最初の形。しあらぼ管理に入っている目標と追う数字を、最初の値として写す
 export function seedPlan(student, today = jstDay()) {
   const track = trackOf(student);
@@ -119,8 +160,84 @@ export function makeGoals(h) {
     return {
       ok: true, today, next_mtg: s.next_mtg || "",
       plan: await planOf(env, memberId, s, today),
+      draft: await draftOf(env, memberId),
       reviews: await h.rawDb(env, "GET", `b_goal_reviews?select=week_start,week_no,submitted_at,approved_at,comment,report->rates,report->kgi,report->done&member_id=eq.${memberId}&order=week_start.desc&limit=20`),
     };
+  }
+
+  // まだ始めても、しまってもいない下書き（無ければ null）
+  async function draftOf(env, memberId) {
+    const [row] = await h.rawDb(env, "GET", `b_goal_drafts?select=draft,source,created_at,applied_at,dismissed_at&member_id=eq.${memberId}`);
+    if (!row || row.applied_at || row.dismissed_at) return null;
+    return { ...row.draft, source: row.source || "", created_at: row.created_at };
+  }
+
+  // しあらぼ管理の生徒の番号から会員をたどる（Claude の道具はこの番号で生徒を指す）
+  async function memberOfStudent(env, studentId) {
+    const sid = String(studentId ?? "").trim();
+    if (!/^\d{1,9}$/.test(sid)) return { ok: false, error: "bad_student_id" };
+    const [s] = await h.rawDb(env, "GET", `shr_students?select=id,name&id=eq.${sid}&archived=eq.false&deleted=eq.false`);
+    if (!s) return { ok: false, error: "student_not_found" };
+    const links = await h.rawDb(env, "GET", `member_alias?select=member_id&kind=eq.shr_student_id&value=eq.${sid}&limit=2`);
+    if (!links.length) return { ok: false, error: "not_linked", note: "この生徒はまだマーケくんの会員と結ばれていない" };
+    if (links.length > 1) return { ok: false, error: "linked_twice", note: "この生徒の番号に会員が 2 人以上結ばれている。結びを直してから" };
+    return { ok: true, member_id: links[0].member_id, name: s.name || "" };
+  }
+
+  // 承認を頼む前に：中身をそろえ、承認の画面に出す名前と週の並びを足す（Naoki が読んで決められるように）
+  async function prepareDraft(env, args) {
+    const who = await memberOfStudent(env, args && args.student_id);
+    if (!who.ok) return who;
+    const c = checkDraft(args && args.draft);
+    if (!c.ok) return c;
+    return { ok: true, args: { student_id: Number(args.student_id), student_name: who.name, source: str(args.source, 120), draft: c.draft, weeks: draftWeeks(c.draft) } };
+  }
+
+  // 承認されたあとに入れる（同じ生徒の前の下書きは置き換える。生徒の設計には触らない）
+  async function setDraft(env, args) {
+    const pre = await prepareDraft(env, args);
+    if (!pre.ok) return pre;
+    const who = await memberOfStudent(env, args.student_id);
+    await h.rawDb(env, "POST", "b_goal_drafts?on_conflict=member_id",
+      [{ member_id: who.member_id, draft: pre.args.draft, source: pre.args.source, created_at: new Date().toISOString(), applied_at: null, dismissed_at: null, prev: null }], "resolution=merge-duplicates,return=minimal");
+    return { ok: true, student_id: pre.args.student_id, student_name: pre.args.student_name, states: pre.args.draft.ms.length, note: "生徒の目標タブに「シアニンと決めた下書きがあります」が出る。生徒が「この設計で始める」を押すまで、生徒の設計は変わらない" };
+  }
+
+  // 生徒が下書きをどうするか：start＝この設計で始める・keep＝今のままにする・undo＝直前の start / keep を元に戻す
+  async function draftAction(env, memberId, body, today = jstDay()) {
+    const s = await studentOf(env, memberId);
+    if (!s) return { ok: false, error: "not_student" };
+    const action = body && body.action;
+    const [row] = await h.rawDb(env, "GET", `b_goal_drafts?select=draft,prev,applied_at,dismissed_at&member_id=eq.${memberId}`);
+    if (!row) return { ok: false, error: "no_draft" };
+    const now = new Date().toISOString();
+    const patch = (o) => h.rawDb(env, "PATCH", `b_goal_drafts?member_id=eq.${memberId}`, o, "return=minimal");
+    if (action === "keep") {
+      if (row.applied_at || row.dismissed_at) return { ok: false, error: "draft_closed" };
+      await patch({ dismissed_at: now });
+      return { ok: true };
+    }
+    if (action === "start") {
+      if (row.applied_at || row.dismissed_at) return { ok: false, error: "draft_closed" };
+      const [cur] = await h.rawDb(env, "GET", `b_goal_plans?select=plan&member_id=eq.${memberId}`);
+      const base = cur && cur.plan && cur.plan.v ? checkPlan(cur.plan, today).plan : seedPlan(s, today);
+      const m = mergeDraft(base, row.draft, today);
+      if (!m.ok) return m;
+      const [saved] = await h.rawDb(env, "POST", "b_goal_plans?on_conflict=member_id",
+        [{ member_id: memberId, plan: m.plan, updated_at: now }], "resolution=merge-duplicates,return=representation");
+      // 元に戻すために、始める前の設計を控える（設計が無かったときは null）
+      await patch({ applied_at: now, prev: cur && cur.plan && cur.plan.v ? cur.plan : null });
+      return { ok: true, plan: { ...saved.plan, saved_at: saved.updated_at } };
+    }
+    if (action === "undo") {
+      if (row.applied_at) {
+        if (row.prev) await h.rawDb(env, "POST", "b_goal_plans?on_conflict=member_id", [{ member_id: memberId, plan: row.prev, updated_at: now }], "resolution=merge-duplicates,return=minimal");
+        else await h.rawDb(env, "DELETE", `b_goal_plans?member_id=eq.${memberId}`, undefined, "return=minimal");
+      }
+      await patch({ applied_at: null, dismissed_at: null, prev: null });
+      return { ok: true, plan: await planOf(env, memberId, s, today), draft: await draftOf(env, memberId) };
+    }
+    return { ok: false, error: "bad_action" };
   }
 
   async function planOf(env, memberId, s, today) {
@@ -152,5 +269,5 @@ export function makeGoals(h) {
     return { ok: true, review: { week_start: row.week_start, week_no: row.week_no, submitted_at: row.submitted_at, approved_at: row.approved_at, comment: row.comment, rates: row.report.rates, kgi: row.report.kgi, done: row.report.done } };
   }
 
-  return { view, savePlan, submitReview, isStudent, studentOf };
+  return { view, savePlan, submitReview, isStudent, studentOf, prepareDraft, setDraft, draftAction };
 }
