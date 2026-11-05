@@ -2,7 +2,7 @@ import { getClient, api, esc, fmtTime, authImage, shrinkImage, noticeHtml } from
 import { correctionHtml, wireNotes } from "/js/correction.js";
 import { setupStudentPush } from "/js/pushclient.js";
 import { flatten, homeHtml, libraryHtml, searchHtml } from "/js/home.js";
-import { planHtml, chainHtml, popHtml, homeCardHtml, applyAction, setPath, weekNo } from "/js/goalplan.js";
+import { planHtml, chainHtml, popHtml, homeCardHtml, tacHtml, applyAction, applyField, setPath, weekNo, weekInfo } from "/js/goalplan.js";
 
 
 
@@ -717,11 +717,20 @@ let gReady = false, gSaveTimer = null, gSaving = false, gAgain = false;
 const gPlanBusy = () => !!gSaveTimer || gSaving;
 const gNow = () => weekNo(gData.plan, gData.today);
 function gToast(t) { const e = $("gk-toast"); e.textContent = t; e.classList.add("on"); clearTimeout(gToast.t); gToast.t = setTimeout(() => e.classList.remove("on"), 1800); }
+let gSel = null, gView = "plan"; // ④ で開いている状態の番号・いま見ている画面
 function drawPlan() {
   if (!gData || !gData.plan) return;
-  $("gk-chain").innerHTML = chainHtml(gData.plan);
+  $("gk-chain").innerHTML = chainHtml(gData.plan, gData.today);
   $("gk-v-plan").innerHTML = planHtml(gData.plan, gData.today);
+  $("gk-v-tac").innerHTML = tacHtml(gData.plan, gData.today, gSel);
 }
+function gShow(v) {
+  gView = v;
+  document.querySelectorAll("#tab-goals .gk-seg [data-gv]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.gv === v)));
+  for (const x of ["plan", "tac", "rec"]) $("gk-v-" + x).classList.toggle("hidden", x !== v);
+  $("gk-saved").classList.toggle("hidden", v === "rec");
+}
+function openTac(i) { gSel = i; drawPlan(); gShow("tac"); $("s4").scrollIntoView({ behavior: "smooth", block: "start" }); }
 function planChanged(msg) { drawPlan(); paintGoalCard(); gSavedLine("保存を待っています…"); clearTimeout(gSaveTimer); gSaveTimer = setTimeout(gSavePlan, 700); if (msg) gToast(msg); }
 function gSavedLine(t, err) { const e = $("gk-saved"); e.textContent = t; e.classList.toggle("err", !!err); }
 async function gSavePlan() {
@@ -755,18 +764,28 @@ function wirePlan() {
   root.addEventListener("keydown", (e) => { const t = e.target; if (t.dataset && t.dataset.ed && e.key === "Enter" && !e.isComposing) { e.preventDefault(); t.blur(); } });
   root.addEventListener("change", (e) => {
     const t = e.target;
+    if (!gData) return;
+    if (t.dataset && t.dataset.sel != null) { gSel = +t.value; drawPlan(); return; }
+    if (applyField(gData.plan, t)) { planChanged(""); return; }
     if (t.dataset && t.dataset.start != null && /^\d{4}-\d{2}-\d{2}$/.test(t.value)) { const d = new Date(t.value + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); gData.plan.start = d.toISOString().slice(0, 10); planChanged("始めた週を直しました"); }
   });
   root.addEventListener("click", (e) => {
     const t = e.target.closest("button, a[data-to]"); if (!t || !gData) return;
     const d = t.dataset;
-    if (d.gv) { root.querySelectorAll(".gk-seg [data-gv]").forEach((b) => b.setAttribute("aria-selected", String(b === t))); $("gk-v-plan").classList.toggle("hidden", d.gv !== "plan"); $("gk-saved").classList.toggle("hidden", d.gv !== "plan"); $("gk-v-rec").classList.toggle("hidden", d.gv !== "rec"); return; }
-    if (d.to) { e.preventDefault(); root.querySelector('[data-gv="plan"]').click(); $(d.to).scrollIntoView({ behavior: "smooth", block: "start" }); return; }
-    if (d.wk) { if (!hoverOK() && !t.classList.contains("pinned")) { root.querySelectorAll(".gk-road .pinned").forEach((x) => x.classList.remove("pinned")); t.classList.add("pinned"); showPop(t); } return; }
+    if (d.gv) { gShow(d.gv); return; }
+    if (d.to) { e.preventDefault(); if (d.to === "s4") { openTac(gSel); return; } gShow("plan"); $(d.to).scrollIntoView({ behavior: "smooth", block: "start" }); return; }
+    if (d.wk) { // マウスなら押すとその状態の戦術へ。指なら 1 回目は中身、2 回目で戦術へ
+      if (!hoverOK() && !t.classList.contains("pinned")) { root.querySelectorAll(".gk-road .pinned").forEach((x) => x.classList.remove("pinned")); t.classList.add("pinned"); showPop(t); return; }
+      const f = weekInfo(gData.plan, +d.wk, gNow()); if (f.i != null) openTac(f.i); return;
+    }
+    if (d.ms != null) { openTac(+d.ms); return; }
+    if (d.back != null) { gShow("plan"); const o = root.querySelector(".gk-overview"); if (o) o.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
     if (applyAction(gData.plan, d, gNow())) {
       const msg = d.add === "ms" ? "状態を足しました。空いている週に並びます" : d.del ? "消しました" : d.spare ? (gData.plan.spare.includes(+d.spare) ? `第 ${d.spare} 週を予備にしました` : `第 ${d.spare} 週に状態を戻しました`) : d.bmv != null ? "時間の置き場所を移しました" : "";
       planChanged(msg);
       if (d.add) { const sel = { kgi: "kgi", ms: "ms", bud: "bud" }[d.add]; const els = root.querySelectorAll(`[data-ed^="${sel}.${gData.plan[sel].length - 1}."]`); if (els[0]) els[0].focus(); }
+      if (d.addk != null) { const el = root.querySelector(`[data-kf="${d.addk}.${gData.plan.ms[d.addk].kpi.length - 1}.n"]`); if (el) el.focus(); }
+      if (d.addt != null) { const el = root.querySelector(`[data-ed="ms.${d.addt}.tasks.${gData.plan.ms[d.addt].tasks.length - 1}.t"]`); if (el) el.focus(); }
     }
   });
   root.addEventListener("mouseover", (e) => { const c = e.target.closest && e.target.closest(".gk-road .c.big"); if (c && hoverOK()) showPop(c); });

@@ -1,7 +1,7 @@
 // 目標達成くん（2026-11-05）1 便目：画面の計算（週の並び・今週・状態の色・直し方）と、描いたものに大事な言葉が出るか
 import test from "node:test";
 import assert from "node:assert/strict";
-import { weekNo, place, weekState, goal13Text, goalHours, budSum, monthWeek, setPath, applyAction, planHtml, chainHtml, homeCardHtml, popHtml } from "../public/js/goalplan.js";
+import { weekNo, place, weekState, goal13Text, goalHours, budSum, monthWeek, setPath, applyAction, applyField, planHtml, chainHtml, homeCardHtml, popHtml, tacHtml, nowMs, tasksHours } from "../public/js/goalplan.js";
 import { seedPlan } from "../src/goals.js";
 
 const plan = () => {
@@ -69,18 +69,48 @@ test("予備：先の週だけ切り替えられる。状態を消すと、続�
   assert.deepEqual(p.ext, { 4: 1 });
 });
 
-test("画面：8 段の帯（④〜⑧は準備中）・全体像・ポップアップ・ホームのカード。書いた字は消毒して出す", () => {
+test("画面：8 段の帯（⑤〜⑧は準備中）・全体像・ポップアップ・ホームのカード。書いた字は消毒して出す", () => {
   const p = plan(); p.ideal = "<b>講座</b>";
   const h = planHtml(p, "2026-11-05");
   assert.match(h, /4 半期の全体像/);
   assert.match(h, /&lt;b&gt;講座/);
   assert.doesNotMatch(h, /<b>講座/);
   assert.match(h, /第 4 週（11月1週）／13 週/);
-  const c = chainHtml(p);
-  assert.match(c, /data-to="s1"/);
-  assert.equal((c.match(/準備中/g) || []).length, 5);
+  const c = chainHtml(p, "2026-11-05");
+  assert.match(c, /data-to="s4"/);
+  assert.equal((c.match(/準備中/g) || []).length, 4);
   assert.match(popHtml(p, 4, 4), /状態 4：状態4/);
   assert.match(popHtml(p, 8, 4), /この週を予備にする/);
   assert.doesNotMatch(popHtml(p, 2, 4), /予備にする/);
   assert.match(homeCardHtml(p, "2026-11-05"), /今週（第 4 週）の状態：状態4/);
+});
+
+test("④ 戦術：開いていなければ今週の状態。KPI とリサーチ・仮説を書くと印が付き、④ の段が「できた」になる", () => {
+  const p = plan();
+  assert.equal(nowMs(p, "2026-11-05"), 3);
+  assert.match(tacHtml(p, "2026-11-05", null), /状態 4：状態4（今週）" ?|selected>状態 4：状態4（今週）/);
+  assert.match(tacHtml(p, "2026-11-05", 5), /value="5" selected/);
+  const m = p.ms[3];
+  assert.equal(applyField(p, { dataset: { mtx: "3.res" }, value: "・伸びている人を 3 人見た" }), true);
+  assert.equal(m.resDone, 1);
+  assert.equal(applyField(p, { dataset: { mtx: "3.hyp" }, value: "・1 行目に数字を入れれば伸びるはず" }), true);
+  assert.match(chainHtml(p, "2026-11-05"), /data-to="s4" class="gk-ci g2  ">.*?戦術<span class="st">できた/);
+  assert.equal(applyField(p, { dataset: { mck: "3.resDone" }, checked: false }), true);
+  assert.equal(m.resDone, 0);
+  assert.equal(applyField(p, { dataset: { kf: "3.0.to" }, value: "1,000" }), true);
+  assert.equal(m.kpi[0].to, 1000);
+  assert.equal(applyField(p, { dataset: { kf: "3.0.to" }, value: "1000" }), false);
+});
+
+test("④ やること：時間を足し、② の目標に使う時間を超えたら「はみ出し」。KPI を消しても続ける週はずれない", () => {
+  const p = plan();
+  applyAction(p, { addt: "3" }, 4); setPath(p, "ms.3.tasks.0.hr", "30");
+  applyAction(p, { addt: "3" }, 4); setPath(p, "ms.3.tasks.1.hr", "12.5");
+  assert.equal(tasksHours(p.ms[3]), 42.5);
+  assert.match(tacHtml(p, "2026-11-05", 3), /2\.5 時間はみ出し/);
+  p.ext = { 5: 1 };
+  applyAction(p, { addk: "3" }, 4);
+  applyAction(p, { del: "ms.3.kpi.1" }, 4);
+  assert.deepEqual(p.ext, { 5: 1 });
+  assert.match(popHtml(p, 4, 4), /data-ms="3"/);
 });
