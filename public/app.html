@@ -54,7 +54,7 @@
     <section id="tab-home" class="hidden"></section>
     <section id="tab-mypage" class="hidden"><iframe id="mypage-frame" title="マイページ" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation" style="width:100%;border:0;min-height:480px;display:block;background:transparent"></iframe></section>
     <section id="tab-goals" class="hidden">
-      <!-- 目標達成くん（2026-11-05）：8 段の帯。1 便目は ①〜③（設計）、2 便目は ④（戦術）、3 便目は ⑤⑥（記録）と ⑦⑧（振り返り・週報）。成長レポートは次の便 -->
+      <!-- 目標達成くん（2026-11-05）：8 段の帯。1 便目は ①〜③（設計）、2 便目は ④（戦術）、3 便目は ⑤⑥（記録）と ⑦⑧（振り返り・週報）。4 便目は成長レポート -->
       <header class="gk-head"><h1>目標達成くん</h1><p>理想から今週の 1 本まで、1 本の線でつなげて回します。文字はさわれば、そのまま直せます。</p></header>
       <nav class="gk-chain" id="gk-chain" aria-label="8 つの段"></nav>
       <div class="gk-seg" role="tablist" aria-label="目標達成くんの画面">
@@ -62,12 +62,14 @@
         <button type="button" role="tab" data-gv="tac" aria-selected="false">戦術</button>
         <button type="button" role="tab" data-gv="rec" aria-selected="false">記録</button>
         <button type="button" role="tab" data-gv="rev" aria-selected="false">振り返り</button>
+        <button type="button" role="tab" data-gv="grow" aria-selected="false" aria-label="成長レポート">成長<span class="gk-long">レポート</span></button>
       </div>
       <div class="gk-view" id="gk-v-plan"><p class="note" style="margin:0">読み込んでいます…</p></div>
       <div class="gk-view hidden" id="gk-v-tac"></div>
       <p class="note gk-saved" id="gk-saved" role="status" aria-live="polite"></p>
       <div class="gk-view hidden" id="gk-v-rec"></div>
       <div class="gk-view hidden" id="gk-v-rev"></div>
+      <div class="gk-view hidden" id="gk-v-grow"></div>
       <div class="gk-toast" id="gk-toast" role="status" aria-live="polite"></div>
     </section>
     <section id="tab-lessons" class="stack"></section>
