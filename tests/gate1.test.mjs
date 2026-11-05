@@ -20,7 +20,7 @@ test("会員・先行で試す・ゲスト・シアニンは full、それ以外
 test("マイページ・教材の質問とメモ・添削ルーム・目標・設計の口は、contract の人に 403 を返す", () => {
   const src = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
   const n = (src.match(/studentAccess\(env, customer, v\.email\)\)\.access !== "full"\) return json\(NOT_MEMBER, 403\)/g) || []).length;
-  assert.equal(n, 5, "マイページ・lesson・room・目標（2026-10-30）・目標達成くんの設計（2026-11-05）の 5 か所");
+  assert.equal(n, 6, "マイページ・lesson・room・目標（2026-10-30）・目標達成くんの設計と週報（2026-11-05）の 6 か所");
   assert.ok(src.includes('access: "contract"'), "/api/me は contract の人に中身を返さない");
 });
 

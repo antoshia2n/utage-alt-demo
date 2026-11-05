@@ -316,3 +316,49 @@ body.student .btn.ghost { background: transparent; color: var(--accent); border:
   .gk-msgo { grid-template-columns: 1fr auto auto; grid-template-areas: "wk stt x" "nm nm nm" "pp pp go"; }
   .gk-msgo .gk-go { grid-area: go; }
 }
+/* 目標達成くん 3 便目（2026-11-05 12:40 OK）：⑤ 実行・⑥ 記録・⑦ 評価・⑧ 修正 */
+.gk-step.g3 .gk-no { background: var(--gk-ok); }
+.gk-steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.gk-stp { border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; display: grid; gap: 6px; background: var(--surface); }
+.gk-stp .n { font-size: 13px; font-weight: 700; } .gk-stp .n small { display: block; font-weight: 400; color: var(--muted); font-size: 11.5px; }
+.gk-stp .c { display: flex; align-items: center; justify-content: space-between; }
+.gk-stp .c button { width: 40px; height: 40px; border-radius: 10px; border: 0; background: var(--accent-soft); color: var(--accent); font-size: 20px; font-weight: 700; cursor: pointer; }
+.gk-stp .c b { font-size: 24px; font-weight: 800; }
+.gk-in.big { font-size: 20px; font-weight: 800; text-align: center; }
+.gk-in.wide { width: 100%; box-sizing: border-box; }
+.gk-tac li.done .gk-ck span { text-decoration: line-through; color: var(--muted); }
+.gk-hrs { display: flex; gap: 16px; flex-wrap: wrap; }
+.gk-hl { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; }
+.gk-hl .hh { width: 70px; text-align: center; font-size: 16px; font-weight: 700; }
+.gk-hl small { color: var(--muted); font-weight: 400; }
+.gk-opt { font-size: 11px; color: var(--muted); margin-left: 6px; }
+.gk-req { font-size: 11px; font-weight: 700; color: var(--gk-late); margin-left: 6px; }
+.gk-pipe { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; gap: 6px; align-items: center; font-size: 12px; text-align: center; }
+.gk-pipe div { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 8px 6px; line-height: 1.35; }
+.gk-pipe div b { display: block; font-size: 12.5px; }
+.gk-pipe .me { border: 1.5px solid var(--gk-ok); }
+.gk-pipe span { color: var(--muted); font-weight: 700; }
+.gk-auto { display: grid; }
+.gk-auto .row { display: flex; justify-content: space-between; gap: 8px; font-size: 13.5px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.gk-auto .row span { color: var(--muted); }
+.gk-2ax { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.gk-2ax .ax { display: flex; flex-direction: column; gap: 4px; border-radius: 12px; padding: 12px 14px; background: var(--soft); }
+.gk-2ax .ax strong { font-size: 26px; font-weight: 800; line-height: 1; }
+.gk-2ax .ax span { font-size: 12px; color: var(--muted); }
+.gk-verd { border-radius: 12px; padding: 10px 14px; background: var(--soft); }
+.gk-verd .v1 { font-weight: 700; font-size: 14px; } .gk-verd .v2 { font-size: 13px; color: var(--muted); margin-top: 2px; }
+.gk-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.gk-chips button { border: 1px solid var(--field); background: var(--surface); color: var(--ink); border-radius: 99px; padding: 7px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+.gk-chips button[aria-pressed=true] { background: var(--gk-ok); border-color: var(--gk-ok); color: #fff; }
+.gk-choice { display: grid; gap: 8px; }
+.gk-choice label { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; cursor: pointer; font-size: 14px; }
+.gk-choice label small { display: block; font-size: 12px; color: var(--muted); }
+.gk-choice input { margin-top: 3px; accent-color: var(--gk-ok); }
+.gk-choice label:has(input:checked) { border-color: var(--gk-ok); }
+.gk-badge { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 99px; background: var(--soft); color: var(--muted); white-space: nowrap; }
+.gk-badge.sent { background: var(--accent-soft); color: var(--accent); }
+.gk-badge.ok { background: var(--gk-ok); color: #fff; }
+.gk-hint { margin: 0; text-align: right; font-size: 12px; }
+.gk-from-box { border-left: 3px solid var(--gk-ok); background: var(--soft); border-radius: 0 10px 10px 0; padding: 8px 12px; font-size: 13.5px; display: grid; gap: 2px; }
+.gk-from-box .l { font-size: 11.5px; font-weight: 700; color: var(--gk-ok); }
+@media (max-width: 560px) { .gk-pipe { font-size: 10.5px; } .gk-pipe div { padding: 6px 3px; } .gk-pipe div b { font-size: 11px; } }

@@ -1,6 +1,7 @@
 // 目標達成くん（2026-11-05・Naoki 11:25「OK」）1 便目：8 段の帯と ①理想・②条件（KGI・リソース予算）・③戦略（13 週の目標・全体像・状態）
 // 正本はサーバーの b_goal_plans（生徒が書く）。ここは描くのと、直したら保存を頼むだけ。
-// 2 便目（2026-11-05 12:29 OK）：④ 戦術（状態ごとのリサーチ・仮説・この週の KPI・やること）。⑤〜⑧ は次の便で開く。
+// 2 便目（2026-11-05 12:29 OK）：④ 戦術（状態ごとのリサーチ・仮説・この週の KPI・やること）。
+// 3 便目（2026-11-05 12:40 OK）：⑤ 実行・⑥ 記録（記録タブ）と ⑦ 評価・⑧ 修正（振り返りタブ・週報を出す）。
 export const WEEKS = 13;
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const D = 864e5;
@@ -44,10 +45,12 @@ const ST_COLOR = { done: "#15803d", now: "#4644c7", next: "#9b99e6", late: "#d97
 const ed = (path, val, ph, cls = "") => `<span class="${cls}" data-ed="${path}" data-ph="${esc(ph)}" contenteditable="plaintext-only" role="textbox" aria-label="${esc(ph)}" spellcheck="false">${esc(val)}</span>`;
 const head = (no, title, q) => `<div class="gk-sh"><span class="gk-no">${no}</span><h3>${title}</h3><span class="q">${q}</span></div>`;
 
-const STEPS = [["理想", "s1"], ["条件", "s2"], ["戦略", "s3"], ["戦術", "s4"], ["実行"], ["記録"], ["評価"], ["修正"]];
+const STEPS = [["理想", "s1"], ["条件", "s2"], ["戦略", "s3"], ["戦術", "s4"], ["実行", "s5"], ["記録", "s6"], ["評価", "s7"], ["修正", "s8"]];
 export function chainHtml(plan, today) {
   const cur = today ? nowMs(plan, today) : null, m = cur == null ? null : plan.ms[cur];
-  const done = [!!plan.ideal, plan.kgi.length > 0, plan.ms.length > 0, !!(m && m.resDone && m.hypDone && m.kpi.length)];
+  const n = today ? weekNo(plan, today) : 0, w = plan.wk && plan.wk[n];
+  const done = [!!plan.ideal, plan.kgi.length > 0, plan.ms.length > 0, !!(m && m.resDone && m.hypDone && m.kpi.length),
+    !!(m && (m.kpi.some((k) => k.v > 0) || m.tasks.some((t) => t.d))), !!(w && Object.values(w.used || {}).some((h) => h > 0)), !!(w && w.reason), !!(w && w.next)];
   const here = done.indexOf(false);
   return STEPS.map(([n, id], i) => {
     const g = i < 3 ? 1 : i < 6 ? 2 : 3;
@@ -137,7 +140,7 @@ export function tacHtml(plan, today, sel) {
   const m = plan.ms[i], n = msWeek(plan, i), hrs = tasksHours(m), cap = goalHours(plan);
   const opts = plan.ms.map((mm, j) => `<option value="${j}" ${j === i ? "selected" : ""}>状態 ${j + 1}：${esc(mm.n || "（まだ書いていません）")}${j === cur ? "（今週）" : ""}</option>`).join("");
   const kpi = m.kpi.map((k, j) => `<div class="gk-kpid"><input class="gk-in" data-kf="${i}.${j}.n" value="${esc(k.n)}" placeholder="数字の名前（例：X 記事）" aria-label="KPI ${j + 1} の名前" maxlength="30"><input class="gk-in num" data-kf="${i}.${j}.to" value="${k.to ? fmt(k.to) : ""}" inputmode="numeric" placeholder="目標" aria-label="KPI ${j + 1} の目標"><input class="gk-in unit" data-kf="${i}.${j}.u" value="${esc(k.u)}" placeholder="単位" aria-label="KPI ${j + 1} の単位" maxlength="10"><button class="gk-x" type="button" data-del="ms.${i}.kpi.${j}" aria-label="KPI ${j + 1} を消す">×</button></div>`).join("");
-  const tasks = m.tasks.map((t, j) => `<li><span class="tt">${ed(`ms.${i}.tasks.${j}.t`, t.t, "やること")}<span class="wh">いつ：${ed(`ms.${i}.tasks.${j}.when`, t.when, "例：火曜の朝")}</span></span><span class="hr">${ed(`ms.${i}.tasks.${j}.hr`, String(t.hr || 0), "0")}h</span><button class="gk-x" type="button" data-del="ms.${i}.tasks.${j}" aria-label="やること ${j + 1} を消す">×</button></li>`).join("");
+  const tasks = m.tasks.map((t, j) => `<li><span class="tt">${ed(`ms.${i}.tasks.${j}.t`, t.t, "やること")}<span class="wh">いつ：${ed(`ms.${i}.tasks.${j}.when`, t.when, "例：火曜の朝")}${t.from ? "　⑧ 先週の修正から" : ""}</span></span><span class="hr">${ed(`ms.${i}.tasks.${j}.hr`, String(t.hr || 0), "0")}h</span><button class="gk-x" type="button" data-del="ms.${i}.tasks.${j}" aria-label="やること ${j + 1} を消す">×</button></li>`).join("");
   return `<div class="gk-step g2" id="s4">${head(4, "戦術を考える", "調べて、仮説を立てて、この週の KPI とやることに落とす")}
     <label class="gk-pick"><span>どの状態の戦術？</span><select data-sel aria-label="戦術を考える状態">${opts}</select></label>
     <div class="gk-goal13 now"><span class="l">${n > 0 ? `第 ${n} 週・${monthWeek(plan, n)}` : "週が足りません"}${i === cur ? "（今週）" : ""}　<span class="gk-from">③ マイルストーンから</span></span><p>${ed(`ms.${i}.n`, m.n, "どんな状態になっているか")}</p></div>
@@ -152,6 +155,111 @@ export function tacHtml(plan, today, sel) {
       <div class="gk-cap ${hrs > cap ? "over" : ""}"><span>計画 <b>${hrs} 時間</b> ／ 目標に使える ${cap} 時間（② から）</span><span>${hrs > cap ? `<b class="ov">${hrs - cap} 時間はみ出し</b>` : `残り ${cap - hrs} 時間`}</span><div class="tr"><i style="width:${cap ? Math.min(100, (hrs / cap) * 100) : 0}%"></i></div></div></div>
     <div class="gk-act"><button class="btn ghost" type="button" data-back>← 全体像へ戻る</button></div></div>`;
 }
+
+// ---------- 3 便目：⑤ 実行・⑥ 記録・⑦ 評価・⑧ 修正 ----------
+export const REASONS = ["時間が取れなかった", "やり方が合わなかった", "予定外の仕事", "体調・気分", "思ったより難しかった", "うまくいった"];
+const WK0 = () => ({ used: {}, memo: "", reason: "", why: "", next: "", rmSpare: 0, tryy: "", tryAdded: 0 });
+export const weekRec = (plan, n) => (plan.wk && plan.wk[n]) || WK0();
+const ensureWeek = (plan, n) => { plan.wk = plan.wk || {}; if (!plan.wk[n]) plan.wk[n] = WK0(); return plan.wk[n]; };
+export const msAt = (plan, n) => { const x = place(plan).w[n]; return Array.isArray(x) ? x : null; };
+export function usedHours(plan, n) { const w = weekRec(plan, n); return plan.bud.filter((b) => b.g).reduce((a, b) => a + (+w.used[b.n] || 0), 0); }
+export function timeRate(plan, n) { const cap = goalHours(plan); return cap ? Math.round((usedHours(plan, n) / cap) * 100) : 0; }
+export function actRate(plan, n) {
+  const x = msAt(plan, n); if (!x) return null;
+  const m = plan.ms[x[0]], parts = m.kpi.map(kp).concat(m.tasks.map((t) => (t.d ? 1 : 0)));
+  return parts.length ? Math.round((parts.reduce((a, b) => a + b, 0) / parts.length) * 100) : null;
+}
+export function verdict(t, a) {
+  if (a == null) return ["KPI ややることがまだありません", "④ 戦術で、この週の KPI とやることを決めます"];
+  const lt = t < 70, la = a < 70;
+  return lt && la ? ["時間が取れず、進みも少なかった", "時間の予算が現実的か見直す"] : !lt && la ? ["時間は使えたが、進みが少なかった", "やり方（仮説）を見直す"] : lt ? ["少ない時間で進められた", "この仮説は効いている"] : ["時間も使えて、進みも出た", "このまま次の状態へ"];
+}
+const weekSel = (plan, today, n) => { const now = Math.min(weekNo(plan, today), WEEKS); return now < 1 ? "" : `<label class="gk-pick"><span>どの週？</span><select data-wsel aria-label="記録する週">${Array.from({ length: now }, (_, i) => now - i).map((k) => `<option value="${k}" ${k === n ? "selected" : ""}>第 ${k} 週（${monthWeek(plan, k)}）${k === now ? "・今週" : ""}</option>`).join("")}</select></label>`; };
+const stateLine = (plan, n) => { const x = msAt(plan, n); return x ? `状態 ${x[0] + 1}${x[1] > 0 ? `（続き ${x[1] + 1} 週目）` : ""}：${plan.ms[x[0]].n || "（まだ書いていません）"}` : "予備の週"; };
+export function recHtml(plan, today, n) {
+  if (weekNo(plan, today) < 1) return `<div class="gk-step g2">${head(5, "実行", "13 週が始まってから記録します")}</div>`;
+  const x = msAt(plan, n), m = x ? plan.ms[x[0]] : null, i = x ? x[0] : null, w = weekRec(plan, n);
+  const kpi = m && m.kpi.length ? m.kpi.map((k, j) => k.to >= 1000
+    ? `<div class="gk-stp"><div class="n">${esc(k.n || "（名前なし）")}<small>目標 ${fmt(k.to)}${esc(k.u)}</small></div><input class="gk-in big" data-kin="${i}.${j}" value="${fmt(k.v)}" inputmode="numeric" aria-label="${esc(k.n)}の今の数"></div>`
+    : `<div class="gk-stp"><div class="n">${esc(k.n || "（名前なし）")}<small>目標 ${fmt(k.to)}${esc(k.u)}</small></div><div class="c"><button type="button" data-kv="${i}.${j}" data-d="-1" aria-label="${esc(k.n)}を 1 減らす">−</button><b>${fmt(k.v)}</b><button type="button" data-kv="${i}.${j}" data-d="1" aria-label="${esc(k.n)}を 1 足す">＋</button></div></div>`).join("")
+    : `<p class="note" style="margin:0">この週の KPI はまだありません。<button class="gk-mini-add" type="button" data-ms="${i ?? ""}">④ 戦術で決める →</button></p>`;
+  const tasks = m && m.tasks.length ? `<div class="gk-numh">やることのチェック</div><ul class="gk-tac">${m.tasks.map((t, j) => `<li class="${t.d ? "done" : ""}"><label class="gk-ck"><input type="checkbox" data-td="${i}.${j}" ${t.d ? "checked" : ""}><span>${esc(t.t || "（まだ書いていません）")}</span></label><span class="hr">${t.hr}h${t.when ? "・" + esc(t.when) : ""}</span></li>`).join("")}</ul>` : "";
+  const hrs = plan.bud.filter((b) => b.g).map((b) => `<label class="gk-hl">${esc(b.n)}<input class="gk-in hh" data-used="${esc(b.n)}" value="${w.used[b.n] ?? ""}" inputmode="decimal" placeholder="0" aria-label="${esc(b.n)}に使った時間"><small>/ ${b.h}h</small></label>`).join("");
+  return `<div class="gk-step g2" id="s5">${head(5, "実行", "今週の KPI の数と、やることのチェック。いつ入れても、まとめて入れても大丈夫")}
+    ${weekSel(plan, today, n)}<div class="gk-goal13 now"><span class="l">第 ${n} 週・${monthWeek(plan, n)}</span><p>${esc(stateLine(plan, n))}</p></div>
+    ${m ? `<div class="gk-steps">${kpi}</div>${tasks}` : `<p class="note" style="margin:0">予備の週です。遅れを取り戻すか、休む週にします</p>`}</div>
+  <div class="gk-step g2" id="s6">${head(6, "記録", "今週、目標に使った時間（だいたいで大丈夫）とメモ")}
+    ${hrs ? `<div class="gk-hrs">${hrs}</div>` : `<p class="note" style="margin:0">② リソース予算で「目標に使う時間」を決めると、ここに出ます</p>`}
+    <div><span class="gk-numh">メモ</span><span class="gk-opt">書かなくても大丈夫</span><textarea class="gk-bul" rows="2" data-wtx="memo" maxlength="2000" placeholder="・気づいたこと" aria-label="メモ">${esc(w.memo)}</textarea></div>
+    <p class="note" style="margin:0">ここで入れた数と時間が、そのまま ⑦ 評価に入ります</p></div>`;
+}
+export function reportFor(plan, n) {
+  const x = msAt(plan, n), m = x ? plan.ms[x[0]] : null, w = weekRec(plan, n), t = timeRate(plan, n), a = actRate(plan, n);
+  const d = weekDate(plan, n), e = new Date(d.getTime() + 6 * D);
+  const r = { state: stateLine(plan, n), done: m && msDone(m) ? 1 : 0, kpi: m ? m.kpi.map((k) => ({ ...k })) : [], hours: { used: usedHours(plan, n), cap: goalHours(plan) },
+    rates: { time: t, act: a ?? 0 }, tasks: { done: m ? m.tasks.filter((k) => k.d).length : 0, all: m ? m.tasks.length : 0 }, reason: w.reason, why: w.why, next: w.next, tryy: w.tryy, memo: w.memo };
+  r.text = `【週報】${monthWeek(plan, n)}（${md(d)}〜${md(e)}）第${n}週／13\n今週の状態：${r.state}（${r.done ? "届いた" : "まだ"}）\n時間 ${r.hours.used}/${r.hours.cap}h（${t}%）・行動 ${a ?? "―"}%\n`
+    + (r.kpi.length ? r.kpi.map((k) => `${k.n} ${fmt(k.v)}/${fmt(k.to)}${k.u}`).join("・") + "\n" : "")
+    + `理由：${w.reason || "―"}${w.why ? `（${w.why}）` : ""}\n来週：${w.next === "cont" ? "同じ状態を続ける" : w.next === "go" ? "次の状態へ進む" : "―"}${w.tryy ? `\n変えること：${w.tryy}` : ""}${w.memo.trim() ? `\nメモ：\n${w.memo.trim()}` : ""}`;
+  return r;
+}
+export function reviewHtml(plan, today, n, rv) {
+  if (weekNo(plan, today) < 1) return `<div class="gk-step g3">${head(7, "評価", "13 週が始まってから振り返ります")}</div>`;
+  const x = msAt(plan, n), m = x ? plan.ms[x[0]] : null, w = weekRec(plan, n), t = timeRate(plan, n), a = actRate(plan, n), [v1, v2] = verdict(t, a);
+  const nx = place(plan).w.slice(n + 1).find((y) => Array.isArray(y) && (!x || y[0] !== x[0]));
+  const ok = !!(w.reason && w.next);
+  const badge = rv ? (rv.approved_at ? `<span class="gk-badge ok">シアニンが承認 ✓</span>` : `<span class="gk-badge sent">提出済み</span>`) : `<span class="gk-badge">まだ出していません</span>`;
+  return `<div class="gk-pipe"><div><b>④ 戦術</b>計画 ${m ? tasksHours(m) : 0}h</div><span>＋</span><div><b>⑤⑥ 記録</b>数と時間</div><span>→</span><div class="me"><b>⑦⑧ 週報</b>来週の ④ と ③ へ</div></div>
+  <div class="gk-step g3" id="s7">${head(7, "評価", "数は ⑤⑥ から自動で入っています")}
+    <div class="gk-sh">${weekSel(plan, today, n)}<span class="sp">${badge}</span></div>
+    <div class="gk-auto"><div class="row"><span>今週の状態</span><b>${esc(stateLine(plan, n))}　${m ? (msDone(m) ? "届いた" : "まだ") : ""}</b></div>
+      ${m ? m.kpi.map((k) => `<div class="row"><span>${esc(k.n)}</span><b>${fmt(k.v)} / ${fmt(k.to)}${esc(k.u)}</b></div>`).join("") : ""}</div>
+    <div class="gk-2ax"><div class="ax"><span>時間の実行率</span><strong>${t}%</strong><span>${usedHours(plan, n)} / ${goalHours(plan)} 時間</span></div><div class="ax"><span>行動の実行率</span><strong>${a ?? "―"}${a == null ? "" : "%"}</strong><span>KPI とやることの平均</span></div></div>
+    <div class="gk-verd"><div class="v1">${v1}</div><div class="v2">${v2}</div></div>
+    <div><span class="gk-numh">一番の理由は？</span><span class="gk-req">1 つ押す</span><div class="gk-chips" role="group" aria-label="一番の理由">${REASONS.map((r) => `<button type="button" data-rs="${esc(r)}" aria-pressed="${w.reason === r}">${r}</button>`).join("")}</div></div>
+    <div><span class="gk-numh">ひとこと</span><span class="gk-opt">書かなくても大丈夫</span><input class="gk-in wide" data-wtx="why" value="${esc(w.why)}" maxlength="200" placeholder="例：記事が下書きで止まった" aria-label="ひとこと"></div></div>
+  <div class="gk-link">↓ 来週へつなぐ</div>
+  <div class="gk-step g3" id="s8">${head(8, "修正", "来週の進め方を選ぶと、③ ロードマップが自動で直ります")}
+    <div class="gk-choice" role="radiogroup" aria-label="来週の進め方">
+      <label><input type="radio" name="gk-nx" value="cont" ${w.next === "cont" ? "checked" : ""} ${m ? "" : "disabled"}><span>同じ状態を、来週も続ける${m && !msDone(m) ? "（おすすめ）" : ""}<small>${m ? `第 ${n + 1} 週も「${esc(m.n || "この状態")}」。予備の週を 1 つ使います` : "予備の週は続けられません"}</small></span></label>
+      <label><input type="radio" name="gk-nx" value="go" ${w.next === "go" ? "checked" : ""}><span>次の状態へ進む${m && msDone(m) ? "（おすすめ）" : ""}<small>来週は「${nx ? esc(plan.ms[nx[0]].n || "次の状態") : "―"}」</small></span></label>
+    </div>
+    <div><span class="gk-numh">来週変えること</span><span class="gk-opt">書くと、出したときに来週の ④ やることに入ります</span><input class="gk-in wide" data-wtx="tryy" value="${esc(w.tryy)}" maxlength="200" placeholder="例：記事は火曜と金曜の朝に 45 分だけ取る" aria-label="来週変えること"></div></div>
+  <div class="gk-act"><button class="btn ghost" type="button" data-copy>コピー</button><button class="btn" type="button" data-submit ${ok ? "" : "disabled"}>${rv ? "出し直す" : "週報を出す"}</button></div>
+  <p class="note gk-hint">${ok ? (rv ? "出し直すと、承認はいったん外れます" : "出すと、シアニンが読んで承認します") : "理由を 1 つと、来週の進め方を選ぶと出せます"}</p>
+  ${rv && rv.approved_at && rv.comment ? `<div class="gk-from-box"><span class="l">シアニンから</span><span>${esc(rv.comment)}</span></div>` : ""}`;
+}
+// ⑧：来週の進め方。前の選び方を戻してから当てる。「続ける」は次の週の予備（無ければ一番うしろの予備）を 1 つ使う
+export function applyNext(plan, n, choice) {
+  const w = ensureWeek(plan, n), x = msAt(plan, n);
+  if (w.next === choice) return false;
+  if (w.next === "cont" && x) { plan.ext[x[0]] = Math.max(0, (plan.ext[x[0]] || 0) - 1); if (!plan.ext[x[0]]) delete plan.ext[x[0]]; if (w.rmSpare) plan.spare = [...new Set([...plan.spare, w.rmSpare])].sort((a, b) => a - b); w.rmSpare = 0; }
+  if (choice === "cont") {
+    if (!x) return false;
+    plan.ext[x[0]] = (plan.ext[x[0]] || 0) + 1;
+    const later = plan.spare.filter((k) => k > n), rm = later.includes(n + 1) ? n + 1 : later.length ? Math.max(...later) : 0;
+    if (rm) { plan.spare = plan.spare.filter((k) => k !== rm); w.rmSpare = rm; }
+  }
+  w.next = choice; return true;
+}
+// 記録・振り返りの欄の入力。変えたら true
+export function applyWeek(plan, n, t) {
+  const ds = t.dataset || {};
+  if (ds.kin) { const [i, j] = ds.kin.split("."), k = plan.ms[i] && plan.ms[i].kpi[j]; if (!k) return false; const v = Number(String(t.value).replace(/[^\d.\-]/g, "")) || 0; if (k.v === v) return false; k.v = v; return true; }
+  if (ds.kv) { const [i, j] = ds.kv.split("."), k = plan.ms[i] && plan.ms[i].kpi[j]; if (!k) return false; k.v = Math.max(0, (+k.v || 0) + +ds.d); return true; }
+  if (ds.td) { const [i, j] = ds.td.split("."), x = plan.ms[i] && plan.ms[i].tasks[j]; if (!x) return false; x.d = t.checked ? 1 : 0; return true; }
+  if (ds.used != null) { const w = ensureWeek(plan, n), v = Math.round(Math.min(168, Math.max(0, Number(String(t.value).replace(/[^\d.]/g, "")) || 0)) * 2) / 2; if (w.used[ds.used] === v) return false; w.used[ds.used] = v; return true; }
+  if (ds.wtx) { const w = ensureWeek(plan, n); if (w[ds.wtx] === t.value) return false; w[ds.wtx] = t.value; return true; }
+  if (ds.rs) { const w = ensureWeek(plan, n); w.reason = w.reason === ds.rs ? "" : ds.rs; return true; }
+  return false;
+}
+// 出したあと：「来週変えること」を次に来る状態（予備の週は飛ばす）のやることに 1 回だけ足す
+export function carryTry(plan, n) {
+  const w = weekRec(plan, n), x = place(plan).w.slice(n + 1).find((y) => Array.isArray(y));
+  if (!w.tryy.trim() || w.tryAdded || !x) return false;
+  plan.ms[x[0]].tasks.push({ t: w.tryy.trim(), when: "", hr: 0, d: 0, from: 1 }); ensureWeek(plan, n).tryAdded = 1; return true;
+}
+
 // ホームのカード（今週の状態と全体像）
 export function homeCardHtml(plan, today) {
   const now = weekNo(plan, today), f = now >= 1 && now <= WEEKS ? weekInfo(plan, now, now) : null;
@@ -159,7 +267,7 @@ export function homeCardHtml(plan, today) {
   return `<a class="card gk" href="#goals" data-go="goals">
     <div class="gk-hc-top"><span class="l">13 週の目標：${esc(g13 || "まだ書いていません")}</span><p>${f ? `今週（第 ${now} 週）の状態：${esc(f.title.replace(/^状態 \d+(（[^）]*）)?：/, ""))}` : now < 1 ? "13 週はこれから始まります" : "13 週が終わりました。次の 13 週を設計しましょう"}</p></div>
     <div class="gk-hc-body"><div class="gk-road">${roadHtml(plan, now, false)}</div>
-      <div class="gk-hc-row" style="font-size:13px">${f && f.p != null ? `<span>今週の状態の進み <b>${Math.round(f.p * 100)}%</b></span>` : ""}<span>目標に使える時間 <b>${goalHours(plan)}h</b>／週</span></div>
+      <div class="gk-hc-row" style="font-size:13px">${f && actRate(plan, now) != null ? `<span>今週の行動の実行率 <b>${actRate(plan, now)}%</b></span>` : ""}<span>時間 <b>${usedHours(plan, now)} / ${goalHours(plan)}h</b></span></div>
       <span class="gk-hc-go">目標達成くんを開く →</span></div></a>`;
 }
 

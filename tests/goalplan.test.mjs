@@ -1,7 +1,7 @@
 // 目標達成くん（2026-11-05）1 便目：画面の計算（週の並び・今週・状態の色・直し方）と、描いたものに大事な言葉が出るか
 import test from "node:test";
 import assert from "node:assert/strict";
-import { weekNo, place, weekState, goal13Text, goalHours, budSum, monthWeek, setPath, applyAction, applyField, planHtml, chainHtml, homeCardHtml, popHtml, tacHtml, nowMs, tasksHours } from "../public/js/goalplan.js";
+import { weekNo, place, weekState, goal13Text, goalHours, budSum, monthWeek, setPath, applyAction, applyField, planHtml, chainHtml, homeCardHtml, popHtml, tacHtml, nowMs, tasksHours, recHtml, reviewHtml, reportFor, applyWeek, applyNext, carryTry, timeRate, actRate, verdict } from "../public/js/goalplan.js";
 import { seedPlan } from "../src/goals.js";
 
 const plan = () => {
@@ -69,7 +69,7 @@ test("予備：先の週だけ切り替えられる。状態を消すと、続�
   assert.deepEqual(p.ext, { 4: 1 });
 });
 
-test("画面：8 段の帯（⑤〜⑧は準備中）・全体像・ポップアップ・ホームのカード。書いた字は消毒して出す", () => {
+test("画面：8 段の帯（全部開いた）・全体像・ポップアップ・ホームのカード。書いた字は消毒して出す", () => {
   const p = plan(); p.ideal = "<b>講座</b>";
   const h = planHtml(p, "2026-11-05");
   assert.match(h, /4 半期の全体像/);
@@ -78,7 +78,8 @@ test("画面：8 段の帯（⑤〜⑧は準備中）・全体像・ポップア
   assert.match(h, /第 4 週（11月1週）／13 週/);
   const c = chainHtml(p, "2026-11-05");
   assert.match(c, /data-to="s4"/);
-  assert.equal((c.match(/準備中/g) || []).length, 4);
+  assert.equal((c.match(/準備中/g) || []).length, 0);
+  assert.match(c, /data-to="s8"/);
   assert.match(popHtml(p, 4, 4), /状態 4：状態4/);
   assert.match(popHtml(p, 8, 4), /この週を予備にする/);
   assert.doesNotMatch(popHtml(p, 2, 4), /予備にする/);
@@ -113,4 +114,50 @@ test("④ やること：時間を足し、② の目標に使う時間を超え
   applyAction(p, { del: "ms.3.kpi.1" }, 4);
   assert.deepEqual(p.ext, { 5: 1 });
   assert.match(popHtml(p, 4, 4), /data-ms="3"/);
+});
+
+test("⑤⑥ 記録：KPI の数・やることのチェック・使った時間で、2 つの実行率が出る", () => {
+  const p = plan(); p.ms[3].tasks = [{ t: "書く", when: "", hr: 6, d: 0, from: 0 }];
+  applyWeek(p, 4, { dataset: { kv: "3.0", d: "1" } });
+  assert.equal(p.ms[3].kpi[0].v, 2);
+  applyWeek(p, 4, { dataset: { td: "3.0" }, checked: true });
+  applyWeek(p, 4, { dataset: { used: "X" }, value: "6" });
+  applyWeek(p, 4, { dataset: { used: "副業" }, value: "16" });
+  assert.equal(timeRate(p, 4), 55);
+  assert.equal(actRate(p, 4), 100);
+  assert.deepEqual(verdict(55, 100), ["少ない時間で進められた", "この仮説は効いている"]);
+  assert.equal(actRate(p, 5), null);
+  const h = recHtml(p, "2026-11-05", 4);
+  assert.match(h, /data-used="X" value="6"/);
+  assert.match(h, /第 4 週（11月1週）・今週/);
+});
+
+test("⑧ 修正：続けるは次の週の予備を使い、選び直すと元に戻る。予備が無ければ後ろがずれる", () => {
+  const p = plan();
+  assert.equal(applyNext(p, 4, "cont"), true);
+  assert.deepEqual(place(p).w[5], [3, 1]);
+  assert.deepEqual(p.spare, [10, 13]);
+  applyNext(p, 4, "go");
+  assert.deepEqual(p.spare, [5, 10, 13]);
+  assert.deepEqual(p.ext, {});
+  p.spare = [10, 13]; applyNext(p, 3, "cont");
+  assert.deepEqual(p.spare, [10]);
+  assert.deepEqual(place(p).w[4], [2, 1]);
+});
+
+test("⑦⑧ 週報：理由と来週を選ぶと出せる。コピーの文と、来週変えることは来週の ④ へ 1 回だけ", () => {
+  const p = plan();
+  assert.match(reviewHtml(p, "2026-11-05", 4, null), /data-submit disabled/);
+  applyWeek(p, 4, { dataset: { rs: "時間が取れなかった" } });
+  applyNext(p, 4, "go");
+  applyWeek(p, 4, { dataset: { wtx: "tryy" }, value: "火曜の朝に書く" });
+  assert.doesNotMatch(reviewHtml(p, "2026-11-05", 4, null), /data-submit disabled/);
+  const r = reportFor(p, 4);
+  assert.match(r.text, /【週報】11月1週（11\/2〜11\/8）第4週／13/);
+  assert.match(r.text, /理由：時間が取れなかった/);
+  assert.match(r.text, /来週：次の状態へ進む/);
+  assert.equal(carryTry(p, 4), true);
+  assert.equal(carryTry(p, 4), false);
+  assert.deepEqual(p.ms[4].tasks.at(-1), { t: "火曜の朝に書く", when: "", hr: 0, d: 0, from: 1 });
+  assert.match(reviewHtml(p, "2026-11-05", 4, { week_no: 4, approved_at: "2026-11-06", comment: "いいね" }), /シアニンが承認 ✓[\s\S]*いいね/);
 });

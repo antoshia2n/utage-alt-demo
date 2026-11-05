@@ -40,7 +40,7 @@ test("追う数字：空と重なりを外して 3 つまで", () => {
 function fake() {
   const t = { member_alias: [{ member_id: "m1", kind: "shr_student_id", value: "44" }, { member_id: "m2", kind: "email_hash", value: "x" }],
     shr_students: [{ id: 44, name: "ひろ", goal: "月 10 万", next_action: "毎日 1 本", next_mtg: "2026-11-02", last_mtg: "2026-10-23", track: ["投稿数"], archived: false, deleted: false }],
-    b_reports: [], b_goal_plans: [] };
+    b_reports: [], b_goal_plans: [], b_goal_reviews: [] };
   const rawDb = async (env, method, path, body) => {
     const [tbl, qs = ""] = path.split("?");
     const f = {}; for (const p of qs.split("&")) { const m = p.match(/^([a-z_]+)=(eq|gte)\.(.*)$/); if (m) f[m[1]] = [m[2], decodeURIComponent(m[3])]; }
@@ -68,7 +68,7 @@ test("生徒だけ：結ばれた人は目標を読めて、書くと同じ日�
 });
 
 // ---------- 目標達成くん（2026-11-05）：13 週の設計 ----------
-import { checkPlan, seedPlan } from "../src/goals.js";
+import { checkPlan, seedPlan, checkReview } from "../src/goals.js";
 
 test("設計：KGI は 3 つまで・長さをそろえる・知らない項目は捨てる・始めた週は月曜にそろえる", () => {
   const c = checkPlan({ start: "2026-11-05", ideal: "x".repeat(500), kgi: [1, 2, 3, 4].map((i) => ({ n: "K" + i, v: "420", to: "1,000", u: "人" })), hack: 1,
@@ -109,4 +109,32 @@ test("設計：生徒だけが保存でき、読むと保存した形が返る�
   assert.equal(v1.plan.ideal, "講座で月 30 万");
   assert.equal((await g.savePlan({}, "m2", { plan: {} }, "2026-11-05")).error, "not_student");
   assert.equal((await g.savePlan({}, "m1", {}, "2026-11-05")).error, "bad_plan");
+});
+
+test("週報：設計を保存してから・理由と来週がそろってから出せる。先の週は出せない。出し直すと承認は外れる", async () => {
+  const { t, g } = fake();
+  const v0 = await g.view({}, "m1", "2026-11-05");
+  const body = { week_no: 1, report: { reason: "うまくいった", next: "go", rates: { time: 55, act: 52 }, text: "【週報】" } };
+  assert.equal((await g.submitReview({}, "m1", body, "2026-11-05")).error, "plan_not_saved");
+  await g.savePlan({}, "m1", { plan: { ...v0.plan, start: "2026-11-02" } }, "2026-11-05");
+  assert.equal((await g.submitReview({}, "m1", { week_no: 1, report: { reason: "", next: "go" } }, "2026-11-05")).error, "report_incomplete");
+  assert.equal((await g.submitReview({}, "m1", { ...body, week_no: 2 }, "2026-11-05")).error, "week_out_of_range");
+  const r = await g.submitReview({}, "m1", body, "2026-11-05");
+  assert.equal(r.ok, true);
+  assert.equal(r.review.week_start, "2026-11-02");
+  t.b_goal_reviews[0].approved_at = "2026-11-06T00:00:00Z"; t.b_goal_reviews[0].comment = "いいね";
+  const r2 = await g.submitReview({}, "m1", body, "2026-11-05");
+  assert.equal(r2.review.approved_at, null);
+  assert.equal(t.b_goal_reviews.length, 1);
+  assert.equal((await g.view({}, "m1", "2026-11-05")).reviews.length, 1);
+  assert.equal((await g.submitReview({}, "m2", body, "2026-11-05")).error, "not_student");
+});
+
+test("設計の週ごとの記録：知らない理由・13 週の外の週は捨てる", () => {
+  const p = checkPlan({ wk: { 4: { used: { X: 300 }, reason: "なんとなく", next: "x" }, 20: { memo: "x" } } }, "2026-11-05").plan;
+  assert.deepEqual(Object.keys(p.wk), ["4"]);
+  assert.equal(p.wk[4].used.X, 168);
+  assert.equal(p.wk[4].reason, "");
+  assert.equal(p.wk[4].next, "");
+  assert.equal(checkReview({ week_no: 1, report: {} }, p, "2026-11-05").error, "report_incomplete");
 });
