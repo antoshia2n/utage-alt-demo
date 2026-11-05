@@ -1406,6 +1406,17 @@ function approvalRef(x) {
   if (a.form_slug !== undefined) rows.push(["申込のフォーム", a.form_slug || "（結ばない）"]);
   if (a.thanks_page_slug !== undefined) rows.push(["サンクスページ", a.thanks_page_slug || "（移さない）"]);
   if (a.key && a.seminar_id) rows.push(["知らせ", a.key + (a.offset_minutes === undefined ? "" : a.offset_minutes === null ? "・申込の直後" : a.offset_minutes >= 0 ? `・開催の ${a.offset_minutes} 分前` : `・開催の ${-a.offset_minutes} 分あと`)]);
+  // 目標達成くん 6 便目：生徒の設計の下書き（生徒の名前と週の並びは頼んだ時点で足してある）
+  if (a.draft && typeof a.draft === "object") {
+    const d = a.draft, n = (v) => Number(v || 0).toLocaleString("ja-JP");
+    rows.push(["生徒", `${a.student_name || "（名前なし）"}（しあらぼ管理の番号 ${a.student_id}）`]);
+    if (a.source) rows.push(["もとにしたもの", a.source]);
+    rows.push(["① 理想", (d.ideal || "（空）") + (d.idealWhen ? `（${d.idealWhen}）` : "")]);
+    rows.push(["② KGI", (d.kgi || []).length ? d.kgi.map((k) => `${k.n} ${n(k.v)}→${n(k.to)}${k.u || ""}`).join("\n") : "（空）"]);
+    rows.push(["③ 13 週", `${d.start} から・状態 ${(d.ms || []).length} 個・予備の週 ${(d.spare || []).length} つ${(d.spare || []).length ? `（第 ${d.spare.join("・")} 週）` : ""}${d.goal13 ? "\n13 週の目標：" + d.goal13 : ""}`]);
+    if (Array.isArray(a.weeks)) rows.push(["週ごとの状態と KPI", a.weeks.join("\n")]);
+    rows.push(["入れないもの", "リソース予算（生活の時間は生徒が入れる）・④ 戦術。生徒が「この設計で始める」を押すまで、生徒の設計は変わらない"]);
+  }
   if (!rows.length) return "";
   return `<dl class="ap-ref">${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd class="pre">${esc(v)}</dd>`).join("")}</dl>`;
 }

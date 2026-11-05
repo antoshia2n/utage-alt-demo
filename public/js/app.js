@@ -2,7 +2,7 @@ import { getClient, api, esc, fmtTime, authImage, shrinkImage, noticeHtml } from
 import { correctionHtml, wireNotes } from "/js/correction.js";
 import { setupStudentPush } from "/js/pushclient.js";
 import { flatten, homeHtml, libraryHtml, searchHtml } from "/js/home.js";
-import { planHtml, chainHtml, popHtml, homeCardHtml, tacHtml, recHtml, reviewHtml, growHtml, reportFor, applyAction, applyField, applyWeek, applyNext, carryTry, setPath, weekNo, weekInfo, WEEKS } from "/js/goalplan.js";
+import { planHtml, chainHtml, popHtml, homeCardHtml, tacHtml, recHtml, reviewHtml, growHtml, reportFor, applyAction, applyField, applyWeek, applyNext, carryTry, setPath, weekNo, weekInfo, WEEKS, draftHtml } from "/js/goalplan.js";
 
 
 
@@ -654,7 +654,7 @@ main().catch((e) => fail("読み込めませんでした：" + e.message));
 
 
 // ---------- 目標（2026-10-30・2026-11-05 に目標達成くんへ）：目標はしあらぼ管理が正本（読むだけ）。日報・週報はここで書く ----------
-const G_ERR = { empty: "数字か文のどちらかを入れてください", bad_number: "数字の欄に数でないものが入っています", body_too_long: "2000 字までです", day_out_of_range: "その日はもう直せません（7 日前まで）", bad_plan: "送った中身が読めませんでした。画面を読み直してください", plan_too_large: "書いた量が多すぎます。少し短くしてください", not_student: "この画面はしあらぼの生徒向けです", report_incomplete: "理由と来週の進め方を選んでください", week_out_of_range: "その週はまだ出せません", plan_not_saved: "先に設計を保存してください", bad_report: "送った中身が読めませんでした。画面を読み直してください" };
+const G_ERR = { empty: "数字か文のどちらかを入れてください", bad_number: "数字の欄に数でないものが入っています", body_too_long: "2000 字までです", day_out_of_range: "その日はもう直せません（7 日前まで）", bad_plan: "送った中身が読めませんでした。画面を読み直してください", plan_too_large: "書いた量が多すぎます。少し短くしてください", not_student: "この画面はしあらぼの生徒向けです", report_incomplete: "理由と来週の進め方を選んでください", week_out_of_range: "その週はまだ出せません", plan_not_saved: "先に設計を保存してください", no_draft: "下書きが見つかりませんでした。画面を読み直してください", draft_closed: "この下書きはもう使いました。画面を読み直してください", bad_report: "送った中身が読めませんでした。画面を読み直してください" };
 const gErr = (r) => G_ERR[r && r.error] || errText(r);
 let gData = null, gToken = null;
 function gDraw() { drawPlan(); }
@@ -670,12 +670,14 @@ let gReady = false, gSaveTimer = null, gSaving = false, gAgain = false;
 const gPlanBusy = () => !!gSaveTimer || gSaving;
 const gNow = () => weekNo(gData.plan, gData.today);
 function gToast(t) { const e = $("gk-toast"); e.textContent = t; e.classList.add("on"); clearTimeout(gToast.t); gToast.t = setTimeout(() => e.classList.remove("on"), 1800); }
+let gDraftOpen = false, gDraftDone = ""; // 6 便目：下書きの中を開いているか・直前に押したもの（start / keep）
 let gSel = null, gView = "plan", gWeek = null; // ④ で開いている状態の番号・いま見ている画面・記録と振り返りの週
 const gWk = () => gWeek || Math.max(1, Math.min(WEEKS, gNow()));
 const gRev = (n) => (gData.reviews || []).find((x) => x.week_no === n) || null;
 function drawPlan() {
   if (!gData || !gData.plan) return;
   $("gk-chain").innerHTML = chainHtml(gData.plan, gData.today);
+  $("gk-draft").innerHTML = draftHtml(gData.draft, gDraftOpen, gDraftDone);
   $("gk-v-plan").innerHTML = planHtml(gData.plan, gData.today);
   $("gk-v-tac").innerHTML = tacHtml(gData.plan, gData.today, gSel);
   $("gk-v-rec").innerHTML = recHtml(gData.plan, gData.today, gWk());
@@ -707,6 +709,20 @@ function showPop(c) {
   const r = c.getBoundingClientRect(), pr = pop.offsetParent.getBoundingClientRect();
   pop.style.left = Math.max(0, Math.min(r.left - pr.left + r.width / 2 - pop.offsetWidth / 2, pr.width - pop.offsetWidth)) + "px";
   pop.style.top = (r.bottom - pr.top + 8) + "px";
+}
+// 6 便目：シアニンと決めた下書き。start＝この設計で始める・keep＝今のままにする・undo＝元に戻す・open＝中を見る
+async function gDraft(action, btn) {
+  if (action === "open") { gDraftOpen = !gDraftOpen; drawPlan(); const b = document.querySelector('#gk-draft [data-draft="open"]'); if (b) b.focus(); return; }
+  btn.disabled = true;
+  const pending = !!gSaveTimer; clearTimeout(gSaveTimer); gSaveTimer = null;
+  if (pending) await gSavePlan(); // 保存を待っている書きかけを先に出し切る（元に戻すとき、その時点の設計に戻るように）
+  const r = await api("/api/me/goals/draft", { method: "POST", token: gToken, body: { action } });
+  if (!r.ok) { btn.disabled = false; gToast("できませんでした。" + gErr(r)); return; }
+  if (action === "start") { gData.plan = r.plan; gDraftDone = "start"; gToast("下書きで ①〜③ を入れて保存しました"); }
+  else if (action === "keep") { gDraftDone = "keep"; gToast("下書きはしまいました"); }
+  else { gData.plan = r.plan; gData.draft = r.draft; gDraftDone = ""; gToast("元に戻しました"); }
+  gSel = null; gWeek = null; drawPlan(); paintGoalCard(); gShow("plan");
+  const next = document.querySelector("#gk-draft button"); if (next) next.focus();
 }
 // 週報を出す：手元の設計を先に保存してから、その週の控えを送る
 async function gSubmit(btn) {
@@ -746,6 +762,7 @@ function wirePlan() {
     const t = e.target.closest("button, a[data-to]"); if (!t || !gData) return;
     const d = t.dataset;
     if (d.gv) { gShow(d.gv); return; }
+    if (d.draft) { gDraft(d.draft, t); return; }
     if (d.to) { e.preventDefault(); if (d.to === "s4") { openTac(gSel); return; } gShow({ s5: "rec", s6: "rec", s7: "rev", s8: "rev" }[d.to] || "plan"); $(d.to).scrollIntoView({ behavior: "smooth", block: "start" }); return; }
     if (d.kv || d.rs) { if (applyWeek(gData.plan, gWk(), t)) planChanged(""); return; }
     if (d.copy != null) { const txt = reportFor(gData.plan, gWk()).text; (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => gToast("コピーしました。LINE にそのまま貼れます"), () => gToast("コピーできませんでした")); return; }

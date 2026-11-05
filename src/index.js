@@ -76,7 +76,7 @@ import { mailText, mailHtml } from "./mailhtml.js";
 import { makeNews, newsQuery } from "./news.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.64.0-bgoalgrow";
+const VERSION = "0.65.0-bgoaldraft";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -1073,6 +1073,18 @@ async function handleApi(request, env, url) {
     const r = await goals.savePlan(env, customer.id, body);
     return json(r, r.ok ? 200 : r.error === "not_student" ? 404 : 400);
   }
+  // 目標達成くん 6 便目（2026-11-05）：シアニンと決めた下書きを、始める・今のままにする・元に戻す（生徒が自分の分だけ）
+  if (path === "/api/me/goals/draft" && method === "POST") {
+    const v = await verifyUser(request, env);
+    if (v.error) return json({ ok: false, error: v.error }, 401);
+    const customer = await customerByEmail(env, v.email);
+    if (!customer) return json({ ok: false, error: "not_registered" }, 404);
+    if ((await studentAccess(env, customer, v.email)).access !== "full") return json(NOT_MEMBER, 403);
+    const body = await request.json().catch(() => ({}));
+    const r = await goals.draftAction(env, customer.id, body);
+    if (r.ok && body.action !== "undo") await addEvent(env, customer.id, body.action === "start" ? "goal_draft_started" : "goal_draft_kept", {}, "site");
+    return json(r, r.ok ? 200 : r.error === "not_student" ? 404 : 400);
+  }
   if (path === "/api/me/goals" && method === "GET") {
     const v = await verifyUser(request, env);
     if (v.error) return json({ ok: false, error: v.error }, 401);
@@ -1720,6 +1732,32 @@ const TOOLS = [
     say: "生徒にメッセージを送る",
     description: "シアニンとして 1 人にメッセージを送る（添削の 3 欄ではない、ふつうのやりとり）。生徒の画面の添削ルームに新着として出る。文字だけ・8000 文字まで。reply_to に教材の質問の番号（get_room の messages で lesson が付いた生徒のメッセージの id）を渡すと、その質問への答えになり、生徒の教材の下にも出る。承認が要る道具：呼ぶと承認待ちになり approval_url が返る。",
     inputSchema: { type: "object", properties: { person_id: { type: "string" }, text: { type: "string" }, reply_to: { type: "integer" } }, required: ["person_id", "text"] },
+  },
+  {
+    name: "set_goal_draft",
+    screen: "ai_only",
+    say: "生徒の目標達成くんに、設計の下書きを入れる",
+    description: "面談の議事録から作った 13 週の設計の下書きを、しあらぼの生徒の目標達成くん（マイページの目標タブ）に入れる。承認が要る道具：呼ぶと承認待ちになり approval_url が返る。Naoki が承認すると下書きが入り、生徒の画面に「シアニンと決めた下書きがあります」が出る。生徒が「この設計で始める」を押すまで生徒の設計は変わらない。同じ生徒の前の下書きは置き換える。student_id はしあらぼ管理の生徒の番号（shiarabo__list_students の id）。入れるのは ①理想 ②KGI ③13 週だけで、リソース予算と戦術は入れない（生徒が入れる）。start は始める週の月曜（YYYY-MM-DD・ほかの曜日はその週の月曜に直す）。ms は状態（マイルストーン）を週の順に最大 13 個、spare は予備の週の番号（1〜13）。状態は予備の週を飛ばして第 1 週から並ぶ。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        student_id: { type: "integer", description: "しあらぼ管理の生徒の番号" },
+        source: { type: "string", description: "もとにしたもの（例：10/30 の面談の議事録）" },
+        draft: {
+          type: "object",
+          properties: {
+            start: { type: "string", description: "13 週を始める週（YYYY-MM-DD）" },
+            ideal: { type: "string", description: "① 理想（200 字まで）" },
+            idealWhen: { type: "string", description: "理想の時期（例：2027 年 3 月）" },
+            kgi: { type: "array", maxItems: 3, items: { type: "object", properties: { n: { type: "string" }, v: { type: "number", description: "今の値" }, to: { type: "number", description: "13 週で届く値" }, u: { type: "string", description: "単位" } }, required: ["n"] } },
+            goal13: { type: "string", description: "13 週の目標（省くと KGI から作る）" },
+            spare: { type: "array", items: { type: "integer" }, description: "予備の週の番号（例：[5,10,13]）" },
+            ms: { type: "array", maxItems: 13, items: { type: "object", properties: { n: { type: "string", description: "状態の名前（〜ができている）" }, kpi: { type: "array", maxItems: 5, items: { type: "object", properties: { n: { type: "string" }, to: { type: "number" }, u: { type: "string" } }, required: ["n"] } } }, required: ["n"] } },
+          },
+        },
+      },
+      required: ["student_id", "draft"],
+    },
   },
   {
     name: "notify_naoki",
@@ -2402,6 +2440,7 @@ async function runTool(env, name, args) {
   if (name === "return_correction") return await core.returnCorrection(env, args, "mcp");
   if (name === "list_corrections") return await listCorrections(env, args);
   if (name === "send_chat") return await core.sendChat(env, args, "mcp");
+  if (name === "set_goal_draft") return await goals.setDraft(env, args);
   if (name === "notify_naoki") {
     const u = String(args.url || "/admin");
     if (!String(args.title || "").trim()) return { ok: false, error: "need_title" };
@@ -2563,6 +2602,8 @@ async function rpc(msg, env, origin = "") {
         // 便 8g-4：まとめて動かすときは、頼む時点で動かす下書きの番号と部品の一覧（種類・名前・宛先の人数）を中身に書き込む
         let toApprove = args;
         if (name === "publish_block") { const pre = await blocks.preparePublish(env, args); toApprove = pre.ok ? pre.args : null; if (!pre.ok) result = pre; }
+        // 6 便目：下書きは頼む時点で中身をそろえ、生徒の名前と週の並びを足す（承認の画面で読めるように）
+        if (name === "set_goal_draft") { const pre = await goals.prepareDraft(env, args); toApprove = pre.ok ? pre.args : null; if (!pre.ok) result = pre; }
         if (toApprove) result = await guard.requestApproval(env, name, toApprove, origin);
         // 便 8f-3：承認待ちができたら Naoki のスマホへ（押すとその承認の画面が開く）
         if (result && result.pending_approval) await push.send(env, { title: "承認待ち：" + sayOf(TOOLS, name), body: "AI が承認を頼んでいます。開いて中身を見て決めてください", url: `/admin#approval/${result.approval_id}`, tag: "approval" });

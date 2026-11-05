@@ -353,3 +353,24 @@ export function applyAction(plan, d, now) {
   if (d.spare) { const n = +d.spare; if (n <= now) return false; plan.spare = plan.spare.includes(n) ? plan.spare.filter((x) => x !== n) : [...plan.spare, n].sort((a, b) => a - b); return true; }
   return false;
 }
+
+// ---------- 6 便目（2026-11-05 Naoki 14:55「OK」）：シアニンと決めた下書き ----------
+// done：直前に押したもの（"start"＝始めた・"keep"＝しまった）。押したあとは「元に戻す」の帯だけを出す
+export function draftHtml(dr, open, done) {
+  if (done) return `<div class="gk-draft done" role="status"><span>${done === "start" ? "下書きで ①理想・②KGI・③13 週を入れて保存しました。② のリソース予算は自分で入れてください" : "下書きはしまいました。今の設計はそのままです"}</span><button class="btn ghost" type="button" data-draft="undo">元に戻す</button></div>`;
+  if (!dr) return "";
+  const p = { start: dr.start, ms: dr.ms || [], ext: {}, spare: dr.spare || [] }, { w } = place(p);
+  const weeks = Array.from({ length: WEEKS }, (_, k) => k + 1).map((n) => {
+    const x = w[n], m = Array.isArray(x) ? p.ms[x[0]] : null;
+    return x === "spare" ? `<li class="sp"><span>第 ${n} 週<small>${md(weekDate(p, n))}〜</small></span><span>予備の週</span></li>`
+      : m ? `<li><span>第 ${n} 週<small>${md(weekDate(p, n))}〜</small></span><span>${esc(m.n)}${m.kpi.length ? `<small>KPI：${m.kpi.map((k) => `${esc(k.n)} ${fmt(k.to)}${esc(k.u)}`).join("・")}</small>` : ""}</span></li>`
+      : `<li class="sp"><span>第 ${n} 週<small>${md(weekDate(p, n))}〜</small></span><span>（空き）</span></li>`;
+  }).join("");
+  const kgi = (dr.kgi || []).map((k) => `${esc(k.n)} ${fmt(k.to)}${esc(k.u)}`).join("・");
+  return `<section class="gk-draft" aria-label="シアニンと決めた下書き">
+    <h3>シアニンと決めた下書きがあります</h3>
+    <p>${dr.source ? esc(dr.source) + "から" : "面談の中身から"}作りました。理想・KGI・13 週の状態が入っています。始めたあとも自由に直せます。</p>
+    <div class="gk-draft-act"><button class="btn" type="button" data-draft="start">この設計で始める</button><button class="btn ghost" type="button" data-draft="keep">今のままにする</button><button class="gk-mini-add" type="button" data-draft="open" aria-expanded="${open ? "true" : "false"}">中を見る ${open ? "▲" : "▼"}</button></div>
+    ${open ? `<dl class="gk-draft-body"><dt>① 理想</dt><dd>${esc(dr.ideal || "（空）")}${dr.idealWhen ? `（${esc(dr.idealWhen)}）` : ""}</dd><dt>② KGI</dt><dd>${kgi || "（空）"}</dd><dt>③ 13 週</dt><dd>${md(weekDate(p, 1))} から${dr.goal13 ? `・${esc(dr.goal13)}` : ""}<ol class="gk-draft-wk">${weeks}</ol></dd></dl>` : ""}
+  </section>`;
+}

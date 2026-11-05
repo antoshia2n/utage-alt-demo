@@ -372,3 +372,18 @@ body.student .btn.ghost { background: transparent; color: var(--accent); border:
 svg.gk-ch { width: 100%; height: auto; display: block; color: var(--ink); }
 #gk-v-grow .gk-no { background: #d97706; font-size: 11px; }
 @media (max-width: 560px) { .gk-tile b { font-size: 21px; } .gk-seg button { font-size: 12.5px; } .gk-long { display: none; } }
+/* 目標達成くん 6 便目（2026-11-05）：シアニンと決めた下書きの帯 */
+.gk-draft { border: 1px solid var(--gk-deep); background: color-mix(in srgb, var(--gk-deep) 7%, var(--surface)); border-radius: 16px; padding: 14px 16px; margin-bottom: 12px; }
+.gk-draft h3 { margin: 0; font-size: 15px; }
+.gk-draft > p { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+.gk-draft-act { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+.gk-draft-body { display: grid; grid-template-columns: 76px 1fr; gap: 8px 12px; margin: 12px 0 0; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px; font-size: 13px; }
+.gk-draft-body dt { color: var(--muted); font-size: 12px; }
+.gk-draft-body dd { margin: 0; }
+.gk-draft-wk { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
+.gk-draft-wk li { display: grid; grid-template-columns: 70px 1fr; gap: 8px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+.gk-draft-wk li.sp { border-style: dashed; color: var(--muted); }
+.gk-draft-wk small { display: block; font-size: 12px; color: var(--muted); }
+.gk-draft.done { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; font-size: 13px; }
+@media (max-width: 520px) { .gk-draft-body { grid-template-columns: 1fr; } }
+.gk-draft-act .gk-mini-add { min-height: 44px; padding: 0 8px; }
