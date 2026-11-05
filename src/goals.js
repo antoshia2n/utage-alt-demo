@@ -50,6 +50,55 @@ export function checkReport(body = {}, today = jstDay()) {
   return { ok: true, row: { kind, day, numbers, body: text } };
 }
 
+
+// ---------- 目標達成くん（2026-11-05）：13 週の設計。生徒が書き、ここが正本 ----------
+const WEEKS = 13;
+const LIM = { ideal: 200, when: 40, goal13: 200, strat: 300, kgi: 3, name: 30, unit: 10, bud: 12, budName: 20, ms: 13, msName: 80, kpi: 5, tasks: 20, task: 100, taskWhen: 30, res: 2000, hyp: 1000, bytes: 60000 };
+const PALETTE = ["#94a3b8", "#cbd5e1", "#f9a8d4", "#86efac", "#4644c7", "#2b2a7a", "#fcd34d", "#a78bfa", "#67e8f9", "#fdba74"];
+const str = (v, max) => String(v ?? "").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "").trim().slice(0, max);
+const num = (v, lo, hi) => { const n = Number(String(v ?? "").replace(/[,，\s]/g, "")); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : 0; };
+const arr = (v) => (Array.isArray(v) ? v : []);
+const metric = (k) => ({ n: str(k && k.n, LIM.name), v: num(k && k.v, -1e9, 1e9), to: num(k && k.to, 0, 1e9), u: str(k && k.u, LIM.unit) });
+
+// 生徒が送ってきた設計を、決まった形と長さにそろえる（知らない項目は捨てる）
+export function checkPlan(input, today = jstDay()) {
+  const p = input && typeof input === "object" && !Array.isArray(input) ? input : null;
+  if (!p) return { ok: false, error: "bad_plan" };
+  const start = DAY_RE.test(String(p.start || "")) && !isNaN(Date.parse(p.start)) ? weekStart(p.start) : weekStart(today);
+  const spare = [...new Set(arr(p.spare).map((n) => Math.trunc(Number(n))).filter((n) => n >= 1 && n <= WEEKS))].sort((a, b) => a - b);
+  const ext = {};
+  for (const [k, v] of Object.entries(p.ext && typeof p.ext === "object" ? p.ext : {})) { const i = Math.trunc(Number(k)), n = Math.trunc(num(v, 0, 3)); if (i >= 0 && i < LIM.ms && n > 0) ext[i] = n; }
+  const plan = {
+    v: 1, start,
+    ideal: str(p.ideal, LIM.ideal), idealWhen: str(p.idealWhen, LIM.when),
+    kgi: arr(p.kgi).slice(0, LIM.kgi).map(metric),
+    bud: arr(p.bud).slice(0, LIM.bud).map((b, i) => ({ n: str(b && b.n, LIM.budName), h: Math.round(num(b && b.h, 0, 168) * 2) / 2, g: b && b.g ? 1 : 0, c: PALETTE.includes(b && b.c) ? b.c : PALETTE[i % PALETTE.length] })),
+    goal13: str(p.goal13, LIM.goal13), goal13Own: p.goal13Own ? 1 : 0,
+    strat: str(p.strat, LIM.strat), spare, ext,
+    ms: arr(p.ms).slice(0, LIM.ms).map((m) => ({
+      n: str(m && m.n, LIM.msName),
+      kpi: arr(m && m.kpi).slice(0, LIM.kpi).map(metric),
+      tasks: arr(m && m.tasks).slice(0, LIM.tasks).map((t) => ({ t: str(t && t.t, LIM.task), when: str(t && t.when, LIM.taskWhen), hr: Math.round(num(t && t.hr, 0, 80) * 2) / 2, d: t && t.d ? 1 : 0, from: t && t.from ? 1 : 0 })),
+      res: str(m && m.res, LIM.res), hyp: str(m && m.hyp, LIM.hyp), resDone: m && m.resDone ? 1 : 0, hypDone: m && m.hypDone ? 1 : 0,
+    })),
+  };
+  if (JSON.stringify(plan).length > LIM.bytes) return { ok: false, error: "plan_too_large" };
+  return { ok: true, plan };
+}
+
+// まだ設計が無い生徒の最初の形。しあらぼ管理に入っている目標と追う数字を、最初の値として写す
+export function seedPlan(student, today = jstDay()) {
+  const track = trackOf(student);
+  return checkPlan({
+    start: weekStart(today),
+    goal13: String((student && student.goal) || ""), goal13Own: student && student.goal ? 1 : 0,
+    bud: [{ n: "睡眠", h: 50 }, { n: "労働", h: 40 }, { n: "家庭", h: 28 }, { n: "習慣", h: 10 }, { n: "X", h: 10, g: 1 }, { n: "副業", h: 30, g: 1 }]
+      .map((b, i) => ({ ...b, c: PALETTE[i] })),
+    spare: [5, 10, 13],
+    ms: track.length ? [{ n: "", kpi: track.map((n) => ({ n, v: 0, to: 0, u: "" })) }] : [],
+  }, today).plan;
+}
+
 export function makeGoals(h) {
   // h: { rawDb }
   async function studentOf(env, memberId) {
@@ -74,7 +123,24 @@ export function makeGoals(h) {
       ok: true, today, week: weekStart(today), last_week: addDays(weekStart(today), -7),
       goal: { text: s.goal || "", next_action: s.next_action || "", next_mtg: s.next_mtg || "", last_mtg: s.last_mtg || "", track: trackOf(s) },
       daily: rows.filter((r) => r.kind === "daily"), weekly: rows.filter((r) => r.kind === "weekly"),
+      plan: await planOf(env, memberId, s, today),
     };
+  }
+
+  async function planOf(env, memberId, s, today) {
+    const [row] = await h.rawDb(env, "GET", `b_goal_plans?select=plan,updated_at&member_id=eq.${memberId}`);
+    if (row && row.plan && row.plan.v) return { ...checkPlan(row.plan, today).plan, saved_at: row.updated_at };
+    return { ...seedPlan(s, today), saved_at: null };
+  }
+
+  async function savePlan(env, memberId, body, today = jstDay()) {
+    if (!(await studentOf(env, memberId))) return { ok: false, error: "not_student" };
+    const c = checkPlan(body && body.plan, today);
+    if (!c.ok) return c;
+    const now = new Date().toISOString();
+    const [row] = await h.rawDb(env, "POST", "b_goal_plans?on_conflict=member_id",
+      [{ member_id: memberId, plan: c.plan, updated_at: now }], "resolution=merge-duplicates,return=representation");
+    return { ok: true, plan: { ...row.plan, saved_at: row.updated_at } };
   }
 
   async function save(env, memberId, body, today = jstDay()) {
@@ -86,5 +152,5 @@ export function makeGoals(h) {
     return { ok: true, report: { kind: row.kind, day: row.day, numbers: row.numbers, body: row.body, updated_at: row.updated_at } };
   }
 
-  return { view, save, isStudent, studentOf };
+  return { view, save, savePlan, isStudent, studentOf };
 }

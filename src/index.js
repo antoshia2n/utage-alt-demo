@@ -76,7 +76,7 @@ import { mailText, mailHtml } from "./mailhtml.js";
 import { makeNews, newsQuery } from "./news.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.60.0-bwsops";
+const VERSION = "0.61.0-bgoalplan";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -1050,6 +1050,17 @@ async function handleApi(request, env, url) {
   }
 
   // 目標タブ（2026-10-30）：自分の目標を読む・日報と週報を書く。マイページの全部が開く人で、しあらぼ管理の生徒に結ばれた人だけ
+  // 目標達成くん（2026-11-05）：13 週の設計を保存する（生徒が自分の分だけ）
+  if (path === "/api/me/goals/plan" && method === "PUT") {
+    const v = await verifyUser(request, env);
+    if (v.error) return json({ ok: false, error: v.error }, 401);
+    const customer = await customerByEmail(env, v.email);
+    if (!customer) return json({ ok: false, error: "not_registered" }, 404);
+    if ((await studentAccess(env, customer, v.email)).access !== "full") return json(NOT_MEMBER, 403);
+    const body = await request.json().catch(() => ({}));
+    const r = await goals.savePlan(env, customer.id, body);
+    return json(r, r.ok ? 200 : r.error === "not_student" ? 404 : 400);
+  }
   if (path === "/api/me/goals" && (method === "GET" || method === "PUT")) {
     const v = await verifyUser(request, env);
     if (v.error) return json({ ok: false, error: v.error }, 401);

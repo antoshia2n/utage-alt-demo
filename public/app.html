@@ -18,14 +18,14 @@
 </head>
 <body class="student">
 <div class="shell">
-  <!-- 生徒の画面の枠（2026-11-04 Naoki OK）：左のメニューは 5 つ（ホーム・教材・添削・記録・アプリ）。お知らせは上の帯のベル、ご契約は右上のアカウントの中、振り返りは添削の中。
+  <!-- 生徒の画面の枠（2026-11-04 Naoki OK）：左のメニューは 5 つ（ホーム・教材・添削・目標・アプリ）。お知らせは上の帯のベル、ご契約は右上のアカウントの中、振り返りは添削の中。
        スマホでは下のタブになる。名前は data-label（上の帯の題名とタブの名前に使う） -->
   <nav class="side" aria-label="メニュー">
     <a class="side-logo" href="/app">シアラボ</a>
     <button class="it" type="button" aria-selected="true" data-tab="home" data-label="ホーム"><svg class="si" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11l8-7 8 7v9a1 1 0 0 1-1 1h-4v-6h-6v6H5a1 1 0 0 1-1-1z"/></svg><span class="lbl">ホーム</span></button>
     <button class="it" type="button" aria-selected="false" data-tab="lessons" data-label="教材"><svg class="si" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6.8C10 5.3 7.2 4.8 4 5.3v13c3.2-.5 6 0 8 1.5 2-1.5 4.8-2 8-1.5v-13c-3.2-.5-6 0-8 1.5zM12 6.8v13"/></svg><span class="lbl">教材</span></button>
     <button class="it" type="button" aria-selected="false" data-tab="room" data-label="添削"><svg class="si" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 19.5h4l10.2-10.2a2.1 2.1 0 0 0-3-3L5.5 16.5zM14 7.5l3 3"/></svg><span class="lbl">添削</span><span class="badge hidden" id="room-badge"></span></button>
-    <button class="it hidden" type="button" aria-selected="false" data-tab="goals" data-label="記録"><svg class="si" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19.5h16M7 16v-5M12 16V7M17 16v-8"/></svg><span class="lbl">記録</span></button>
+    <button class="it hidden" type="button" aria-selected="false" data-tab="goals" data-label="目標"><svg class="si" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19.5h16M7 16v-5M12 16V7M17 16v-8"/></svg><span class="lbl">目標</span></button>
     <button class="it" type="button" aria-selected="false" data-tab="apps" data-label="アプリ"><svg class="si" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6.5" height="6.5" rx="1.8"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.8"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.8"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.8"/></svg><span class="lbl">アプリ</span></button>
     <!-- メニューには出さないが、題名に使う画面 -->
     <button class="it hidden" id="side-mypage" type="button" aria-selected="false" data-tab="mypage" data-label="マイページ" data-quiet="1"></button>
@@ -53,8 +53,17 @@
     <div id="member" class="card member hidden"></div>
     <section id="tab-home" class="hidden"></section>
     <section id="tab-mypage" class="hidden"><iframe id="mypage-frame" title="マイページ" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation" style="width:100%;border:0;min-height:480px;display:block;background:transparent"></iframe></section>
-    <section id="tab-goals" class="stack hidden">
-      <div class="card stack" id="g-goal"><p class="note" style="margin:0">読み込んでいます…</p></div>
+    <section id="tab-goals" class="hidden">
+      <!-- 目標達成くん（2026-11-05）：8 段の帯。1 便目は ①〜③（設計）。④〜⑧ は次の便で開く。記録は今の日報・週報のまま -->
+      <header class="gk-head"><h1>目標達成くん</h1><p>理想から今週の 1 本まで、1 本の線でつなげて回します。文字はさわれば、そのまま直せます。</p></header>
+      <nav class="gk-chain" id="gk-chain" aria-label="8 つの段"></nav>
+      <div class="gk-seg" role="tablist" aria-label="目標達成くんの画面">
+        <button type="button" role="tab" data-gv="plan" aria-selected="true">設計</button>
+        <button type="button" role="tab" data-gv="rec" aria-selected="false">日報・週報</button>
+      </div>
+      <div class="gk-view" id="gk-v-plan"><p class="note" style="margin:0">読み込んでいます…</p></div>
+      <p class="note gk-saved" id="gk-saved" role="status" aria-live="polite"></p>
+      <div class="gk-view stack hidden" id="gk-v-rec">
       <form class="card stack" id="g-daily" novalidate>
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><h3 style="margin:0">日報</h3><label class="note" style="display:flex;gap:6px;align-items:center;margin:0">日付 <select id="g-day" aria-label="日報の日付"></select></label></div>
         <div id="g-nums" class="stack"></div>
@@ -70,6 +79,8 @@
         <p class="note" id="g-wmsg" role="status" aria-live="polite" style="margin:0"></p>
       </form>
       <details class="card" id="g-past"><summary>これまでの日報を見る ▼</summary><div id="g-list" class="stack" style="margin-top:10px"></div></details>
+      </div>
+      <div class="gk-toast" id="gk-toast" role="status" aria-live="polite"></div>
     </section>
     <section id="tab-lessons" class="stack"></section>
 
