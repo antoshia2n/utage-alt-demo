@@ -290,3 +290,53 @@ body { font-family: "Geist", "Noto Sans JP", "Hiragino Sans", "Hiragino Kaku Got
 .bt-pvbox .opt input { width: auto; }
 .bt-pvbox .btn { align-self: flex-start; }
 @media (max-width: 900px) { .bt-typepick { grid-template-columns: repeat(3, minmax(0, 1fr)); } .bt-qe { padding-left: 14px; } }
+/* 2026-11-06 予約の便④：リマインド（通知の並び・テンプレート・編集画面） */
+.bt-tl { position: relative; padding-left: 26px; }
+.bt-tl::before { content: ""; position: absolute; left: 9px; top: 10px; bottom: 10px; width: 2px; background: var(--line); }
+.bt-st { position: relative; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; background: var(--surface); }
+.bt-st::before { content: ""; position: absolute; left: -22px; top: 50%; margin-top: -7px; width: 12px; height: 12px; border-radius: 99px; background: var(--surface); border: 2px solid var(--field, #a39a90); }
+.bt-st.on::before { background: var(--accent); border-color: var(--accent); }
+.bt-st.off { opacity: .72; }
+.bt-st select { min-height: 38px; border-radius: 10px; border: 1px solid var(--field, #a39a90); background: var(--surface); color: var(--ink); padding: 0 8px; font: inherit; font-size: 14px; }
+.bt-st .when { display: flex; gap: 6px; flex-wrap: wrap; }
+.bt-st .ch { font-size: 12px; border-radius: 6px; padding: 2px 8px; background: var(--bg); color: var(--muted); }
+.bt-st .tp { flex: 1; display: flex; gap: 6px; align-items: center; min-width: 220px; }
+.bt-st .tp select { flex: 1; min-width: 0; }
+.bt-legacy { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; border: 1px dashed var(--line); border-radius: 12px; padding: 14px; }
+.bt-legacy span { color: var(--muted); font-size: 14px; }
+.bt-tladd { margin-top: 4px; }
+.bt-tpl { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.bt-tplc { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--surface); text-align: left; cursor: pointer; font: inherit; color: var(--ink); display: flex; flex-direction: column; gap: 4px; }
+.bt-tplc:hover, .bt-tplc:focus-visible { border-color: var(--field, #a39a90); }
+.bt-tplc span { font-size: 12px; color: var(--muted); }
+.bt-tplc small { font-size: 12px; color: var(--accent); }
+.bt-tplc.new { border-style: dashed; color: var(--accent); font-weight: 700; justify-content: center; align-items: center; min-height: 84px; }
+.bt-mbg { position: fixed; inset: 0; background: rgba(28,25,23,.45); z-index: 50; display: grid; place-items: center; padding: 16px; }
+.bt-mbg.hidden { display: none; }
+.bt-modal { background: var(--surface); color: var(--ink); border-radius: 16px; max-width: 980px; width: 100%; max-height: 92vh; overflow: auto; padding: 20px; box-shadow: 0 20px 60px rgba(0,0,0,.25); }
+.bt-modal .mh { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.bt-modal .mh h3 { margin: 0; flex: 1; font-size: 18px; }
+.bt-mcols { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+.bt-mfoot { display: flex; align-items: center; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+.bt-mfoot .danger { color: #b42318; }
+.bt-ed { min-height: 220px; border: 1px solid var(--field, #a39a90); border-radius: 10px; padding: 12px 14px; background: var(--surface); line-height: 1.9; font-size: 14px; outline: 0; white-space: pre-wrap; word-break: break-word; }
+.bt-ed.one { min-height: 0; white-space: nowrap; overflow: hidden; line-height: 1.7; }
+.bt-ed:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.bt-ed.empty::before { content: attr(data-ph); color: var(--muted); pointer-events: none; }
+.bt-modal .tok { display: inline-flex; align-items: center; background: #eef2ff; color: #3730a3; border: 1px solid #c7d2fe; border-radius: 6px; padding: 0 6px; margin: 0 2px; font-size: 13px; line-height: 1.6; font-weight: 600; user-select: all; }
+.bt-edbar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+.bt-edbar .tokbtn { border: 1px solid #c7d2fe; background: #eef2ff; color: #3730a3; border-radius: 6px; padding: 4px 8px; cursor: pointer; font-size: 12px; font-weight: 600; min-height: 30px; font-family: inherit; }
+.bt-slash { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: 4px; margin-top: 6px; display: flex; flex-direction: column; max-width: 260px; }
+.bt-slash.hidden { display: none; }
+.bt-slash button { border: 0; background: none; text-align: left; padding: 8px 10px; border-radius: 8px; cursor: pointer; font: inherit; color: var(--ink); }
+.bt-slash button[aria-selected=true] { background: var(--accent-soft); font-weight: 600; }
+.bt-edfoot { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); margin-top: 6px; }
+.bt-phr { display: flex; gap: 6px; flex-wrap: wrap; }
+.bt-phr button { border: 1px solid var(--field, #a39a90); background: var(--surface); color: var(--ink); border-radius: 99px; padding: 6px 12px; cursor: pointer; font: inherit; font-size: 13px; min-height: 34px; }
+.bt-phr button:hover { border-color: var(--accent); color: var(--accent); }
+.bt-phone { border: 1px solid var(--line); border-radius: 16px; overflow: hidden; background: var(--surface); }
+.bt-phone .ph-h { padding: 12px 14px; border-bottom: 1px solid var(--line); background: var(--bg); }
+.bt-phone .ph-h b { display: block; font-size: 14px; }
+.bt-phone .ph-h span { font-size: 11px; color: var(--muted); }
+.bt-phone .ph-b { padding: 14px; font-size: 13px; line-height: 1.8; white-space: pre-wrap; word-break: break-word; max-height: 460px; overflow: auto; }
+@media (max-width: 900px) { .bt-mcols { grid-template-columns: 1fr; } }

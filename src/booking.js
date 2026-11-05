@@ -206,14 +206,38 @@ export function cleanOverrides(v) {
 const hm = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 export const rangesText = (rs) => rs.map(([a, b]) => `${hm(a)}-${hm(b)}`).join(",");
 
-export function render(text, type, b, person) {
+export const SIGN = "シアニン（シアラボ）";
+export function render(text, type, b, person, extra = {}) {
   const map = {
+    booking_url: (type.audience || "public") === "member" ? "https://lab.shia2n.jp/app#booking" : "", sign: SIGN, ...extra,
     name: (person && person.name) || "", email: (person && person.email) || "",
     title: type.title, date: fmtJst(b.slot), minutes: String(b.minutes || type.minutes),
     zoom: type.zoom_url || "（追ってお知らせします）", end: endLabel(b.slot, b.minutes || type.minutes), topic: b.topic || "（未記入）", answers: answersText(b.answers),
   };
   return String(text || "").replace(/\{\{(\w+)\}\}/g, (all, k) => (k in map ? map[k] : all));
 }
+
+// 通知の並び（便④）：いつ（予約した直後・開始の◯分前・終わって◯分後・キャンセルされたとき）× どのテンプレート
+// 差し込み項目（テンプレートの {{…}}）
+export const TPL_KEYS = { name: "名前", title: "メニュー名", date: "日時", end: "終了時刻", minutes: "所要時間", zoom: "Zoom の URL", answers: "フォームの回答", topic: "相談したいこと", booking_url: "予約ページ", sign: "署名" };
+export const REMIND_WHEN = ["booked", "before", "after", "canceled"];
+export function cleanReminders(v) {
+  if (!Array.isArray(v) || v.length > 10) return { error: "bad_reminders", note: "通知は 10 件まで" };
+  const out = [], keys = new Set();
+  for (const [i, r] of v.entries()) {
+    if (!r || !REMIND_WHEN.includes(r.when)) return { error: "bad_reminders", note: `${i + 1} 件目のタイミング` };
+    const minutes = r.when === "before" || r.when === "after" ? Number(r.minutes) : 0;
+    if (!Number.isInteger(minutes) || minutes < 0 || minutes > 30 * 1440 || ((r.when === "before" || r.when === "after") && minutes < 10)) return { error: "bad_reminders", note: `${i + 1} 件目の時間（10 分〜30 日）` };
+    if (!UUID_RE.test(String(r.template_id || ""))) return { error: "bad_reminders", note: `${i + 1} 件目のテンプレート` };
+    let key = String(r.key || "").trim();
+    if (!/^[a-z0-9_-]{1,20}$/.test(key) || keys.has(key)) { let n = i + 1; while (keys.has("s" + n) || v.some((x, j) => j !== i && x && x.key === "s" + n)) n++; key = "s" + n; }
+    keys.add(key);
+    out.push({ key, when: r.when, minutes, template_id: r.template_id, on: r.on !== false });
+  }
+  return { reminders: out };
+}
+// 送る時刻（before：開始の◯分前／after：終わって◯分後）。それ以外は null
+export const remindAt = (r, b) => (r.when === "before" ? Date.parse(b.slot) - r.minutes * 60e3 : r.when === "after" ? Date.parse(b.slot) + ((b.minutes || 30) + r.minutes) * 60e3 : null);
 
 export function makeBooking(h) {
   const { db, addEvent, logInbound, bin3, registerPerson, busyBetween, pagesOrigin, afterBooked } = h;
@@ -252,7 +276,7 @@ export function makeBooking(h) {
     active: t.active, archived: !!t.archived_at, audience: t.audience || "public", entitlements: t.entitlements || [], questions: t.questions || [], after_actions: t.after_actions || [],
     description: t.description || "", color: t.color || "", allowed_members: t.allowed_members || [],
     week_hours: weekHours(t), date_overrides: t.date_overrides || {}, durations: t.durations || [], slot_step: t.slot_step || null,
-    buffer_before: t.buffer_before || 0, buffer_after: t.buffer_after || 0, max_per_day: t.max_per_day || null, max_per_person: t.max_per_person || 1, cancel_hours: t.cancel_hours ?? null,
+    buffer_before: t.buffer_before || 0, buffer_after: t.buffer_after || 0, max_per_day: t.max_per_day || null, max_per_person: t.max_per_person || 1, cancel_hours: t.cancel_hours ?? null, reminders: Array.isArray(t.reminders) ? t.reminders : null,
     embed: (t.audience || "public") === "public" ? `<div data-lab-part="booking:${t.slug}"></div>` : "", ...extra,
   });
 
@@ -412,6 +436,17 @@ export function makeBooking(h) {
       if (arr.some((k) => !AFTER_ACTIONS.includes(k))) return { ok: false, error: "bad_after_actions", note: "使えるのは shr_next_mtg（しあらぼ管理の次の面談）" };
       row.after_actions = [...new Set(arr)];
     }
+    if ("reminders" in args) {
+      if (args.reminders === null) row.reminders = null;
+      else {
+        const r = cleanReminders(args.reminders);
+        if (r.error) return { ok: false, error: r.error, note: r.note };
+        const ids = [...new Set(r.reminders.map((x) => x.template_id))];
+        const found = ids.length ? await templates(env, ids) : [];
+        if (found.filter((x) => !x.archived_at).length !== ids.length) return { ok: false, error: "template_not_found" };
+        row.reminders = r.reminders;
+      }
+    }
     if ("active" in args) row.active = !!args.active;
     if ("archived" in args) row.archived_at = args.archived ? now() : null;
     let out;
@@ -461,6 +496,26 @@ export function makeBooking(h) {
     });
     return r.result;
   }
+  // テンプレート（便④）
+  async function templates(env, ids) {
+    const list = ids ? [...new Set(ids)].filter((x) => UUID_RE.test(String(x))) : null;
+    if (list && !list.length) return [];
+    return await db(env, "GET", "b_booking_templates?select=*&order=created_at.asc" + (list ? `&id=in.(${list.join(",")})` : "&archived_at=is.null"));
+  }
+  async function sendTemplate(env, t, b, person, tpl, step, actor) {
+    const r = await bin3.sendMail(env, person, { kind: "booking_notice", subject: render(tpl.subject, t, b, person), text: render(tpl.body, t, b, person), actor, extra: { booking_type: t.id, slot: b.slot, which: step.when, step: step.key, template: tpl.id } });
+    return r.result;
+  }
+  // 予約した直後・キャンセルされたときの通知。並びが無いメニューは今までどおり（予約した直後だけ）
+  async function notifyNow(env, t, b, person, when, actor = "site") {
+    if (!Array.isArray(t.reminders)) return when === "booked" ? await sendNotice(env, t, b, person, "confirm", actor) : "none";
+    const steps = t.reminders.filter((r) => r.on && r.when === when);
+    if (!steps.length) return "none";
+    const tpls = new Map((await templates(env, steps.map((r) => r.template_id))).map((x) => [x.id, x]));
+    let out = "none";
+    for (const st of steps) { const tpl = tpls.get(st.template_id); if (!tpl || tpl.archived_at) continue; out = await sendTemplate(env, t, b, person, tpl, st, actor); }
+    return out;
+  }
 
   // 予約する（lp の住所から。ログイン不要）
   async function book(env, slug, body = {}) {
@@ -482,7 +537,7 @@ export function makeBooking(h) {
     const b = { slot: iso, type_id: t.id, type_title: t.title, minutes: t.minutes, topic, ...(ans.answers.length ? { answers: ans.answers } : {}) };
     await addEvent(env, reg.id, "consult_booked", b, "site");
     const [person] = await db(env, "GET", `customers?select=id,name,email&id=eq.${reg.id}`);
-    const mail = person ? await sendNotice(env, t, b, person, "confirm", "site") : "failed";
+    const mail = person ? await notifyNow(env, t, b, person, "booked") : "failed";
     await logInbound(env, "booking", { slug: t.slug, slot: iso }, { ok: true, is_new: reg.is_new, mail }, 200);
     let thanks_url = null;
     if (t.thanks_page_slug) {
@@ -492,23 +547,35 @@ export function makeBooking(h) {
     return { ok: true, id: reg.id, is_new: reg.is_new, slot: iso, label: fmtJst(iso), mail, thanks_url };
   }
 
-  // 定時の処理：前日の知らせ（送る時刻から 3 時間のうち・1 人 1 枠 1 回）
+  // 定時の処理：開始の◯分前・終わって◯分後の通知（送る時刻から 3 時間のうち・1 人 1 枠 1 通知 1 回）
+  // 並びが無いメニューは今までの「前日の知らせ」（remind_minutes・remind_*）
   async function run(env, at = Date.now()) {
     const out = { sent: 0, blocked: 0, failed: 0 };
     const types = new Map((await db(env, "GET", "b_booking_types?select=*&archived_at=is.null")).map((t) => [t.id, t]));
     if (!types.size) return out;
-    const done = new Set((await db(env, "GET", "events?select=customer_id,payload&type=eq.consult_reminded&limit=20000")).map((e) => e.customer_id + "|" + (e.payload && e.payload.slot)));
+    // 送った印。step の無い古い印は、前日の知らせ（移した並びの s2）として数える
+    const done = new Set((await db(env, "GET", "events?select=customer_id,payload&type=eq.consult_reminded&limit=20000")).map((e) => e.customer_id + "|" + (e.payload && e.payload.slot) + "|" + ((e.payload && e.payload.step) || "s2")));
+    const tplIds = [...types.values()].flatMap((t) => (Array.isArray(t.reminders) ? t.reminders : []).map((r) => r.template_id));
+    const tpls = new Map((await templates(env, tplIds)).map((x) => [x.id, x]));
+    const people = new Map();
+    const person = async (id) => { if (!people.has(id)) { const [p] = await db(env, "GET", `customers?select=id,name,email&id=eq.${id}`); people.set(id, p || null); } return people.get(id); };
     for (const b of await bookings(env)) {
       const t = types.get(b.type_id);
-      if (!t || t.remind_minutes == null) continue;
-      const send = Date.parse(b.slot) - t.remind_minutes * 60e3;
-      if (at < send || at >= send + WINDOW_MS || Date.parse(b.at) > send) continue;
-      if (done.has(b.customer_id + "|" + b.slot)) continue;
-      const [person] = await db(env, "GET", `customers?select=id,name,email&id=eq.${b.customer_id}`);
-      if (!person) continue;
-      const r = await sendNotice(env, t, b, person, "remind", "site");
-      if (r !== "failed") await addEvent(env, b.customer_id, "consult_reminded", { slot: b.slot, type_id: t.id, mail: r }, eventActor("site"));
-      out[r]++;
+      if (!t) continue;
+      const steps = Array.isArray(t.reminders) ? t.reminders.filter((r) => r.on && (r.when === "before" || r.when === "after"))
+        : t.remind_minutes == null ? [] : [{ key: "s2", when: "before", minutes: t.remind_minutes, legacy: true }];
+      for (const st of steps) {
+        const send = remindAt(st, b);
+        if (at < send || at >= send + WINDOW_MS || Date.parse(b.at) > send) continue;
+        if (done.has(b.customer_id + "|" + b.slot + "|" + st.key)) continue;
+        const p = await person(b.customer_id);
+        if (!p) continue;
+        let r;
+        if (st.legacy) r = await sendNotice(env, t, b, p, "remind", "site");
+        else { const tpl = tpls.get(st.template_id); if (!tpl || tpl.archived_at) continue; r = await sendTemplate(env, t, b, p, tpl, st, "site"); }
+        if (r !== "failed") { await addEvent(env, b.customer_id, "consult_reminded", { slot: b.slot, type_id: t.id, step: st.key, mail: r }, eventActor("site")); done.add(b.customer_id + "|" + b.slot + "|" + st.key); }
+        out[r] = (out[r] || 0) + 1;
+      }
     }
     return out;
   }
@@ -553,7 +620,7 @@ export function makeBooking(h) {
     const b = { slot: iso, type_id: t.id, type_title: t.title, minutes: m, topic: (t.questions || []).length ? "" : String((body.answers && body.answers.topic) || "").trim().slice(0, 1000), answers: ans.answers, ...(moving ? { moved_from: moving.slot } : {}) };
     await addEvent(env, customer.id, "consult_booked", b, "site");
     if (moving) await addEvent(env, customer.id, "consult_canceled", { slot: moving.slot, type_id: t.id, type_title: t.title, moved_to: iso }, "site");
-    const mail = await sendNotice(env, t, b, customer, "confirm", "site").catch(() => "failed");
+    const mail = await notifyNow(env, t, b, customer, "booked").catch(() => "failed");
     let after = null;
     if (afterBooked && (t.after_actions || []).length) after = await afterBooked(env, customer.id, t.after_actions, { booked: iso }).catch((e) => ({ error: String(e.message || e) }));
     await logInbound(env, "booking", { slug: t.slug, slot: iso, member: true }, { ok: true, mail, after }, 200);
@@ -568,9 +635,10 @@ export function makeBooking(h) {
     if (!t || t.audience !== "member") return { ok: false, error: "not_found" };
     if (tooLate(t, b.slot)) return { ok: false, error: "too_late", cancel_hours: t.cancel_hours };
     await addEvent(env, customer.id, "consult_canceled", { slot: b.slot, type_id: t.id, type_title: t.title }, "site");
+    const mail = await notifyNow(env, t, b, { id: customer.id, name: customer.name || "", email: customer.email || "" }, "canceled").catch(() => "failed");
     let after = null;
     if (afterBooked && (t.after_actions || []).length) after = await afterBooked(env, customer.id, t.after_actions, { canceled: b.slot }).catch((e) => ({ error: String(e.message || e) }));
-    await logInbound(env, "booking_cancel", { slug: t.slug, slot: b.slot }, { ok: true, after }, 200);
+    await logInbound(env, "booking_cancel", { slug: t.slug, slot: b.slot }, { ok: true, after, mail }, 200);
     // 「元に戻す」のために、取り消した予約の中身を返す
     return { ok: true, slot: b.slot, slug: t.slug, minutes: b.minutes, answers: Object.fromEntries((b.answers || []).map((a) => [a.key, a.values || a.value])) };
   }
@@ -579,5 +647,49 @@ export function makeBooking(h) {
     return await db(env, "GET", "b_booking_types?select=id,slug,title,active,thanks_page_slug&archived_at=is.null&order=created_at.asc").catch(() => []);
   }
 
-  return { list, get, set, getSlots, publicSlots, book, run, forPlan, forMember, memberBook, memberCancel };
+  // テンプレートの一覧（使っているメニューの数つき）・作る・直す・消す
+  async function listTemplates(env) {
+    const [rows, types] = await Promise.all([templates(env), db(env, "GET", "b_booking_types?select=id,title,reminders&archived_at=is.null")]);
+    return { ok: true, templates: rows.map((x) => ({ id: x.id, name: x.name, subject: x.subject, body: x.body, updated_at: x.updated_at,
+      used: types.filter((t) => (t.reminders || []).some((r) => r.template_id === x.id)).map((t) => t.title) })),
+      placeholders: TPL_KEYS };
+  }
+  async function setTemplate(env, args = {}, by = "admin") {
+    let cur = null;
+    if (args.id) { [cur] = await templates(env, [args.id]); if (!cur) return { ok: false, error: "not_found" }; }
+    const row = { updated_at: now(), updated_by: String(by).slice(0, 200) };
+    if (args.archived === true) {
+      if (!cur) return { ok: false, error: "not_found" };
+      const users = (await db(env, "GET", "b_booking_types?select=id,title,reminders&archived_at=is.null")).filter((t) => (t.reminders || []).some((r) => r.template_id === cur.id));
+      if (users.length) return { ok: false, error: "template_in_use", used: users.map((t) => t.title) };
+      row.archived_at = now();
+    } else {
+      if (args.archived === false) row.archived_at = null;
+      for (const [k, max] of [["name", 60], ["subject", 200], ["body", 8000]]) if (k in args || !cur) {
+        const v = String(args[k] || "").replace(/\u200b/g, "").trim();
+        if (!v || v.length > max) return { ok: false, error: "bad_template_" + k };
+        row[k] = v;
+      }
+    }
+    let out;
+    if (cur) [out] = await db(env, "PATCH", `b_booking_templates?id=eq.${cur.id}`, row, "return=representation");
+    else [out] = await db(env, "POST", "b_booking_templates", [row], "return=representation");
+    await logInbound(env, "change", { kind: "booking_template", id: out.id, before: cur, after: out, by }, { ok: true }, 200);
+    return { ok: true, created: !cur, template: { id: out.id, name: out.name, subject: out.subject, body: out.body, archived: !!out.archived_at } };
+  }
+  // テスト送信：見本の予約で差し込んで、管理者のメールに送る
+  async function testTemplate(env, { subject, body, type_id } = {}, adminEmail) {
+    const em = String(adminEmail || "").toLowerCase();
+    const [p] = await db(env, "GET", `customers?select=id,name,email&email=eq.${encodeURIComponent(em)}`);
+    if (!p) return { ok: false, error: "no_admin_person", note: "管理者のメールが顧客に入っていません" };
+    const t = (type_id && await typeById(env, type_id)) || { id: null, title: "個別相談", minutes: 30, zoom_url: "https://zoom.us/j/…", audience: "member" };
+    const slot = new Date(Date.now() + 7 * DAY).toISOString().slice(0, 11) + "11:00:00.000Z";
+    const b = { slot, minutes: t.minutes, topic: "（見本）相談したいこと", answers: [{ label: "（見本）質問", value: "（見本）回答" }] };
+    const s = String(subject || "").replace(/\u200b/g, "").trim(), x = String(body || "").replace(/\u200b/g, "").trim();
+    if (!s || !x) return { ok: false, error: "bad_template_body" };
+    const r = await bin3.sendMail(env, p, { kind: "booking_notice", subject: "【テスト】" + render(s, t, b, p), text: render(x, t, b, p), actor: "admin", force: true, extra: { test: true } });
+    return { ok: r.result === "sent", result: r.result, to: p.email, error: r.error || r.reason || null };
+  }
+
+  return { list, get, set, getSlots, publicSlots, book, run, forPlan, forMember, memberBook, memberCancel, listTemplates, setTemplate, testTemplate };
 }

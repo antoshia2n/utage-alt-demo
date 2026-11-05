@@ -1072,7 +1072,7 @@ async function loadDeals(focusId, msg) {
 let btCache = [], btWired = false, currentBt = null, btEntCounts = {};
 const WD_LABEL = ["日", "月", "火", "水", "木", "金", "土"];
 const BT_WHY = {
-  bad_audience: "公開範囲を選択してください", bad_entitlements: "会員プランの名前が正しくありません", bad_questions: "質問は 12 件までです", bad_question_label: "質問を入力してください（80 字まで）", bad_question_key: "質問の並びが正しくありません", bad_question_options: "選択肢を 2 つ以上入力してください（1 つ 60 字まで）", bad_after_actions: "予約後の連携先が正しくありません",
+  bad_audience: "公開範囲を選択してください", bad_entitlements: "会員プランの名前が正しくありません", bad_questions: "質問は 12 件までです", bad_question_label: "質問を入力してください（80 字まで）", bad_question_key: "質問の並びが正しくありません", bad_question_options: "選択肢を 2 つ以上入力してください（1 つ 60 字まで）", bad_after_actions: "予約後の連携先が正しくありません", bad_reminders: "通知の設定が正しくありません", template_not_found: "そのテンプレートは見つかりません",
   bad_title: "タイトルを入力してください（80 字まで）", bad_slug: "URL 名は英小文字・数字・ハイフンの 2〜41 字（例 consult-30）", slug_taken: "その URL 名はほかのメニューで使われています",
   bad_minutes: "所要時間は 10〜240 分", bad_weekdays: "曜日を 1 つ以上選択してください", bad_times: "受付時間は「10:00-12:00,20:00-22:00」の形で入力してください",
   bad_days_ahead: "予約受付期間は 1〜90 日", bad_min_notice_hours: "予約締切は 0〜168 時間", bad_remind_minutes: "前日のリマインドは 1〜168 時間前（空欄で送らない）",
@@ -1108,7 +1108,7 @@ const BT_NAV = [
   ["hours", "受付時間", "基本の受付時間・特定日", '<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M8 3v4M16 3v4M3.5 10h17"/>'],
   ["rules", "予約ルール", "締切・上限・バッファ", '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 1.5M9.5 2.8h5"/>'],
   ["form", "予約フォーム", "予約時の質問", '<rect x="5" y="3.5" width="14" height="17" rx="2"/><path d="M8.5 8h7M8.5 12h7M8.5 16h4"/>'],
-  ["remind", "リマインド", "確認メール・前日のメール", '<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20.5h4"/>'],
+  ["remind", "リマインド", "通知のタイミング・テンプレート", '<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20.5h4"/>'],
   ["list", "予約一覧", "今後・過去", '<path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/>'],
 ];
 async function openBookingType(id, opts = {}) {
@@ -1131,7 +1131,7 @@ async function openBookingType(id, opts = {}) {
   }) + `${opts.msg ? `<p class="msg ok" style="margin:12px 0 0" role="status">${esc(opts.msg)}</p>` : ""}
     <div class="bt-lay"><nav class="bt-nav" role="tablist" aria-label="設定">${BT_NAV.map(([k, n, d, ic]) => `<button type="button" role="tab" data-btp="${k}" aria-selected="${k === pane}"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true">${ic}</svg></span><span><b>${n}${k === "list" ? ` <small class="cnt">${upcoming.length}</small>` : ""}</b><small>${d}</small></span></button>`).join("")}</nav>
     <div>${bookingTypeForm(t, r)}
-      <section class="card hidden" data-btpane="remind">${btRemindHtml(t, r)}</section>
+      <section class="card hidden" data-btpane="remind">${btRemindHtml()}</section>
       <section class="card hidden" data-btpane="list"><h3 class="bt-h">予約一覧</h3><div class="seg" role="group" aria-label="期間"><button type="button" data-bl="up" aria-pressed="true">今後 ${upcoming.length}</button><button type="button" data-bl="past" aria-pressed="false">過去 ${r.bookings.length - upcoming.length}</button></div><div id="bb-table" class="table-wrap"></div></section>
     </div></div>`;
   const show = (k) => {
@@ -1436,30 +1436,196 @@ function btUndo(text, undo) {
   let el = $("bt-undo-toast");
   if (!el) { document.body.insertAdjacentHTML("beforeend", '<div class="bt-toast" id="bt-undo-toast" role="status"><span></span><button type="button">元に戻す</button></div>'); el = $("bt-undo-toast"); }
   el.querySelector("span").textContent = text; el.classList.remove("hidden");
-  el.querySelector("button").onclick = () => { el.classList.add("hidden"); undo(); };
+  el.querySelector("button").classList.toggle("hidden", !undo);
+  el.querySelector("button").onclick = () => { el.classList.add("hidden"); if (undo) undo(); };
   clearTimeout(btUndoTimer); btUndoTimer = setTimeout(() => el.classList.add("hidden"), 8000);
 }
-// リマインド（④ でシナリオとテンプレートに作り直す。いまは確認メールと前日のメール）
-function btRemindHtml(t, r) {
-  return `<form id="bn" class="stack"><h3 class="bt-h">リマインド</h3><p class="note bt-hint" style="margin:0">差し込み項目：${esc((r.placeholders || []).join("　"))}（名前・メニュー名・日時・所要時間・Zoom・相談したいこと・回答・終了時刻）</p>
-      <b>確認メール（予約した直後）</b>
-      <div><label for="bn-cs">件名</label><input id="bn-cs" type="text" maxlength="200" value="${esc(t.confirm_subject)}"></div>
-      <div><label for="bn-cb">本文</label><textarea id="bn-cb" rows="8" maxlength="8000">${esc(t.confirm_body)}</textarea></div>
-      <b>前日のリマインド</b>
-      <div><label for="bn-rm">開始の何時間前に送るか（空欄で送らない）</label><input id="bn-rm" type="number" min="1" max="168" style="width:120px" value="${t.remind_minutes == null ? "" : Math.round(t.remind_minutes / 60)}"></div>
-      <div><label for="bn-rs">件名</label><input id="bn-rs" type="text" maxlength="200" value="${esc(t.remind_subject)}"></div>
-      <div><label for="bn-rb">本文</label><textarea id="bn-rb" rows="6" maxlength="8000">${esc(t.remind_body)}</textarea></div>
-      <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="submit">保存</button><span class="note" id="bn-status" role="status"></span></div></form>`;
+// リマインド（便④）：通知の並び（いつ × どのテンプレート）は予約メニューごと、文はテンプレートでメニューをまたいで使い回す
+const BT_WHEN = { booked: "予約した直後", before: "開始前", after: "終了後", canceled: "キャンセルされたとき" };
+const BT_OFF = [10, 30, 60, 120, 180, 360, 720, 1440, 2880, 4320, 10080];
+const btOffLab = (m) => (m % 1440 === 0 ? `${m / 1440} 日` : m % 60 === 0 ? `${m / 60} 時間` : `${m} 分`);
+const btWhenLab = (st) => (st.when === "before" ? `開始 ${btOffLab(st.minutes)}前` : st.when === "after" ? `終了 ${btOffLab(st.minutes)}後` : BT_WHEN[st.when]);
+const btWhenOrder = (st) => (st.when === "booked" ? -1e9 : st.when === "before" ? -st.minutes : st.when === "after" ? 1e6 + st.minutes : 1e9);
+const BT_TOK = { name: "名前", title: "メニュー名", date: "日時", end: "終了時刻", zoom: "Zoom の URL", answers: "フォームの回答", booking_url: "予約ページ", sign: "署名", minutes: "所要時間", topic: "相談したいこと" };
+const BT_SAMPLE = { name: "生徒 A", title: "しあらぼの個別相談（30 分）", date: "11月12日（木）20:00", end: "20:30", zoom: "https://us02web.zoom.us/j/…", answers: "■ X アカウント名\n@example\n■ 相談したいこと\nX 記事の構成", booking_url: "https://lab.shia2n.jp/app#booking", sign: "シアニン（シアラボ）", minutes: "30", topic: "X 記事の構成" };
+const BT_PHRASES = [
+  ["あいさつ", "{{name}} さん\n\nいつもありがとうございます。シアニンです。\n"],
+  ["日時と場所", "■ 日時\n{{date}}〜{{end}}\n\n■ 参加の URL（Zoom）\n{{zoom}}\n"],
+  ["準備してほしいこと", "当日までに、いまの課題を 1 つだけ決めておいてください。画面を共有できるようにしておくとスムーズです。\n"],
+  ["変更・キャンセルの案内", "日時の変更・キャンセルは、マイページの「予約」からできます。\n{{booking_url}}\n"],
+  ["いただいた回答", "■ いただいた回答\n{{answers}}\n"],
+  ["結び", "当日お会いできるのを楽しみにしています。\n\n{{sign}}"],
+];
+let btTpls = [], btSteps = null;
+function btRemindHtml() {
+  return `<h3 class="bt-h">リマインド</h3><p class="note bt-hint">予約の前後に自動で送るメール。タイミングとテンプレートを選ぶだけで設定でき、テンプレートはほかの予約メニューでも使い回せます。変更はすぐに保存されます。</p>
+    <div id="bt-tl" class="bt-tl"><p class="note">読み込んでいます…</p></div>
+    <div class="bt-tladd"><button type="button" class="btn ghost small" id="bt-stadd">＋ 通知を追加</button></div>
+    <h3 class="bt-h" style="margin-top:26px">テンプレート</h3><p class="note bt-hint">クリックすると編集できます。差し込み項目（名前・日時・Zoom・回答など）はボタンか「/」で入れられます。</p>
+    <div class="bt-tpl" id="bt-tpl"></div>`;
 }
-function wireBtRemind(t) {
-  $("bn").addEventListener("submit", async (ev) => {
-    ev.preventDefault();
-    const h = $("bn-rm").value;
-    const body = { id: t.id, confirm_subject: $("bn-cs").value.trim(), confirm_body: $("bn-cb").value, remind_subject: $("bn-rs").value.trim(), remind_body: $("bn-rb").value, remind_minutes: h ? Math.round(Number(h) * 60) : null };
-    const res = await api("/api/admin/booking-types", { method: "POST", token, body });
-    if (!res.ok) { $("bn-status").textContent = BT_WHY[res.error] || "保存できませんでした（" + (res.error || res.status) + "）"; return; }
-    openBookingType(t.id, { tab: "remind", msg: "リマインドを保存しました" });
+async function wireBtRemind(t) {
+  const r = await api("/api/admin/booking-templates", { token });
+  if (!$("bt-tl")) return;
+  btTpls = r.ok ? r.templates : [];
+  btSteps = Array.isArray(t.reminders) ? JSON.parse(JSON.stringify(t.reminders)) : null;
+  const tplName = (id) => (btTpls.find((x) => x.id === id) || {}).name || "（削除されたテンプレート）";
+  const draw = () => {
+    if (!btSteps) {
+      $("bt-tl").innerHTML = `<div class="bt-legacy"><b>標準の通知を使っています</b><span>予約した直後の確認メール${t.remind_minutes != null ? `と、開始 ${btOffLab(t.remind_minutes)}前のメール` : ""}を送ります。</span><button type="button" class="btn small" id="bt-conv">テンプレートで編集する</button></div>`;
+      $("bt-stadd").classList.add("hidden");
+    } else {
+      $("bt-stadd").classList.remove("hidden");
+      const order = btSteps.map((st, i) => [st, i]).sort((x, y) => btWhenOrder(x[0]) - btWhenOrder(y[0]));
+      $("bt-tl").innerHTML = order.map(([st, i]) => `<div class="bt-st${st.on ? " on" : " off"}">
+        <div class="when"><select data-stw="${i}" aria-label="タイミング">${Object.entries({ booked: "予約した直後", before: "開始前", after: "終了後", canceled: "キャンセルされたとき" }).map(([k, n]) => `<option value="${k}"${k === st.when ? " selected" : ""}>${n}</option>`).join("")}</select>
+          ${st.when === "before" || st.when === "after" ? `<select data-stm="${i}" aria-label="どれだけ${st.when === "before" ? "前" : "後"}">${btOpt(BT_OFF, st.minutes, (m) => btOffLab(m) + (st.when === "before" ? "前" : "後"))}</select>` : ""}</div>
+        <span class="ch">メール</span>
+        <div class="tp"><select data-stt="${i}" aria-label="${esc(btWhenLab(st))} のテンプレート">${btTpls.map((x) => `<option value="${x.id}"${x.id === st.template_id ? " selected" : ""}>${esc(x.name)}</option>`).join("")}${btTpls.some((x) => x.id === st.template_id) ? "" : '<option selected value="">（テンプレートを選択）</option>'}</select><button type="button" class="btn ghost small" data-edt="${st.template_id}">編集</button></div>
+        <button type="button" class="sw" role="switch" aria-checked="${st.on}" data-ston="${i}" aria-label="${esc(btWhenLab(st))} を送る"></button>
+        <button type="button" class="btn ghost small" data-stdel="${i}" aria-label="${esc(btWhenLab(st))} の通知を削除">削除</button></div>`).join("") || '<p class="note">通知はありません。「＋ 通知を追加」から追加します。</p>';
+    }
+    $("bt-tpl").innerHTML = btTpls.map((x) => { const used = x.used || []; return `<button type="button" class="bt-tplc" data-edt="${x.id}"><b>${esc(x.name)}</b><span>件名：${esc(x.subject).replace(/\{\{(\w+)\}\}/g, (m, k) => `［${BT_TOK[k] || k}］`)}</span><small>${used.length ? "使用中：" + esc(used.join("・")) : "未使用"}</small></button>`; }).join("")
+      + '<button type="button" class="bt-tplc new" data-edt="new">＋ テンプレートを作成</button>';
+  };
+  let saving = Promise.resolve();
+  const save = (msg, undo) => { saving = saving.then(async () => {
+    const res = await api("/api/admin/booking-types", { method: "POST", token, body: { id: t.id, reminders: btSteps } });
+    if (!res.ok) { btUndo("保存できませんでした（" + (BT_WHY[res.error] || res.note || res.error) + "）"); return; }
+    t.reminders = res.type.reminders; btSteps = JSON.parse(JSON.stringify(t.reminders || [])); draw();
+    const rr = await api("/api/admin/booking-templates", { token }); if (rr.ok) { btTpls = rr.templates; draw(); }
+    btUndo(msg, undo);
+  }); };
+  draw();
+  const root = $("bt-tl").closest("[data-btpane]");
+  root.addEventListener("change", (e) => {
+    const x = e.target, i = +(x.dataset.stw ?? x.dataset.stm ?? x.dataset.stt ?? -1); if (i < 0 || !btSteps) return;
+    const was = JSON.stringify(btSteps), st = btSteps[i];
+    if (x.dataset.stw != null) { st.when = x.value; if ((st.when === "before" || st.when === "after") && !st.minutes) st.minutes = st.when === "before" ? 1440 : 60; if (st.when === "booked" || st.when === "canceled") st.minutes = 0; }
+    if (x.dataset.stm != null) st.minutes = Number(x.value);
+    if (x.dataset.stt != null) { if (!x.value) return; st.template_id = x.value; }
+    save(`「${btWhenLab(st)}」を保存しました`, () => { btSteps = JSON.parse(was); save("元に戻しました"); });
   });
+  root.addEventListener("click", async (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    if (b.id === "bt-conv") { b.disabled = true; await btConvert(t); btSteps = t.reminders; const rr = await api("/api/admin/booking-templates", { token }); if (rr.ok) btTpls = rr.templates; draw(); btUndo("テンプレートで編集できるようにしました"); return; }
+    if (b.id === "bt-stadd") { if (!btTpls.length) { btOpenTpl("new", t, draw); return; } const was = JSON.stringify(btSteps); btSteps.push({ when: "before", minutes: 60, template_id: btTpls[0].id, on: true }); save("「開始 1 時間前」を追加しました。タイミングとテンプレートは選び直せます", () => { btSteps = JSON.parse(was); save("元に戻しました"); }); return; }
+    if (b.dataset.ston != null) { const st = btSteps[+b.dataset.ston], was = JSON.stringify(btSteps); st.on = !st.on; save(`「${btWhenLab(st)}」を${st.on ? "オン" : "オフ"}にしました`, () => { btSteps = JSON.parse(was); save("元に戻しました"); }); return; }
+    if (b.dataset.stdel != null) { const i = +b.dataset.stdel, was = JSON.stringify(btSteps), st = btSteps[i]; btSteps.splice(i, 1); save(`「${btWhenLab(st)}」の通知を削除しました`, () => { btSteps = JSON.parse(was); save("元に戻しました"); }); return; }
+    if (b.dataset.edt) btOpenTpl(b.dataset.edt, t, async () => { const rr = await api("/api/admin/booking-templates", { token }); if (rr.ok) btTpls = rr.templates; draw(); });
+  });
+}
+// 標準の通知（確認メール・前日）をテンプレートに移して、並びを作る
+async function btConvert(t) {
+  const mk = async (name, subject, body) => (await api("/api/admin/booking-templates", { method: "POST", token, body: { name, subject, body } })).template;
+  const c = await mk(`${t.title.slice(0, 40)}：受付`, t.confirm_subject, t.confirm_body);
+  const r = await mk(`${t.title.slice(0, 40)}：前日`, t.remind_subject, t.remind_body);
+  const steps = [{ when: "booked", minutes: 0, template_id: c.id, on: true }, { when: "before", minutes: t.remind_minutes ?? 1440, template_id: r.id, on: t.remind_minutes != null }];
+  const res = await api("/api/admin/booking-types", { method: "POST", token, body: { id: t.id, reminders: steps } });
+  if (res.ok) t.reminders = res.type.reminders;
+}
+// テンプレートの編集（差し込み項目は札で表示。ボタン・「/」・定型文で入れる。右にプレビュー）
+const btChip = (k) => `<span class="tok" contenteditable="false" data-k="${k}">${esc(BT_TOK[k] || k)}</span>`;
+const btToHtml = (x) => esc(x).replace(/\{\{(\w+)\}\}/g, (m, k) => btChip(k)).replace(/\n/g, "<br>");
+function btToText(el) {
+  let out = "";
+  el.childNodes.forEach((n) => {
+    if (n.nodeType === 3) out += n.textContent;
+    else if (n.classList && n.classList.contains("tok")) out += `{{${n.dataset.k}}}`;
+    else if (n.nodeName === "BR") out += "\n";
+    else { if (out && !out.endsWith("\n") && (n.nodeName === "DIV" || n.nodeName === "P")) out += "\n"; out += btToText(n); }
+  });
+  return out.replace(/​/g, "");
+}
+const btRanges = new WeakMap();
+document.addEventListener("selectionchange", () => {
+  const sel = getSelection(); if (!sel.rangeCount) return;
+  const ed = sel.anchorNode && (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement)?.closest(".bt-ed");
+  if (ed) btRanges.set(ed, sel.getRangeAt(0).cloneRange());
+});
+function btInsert(ed, html) {
+  ed.focus();
+  const sel = getSelection();
+  let r = btRanges.get(ed);
+  if (!r || !ed.contains(r.startContainer)) { r = document.createRange(); r.selectNodeContents(ed); r.collapse(false); }
+  const host = (r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement).closest(".tok");
+  if (host) { r = document.createRange(); r.setStartAfter(host); r.collapse(true); }
+  sel.removeAllRanges(); sel.addRange(r); r.deleteContents();
+  const frag = r.createContextualFragment(html), last = frag.lastChild; r.insertNode(frag);
+  if (last) { r.setStartAfter(last); r.collapse(true); sel.removeAllRanges(); sel.addRange(r); btRanges.set(ed, r.cloneRange()); }
+}
+function btOpenTpl(id, t, after) {
+  const x = id === "new" ? { id: null, name: "", subject: "", body: "", used: [] } : btTpls.find((y) => y.id === id);
+  if (!x) return;
+  const back = document.activeElement;
+  let bg = $("bt-mbg");
+  if (!bg) { document.body.insertAdjacentHTML("beforeend", '<div class="bt-mbg hidden" id="bt-mbg"><div class="bt-modal" role="dialog" aria-modal="true" aria-labelledby="bt-m-title" id="bt-modal"></div></div>'); bg = $("bt-mbg"); }
+  const fill = (v) => v.replace(/\{\{(\w+)\}\}/g, (m, k) => (k in BT_SAMPLE ? BT_SAMPLE[k] : m));
+  $("bt-modal").innerHTML = `<div class="mh"><h3 id="bt-m-title">${x.id ? "テンプレートを編集" : "テンプレートを作成"}</h3><button type="button" class="bt-ic" id="bt-m-x" aria-label="閉じる">✕</button></div>
+    <div class="bt-mcols"><div class="stack">
+      <div><label for="bt-m-n">テンプレート名</label><input id="bt-m-n" type="text" maxlength="60" value="${esc(x.name)}" placeholder="例 前日のお知らせ"></div>
+      <div><span class="lbl">件名</span><div class="bt-ed one" id="bt-m-s" contenteditable="true" role="textbox" aria-label="件名" data-ph="件名を入力">${btToHtml(x.subject)}</div></div>
+      <div><span class="lbl">本文</span>
+        <div class="bt-edbar"><span class="note">差し込み項目</span>${Object.entries(BT_TOK).map(([k, n]) => `<button type="button" class="tokbtn" data-ins="${k}">＋ ${esc(n)}</button>`).join("")}</div>
+        <div class="bt-ed" id="bt-m-b" contenteditable="true" role="textbox" aria-multiline="true" aria-label="本文" data-ph="本文を入力。「/」で差し込み項目を入れられます">${btToHtml(x.body)}</div>
+        <div class="bt-slash hidden" id="bt-slash" role="listbox" aria-label="差し込み項目">${Object.entries(BT_TOK).map(([k, n], i) => `<button type="button" role="option" data-sl="${k}" aria-selected="${i === 0}">${esc(n)}</button>`).join("")}</div>
+        <div class="bt-edfoot"><span id="bt-m-cnt"></span><span style="flex:1"></span><button type="button" class="btn ghost small" id="bt-m-ai">Claude への指示文をコピー</button></div></div>
+      <div><span class="lbl">定型文（クリックでカーソル位置に入れる）</span><div class="bt-phr">${BT_PHRASES.map(([n], i) => `<button type="button" data-ph="${i}">${esc(n)}</button>`).join("")}</div></div>
+    </div>
+    <div><div class="bt-toolbar"><span class="lbl" style="margin:0">プレビュー</span><span class="sp"></span><button type="button" class="btn ghost small" id="bt-m-test">テスト送信</button></div>
+      <div class="bt-phone"><div class="ph-h"><b id="bt-pv-s"></b><span>シアラボ → 生徒 A</span></div><div class="ph-b" id="bt-pv-b"></div></div>
+      <p class="note" style="margin-top:8px" id="bt-m-note">差し込み項目は見本（生徒 A・11月12日 20:00〜20:30）で表示しています。</p></div></div>
+    <div class="bt-mfoot">${x.id ? '<button type="button" class="btn ghost small danger" id="bt-m-del">このテンプレートを削除</button>' : ""}<span style="flex:1"></span><span class="note" id="bt-m-msg" role="status"></span><button type="button" class="btn ghost" id="bt-m-c">キャンセル</button><button type="button" class="btn" id="bt-m-ok">保存</button></div>`;
+  const S = $("bt-m-s"), B = $("bt-m-b");
+  const pv = () => { const sv = btToText(S), bv = btToText(B); $("bt-pv-s").textContent = fill(sv) || "（件名なし）"; $("bt-pv-b").textContent = fill(bv) || "（本文なし）"; $("bt-m-cnt").textContent = `${bv.length} 字`; B.classList.toggle("empty", !bv.trim()); S.classList.toggle("empty", !sv.trim()); };
+  bg.classList.remove("hidden"); pv(); (x.id ? B : $("bt-m-n")).focus();
+  let lastEd = B;
+  [S, B].forEach((ed) => { ed.addEventListener("focus", () => { lastEd = ed; }); ed.addEventListener("input", pv); });
+  S.addEventListener("keydown", (e) => { if (e.key === "Enter") e.preventDefault(); });
+  const sl = $("bt-slash"); let slI = 0;
+  const opts = () => [...sl.querySelectorAll("[data-sl]")];
+  const slShow = (on) => { sl.classList.toggle("hidden", !on); if (on) { slI = 0; opts().forEach((o, i) => o.setAttribute("aria-selected", String(i === 0))); } };
+  B.addEventListener("keydown", (e) => {
+    if (!sl.classList.contains("hidden")) {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); slI = (slI + (e.key === "ArrowDown" ? 1 : -1) + opts().length) % opts().length; opts().forEach((o, i) => o.setAttribute("aria-selected", String(i === slI))); return; }
+      if (e.key === "Enter") { e.preventDefault(); opts()[slI].click(); return; }
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); slShow(false); return; }
+      slShow(false);
+    }
+    if (e.key === "/") { e.preventDefault(); slShow(true); }
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); btInsert(B, "<br>​"); pv(); }
+  });
+  sl.addEventListener("click", (e) => { const o = e.target.closest("[data-sl]"); if (!o) return; slShow(false); btInsert(B, btChip(o.dataset.sl) + "​"); pv(); });
+  $("bt-modal").onclick = (e) => {
+    const ins = e.target.closest("[data-ins]"); if (ins) { btInsert(lastEd, btChip(ins.dataset.ins) + "​"); pv(); return; }
+    const ph = e.target.closest("[data-ph]"); if (ph && ph.tagName === "BUTTON") { btInsert(B, btToHtml(BT_PHRASES[+ph.dataset.ph][1])); pv(); }
+  };
+  const msg = (v) => { $("bt-m-msg").textContent = v; };
+  $("bt-m-test").onclick = async () => { msg("テスト送信しています…"); const res = await api("/api/admin/booking-templates/test", { method: "POST", token, body: { subject: btToText(S), body: btToText(B), type_id: t.id } }); msg(res.ok ? `${res.to} にテスト送信しました` : "送れませんでした（" + (res.note || res.error || res.result) + "）"); };
+  $("bt-m-ai").onclick = async () => {
+    const txt = `「${t.title}」の予約の「${$("bt-m-n").value || "通知"}」メールの下書きを書いてください。\n・送る人：シアニン → 予約した人\n・使える差し込み：${Object.entries(BT_TOK).map(([k, n]) => `{{${k}}}＝${n}`).join("、")}\n・やわらかく、短く。件名と本文を分けて。\n・いまの件名：${btToText(S)}\n・いまの本文：\n${btToText(B)}`;
+    try { await navigator.clipboard.writeText(txt); msg("指示文をコピーしました。Claude に貼り付けると下書きが返ってきます"); } catch (_) { msg("コピーできませんでした"); }
+  };
+  const close = () => { bg.classList.add("hidden"); document.removeEventListener("keydown", onKey); if (back && back.focus) back.focus(); };
+  const onKey = (e) => { if (e.key === "Escape" && sl.classList.contains("hidden")) close(); };
+  document.addEventListener("keydown", onKey);
+  bg.onclick = (e) => { if (e.target === bg) close(); };
+  $("bt-m-x").onclick = close; $("bt-m-c").onclick = close;
+  if ($("bt-m-del")) $("bt-m-del").onclick = async () => {
+    const res = await api("/api/admin/booking-templates", { method: "POST", token, body: { id: x.id, archived: true } });
+    if (!res.ok) { msg(res.error === "template_in_use" ? `使用中のため削除できません（${(res.used || []).join("・")}）。先に通知のテンプレートを変えてください` : "削除できませんでした"); return; }
+    close(); await after();
+    btUndo(`テンプレート「${x.name}」を削除しました`, async () => { await api("/api/admin/booking-templates", { method: "POST", token, body: { id: x.id, archived: false } }); await after(); });
+  };
+  $("bt-m-ok").onclick = async () => {
+    const body = { name: $("bt-m-n").value.trim(), subject: btToText(S).trim(), body: btToText(B).trim() };
+    if (!body.name) { msg("テンプレート名を入力してください"); $("bt-m-n").focus(); return; }
+    if (!body.subject) { msg("件名を入力してください"); S.focus(); return; }
+    if (!body.body) { msg("本文を入力してください"); B.focus(); return; }
+    const res = await api("/api/admin/booking-templates", { method: "POST", token, body: x.id ? { id: x.id, ...body } : body });
+    if (!res.ok) { msg("保存できませんでした（" + res.error + "）"); return; }
+    close(); await after(); btUndo(x.id ? "テンプレートを保存しました" : "テンプレートを作成しました。通知のテンプレートで選べます");
+  };
 }
 async function bookingTypeEditor() {
   currentBt = null;

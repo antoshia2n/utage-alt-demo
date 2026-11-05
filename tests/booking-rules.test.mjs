@@ -146,3 +146,66 @@ test("回答形式：単一選択・複数選択は選択肢が 2 つ以上要�
   assert.deepEqual(r.answers.map((a) => a.value), ["対面", "X、LP", "120000"]);
   assert.deepEqual(r.answers[1].values, ["X", "LP"]);
 });
+
+// ---- 便④：リマインドのシナリオとテンプレート ----
+import { cleanReminders, remindAt } from "../src/booking.js";
+const TID = "22222222-2222-4222-8222-222222222222";
+test("通知の並びの決まり：タイミング・分・テンプレート", () => {
+  assert.equal(cleanReminders([{ when: "soon", template_id: TID }]).error, "bad_reminders");
+  assert.equal(cleanReminders([{ when: "before", minutes: 5, template_id: TID }]).error, "bad_reminders");
+  assert.equal(cleanReminders([{ when: "booked", template_id: "x" }]).error, "bad_reminders");
+  const r = cleanReminders([{ key: "a", when: "before", minutes: 60, template_id: TID }, { key: "a", when: "canceled", template_id: TID, on: false }]).reminders;
+  assert.deepEqual(r.map((x) => [x.key, x.minutes, x.on]), [["a", 60, true], ["s2", 0, false]]);
+  const b = { slot: iso("2026-11-09 20:00"), minutes: 30 };
+  assert.equal(remindAt({ when: "before", minutes: 60 }, b), jst("2026-11-09 19:00"));
+  assert.equal(remindAt({ when: "after", minutes: 60 }, b), jst("2026-11-09 21:30"));
+});
+
+function setup4() {
+  const st = fakeStore(), mails = [];
+  const addEvent = async (e, cid, type, payload, actor = "site") => { const [row] = await st.db(e, "POST", "events", [{ customer_id: cid, type, payload, actor }], "return=representation"); return row; };
+  const bin3 = { async sendMail(e, person, m) { mails.push({ to: person.email, ...m }); return { result: "sent" }; } };
+  const bk = makeBooking({ db: st.db, addEvent, logInbound: async () => {}, bin3, registerPerson: async () => ({ ok: false }), busyBetween: async () => ({ state: "ok", busy: [] }), pagesOrigin: () => "", afterBooked: async () => ({ ok: true }) });
+  st.table("customers").push({ id: stu.id, name: "生徒", email: "s@example.com" }, { id: "33333333-3333-4333-8333-333333333333", name: "管理", email: "admin@example.com" });
+  // 試験の表は番号を数で振るので、テンプレートは UUID の行を直に入れる
+  let n = 0;
+  const T = (name, subject, body = "{{name}} さん {{booking_url}}") => { const id = `4444444${++n}-4444-4444-8444-444444444444`.slice(-36); st.table("b_booking_templates").push({ id, name, subject, body, created_at: new Date(n * 1000).toISOString(), archived_at: null }); return id; };
+  return { st, bk, mails, T };
+}
+
+test("テンプレート：作る・直す。使っているメニューがあると消せない", async () => {
+  const { bk, T } = setup4();
+  assert.equal((await bk.setTemplate(env, { name: "", subject: "a", body: "b" })).error, "bad_template_name");
+  assert.equal((await bk.setTemplate(env, { name: "x", subject: "a", body: "b" })).ok, true);
+  const t1 = { id: T("受付", "【受付】{{title}}") };
+  assert.equal((await bk.setTemplate(env, { id: t1.id, name: "受付（標準）" })).template.name, "受付（標準）");
+  await bk.set(env, member({ reminders: [{ when: "booked", template_id: t1.id }] }), "mcp");
+  const l = await bk.listTemplates(env);
+  assert.deepEqual(l.templates.find((x) => x.id === t1.id).used, ["相談"]);
+  assert.equal((await bk.setTemplate(env, { id: t1.id, archived: true })).error, "template_in_use");
+  assert.equal((await bk.set(env, { ...member({ slug: "other" }), reminders: [{ when: "booked", template_id: TID }] })).error, "template_not_found");
+});
+
+test("通知：予約した直後・キャンセルされたとき・開始の前・終わったあと（1 回だけ）", async () => {
+  const { bk, mails, T } = setup4();
+  const [a, b, c, d] = [T("受付", "受付 {{title}}"), T("前", "1 時間前"), T("後", "お礼"), T("取消", "キャンセル")];
+  await bk.set(env, member({ days_ahead: 3, reminders: [{ when: "booked", template_id: a }, { when: "before", minutes: 60, template_id: b }, { when: "after", minutes: 60, template_id: c }, { when: "canceled", template_id: d }, { when: "before", minutes: 1440, template_id: b, on: false }] }), "mcp");
+  const slot = (await bk.forMember(env, stu, basic, false)).types[0].slots[30].slot;
+  await bk.memberBook(env, stu, basic, false, { slug: "consult", slot });
+  assert.deepEqual(mails.map((m) => m.subject), ["受付 相談"]);
+  assert.ok(mails[0].text.includes("https://lab.shia2n.jp/app#booking"));
+  const s0 = Date.parse(slot);
+  await bk.run(env, s0 - 50 * 60e3); await bk.run(env, s0 - 40 * 60e3);
+  await bk.run(env, s0 + 100 * 60e3);
+  assert.deepEqual(mails.map((m) => m.subject), ["受付 相談", "1 時間前", "お礼"]);
+  await bk.memberCancel(env, stu, { slot });
+  assert.equal(mails.at(-1).subject, "キャンセル"); assert.equal(mails.length, 4);
+});
+
+test("テスト送信：見本で差し込み、管理者に【テスト】で送る", async () => {
+  const { bk, mails } = setup4();
+  assert.equal((await bk.testTemplate(env, { subject: "x", body: "y" }, "nobody@example.com")).error, "no_admin_person");
+  const r = await bk.testTemplate(env, { subject: "{{title}}", body: "{{name}} さん {{sign}}" }, "admin@example.com");
+  assert.equal(r.ok, true);
+  assert.equal(mails[0].subject, "【テスト】個別相談"); assert.ok(mails[0].text.startsWith("管理 さん"));
+});
