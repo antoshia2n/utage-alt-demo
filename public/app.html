@@ -26,12 +26,13 @@
     <button class="it" type="button" aria-selected="false" data-tab="lessons" data-label="教材"><svg class="si" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6.8C10 5.3 7.2 4.8 4 5.3v13c3.2-.5 6 0 8 1.5 2-1.5 4.8-2 8-1.5v-13c-3.2-.5-6 0-8 1.5zM12 6.8v13"/></svg><span class="lbl">教材</span></button>
     <button class="it" type="button" aria-selected="false" data-tab="room" data-label="添削"><svg class="si" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 19.5h4l10.2-10.2a2.1 2.1 0 0 0-3-3L5.5 16.5zM14 7.5l3 3"/></svg><span class="lbl">添削</span><span class="badge hidden" id="room-badge"></span></button>
     <button class="it hidden" type="button" aria-selected="false" data-tab="goals" data-label="目標"><svg class="si" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19.5h16M7 16v-5M12 16V7M17 16v-8"/></svg><span class="lbl">目標</span></button>
+    <button class="it hidden" type="button" aria-selected="false" data-tab="booking" data-label="予約"><svg class="si" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5.5" width="16" height="14.5" rx="2"/><path d="M8 3.5v4M16 3.5v4M4 10h16M8.5 14.5l2.2 2.2 4.8-4.8"/></svg><span class="lbl">予約</span></button>
     <button class="it" type="button" aria-selected="false" data-tab="apps" data-label="アプリ"><svg class="si" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6.5" height="6.5" rx="1.8"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.8"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.8"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.8"/></svg><span class="lbl">アプリ</span></button>
     <!-- メニューには出さないが、題名に使う画面 -->
     <button class="it hidden" id="side-mypage" type="button" aria-selected="false" data-tab="mypage" data-label="マイページ" data-quiet="1"></button>
     <button class="it hidden" type="button" aria-selected="false" data-tab="news" data-label="お知らせ" data-quiet="1"></button>
     <button class="it hidden" type="button" aria-selected="false" data-tab="review" data-label="振り返り" data-quiet="1"></button>
-    <button class="it hidden" type="button" aria-selected="false" data-tab="booking" data-label="予約"><span class="lbl">予約</span></button>
+
     <button class="it hidden" type="button" aria-selected="false" data-tab="contract" data-label="ご契約" data-quiet="1"></button>
   </nav>
   <div class="main">
@@ -108,7 +109,14 @@
     <section id="tab-news" class="stack hidden"></section>
 
     <section id="tab-booking" class="stack hidden">
-      <div class="card stack">
+      <!-- 相談の予約（2026-11-05）：予約は UTAGE のページで受ける。booking_url があるときはこの 1 枚だけを出す -->
+      <div class="card stack bk-link hidden" id="bk-link">
+        <h1 class="lt" style="margin:0">相談を予約する</h1>
+        <p style="margin:0">シアニンとの個別相談の日時を選んで申し込めます。申し込みでは、月次アンケート（先月の売上と振り返り・今月の目標・相談したいこと）も書きます。</p>
+        <div><a class="btn" id="bk-link-go" href="#" target="_blank" rel="noopener">予約のページを開く ↗</a></div>
+        <p class="note" style="margin:0">予約のページは別のタブで開きます。</p>
+      </div>
+      <div class="card stack" id="bk-own">
         <h3>個別相談を予約する（30 分）</h3>
         <div id="bk-mine"></div>
         <div id="bk-slots" class="slots"></div>
@@ -120,7 +128,7 @@
         </div>
         <div class="note" id="bk-status"></div>
       </div>
-      <h3 style="margin:8px 0 0">セミナー</h3>
+      <h3 style="margin:8px 0 0" id="bk-sem-h">セミナー</h3>
       <div id="bk-seminars" class="stack"></div>
     </section>
 
