@@ -22,3 +22,23 @@ do $$ begin
     alter table public.b_booking_types add constraint b_booking_types_after_chk check (after_actions <@ '{shr_next_mtg}'::text[]);
   end if;
 end $$;
+
+-- 2026-11-05 夜（予約メニュー 1 便目・デモ v5 に Naoki OK）：基本設定と公開範囲の欄を足す。欄を足すだけ
+--   description     … 説明（予約画面の左に表示・1000 字まで）
+--   color           … 色（一覧とカレンダーで区別・#rrggbb か空）
+--   allowed_members … 個別に許可するユーザー（顧客の番号・200 人まで）。会員プランの条件と「または」
+-- 戻し方：alter table public.b_booking_types drop column description, drop column color, drop column allowed_members;
+alter table public.b_booking_types add column if not exists description text not null default '';
+alter table public.b_booking_types add column if not exists color text not null default '';
+alter table public.b_booking_types add column if not exists allowed_members uuid[] not null default '{}';
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'b_booking_types_desc_chk') then
+    alter table public.b_booking_types add constraint b_booking_types_desc_chk check (char_length(description) <= 1000);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'b_booking_types_color_chk') then
+    alter table public.b_booking_types add constraint b_booking_types_color_chk check (color = '' or color ~ '^#[0-9a-f]{6}$');
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'b_booking_types_allowed_chk') then
+    alter table public.b_booking_types add constraint b_booking_types_allowed_chk check (cardinality(allowed_members) <= 200);
+  end if;
+end $$;

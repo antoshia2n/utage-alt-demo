@@ -68,6 +68,7 @@ async function main() {
   $("main").classList.remove("hidden");
   watchSideEnd();
   $("who").textContent = r.me.name || r.me.email;
+  window.__labMe = r.me; // 予約の入力画面で「予約者」を出す
   $("logout").addEventListener("click", async (e) => { e.preventDefault(); await sb.auth.signOut(); location.replace("/"); });
   // 便 2（関門 5）：共通の外枠（？・アプリ一覧・アカウント）。読めなかったときは今までの名前とログアウトのまま
   {
@@ -402,64 +403,181 @@ function paintBookingLine(ready) {
   const old = home.querySelector(".bk-line"); if (old) old.remove();
   home.insertAdjacentHTML("afterbegin", `<div class="bk-line"><span>シアニンに相談したいときは</span><a class="btn small" href="#booking">相談を予約する →</a></div>`);
 }
-const BK_WHY = { slot_taken: "その時間はちょうど埋まりました。ほかの時間を選んでください", already_booked: "この相談は、すでに予約があります", bad_slot: "その時間は選べません", answer_required: "書いていない欄があります", not_found: "この予約はいま受け付けていません" };
-let bkPick = null; // { slug, slot, label }
-async function loadBooking(token) {
-  const r = await api("/api/booking", { token });
-  if (!r.ok) { $("bk-status").textContent = "読めませんでした。" + errText(r); return; }
-  $("bk-status").textContent = "";
-  $("bk-mine").innerHTML = (r.mine || []).map((b) => `<div class="card bk-mine"><div><div class="note" style="margin:0">予約中</div><b>${esc(b.label)}</b>・${esc(b.title)}${/分/.test(b.title) ? "" : `（${esc(b.minutes)} 分）`}</div>
-    <button class="btn ghost small" type="button" data-cancel="${esc(b.slot)}" aria-label="${esc(b.label + " の予約を取り消す")}">取り消す</button></div>`).join("");
-  if (!r.ready) { $("bk-types").innerHTML = `<p class="note">${esc(r.note || "いま予約できる個別相談はありません")}</p>`; wireCancel(token); return; }
-  $("bk-types").innerHTML = r.types.map((t) => {
-    const head = `<h2 class="bk-h">${esc(t.title)}${t.paused ? ' <span class="pill gray">止めている（管理者だけに見えています）</span>' : ""}</h2><p class="note" style="margin:0">${/分/.test(t.title) ? "" : esc(t.minutes) + " 分・"}ご都合のよい時間を 1 つ選んでください</p>`;
-    if (t.booked) return `<section class="card stack">${head}<p class="note" style="margin:0">この相談は予約済みです。別の日時にするときは、上の予約を取り消してから選んでください。</p></section>`;
-    if (!t.slots.length) return `<section class="card stack">${head}<p class="note" style="margin:0">いま予約できる空き時間がありません。少し時間をおいてもう一度ご覧ください。</p></section>`;
-    const days = [];
-    for (const s of t.slots) { let d = days.find((x) => x.day === s.day); if (!d) days.push(d = { day: s.day, items: [] }); d.items.push(s); }
-    const qs = (t.questions || []).map((q) => `<div><label for="bkq-${esc(t.slug)}-${esc(q.key)}">${esc(q.label)}${q.required ? '<span class="req">（必須）</span>' : ""}</label>
-      ${q.kind === "text" ? `<input type="text" id="bkq-${esc(t.slug)}-${esc(q.key)}" data-q="${esc(q.key)}" maxlength="200" value="${esc(q.hint)}">`
-        : `<textarea id="bkq-${esc(t.slug)}-${esc(q.key)}" data-q="${esc(q.key)}" rows="${q.hint ? Math.min(8, q.hint.split("\n").length + 1) : 3}" maxlength="4000">${esc(q.hint)}</textarea>`}</div>`).join("");
-    return `<section class="card stack" data-type="${esc(t.slug)}">${head}
-      <div class="slots">${days.map((d) => `<div class="slot-day"><div class="slot-date">${esc(d.day)}</div><div class="slot-row">${d.items.map((s) => `<button type="button" class="slot" aria-pressed="false" data-slot="${esc(s.slot)}" data-label="${esc(s.label)}">${esc(s.label.split("）")[1] || s.label)}</button>`).join("")}</div></div>`).join("")}</div>
-      <div class="bk-form stack hidden"><div class="note" data-picked></div>${qs}
-        <div><button class="btn" type="button" data-go>この日時で予約する</button></div><div class="note" data-msg aria-live="polite"></div></div></section>`;
-  }).join("");
-  document.querySelectorAll("#bk-types [data-type]").forEach((sec) => {
-    const slug = sec.dataset.type, form = sec.querySelector(".bk-form");
-    sec.querySelectorAll("[data-slot]").forEach((b) => b.addEventListener("click", () => {
-      sec.querySelectorAll("[data-slot]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
-      bkPick = { slug, slot: b.dataset.slot, label: b.dataset.label };
-      form.querySelector("[data-picked]").textContent = "選んだ日時：" + b.dataset.label;
-      form.classList.remove("hidden");
-    }));
-    sec.querySelector("[data-go]").addEventListener("click", async (ev) => {
-      const go = ev.currentTarget, msg = sec.querySelector("[data-msg]");
-      if (!bkPick || bkPick.slug !== slug) { msg.textContent = "日時を 1 つ選んでください"; sec.querySelector("[data-slot]").focus(); return; }
-      const answers = Object.fromEntries([...sec.querySelectorAll("[data-q]")].map((x) => [x.dataset.q, x.value]));
-      go.disabled = true; msg.textContent = "予約しています…";
-      const res = await api("/api/booking", { method: "POST", token, body: { slug, slot: bkPick.slot, answers } });
-      go.disabled = false;
-      if (!res.ok) {
-        msg.textContent = (res.error === "answer_required" ? `「${res.label}」を書いてください` : BK_WHY[res.error]) || "予約できませんでした。" + errText(res);
-        const f = res.key && sec.querySelector(`[data-q="${CSS.escape(res.key)}"]`); if (f) f.focus();
-        if (res.error === "slot_taken") loadBooking(token);
-        return;
-      }
-      bkPick = null;
-      await loadBooking(token);
-      $("bk-status").textContent = `${res.label} で予約しました。確認のメールをお送りしました`;
-    });
-  });
-  wireCancel(token);
+const BK_WHY = { slot_taken: "その時間はちょうど埋まりました。ほかの時間を選択してください", already_booked: "このメニューは、すでに予約があります", bad_slot: "その時間は選択できません", answer_required: "入力されていない項目があります", not_found: "この予約はいま受け付けていません" };
+const BK_WD = ["日", "月", "火", "水", "木", "金", "土"];
+// 状態：bk.data＝サーバーの答え・bk.menu＝選んでいるメニュー・bk.day＝選んだ日（YYYY-MM-DD・日本時間）・bk.slot＝選んだ枠・bk.ym＝表示中の月・bk.moving＝日時を変更している予約・bk.draft＝書きかけ
+const bk = { token: null, data: null, menu: null, day: null, slot: null, ym: null, moving: null, draft: {}, step: "pick" };
+const jstKey = (iso) => new Date(Date.parse(iso) + 9 * 3600e3).toISOString().slice(0, 10);
+const bkDayLabel = (key) => { const [y, m, d] = key.split("-").map(Number); return `${m}月${d}日（${BK_WD[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]}）`; };
+const bkTime = (iso) => new Date(Date.parse(iso) + 9 * 3600e3).toISOString().slice(11, 16);
+const bkSpan = (s) => `${bkTime(s.slot)}〜${s.end}`;
+let bkToastTimer = null;
+function bkToast(text, undo) {
+  $("bk-toast-t").textContent = text; $("bk-toast-u").classList.toggle("hidden", !undo);
+  $("bk-toast-u").onclick = async () => { $("bk-toast").classList.add("hidden"); if (undo) await undo(); };
+  $("bk-toast").classList.remove("hidden"); clearTimeout(bkToastTimer); bkToastTimer = setTimeout(() => $("bk-toast").classList.add("hidden"), 8000);
 }
-function wireCancel(token) {
-  document.querySelectorAll("#bk-mine [data-cancel]").forEach((b) => b.addEventListener("click", async () => {
-    b.disabled = true;
-    const res = await api("/api/booking/cancel", { method: "POST", token, body: { slot: b.dataset.cancel } });
-    await loadBooking(token);
-    $("bk-status").textContent = res.ok ? "予約を取り消しました。もう一度予約するときは、下から日時を選べます" : "取り消せませんでした。" + errText(res);
+async function loadBooking(token) {
+  bk.token = token;
+  const r = await api("/api/booking", { token });
+  if (!r.ok) { $("bk-main").innerHTML = `<p class="note">読み込めませんでした。${esc(errText(r))}</p>`; return; }
+  bk.data = r;
+  drawMine();
+  if (!r.ready) { $("bk-menus").innerHTML = ""; $("bk-main").innerHTML = `<div class="card"><p class="note" style="margin:0">${esc(r.note || "いま予約できる個別相談はありません")}</p></div>`; return; }
+  if (!bk.menu || !r.types.some((t) => t.slug === bk.menu)) bk.menu = (r.types.find((t) => !t.booked) || r.types[0]).slug;
+  drawMenus(); startPick();
+}
+function bkMenu() { return bk.data.types.find((t) => t.slug === bk.menu); }
+function drawMine() {
+  $("bk-mine").innerHTML = (bk.data.mine || []).map((b) => { const k = jstKey(b.slot), [, m, d] = k.split("-").map(Number);
+    return `<div class="bk-mine"><div class="dt" aria-hidden="true"><small>${m}月</small><b>${d}</b></div><div class="tx"><b>${esc(bkDayLabel(k))} ${esc(bkTime(b.slot))}〜${esc(b.end)}</b><span>${esc(b.title)}・予約済み</span></div>
+      ${b.slug ? `<button class="lnk" type="button" data-move="${esc(b.slot)}" aria-label="${esc(bkDayLabel(k) + " の予約の日時を変更")}">日時を変更</button>` : ""}<button class="lnk" type="button" data-cancel="${esc(b.slot)}" aria-label="${esc(bkDayLabel(k) + " の予約をキャンセル")}">キャンセル</button></div>`; }).join("");
+  $("bk-mine").querySelectorAll("[data-move]").forEach((x) => x.addEventListener("click", () => {
+    const b = bk.data.mine.find((y) => y.slot === x.dataset.move); bk.moving = b; bk.menu = b.slug;
+    bk.draft = Object.fromEntries((b.answers || []).map((a) => [a.key, a.value]));
+    drawMenus(); startPick(); bkToast("新しい日時を選ぶと、現在の予約と入れ替わります");
+    $("bk-main").scrollIntoView({ block: "start", behavior: "smooth" });
   }));
+  $("bk-mine").querySelectorAll("[data-cancel]").forEach((x) => x.addEventListener("click", async () => {
+    x.disabled = true;
+    const res = await api("/api/booking/cancel", { method: "POST", token: bk.token, body: { slot: x.dataset.cancel } });
+    if (!res.ok) { x.disabled = false; bkToast("キャンセルできませんでした。" + errText(res)); return; }
+    await loadBooking(bk.token);
+    bkToast("予約をキャンセルしました", async () => {
+      const again = await api("/api/booking", { method: "POST", token: bk.token, body: { slug: res.slug, slot: res.slot, answers: res.answers } });
+      await loadBooking(bk.token);
+      bkToast(again.ok ? "予約を元に戻しました" : "元に戻せませんでした（その時間は埋まりました）");
+    });
+  }));
+}
+function drawMenus() {
+  const ts = bk.data.types;
+  $("bk-menus").innerHTML = ts.length > 1 ? `<div class="bk-menus" role="group" aria-label="メニュー">${ts.map((t) => `<button type="button" aria-pressed="${t.slug === bk.menu}" data-menu="${esc(t.slug)}"><span class="cdot" style="background:${esc(t.color || "var(--accent)")}"></span>${esc(t.title)}</button>`).join("")}</div>` : "";
+  $("bk-menus").querySelectorAll("[data-menu]").forEach((x) => x.addEventListener("click", () => { bk.menu = x.dataset.menu; bk.moving = null; drawMenus(); startPick(); }));
+}
+function startPick() {
+  const t = bkMenu(); bk.step = "pick"; bk.slot = null;
+  const days = [...new Set(t.slots.map((s) => jstKey(s.slot)))];
+  bk.day = days[0] || null;
+  bk.ym = (bk.day || jstKey(new Date().toISOString())).slice(0, 7);
+  if (t.booked && !bk.moving) {
+    $("bk-main").innerHTML = `<div class="card"><p style="margin:0"><b>${esc(t.title)}</b> は予約済みです。日時を変えるときは、上の「日時を変更」から選んでください。</p></div>`; bkBar(); return;
+  }
+  $("bk-main").innerHTML = `<div class="booker" id="booker">
+    <aside class="info"><div class="host"><div class="av" aria-hidden="true">シ</div><div><b>シアニン</b><br><span>シアラボ</span></div></div>
+      <h2>${esc(t.title)}</h2>
+      <ul class="meta"><li><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>${esc(t.minutes)} 分</li>
+        ${t.zoom ? '<li><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3"/></svg>Zoom（URL は予約後にメールで届きます）</li>' : ""}
+        <li class="picked hidden" id="bk-picked"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M8 3v4M16 3v4M3.5 10h17"/></svg><span id="bk-picked-t"></span></li>
+        ${bk.moving ? `<li class="moving">変更前：${esc(bkDayLabel(jstKey(bk.moving.slot)))} ${esc(bkTime(bk.moving.slot))}〜${esc(bk.moving.end)}</li>` : ""}</ul>
+      ${t.description ? `<p class="desc">${esc(t.description)}</p>` : ""}${t.paused ? '<p class="desc"><span class="pill gray">停止中（管理者だけに表示）</span></p>' : ""}</aside>
+    <div class="calbox" id="bk-calbox"><div class="cal-h"><b id="bk-ym" aria-live="polite"></b><button class="nav" type="button" id="bk-prev" aria-label="前の月">‹</button><button class="nav" type="button" id="bk-next" aria-label="次の月">›</button></div>
+      <div class="cal" id="bk-cal"></div><div class="tz">タイムゾーン：日本時間（GMT+9）</div></div>
+    <div class="times" id="bk-times"><h3 id="bk-t-h"></h3><div class="tlist" id="bk-tlist"></div>
+      <div class="pick wait" id="bk-pick"><div class="pk-t" id="bk-pk-t">時間を選択すると次へ進めます</div><button class="btn" type="button" id="bk-pk-go">次へ</button></div></div>
+    <form class="formbox hidden" id="bk-form" novalidate></form>
+  </div>`;
+  if (!t.slots.length) { $("bk-cal").innerHTML = ""; $("bk-tlist").innerHTML = '<p class="note">いま予約できる空き時間がありません。少し時間をおいてもう一度ご覧ください。</p>'; }
+  $("bk-prev").onclick = () => { bk.ym = bkShift(bk.ym, -1); drawCal(); };
+  $("bk-next").onclick = () => { bk.ym = bkShift(bk.ym, 1); drawCal(); };
+  $("bk-pk-go").onclick = () => { if (!bk.slot) { $("bk-pk-t").innerHTML = '<b class="err-t">時間を選択してください</b>'; const f = $("bk-tlist").querySelector(".t"); if (f) f.focus(); return; } bkForm(); };
+  $("bk-bar-go").onclick = () => bkForm();
+  drawCal(); drawTimes();
+}
+const bkShift = (ym, n) => { const [y, m] = ym.split("-").map(Number), d = new Date(Date.UTC(y, m - 1 + n, 1)); return d.toISOString().slice(0, 7); };
+function drawCal() {
+  const t = bkMenu(), [y, m] = bk.ym.split("-").map(Number);
+  const open = new Map(); for (const s of t.slots) { const k = jstKey(s.slot); open.set(k, (open.get(k) || 0) + 1); }
+  const months = [...new Set([...open.keys()].map((k) => k.slice(0, 7)))].sort();
+  $("bk-ym").textContent = `${y}年${m}月`;
+  $("bk-prev").disabled = !months.length || bk.ym <= months[0];
+  $("bk-next").disabled = !months.length || bk.ym >= months[months.length - 1];
+  const first = new Date(Date.UTC(y, m - 1, 1)).getUTCDay(), n = new Date(Date.UTC(y, m, 0)).getUTCDate(), today = jstKey(new Date().toISOString());
+  let h = BK_WD.map((w) => `<div class="wd">${w}</div>`).join("") + "<div></div>".repeat(first);
+  for (let d = 1; d <= n; d++) {
+    const k = `${bk.ym}-${String(d).padStart(2, "0")}`, c = open.get(k) || 0, cls = (k === today ? " today" : "");
+    h += c ? `<button type="button" class="d open${cls}" data-day="${k}" aria-pressed="${k === bk.day}" aria-label="${bkDayLabel(k)}・空き ${c} 枠">${d}</button>` : `<div class="d${cls}" aria-hidden="true">${d}</div>`;
+  }
+  $("bk-cal").innerHTML = h;
+  $("bk-cal").querySelectorAll("[data-day]").forEach((x) => x.addEventListener("click", () => { bk.day = x.dataset.day; bk.slot = null; drawCal(); drawTimes(); if (matchMedia("(max-width: 860px)").matches) $("bk-times").scrollIntoView({ block: "start", behavior: "smooth" }); }));
+}
+function drawTimes() {
+  const t = bkMenu();
+  if (!bk.day) { $("bk-t-h").textContent = ""; return; }
+  $("bk-t-h").textContent = bkDayLabel(bk.day);
+  const list = t.slots.filter((s) => jstKey(s.slot) === bk.day);
+  $("bk-tlist").innerHTML = list.map((s) => `<button type="button" class="t" data-slot="${esc(s.slot)}" aria-pressed="${bk.slot === s.slot}" aria-label="${esc(bkSpan(s))}">${esc(bkTime(s.slot))}<small> – ${esc(s.end)}</small></button>`).join("");
+  $("bk-tlist").querySelectorAll("[data-slot]").forEach((x) => x.addEventListener("click", () => { bk.slot = x.dataset.slot; drawTimes(); const f = $("bk-tlist").querySelector(`[data-slot="${CSS.escape(bk.slot)}"]`); if (f) f.focus(); }));
+  const sel = list.find((s) => s.slot === bk.slot);
+  $("bk-pick").classList.toggle("wait", !sel);
+  $("bk-pk-t").innerHTML = sel ? `選択中の日時<b>${esc(bkDayLabel(bk.day))} ${esc(bkSpan(sel))}</b>` : "時間を選択すると次へ進めます";
+  bkBar();
+}
+function bkBar() {
+  const t = bk.data && bk.menu && bkMenu(), sel = t && t.slots.find((s) => s.slot === bk.slot);
+  const show = !!sel && bk.step === "pick" && matchMedia("(max-width: 860px)").matches && !$("tab-booking").classList.contains("hidden");
+  $("bk-bar").classList.toggle("hidden", !show);
+  if (show) $("bk-bar-t").innerHTML = `<b>${esc(bkDayLabel(bk.day))} ${esc(bkSpan(sel))}</b>${esc(t.minutes)} 分`;
+}
+addEventListener("resize", () => { if (bk.data) bkBar(); });
+function bkQ(q) {
+  const v = bk.draft[q.key] ?? q.hint ?? "", id = "bkq-" + q.key;
+  return `<div class="f" data-key="${esc(q.key)}"><label for="${id}">${esc(q.label)}<span class="req">${q.required ? "必須" : "任意"}</span></label>${q.kind === "text"
+    ? `<input type="text" id="${id}" data-q="${esc(q.key)}" maxlength="200" value="${esc(v)}"${q.required ? ' aria-required="true"' : ""}>`
+    : `<textarea id="${id}" data-q="${esc(q.key)}" rows="${Math.max(3, Math.min(8, String(v).split("\n").length + 1))}" maxlength="4000"${q.required ? ' aria-required="true"' : ""}>${esc(v)}</textarea>`}<div class="f-msg hidden"></div></div>`;
+}
+function bkForm() {
+  const t = bkMenu(), sel = t.slots.find((s) => s.slot === bk.slot); if (!sel) return;
+  bk.step = "form";
+  $("booker").classList.add("form-mode"); $("bk-calbox").classList.add("hidden"); $("bk-times").classList.add("hidden");
+  $("bk-picked").classList.remove("hidden"); $("bk-picked-t").textContent = `${bkDayLabel(bk.day)} ${bkSpan(sel)}`;
+  const me = (window.__labMe || {});
+  $("bk-form").innerHTML = `<button class="back" type="button" id="bk-back">‹ 戻る</button><h3>予約内容の入力</h3>
+    <div class="who">予約者：<b>${esc(me.name || "")}</b>${me.email ? `（${esc(me.email)}）` : ""}・ログイン中のアカウントで予約します</div>
+    ${(t.questions || []).map(bkQ).join("") || bkQ({ key: "topic", label: "相談したいこと", kind: "textarea", required: false, hint: "" })}
+    <div class="saved" id="bk-saved">入力内容は自動で下書き保存されます</div>
+    <div class="err-t" id="bk-err" aria-live="polite"></div>
+    <div class="cta"><button class="btn" type="submit">${bk.moving ? "この日時に変更" : "予約を確定"}</button></div>`;
+  $("bk-form").classList.remove("hidden"); bkBar();
+  const firstField = $("bk-form").querySelector("input,textarea"); if (firstField) firstField.focus();
+  $("booker").scrollIntoView({ block: "start", behavior: "smooth" });
+  $("bk-back").onclick = () => { bk.step = "pick"; $("booker").classList.remove("form-mode"); $("bk-calbox").classList.remove("hidden"); $("bk-times").classList.remove("hidden"); $("bk-form").classList.add("hidden"); $("bk-picked").classList.add("hidden"); drawTimes(); const f = $("bk-tlist").querySelector('[aria-pressed="true"]'); if (f) f.focus(); };
+  $("bk-form").oninput = (e) => { const k = e.target.dataset.q; if (!k) return; bk.draft[k] = e.target.value; const f = e.target.closest(".f"); f.classList.remove("bad"); f.querySelector(".f-msg").classList.add("hidden"); $("bk-saved").textContent = "下書き保存しました"; };
+  $("bk-form").onsubmit = async (e) => {
+    e.preventDefault();
+    let first = null;
+    for (const q of t.questions || []) {
+      const f = $("bk-form").querySelector(`.f[data-key="${CSS.escape(q.key)}"]`), el = f.querySelector("input,textarea"), bad = q.required && !el.value.trim();
+      f.classList.toggle("bad", bad); const m = f.querySelector(".f-msg"); m.classList.toggle("hidden", !bad); m.textContent = bad ? "入力してください" : ""; if (bad && !first) first = el;
+    }
+    if (first) { first.focus(); return; }
+    const answers = Object.fromEntries([...$("bk-form").querySelectorAll("[data-q]")].map((x) => [x.dataset.q, x.value]));
+    const go = $("bk-form").querySelector("[type=submit]"); go.disabled = true; $("bk-err").textContent = "予約しています…";
+    const res = await api("/api/booking", { method: "POST", token: bk.token, body: { slug: t.slug, slot: bk.slot, answers, ...(bk.moving ? { from: bk.moving.slot } : {}) } });
+    go.disabled = false;
+    if (!res.ok) {
+      $("bk-err").textContent = (res.error === "answer_required" ? `「${res.label}」を入力してください` : BK_WHY[res.error]) || "予約できませんでした。" + errText(res);
+      if (res.error === "slot_taken") { const keep = bk.draft; await loadBooking(bk.token); bk.draft = keep; }
+      return;
+    }
+    const moved = !!bk.moving;
+    bk.moving = null; bk.draft = {}; bk.step = "done";
+    $("bk-main").innerHTML = `<div class="bk-done" id="bk-done" tabindex="-1"><div class="ok" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
+      <h2>${moved ? "日時を変更しました" : "予約が完了しました"}</h2><p>確認メールを送信しました。前日にリマインドをお送りします。</p>
+      <dl class="sum"><dt>日時</dt><dd>${esc(bkDayLabel(jstKey(res.slot)))} ${esc(bkTime(res.slot))}〜${esc(res.end)}（日本時間）</dd><dt>メニュー</dt><dd>${esc(t.title)}</dd>${t.zoom ? "<dt>場所</dt><dd>Zoom（URL は確認メールに記載）</dd>" : ""}</dl>
+      <div class="addcal"><a class="btn ghost small" target="_blank" rel="noopener" href="${esc(bkGcal(t, res))}">Google カレンダーに追加 ↗</a></div>
+      <div class="cta" style="justify-content:center"><button class="btn small" type="button" id="bk-again">予約画面に戻る</button></div>
+      <p class="note">日時の変更・キャンセルは「予約」画面からいつでもできます</p></div>`;
+    $("bk-done").focus(); bkBar();
+    $("bk-again").onclick = () => loadBooking(bk.token);
+    api("/api/booking", { token: bk.token }).then((r) => { if (r.ok) { bk.data = r; drawMine(); } });
+  };
+}
+// Google カレンダーの「予定を作成」の住所（予約した人が自分のカレンダーに入れる）
+function bkGcal(t, res) {
+  const f = (iso) => new Date(iso).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  const end = new Date(Date.parse(res.slot) + t.minutes * 60e3).toISOString();
+  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(t.title)}&dates=${f(res.slot)}/${f(end)}&details=${encodeURIComponent("参加の URL は確認メールに記載しています")}`;
 }
 
 // ---------- 会員の権利（便 3）と、商品を買う（B の便 4） ----------
