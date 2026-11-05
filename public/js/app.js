@@ -81,7 +81,19 @@ async function main() {
   }
   // 関門 1（2026-10-29）：会員でない人（無料の登録・会員でない買い手）は「ご契約」だけ。ほかのタブは出さない
   if (r.access === "contract") {
-    document.querySelectorAll(".side [data-tab]").forEach((b) => b.classList.toggle("hidden", b.dataset.tab !== "contract"));
+    // 2026-11-05：個別相談の予約は、ご契約だけの画面でも権利が合えば出す
+    const bkOn = r.booking_ready === true;
+    document.querySelectorAll(".side [data-tab]").forEach((b) => b.classList.toggle("hidden", !(b.dataset.tab === "contract" || (bkOn && b.dataset.tab === "booking"))));
+    if (bkOn) {
+      const pick = (name) => {
+        ["contract", "booking"].forEach((t) => { $("tab-" + t).classList.toggle("hidden", t !== name); document.querySelector(`.side [data-tab="${t}"]`).setAttribute("aria-selected", String(t === name)); });
+        $("crumb").textContent = name === "booking" ? "予約" : "ご契約";
+        if (name === "booking") loadBooking(session.access_token);
+      };
+      document.querySelector('.side [data-tab="booking"]').addEventListener("click", () => pick("booking"));
+      document.querySelector('.side [data-tab="contract"]').addEventListener("click", () => pick("contract"));
+      if (location.hash === "#booking") setTimeout(() => pick("booking"), 0);
+    }
     const cb = document.querySelector('.side [data-tab="contract"]'); cb.innerHTML = '<span class="lbl">ご契約</span>'; cb.removeAttribute("data-quiet");
     $("news-btn").classList.add("hidden");
     ["mypage", "goals", "lessons", "lesson", "news", "room", "review", "booking", "apps"].forEach((t) => $("tab-" + t).classList.add("hidden"));
@@ -145,15 +157,15 @@ async function main() {
     $("rf-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText(rf.link); $("rf-copy").textContent = "写しました"; } catch (_) { $("rf-copy").textContent = "写せませんでした"; } });
   }
 
-  // 相談の予約（2026-11-05）：しあらぼの生徒・モニターだけ、サーバーが UTAGE の予約ページの住所を返す
-  const bookingUrl = typeof r.booking_url === "string" && /^https:[/][/]utage-system[.]com[/]/.test(r.booking_url) ? r.booking_url : null;
+  // 個別相談の予約（2026-11-05）：予約できる種類が 1 つでもあれば、左のメニューとホームの 1 行に出す
+  const bookingReady = r.booking_ready === true;
   const sections = ["home", "mypage", "goals", "lessons", "lesson", "news", "room", "review", "booking", "contract", "apps"];
   const showTab = (name) => {
     sections.forEach((s) => $("tab-" + s).classList.toggle("hidden", s !== name));
     if (name === "room") room.open();
     if (name === "review") loadReview(token);
     if (name === "goals") loadGoals(token);
-    if (name === "booking") { if (bookingUrl) showBookingLink(bookingUrl); else loadBooking(token); }
+    if (name === "booking") loadBooking(token);
     if (name === "contract") loadContract(token);
     if (name === "apps") renderApps(r);
     if (name === "home") drawHome();
@@ -175,7 +187,7 @@ async function main() {
     if (!flat.length) { $("tab-home").innerHTML = $("tab-lessons").innerHTML; return; }
     let theme = null; try { theme = localStorage.getItem(THEME_KEY); } catch { /* 覚えられなくても動く */ }
     $("tab-home").innerHTML = homeHtml({ tier: r.tier || "lab", rows: r.home_rows, flat, views, seed: r.me.email || "", theme });
-    paintBookingLine(bookingUrl);
+    paintBookingLine(bookingReady);
     paintGoalCard();
     const sel = $("home-theme");
     if (sel) sel.addEventListener("change", () => { try { localStorage.setItem(THEME_KEY, sel.value); } catch { /* 覚えられなくても今は変わる */ } drawHome(); $("home-theme") && $("home-theme").focus(); });
@@ -299,7 +311,6 @@ async function main() {
   if (!location.hash || location.hash === "#home") showTab("home");
   if (location.hash === "#review") showTab("review");
   // ムダ 2（2026-10-30）：予約は、サーバーが準備できたと返すまで左のメニューに出さない
-  const bookingReady = r.booking_ready === true || !!bookingUrl;
   document.querySelector('.side [data-tab="booking"]').classList.toggle("hidden", !bookingReady);
   if (location.hash === "#booking" && bookingReady) showTab("booking");
   // 目標タブ（2026-10-30）：しあらぼの生徒だけ
@@ -384,73 +395,70 @@ async function loadContract(token) {
   }));
 }
 
-// ---------- 相談の予約（2026-11-05）：UTAGE の予約ページへ飛ぶ ----------
-function showBookingLink(url) {
-  $("bk-link").classList.remove("hidden");
-  $("bk-link-go").href = url;
-  ["bk-own", "bk-sem-h", "bk-seminars"].forEach((id) => $(id).classList.add("hidden"));
-}
+// ---------- 個別相談の予約（2026-11-05）：マーケくんの予約の種類（audience=member） ----------
 // ホームの上に小さく 1 行（学びの記録の上・目標のカードの下）
-function paintBookingLine(url) {
-  const home = $("tab-home") && $("tab-home").querySelector(".home"); if (!home || !url) return;
+function paintBookingLine(ready) {
+  const home = $("tab-home") && $("tab-home").querySelector(".home"); if (!home || !ready) return;
   const old = home.querySelector(".bk-line"); if (old) old.remove();
-  home.insertAdjacentHTML("afterbegin", `<div class="bk-line"><span>シアニンに相談したいときは</span><a class="btn small" href="${esc(url)}" target="_blank" rel="noopener">相談を予約する ↗</a></div>`);
+  home.insertAdjacentHTML("afterbegin", `<div class="bk-line"><span>シアニンに相談したいときは</span><a class="btn small" href="#booking">相談を予約する →</a></div>`);
 }
-
-// ---------- 予約とセミナー（便 4） ----------
-let pickedSlot = null;
+const BK_WHY = { slot_taken: "その時間はちょうど埋まりました。ほかの時間を選んでください", already_booked: "この相談は、すでに予約があります", bad_slot: "その時間は選べません", answer_required: "書いていない欄があります", not_found: "この予約はいま受け付けていません" };
+let bkPick = null; // { slug, slot, label }
 async function loadBooking(token) {
   const r = await api("/api/booking", { token });
   if (!r.ok) { $("bk-status").textContent = "読めませんでした。" + errText(r); return; }
-  // B の便 7c-1：本番では、本物の枠ができるまで（便 8f）準備中だけを出す
-  if (r.ready === false) {
-    $("bk-mine").innerHTML = ""; $("bk-slots").innerHTML = `<p class="note" style="margin:0">${esc(r.note || "準備中です")}</p>`;
-    $("bk-form").classList.add("hidden"); $("bk-seminars").innerHTML = ""; $("bk-status").textContent = "";
-    return;
-  }
-  $("bk-mine").innerHTML = r.mine.length
-    ? r.mine.map((b) => `<div class="msg ok booked"><div><b>予約中：${esc(b.label)}</b>${b.topic ? `<div class="note">${esc(b.topic)}</div>` : ""}</div><button class="btn ghost small" data-cancel="${esc(b.slot)}" type="button">取り消す</button></div>`).join("")
-    : "";
-  const hasBooking = r.mine.length > 0;
-  const days = {};
-  for (const s of r.slots) { const d = s.label.split("）")[0] + "）"; (days[d] = days[d] || []).push(s); }
-  $("bk-slots").innerHTML = hasBooking ? '<p class="note" style="margin:0">予約は 1 件までです。別の日時にするときは、上の予約を取り消してから選んでください。</p>'
-    : Object.entries(days).map(([d, list]) => `<div class="slot-day"><div class="slot-date">${esc(d)}</div><div class="slot-row">${list.map((s) => `<button type="button" class="slot" data-slot="${esc(s.slot)}" data-label="${esc(s.label)}" ${s.taken ? "disabled" : ""}>${esc(s.label.split("）")[1])}${s.taken ? "<small>埋まり</small>" : ""}</button>`).join("")}</div></div>`).join("");
-  $("bk-form").classList.add("hidden");
-  document.querySelectorAll("#bk-slots .slot").forEach((b) => b.addEventListener("click", () => {
-    document.querySelectorAll("#bk-slots .slot").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
-    pickedSlot = b.dataset.slot;
-    $("bk-picked").textContent = "選んだ日時：" + b.dataset.label;
-    $("bk-form").classList.remove("hidden");
-  }));
-  document.querySelectorAll("[data-cancel]").forEach((b) => b.addEventListener("click", async () => {
+  $("bk-status").textContent = "";
+  $("bk-mine").innerHTML = (r.mine || []).map((b) => `<div class="card bk-mine"><div><div class="note" style="margin:0">予約中</div><b>${esc(b.label)}</b>・${esc(b.title)}${/分/.test(b.title) ? "" : `（${esc(b.minutes)} 分）`}</div>
+    <button class="btn ghost small" type="button" data-cancel="${esc(b.slot)}" aria-label="${esc(b.label + " の予約を取り消す")}">取り消す</button></div>`).join("");
+  if (!r.ready) { $("bk-types").innerHTML = `<p class="note">${esc(r.note || "いま予約できる個別相談はありません")}</p>`; wireCancel(token); return; }
+  $("bk-types").innerHTML = r.types.map((t) => {
+    const head = `<h2 class="bk-h">${esc(t.title)}${t.paused ? ' <span class="pill gray">止めている（管理者だけに見えています）</span>' : ""}</h2><p class="note" style="margin:0">${/分/.test(t.title) ? "" : esc(t.minutes) + " 分・"}ご都合のよい時間を 1 つ選んでください</p>`;
+    if (t.booked) return `<section class="card stack">${head}<p class="note" style="margin:0">この相談は予約済みです。別の日時にするときは、上の予約を取り消してから選んでください。</p></section>`;
+    if (!t.slots.length) return `<section class="card stack">${head}<p class="note" style="margin:0">いま予約できる空き時間がありません。少し時間をおいてもう一度ご覧ください。</p></section>`;
+    const days = [];
+    for (const s of t.slots) { let d = days.find((x) => x.day === s.day); if (!d) days.push(d = { day: s.day, items: [] }); d.items.push(s); }
+    const qs = (t.questions || []).map((q) => `<div><label for="bkq-${esc(t.slug)}-${esc(q.key)}">${esc(q.label)}${q.required ? '<span class="req">（必須）</span>' : ""}</label>
+      ${q.kind === "text" ? `<input type="text" id="bkq-${esc(t.slug)}-${esc(q.key)}" data-q="${esc(q.key)}" maxlength="200" value="${esc(q.hint)}">`
+        : `<textarea id="bkq-${esc(t.slug)}-${esc(q.key)}" data-q="${esc(q.key)}" rows="${q.hint ? Math.min(8, q.hint.split("\n").length + 1) : 3}" maxlength="4000">${esc(q.hint)}</textarea>`}</div>`).join("");
+    return `<section class="card stack" data-type="${esc(t.slug)}">${head}
+      <div class="slots">${days.map((d) => `<div class="slot-day"><div class="slot-date">${esc(d.day)}</div><div class="slot-row">${d.items.map((s) => `<button type="button" class="slot" aria-pressed="false" data-slot="${esc(s.slot)}" data-label="${esc(s.label)}">${esc(s.label.split("）")[1] || s.label)}</button>`).join("")}</div></div>`).join("")}</div>
+      <div class="bk-form stack hidden"><div class="note" data-picked></div>${qs}
+        <div><button class="btn" type="button" data-go>この日時で予約する</button></div><div class="note" data-msg aria-live="polite"></div></div></section>`;
+  }).join("");
+  document.querySelectorAll("#bk-types [data-type]").forEach((sec) => {
+    const slug = sec.dataset.type, form = sec.querySelector(".bk-form");
+    sec.querySelectorAll("[data-slot]").forEach((b) => b.addEventListener("click", () => {
+      sec.querySelectorAll("[data-slot]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+      bkPick = { slug, slot: b.dataset.slot, label: b.dataset.label };
+      form.querySelector("[data-picked]").textContent = "選んだ日時：" + b.dataset.label;
+      form.classList.remove("hidden");
+    }));
+    sec.querySelector("[data-go]").addEventListener("click", async (ev) => {
+      const go = ev.currentTarget, msg = sec.querySelector("[data-msg]");
+      if (!bkPick || bkPick.slug !== slug) { msg.textContent = "日時を 1 つ選んでください"; sec.querySelector("[data-slot]").focus(); return; }
+      const answers = Object.fromEntries([...sec.querySelectorAll("[data-q]")].map((x) => [x.dataset.q, x.value]));
+      go.disabled = true; msg.textContent = "予約しています…";
+      const res = await api("/api/booking", { method: "POST", token, body: { slug, slot: bkPick.slot, answers } });
+      go.disabled = false;
+      if (!res.ok) {
+        msg.textContent = (res.error === "answer_required" ? `「${res.label}」を書いてください` : BK_WHY[res.error]) || "予約できませんでした。" + errText(res);
+        const f = res.key && sec.querySelector(`[data-q="${CSS.escape(res.key)}"]`); if (f) f.focus();
+        if (res.error === "slot_taken") loadBooking(token);
+        return;
+      }
+      bkPick = null;
+      await loadBooking(token);
+      $("bk-status").textContent = `${res.label} で予約しました。確認のメールをお送りしました`;
+    });
+  });
+  wireCancel(token);
+}
+function wireCancel(token) {
+  document.querySelectorAll("#bk-mine [data-cancel]").forEach((b) => b.addEventListener("click", async () => {
     b.disabled = true;
     const res = await api("/api/booking/cancel", { method: "POST", token, body: { slot: b.dataset.cancel } });
-    $("bk-status").textContent = res.ok ? "予約を取り消しました" : "取り消せませんでした。" + errText(res);
-    loadBooking(token);
-  }));
-  $("bk-go").onclick = async () => {
-    if (!pickedSlot) return;
-    $("bk-go").disabled = true;
-    const res = await api("/api/booking", { method: "POST", token, body: { slot: pickedSlot, topic: $("bk-topic").value } });
-    $("bk-go").disabled = false;
-    const why = { slot_taken: "その枠は先に埋まりました", already_booked: "予約は 1 件までです", bad_slot: "その枠は選べません" };
-    $("bk-status").textContent = res.ok ? "予約しました（確認のメールを送りました）" : (why[res.error] || "予約できませんでした。" + errText(res));
-    if (res.ok) { pickedSlot = null; $("bk-topic").value = ""; }
-    loadBooking(token);
-  };
-  $("bk-seminars").innerHTML = r.seminars.map((s) => `<div class="card seminar">
-      <div class="note">${esc(s.label)}・${s.minutes} 分${s.past ? "・終了" : ""}</div>
-      <h3>${esc(s.title)}</h3>
-      ${s.past
-        ? (s.archive_url ? `<a class="btn ghost small" href="${esc(s.archive_url)}" target="_blank" rel="noopener">アーカイブを見る</a>` : '<span class="note">申し込んだ人だけアーカイブが見られます</span>')
-        : (s.registered ? `<span class="pill">申込済</span> <a class="note" href="${esc(s.zoom_url)}" target="_blank" rel="noopener">Zoom の URL</a>` : `<button class="btn small" data-sem="${esc(s.id)}" type="button">申し込む</button>`)}
-    </div>`).join("");
-  document.querySelectorAll("[data-sem]").forEach((b) => b.addEventListener("click", async () => {
-    b.disabled = true;
-    const res = await api(`/api/seminars/${b.dataset.sem}/register`, { method: "POST", token });
-    $("bk-status").textContent = res.ok ? "セミナーに申し込みました（Zoom の URL をメールで送りました）" : "申し込めませんでした。" + errText(res);
-    loadBooking(token);
+    await loadBooking(token);
+    $("bk-status").textContent = res.ok ? "予約を取り消しました。もう一度予約するときは、下から日時を選べます" : "取り消せませんでした。" + errText(res);
   }));
 }
 

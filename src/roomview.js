@@ -11,7 +11,7 @@ export function toNotice(e) {
   const p = e.payload || {};
   const base = { id: e.id, kind: "notice", type: e.type, at: e.occurred_at };
   switch (e.type) {
-    case "consult_booked": return { ...base, title: "個別相談の予約", detail: p.type_title || "個別相談", slot: p.slot || null };
+    case "consult_booked": return { ...base, title: "個別相談の予約", detail: p.type_title || "個別相談", slot: p.slot || null, ...(Array.isArray(p.answers) && p.answers.length ? { answers: p.answers.filter((x) => x && x.value).map((x) => ({ label: String(x.label || ""), value: String(x.value || "") })) } : {}) };
     case "consult_canceled": return { ...base, title: "予約の取り消し", detail: p.type_title || "個別相談", slot: p.slot || null };
     case "seminar_registered": return { ...base, title: "セミナーの申込", detail: p.title || "" };
     case "purchase_completed": return { ...base, title: "お申し込み", detail: p.product_name || "", ...(p.mode === "test" ? { test: true } : {}) };

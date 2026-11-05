@@ -118,7 +118,10 @@ export function fmtTime(iso) {
 // 便 15b：部屋の「やり取り」の枠に出す 1 行の知らせ（生徒の画面と Lab OS で同じ形）
 export function noticeHtml(n) {
   const bits = [n.detail, n.slot ? fmtTime(n.slot) : ""].filter(Boolean).map(esc).join("・");
-  return `<div class="notice"><span class="pill gray">${esc(n.title)}</span><span class="n-d">${bits}${n.test ? "（試し）" : ""}</span><time>${fmtTime(n.at)}</time></div>`;
+  // 2026-11-05：予約のときの答え（あれば、たたんで出す）
+  const ans = Array.isArray(n.answers) && n.answers.length
+    ? `<details class="n-ans"><summary>答え ${n.answers.length} 件を見る ▼</summary>${n.answers.map((a) => `<div><b>${esc(a.label)}</b><p style="margin:2px 0 8px;white-space:pre-wrap">${esc(a.value)}</p></div>`).join("")}</details>` : "";
+  return `<div class="notice"><span class="pill gray">${esc(n.title)}</span><span class="n-d">${bits}${n.test ? "（試し）" : ""}</span><time>${fmtTime(n.at)}</time></div>${ans}`;
 }
 
 export function esc(s) {

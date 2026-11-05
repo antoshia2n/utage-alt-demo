@@ -391,4 +391,11 @@ svg.gk-ch { width: 100%; height: auto; display: block; color: var(--ink); }
 /* 相談の予約（2026-11-05）：ホームの上の 1 行。目立たせすぎず、すぐ見つかる */
 body.student .bk-line { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--soft); font-size: 14px; color: var(--muted); }
 body.student .bk-line .btn.small { padding: 0 16px; }
-body.student .bk-line a.btn, body.student #bk-link-go { color: var(--accent-ink); }
+body.student .bk-line a.btn { color: var(--accent-ink); }
+body.student .bk-mine { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+body.student .bk-h { font-size: 20px; font-weight: 700; margin: 0; }
+body.student #tab-booking .req { font-weight: 400; font-size: 12px; color: var(--muted); margin-left: 4px; }
+body.student #tab-booking textarea { width: 100%; box-sizing: border-box; font: inherit; font-size: 14px; line-height: 1.7; border: 1px solid var(--field); border-radius: 10px; padding: 10px 12px; background: var(--surface); color: var(--ink); resize: vertical; }
+body.student #tab-booking input[type=text] { border-color: var(--field); }
+body.student #tab-booking .slot { border-color: var(--field); min-height: 44px; }
+@media (max-width: 860px) { body.student #tab-booking textarea, body.student #tab-booking input[type=text] { font-size: 16px; } }
