@@ -40,7 +40,7 @@ test("追う数字：空と重なりを外して 3 つまで", () => {
 function fake() {
   const t = { member_alias: [{ member_id: "m1", kind: "shr_student_id", value: "44" }, { member_id: "m2", kind: "email_hash", value: "x" }],
     shr_students: [{ id: 44, name: "ひろ", goal: "月 10 万", next_action: "毎日 1 本", next_mtg: "2026-11-02", last_mtg: "2026-10-23", track: ["投稿数"], archived: false, deleted: false }],
-    b_reports: [] };
+    b_reports: [], b_goal_plans: [] };
   const rawDb = async (env, method, path, body) => {
     const [tbl, qs = ""] = path.split("?");
     const f = {}; for (const p of qs.split("&")) { const m = p.match(/^([a-z_]+)=(eq|gte)\.(.*)$/); if (m) f[m[1]] = [m[2], decodeURIComponent(m[3])]; }
@@ -65,4 +65,48 @@ test("生徒だけ：結ばれた人は目標を読めて、書くと同じ日�
   assert.equal(t.b_reports[0].body, "直した");
   assert.equal((await g.save({}, "m2", { kind: "daily", day: TODAY, body: "x" }, TODAY)).error, "not_student");
   assert.equal((await g.view({}, "m2", TODAY)).error, "not_student");
+});
+
+// ---------- 目標達成くん（2026-11-05）：13 週の設計 ----------
+import { checkPlan, seedPlan } from "../src/goals.js";
+
+test("設計：KGI は 3 つまで・長さをそろえる・知らない項目は捨てる・始めた週は月曜にそろえる", () => {
+  const c = checkPlan({ start: "2026-11-05", ideal: "x".repeat(500), kgi: [1, 2, 3, 4].map((i) => ({ n: "K" + i, v: "420", to: "1,000", u: "人" })), hack: 1,
+    bud: [{ n: "睡眠", h: 200, c: "red" }], spare: [5, 5, 0, 14, 10], ext: { 3: 9, "-1": 1 }, ms: [{ n: "状態", kpi: [{ n: "記事", to: 2 }], tasks: [{ t: "書く", hr: 99 }] }] }, "2026-11-05");
+  assert.equal(c.ok, true);
+  const p = c.plan;
+  assert.equal(p.start, "2026-11-02");
+  assert.equal(p.ideal.length, 200);
+  assert.equal(p.kgi.length, 3);
+  assert.deepEqual(p.kgi[0], { n: "K1", v: 420, to: 1000, u: "人" });
+  assert.equal("hack" in p, false);
+  assert.equal(p.bud[0].h, 168);
+  assert.equal(p.bud[0].c.startsWith("#"), true);
+  assert.deepEqual(p.spare, [5, 10]);
+  assert.deepEqual(p.ext, { 3: 3 });
+  assert.equal(p.ms[0].tasks[0].hr, 80);
+  assert.equal(checkPlan(null).error, "bad_plan");
+  assert.equal(checkPlan({ ms: Array.from({ length: 13 }, () => ({ n: "あ".repeat(80), res: "あ".repeat(2000), hyp: "あ".repeat(1000), tasks: Array.from({ length: 20 }, () => ({ t: "あ".repeat(100) })) })) }).error, "plan_too_large");
+});
+
+test("設計：最初の形は、しあらぼ管理の目標と追う数字を写し、168 時間の予算を置く", () => {
+  const p = seedPlan({ goal: "月 10 万", track: ["投稿数"] }, "2026-11-05");
+  assert.equal(p.goal13, "月 10 万");
+  assert.equal(p.goal13Own, 1);
+  assert.equal(p.bud.reduce((a, b) => a + b.h, 0), 168);
+  assert.deepEqual(p.ms[0].kpi.map((k) => k.n), ["投稿数"]);
+  assert.deepEqual(seedPlan({ goal: "", track: [] }, "2026-11-05").ms, []);
+});
+
+test("設計：生徒だけが保存でき、読むと保存した形が返る。保存前は最初の形", async () => {
+  const { g } = fake();
+  const v0 = await g.view({}, "m1", "2026-11-05");
+  assert.equal(v0.plan.saved_at, null);
+  assert.equal(v0.plan.goal13, "月 10 万");
+  const r = await g.savePlan({}, "m1", { plan: { ...v0.plan, ideal: "講座で月 30 万" } }, "2026-11-05");
+  assert.equal(r.ok, true);
+  const v1 = await g.view({}, "m1", "2026-11-05");
+  assert.equal(v1.plan.ideal, "講座で月 30 万");
+  assert.equal((await g.savePlan({}, "m2", { plan: {} }, "2026-11-05")).error, "not_student");
+  assert.equal((await g.savePlan({}, "m1", {}, "2026-11-05")).error, "bad_plan");
 });

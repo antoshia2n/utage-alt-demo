@@ -2,6 +2,7 @@ import { getClient, api, esc, fmtTime, authImage, shrinkImage, noticeHtml } from
 import { correctionHtml, wireNotes } from "/js/correction.js";
 import { setupStudentPush } from "/js/pushclient.js";
 import { flatten, homeHtml, libraryHtml, searchHtml } from "/js/home.js";
+import { planHtml, chainHtml, popHtml, homeCardHtml, applyAction, setPath, weekNo } from "/js/goalplan.js";
 
 
 
@@ -172,6 +173,7 @@ async function main() {
     if (!flat.length) { $("tab-home").innerHTML = $("tab-lessons").innerHTML; return; }
     let theme = null; try { theme = localStorage.getItem(THEME_KEY); } catch { /* 覚えられなくても動く */ }
     $("tab-home").innerHTML = homeHtml({ tier: r.tier || "lab", rows: r.home_rows, flat, views, seed: r.me.email || "", theme });
+    paintGoalCard();
     const sel = $("home-theme");
     if (sel) sel.addEventListener("change", () => { try { localStorage.setItem(THEME_KEY, sel.value); } catch { /* 覚えられなくても今は変わる */ } drawHome(); $("home-theme") && $("home-theme").focus(); });
   };
@@ -300,7 +302,7 @@ async function main() {
   // 目標タブ（2026-10-30）：しあらぼの生徒だけ
   const goalsReady = r.goals_ready === true;
   document.querySelector('.side [data-tab="goals"]').classList.toggle("hidden", !goalsReady);
-  if (goalsReady) wireGoals(token);
+  if (goalsReady) { wireGoals(token); gReady = true; paintGoalCard(); }
   if (location.hash === "#goals" && goalsReady) showTab("goals");
   if (location.hash === "#contract") showTab("contract");
   // 便 8g-1：通知を押して開いた画面がもう出ているとき、住所の # だけが変わるので、ここで部屋へ移る
@@ -652,7 +654,7 @@ main().catch((e) => fail("読み込めませんでした：" + e.message));
 
 
 // ---------- 目標と日報（2026-10-30）：目標はしあらぼ管理が正本（読むだけ）。日報・週報はここで書く ----------
-const G_ERR = { empty: "数字か文のどちらかを入れてください", bad_number: "数字の欄に数でないものが入っています", body_too_long: "2000 字までです", day_out_of_range: "その日はもう直せません（7 日前まで）", not_student: "この画面はしあらぼの生徒向けです" };
+const G_ERR = { empty: "数字か文のどちらかを入れてください", bad_number: "数字の欄に数でないものが入っています", body_too_long: "2000 字までです", day_out_of_range: "その日はもう直せません（7 日前まで）", bad_plan: "送った中身が読めませんでした。画面を読み直してください", plan_too_large: "書いた量が多すぎます。少し短くしてください", not_student: "この画面はしあらぼの生徒向けです" };
 const gErr = (r) => G_ERR[r && r.error] || errText(r);
 let gData = null, gToken = null;
 const gDayLabel = (d) => { const t = new Date(d + "T00:00:00Z"); return `${t.getUTCMonth() + 1}/${t.getUTCDate()}（${"日月火水木金土"[t.getUTCDay()]}）`; };
@@ -677,11 +679,7 @@ function gFillWeekly() {
   $("g-wmsg").textContent = rep ? "この週の振り返りは保存してあります（直して保存し直せます）" : "";
 }
 function gDraw() {
-  const g = gData.goal;
-  $("g-goal").innerHTML = `<h3 style="margin:0">いまの目標</h3>
-    <p style="margin:0;white-space:pre-wrap">${g.text ? esc(g.text) : '<span class="note">次の面談でシアニンと一緒に決めます</span>'}</p>
-    ${g.next_action ? `<div><div class="note" style="margin:0 0 2px">次の一手</div><p style="margin:0;white-space:pre-wrap">${esc(g.next_action)}</p></div>` : ""}
-    <p class="note" style="margin:0">${g.next_mtg ? `次の面談 ${esc(gDayLabel(g.next_mtg))}` : "次の面談はまだ決まっていません"}${g.last_mtg ? `・前回 ${esc(gDayLabel(g.last_mtg))}` : ""}</p>`;
+  drawPlan();
   const keepDay = $("g-day").value, keepWeek = $("g-week").value;
   $("g-day").innerHTML = Array.from({ length: 8 }, (_, i) => gAdd(gData.today, -i)).map((d, i) => `<option value="${d}">${i === 0 ? "今日 " : i === 1 ? "昨日 " : ""}${gDayLabel(d)}${gDaily(d) ? " ✓" : ""}</option>`).join("");
   $("g-week").innerHTML = [[gData.week, "今週"], [gData.last_week, "先週"]].map(([d, l]) => `<option value="${d}">${l}（${gDayLabel(d)}〜）${gWeekly(d) ? " ✓" : ""}</option>`).join("");
@@ -694,7 +692,8 @@ function gDraw() {
 async function loadGoals(token) {
   gToken = token;
   const r = await api("/api/me/goals", { token });
-  if (!r.ok) { $("g-goal").innerHTML = `<p class="note" style="margin:0">読めませんでした。${esc(gErr(r))}</p>`; return; }
+  if (!r.ok) { $("gk-v-plan").innerHTML = `<p class="note" style="margin:0">読めませんでした。${esc(gErr(r))}</p>`; return; }
+  if (gData && gPlanBusy()) r.plan = gData.plan; // 保存の途中なら、手元の設計を残す
   gData = r; gDraw();
 }
 async function gSave(kind) {
@@ -712,10 +711,84 @@ async function gSave(kind) {
   gDraw();
   $(isD ? "g-msg" : "g-wmsg").textContent = isD ? `${gDayLabel(r.report.day)}の日報を保存しました` : "週の振り返りを保存しました";
 }
+
+// ---------- 目標達成くん（2026-11-05）：設計（①理想 ②条件 ③戦略）。直したら少し待ってまとめて保存する ----------
+let gReady = false, gSaveTimer = null, gSaving = false, gAgain = false;
+const gPlanBusy = () => !!gSaveTimer || gSaving;
+const gNow = () => weekNo(gData.plan, gData.today);
+function gToast(t) { const e = $("gk-toast"); e.textContent = t; e.classList.add("on"); clearTimeout(gToast.t); gToast.t = setTimeout(() => e.classList.remove("on"), 1800); }
+function drawPlan() {
+  if (!gData || !gData.plan) return;
+  $("gk-chain").innerHTML = chainHtml(gData.plan);
+  $("gk-v-plan").innerHTML = planHtml(gData.plan, gData.today);
+}
+function planChanged(msg) { drawPlan(); paintGoalCard(); gSavedLine("保存を待っています…"); clearTimeout(gSaveTimer); gSaveTimer = setTimeout(gSavePlan, 700); if (msg) gToast(msg); }
+function gSavedLine(t, err) { const e = $("gk-saved"); e.textContent = t; e.classList.toggle("err", !!err); }
+async function gSavePlan() {
+  gSaveTimer = null;
+  if (gSaving) { gAgain = true; return; }
+  gSaving = true;
+  const { saved_at: _drop, ...plan } = gData.plan;
+  const r = await api("/api/me/goals/plan", { method: "PUT", token: gToken, body: { plan } });
+  gSaving = false;
+  if (!r.ok) { gSavedLine("保存できませんでした。" + gErr(r) + "（もう一度直すと、保存し直します）", true); }
+  else { gData.plan.saved_at = r.plan.saved_at; gSavedLine(`保存しました（${new Date(r.plan.saved_at).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}）`); }
+  if (gAgain) { gAgain = false; gSavePlan(); }
+}
+function showPop(c) {
+  const pop = $("gk-pop"); if (!pop) return;
+  pop.innerHTML = popHtml(gData.plan, +c.dataset.wk, gNow()); pop.hidden = false;
+  const r = c.getBoundingClientRect(), pr = pop.offsetParent.getBoundingClientRect();
+  pop.style.left = Math.max(0, Math.min(r.left - pr.left + r.width / 2 - pop.offsetWidth / 2, pr.width - pop.offsetWidth)) + "px";
+  pop.style.top = (r.bottom - pr.top + 8) + "px";
+}
+const hoverOK = () => window.matchMedia("(hover: hover)").matches;
+function wirePlan() {
+  const root = $("tab-goals");
+  root.addEventListener("focusout", (e) => {
+    const t = e.target;
+    if (!(t.dataset && t.dataset.ed && gData && setPath(gData.plan, t.dataset.ed, t.textContent))) return;
+    const next = e.relatedTarget && e.relatedTarget.dataset && e.relatedTarget.dataset.ed; // 次に押した欄へ、描き直したあとも戻る
+    planChanged(t.dataset.ed.startsWith("kgi") && !gData.plan.goal13Own ? "13 週の目標も直りました" : "");
+    if (next) { const el = root.querySelector(`[data-ed="${next}"]`); if (el) el.focus(); }
+  });
+  root.addEventListener("keydown", (e) => { const t = e.target; if (t.dataset && t.dataset.ed && e.key === "Enter" && !e.isComposing) { e.preventDefault(); t.blur(); } });
+  root.addEventListener("change", (e) => {
+    const t = e.target;
+    if (t.dataset && t.dataset.start != null && /^\d{4}-\d{2}-\d{2}$/.test(t.value)) { const d = new Date(t.value + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); gData.plan.start = d.toISOString().slice(0, 10); planChanged("始めた週を直しました"); }
+  });
+  root.addEventListener("click", (e) => {
+    const t = e.target.closest("button, a[data-to]"); if (!t || !gData) return;
+    const d = t.dataset;
+    if (d.gv) { root.querySelectorAll(".gk-seg [data-gv]").forEach((b) => b.setAttribute("aria-selected", String(b === t))); $("gk-v-plan").classList.toggle("hidden", d.gv !== "plan"); $("gk-saved").classList.toggle("hidden", d.gv !== "plan"); $("gk-v-rec").classList.toggle("hidden", d.gv !== "rec"); return; }
+    if (d.to) { e.preventDefault(); root.querySelector('[data-gv="plan"]').click(); $(d.to).scrollIntoView({ behavior: "smooth", block: "start" }); return; }
+    if (d.wk) { if (!hoverOK() && !t.classList.contains("pinned")) { root.querySelectorAll(".gk-road .pinned").forEach((x) => x.classList.remove("pinned")); t.classList.add("pinned"); showPop(t); } return; }
+    if (applyAction(gData.plan, d, gNow())) {
+      const msg = d.add === "ms" ? "状態を足しました。空いている週に並びます" : d.del ? "消しました" : d.spare ? (gData.plan.spare.includes(+d.spare) ? `第 ${d.spare} 週を予備にしました` : `第 ${d.spare} 週に状態を戻しました`) : d.bmv != null ? "時間の置き場所を移しました" : "";
+      planChanged(msg);
+      if (d.add) { const sel = { kgi: "kgi", ms: "ms", bud: "bud" }[d.add]; const els = root.querySelectorAll(`[data-ed^="${sel}.${gData.plan[sel].length - 1}."]`); if (els[0]) els[0].focus(); }
+    }
+  });
+  root.addEventListener("mouseover", (e) => { const c = e.target.closest && e.target.closest(".gk-road .c.big"); if (c && hoverOK()) showPop(c); });
+  root.addEventListener("mouseout", (e) => {
+    const c = e.target.closest && e.target.closest(".gk-road .c.big, #gk-pop"); if (!c || !hoverOK()) return;
+    const to = e.relatedTarget; if (to && to.closest && to.closest("#gk-pop, .gk-road .c.big")) return;
+    const p = $("gk-pop"); if (p) p.hidden = true;
+  });
+}
+// ホームの「今週の目標の進み」カード（目標達成くんを使う生徒だけ）
+async function paintGoalCard() {
+  if (!gReady) return;
+  const home = $("tab-home") && $("tab-home").querySelector(".home"); if (!home) return;
+  if (!gData) { const r = await api("/api/me/goals", { token: gToken }); if (!r.ok || gData) { if (gData) paintGoalCard(); return; } gData = r; }
+  const old = home.querySelector("a.gk"); if (old) old.remove();
+  home.insertAdjacentHTML("afterbegin", homeCardHtml(gData.plan, gData.today));
+}
 let gWired = false;
 function wireGoals(token) {
   gToken = token;
   if (gWired) return; gWired = true;
+  wirePlan();
   $("g-day").addEventListener("change", gFillDaily);
   $("g-week").addEventListener("change", gFillWeekly);
   $("g-daily").addEventListener("submit", (e) => { e.preventDefault(); gSave("daily"); });
