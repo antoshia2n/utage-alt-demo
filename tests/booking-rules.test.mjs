@@ -210,37 +210,69 @@ test("テスト送信：見本で差し込み、管理者に【テスト】で�
   assert.equal(mails[0].subject, "【テスト】個別相談"); assert.ok(mails[0].text.startsWith("管理 さん"));
 });
 
-// ---- 便⑤：Google カレンダーに書き込む（Apps Script のウェブアプリ） ----
+// ---- 便⑤＋担当者：担当者ごとに Google カレンダーをつなぐ（Apps Script のウェブアプリ） ----
 import { makeGcal, scriptCode } from "../src/gcal.js";
-test("Google カレンダー：つなぐ・予約で予定を作る・日時の変更とキャンセルで消す", async () => {
-  const st = fakeStore(), calls = [];
-  const fetchImpl = async (url, o) => { const j = JSON.parse(o.body); calls.push(j); if (j.secret !== secret) return new Response(JSON.stringify({ ok: false, error: "bad_secret" })); return new Response(JSON.stringify(j.action === "create" ? { ok: true, id: "ev" + calls.length + "@google.com" } : { ok: true, calendar: "Naoki" })); };
+function setupStaff() {
+  const st = fakeStore(), calls = [], secrets = {};
+  const busyOf = {};
+  const fetchImpl = async (url, o) => { const j = JSON.parse(o.body); calls.push({ url, ...j }); if (secrets[url] !== j.secret) return new Response(JSON.stringify({ ok: false, error: "bad_secret" }));
+    if (j.action === "create") return new Response(JSON.stringify({ ok: true, id: "ev" + calls.length + "@google.com" }));
+    if (j.action === "busy") return new Response(JSON.stringify(busyOf[url] ? { ok: true, busy: busyOf[url] } : { ok: false, error: "bad_action" }));
+    return new Response(JSON.stringify({ ok: true, calendar: url.slice(-10) })); };
   const gcal = makeGcal({ db: st.db, logInbound: async () => {}, fetchImpl });
-  const code = (await gcal.makeCode(env, "admin")).code;
-  const secret = code.match(/const SECRET = "([0-9a-f]+)"/)[1];
-  assert.ok(scriptCode("x").includes("CalendarApp.getDefaultCalendar()"));
-  assert.equal((await gcal.connect(env, "https://example.com/x", "admin")).error, "bad_url");
-  const URL1 = "https://script.google.com/macros/s/AKfycbx_abcdefghijklmnopqrstuvwxyz/exec";
-  const c = await gcal.connect(env, URL1, "admin");
-  assert.equal(c.ok, true); assert.equal(c.calendar, "Naoki");
-  assert.equal((await gcal.status(env)).set, true);
-
   const addEvent = async (e, cid, type, payload, actor = "site") => { const [row] = await st.db(e, "POST", "events", [{ customer_id: cid, type, payload, actor }], "return=representation"); return row; };
-  const bk = makeBooking({ gcal, db: st.db, addEvent, logInbound: async () => {}, bin3: { async sendMail() { return { result: "sent" }; } }, registerPerson: async () => ({ ok: false }), busyBetween: async () => ({ state: "ok", busy: [] }), pagesOrigin: () => "", afterBooked: async () => ({ ok: true }) });
-  await bk.set(env, member({ days_ahead: 3, zoom_url: "https://zoom.us/j/1" }), "mcp");
+  const icalBusy = [];
+  const bk = makeBooking({ gcal, db: st.db, addEvent, logInbound: async () => {}, bin3: { async sendMail() { return { result: "sent" }; } }, registerPerson: async () => ({ ok: false }), busyBetween: async () => ({ state: "ok", busy: icalBusy }), pagesOrigin: () => "", afterBooked: async () => ({ ok: true }) });
+  // 試験の表は番号を数で振るので、担当者は UUID の行を直に入れる
+  let n = 0;
+  const staff = async (name, url, o = {}) => { const id = `5555555${++n}-5555-4555-8555-555555555555`.slice(-36); st.table("b_staff").push({ id, name, email: "", script_url: "", script_secret: "", ical_fallback: false, created_at: new Date(n * 1000).toISOString(), archived_at: null, ...o });
+    const secret = (await gcal.makeCode(env, id, "admin")).code.match(/const SECRET = "([0-9a-f]+)"/)[1]; secrets[url] = secret; return id; };
+  return { st, calls, gcal, bk, staff, busyOf, icalBusy };
+}
+const URLA = "https://script.google.com/macros/s/AKfycbx_aaaaaaaaaaaaaaaaaaaaaaaaaaaa/exec", URLB = "https://script.google.com/macros/s/AKfycbx_bbbbbbbbbbbbbbbbbbbbbbbbbbbb/exec";
+
+test("担当者：つなぐ・予約で担当者のカレンダーに予定を作る・日時の変更とキャンセルで消す", async () => {
+  const { calls, gcal, bk, staff } = setupStaff();
+  assert.ok(scriptCode("x").includes("CalendarApp.getDefaultCalendar()") && scriptCode("x").includes('req.action === "busy"'));
+  const a = await staff("シアニン", URLA);
+  assert.equal((await gcal.connect(env, a, "https://example.com/x", "admin")).error, "bad_url");
+  assert.equal((await gcal.connect(env, a, URLA, "admin")).ok, true);
+  assert.equal((await gcal.list(env)).staff[0].set, true);
+  await bk.set(env, member({ days_ahead: 3, zoom_url: "https://zoom.us/j/1", staff_id: a }), "mcp");
   const s = (await bk.forMember(env, stu, basic, false)).types[0].slots;
   await bk.memberBook(env, stu, basic, false, { slug: "consult", slot: s[5].slot });
   const ci = calls.findIndex((x) => x.action === "create"), cr = calls[ci];
-  assert.deepEqual(cr.guests, ["s@example.com"]); assert.equal(cr.location, "https://zoom.us/j/1"); assert.ok(cr.title.includes("生徒"));
+  assert.equal(cr.url, URLA); assert.deepEqual(cr.guests, ["s@example.com"]); assert.equal(cr.location, "https://zoom.us/j/1");
   await bk.memberBook(env, stu, basic, false, { slug: "consult", slot: s[9].slot, from: s[5].slot });
   assert.equal(calls.at(-1).action, "delete"); assert.equal(calls.at(-1).id, `ev${ci + 1}@google.com`);
   await bk.memberCancel(env, stu, { slot: s[9].slot });
   assert.equal(calls.at(-1).action, "delete");
-  assert.ok(String(calls.at(-1).id).endsWith("@google.com"));
-  // 書き込まない設定のメニューは呼ばない
-  const n = calls.length;
-  await bk.set(env, { ...member({ slug: "nowrite", gcal_write: false, days_ahead: 3 }) }, "mcp");
-  const s2 = (await bk.forMember(env, stu, basic, false)).types.find((x) => x.slug === "nowrite").slots;
-  await bk.memberBook(env, stu, basic, false, { slug: "nowrite", slot: s2[20].slot });
-  assert.equal(calls.length, n);
+  assert.equal((await gcal.set(env, { id: a, archived: true })).error, "staff_in_use");
+  assert.equal((await bk.set(env, member({ slug: "x2", staff_id: "66666666-6666-4666-8666-666666666666" }), "mcp")).error, "staff_not_found");
+});
+
+test("担当者：空き時間はその人の予定とその人の予約だけ避ける。読めないときは Naoki だけ iCal", async () => {
+  const { gcal, bk, staff, busyOf, icalBusy, st } = setupStaff();
+  const a = await staff("A", URLA), b = await staff("B", URLB, { ical_fallback: true });
+  await gcal.connect(env, a, URLA, "admin"); await gcal.connect(env, b, URLB, "admin");
+  await bk.set(env, member({ slug: "ma", days_ahead: 3, staff_id: a }), "mcp");
+  await bk.set(env, member({ slug: "mb", days_ahead: 3, staff_id: b }), "mcp");
+  const first = (slug) => bk.forMember(env, stu, basic, false).then((v) => v.types.find((x) => x.slug === slug).slots);
+  const s0 = (await first("ma"))[3].slot, t0 = Date.parse(s0);
+  busyOf[URLA] = [{ start: t0, end: t0 + 30 * 60e3 }];
+  st.table("b_staff").forEach(() => {}); // キャッシュは 30 秒。違う範囲で読む
+  const sa = await bk.forMember(env, stu, basic, false, Date.now() + 1000);
+  const listA = sa.types.find((x) => x.slug === "ma").slots.map((x) => x.slot), listB = sa.types.find((x) => x.slug === "mb").slots.map((x) => x.slot);
+  assert.ok(!listA.includes(s0)); assert.ok(listB.includes(s0));
+  // B は busy が読めない（古いコード）→ iCal で読む
+  icalBusy.push({ start: t0, end: t0 + 30 * 60e3 });
+  const sb = await bk.forMember(env, stu, basic, false, Date.now() + 2000);
+  assert.ok(!sb.types.find((x) => x.slug === "mb").slots.map((x) => x.slot).includes(s0));
+  // A の予約は B の空きをふさがない
+  const other = { ...stu, id: "77777777-7777-4777-8777-777777777777", email: "o@example.com" };
+  const s1 = listA[10];
+  await bk.memberBook(env, other, basic, false, { slug: "ma", slot: s1 });
+  const after = await bk.forMember(env, stu, basic, false, Date.now() + 3000);
+  assert.ok(!after.types.find((x) => x.slug === "ma").slots.map((x) => x.slot).includes(s1));
+  assert.ok(after.types.find((x) => x.slug === "mb").slots.map((x) => x.slot).includes(s1));
 });

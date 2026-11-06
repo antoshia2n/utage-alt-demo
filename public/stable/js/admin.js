@@ -1072,7 +1072,7 @@ async function loadDeals(focusId, msg) {
 let btCache = [], btWired = false, currentBt = null, btEntCounts = {};
 const WD_LABEL = ["日", "月", "火", "水", "木", "金", "土"];
 const BT_WHY = {
-  bad_audience: "公開範囲を選択してください", bad_entitlements: "会員プランの名前が正しくありません", bad_questions: "質問は 12 件までです", bad_question_label: "質問を入力してください（80 字まで）", bad_question_key: "質問の並びが正しくありません", bad_question_options: "選択肢を 2 つ以上入力してください（1 つ 60 字まで）", bad_after_actions: "予約後の連携先が正しくありません", bad_reminders: "通知の設定が正しくありません", template_not_found: "そのテンプレートは見つかりません",
+  bad_audience: "公開範囲を選択してください", bad_entitlements: "会員プランの名前が正しくありません", bad_questions: "質問は 12 件までです", bad_question_label: "質問を入力してください（80 字まで）", bad_question_key: "質問の並びが正しくありません", bad_question_options: "選択肢を 2 つ以上入力してください（1 つ 60 字まで）", bad_after_actions: "予約後の連携先が正しくありません", bad_reminders: "通知の設定が正しくありません", staff_not_found: "その担当者は見つかりません", template_not_found: "そのテンプレートは見つかりません",
   bad_title: "タイトルを入力してください（80 字まで）", bad_slug: "URL 名は英小文字・数字・ハイフンの 2〜41 字（例 consult-30）", slug_taken: "その URL 名はほかのメニューで使われています",
   bad_minutes: "所要時間は 10〜240 分", bad_weekdays: "曜日を 1 つ以上選択してください", bad_times: "受付時間は「10:00-12:00,20:00-22:00」の形で入力してください",
   bad_days_ahead: "予約受付期間は 1〜90 日", bad_min_notice_hours: "予約締切は 0〜168 時間", bad_remind_minutes: "前日のリマインドは 1〜168 時間前（空欄で送らない）",
@@ -1088,6 +1088,7 @@ async function loadBookingTypes() {
   const r = await api("/api/admin/booking-types", { token });
   if (!r.ok) { $("bt-count").textContent = "読み込めませんでした（" + (r.error || r.status) + "）"; return; }
   btCache = r.types || []; btEntCounts = r.ent_counts || {};
+  await loadStaff(); wireStaff();
   const store = r.store === "production";
   $("bt-new").classList.toggle("hidden", !store);
   if (store && !btWired) { btWired = true; $("bt-new").addEventListener("click", () => bookingTypeEditor(null)); }
@@ -1232,6 +1233,7 @@ function bookingTypeForm(t, r = {}) {
         <label class="bt-tog"><button type="button" class="sw" role="switch" id="bt-multi" aria-checked="${multi}" aria-label="予約する人が所要時間を選べる"></button><span>予約する人が所要時間を選べる（選択した中から。いちばん短いものが最初に表示）</span></label></div>
       <div><label for="bt-desc">説明（予約画面の左に表示）</label><textarea id="bt-desc" rows="3" maxlength="1000" placeholder="例 月に 1 回の面談です。先月の振り返りと今月の目標を入力してから、日時を選択してください。">${esc(t ? t.description || "" : "")}</textarea></div>
       <div><label for="bt-zoom">場所（Zoom の URL）</label><input id="bt-zoom" type="url" inputmode="url" maxlength="500" placeholder="https://zoom.us/j/..." value="${esc(t ? t.zoom_url : "")}"></div>
+      <div><label for="bt-staff">担当者（この人の Google カレンダーの空き時間で受け付け、予約はこの人のカレンダーに入る）</label><select id="bt-staff" class="inline"><option value="">（担当者なし）</option>${btStaff.map((x) => `<option value="${x.id}"${t ? (t.staff_id === x.id ? " selected" : "") : x === btStaff[0] ? " selected" : ""}>${esc(x.name)}${x.set ? "" : "（カレンダー未接続）"}</option>`).join("")}</select></div>
       <div><span class="lbl">色（一覧とカレンダーで区別）</span><div class="segs" role="group" aria-label="色" id="bt-color">${BT_COLORS.map((c, i) => `<button type="button" class="sw-c" data-color="${c}" aria-pressed="${c === color}" aria-label="色 ${i + 1}" style="background:${c}"></button>`).join("")}</div></div>
       <div><label for="bt-slug">URL 名（英小文字・数字・ハイフン）</label><input id="bt-slug" type="text" maxlength="41" autocapitalize="off" autocomplete="off" placeholder="例 consult-30" value="${esc(t ? t.slug : "")}"></div>
       <div><label for="bt-thanks">予約後に表示するページ（公開中のときだけ）</label><select id="bt-thanks" class="inline"><option value="">（表示しない・予約画面に完了メッセージ）</option>${thanksOpts}</select></div>
@@ -1412,7 +1414,7 @@ function wireBookingTypeForm(t, r = {}) {
       description: $("bt-desc").value, color: (document.querySelector('#bt-color [aria-pressed="true"]') || {}).dataset?.color || "",
       days_ahead: Number($("bt-days").value || 14), min_notice_hours: $("bt-notice").disabled ? 0 : Number($("bt-notice").value || 0),
       week_hours: Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map((w) => [w, btRangesOf(grid[w])])), date_overrides: Object.fromEntries(Object.entries(ov).filter(([k]) => k >= todayK)),
-      gcal_write: $("bt-gwrite").checked, gcal_invite: $("bt-ginvite").checked,
+      staff_id: $("bt-staff").value || null, gcal_write: $("bt-gwrite").checked, gcal_invite: $("bt-ginvite").checked,
       durations: isMulti() ? [...document.querySelectorAll('#bt-dur [data-min][aria-pressed="true"]')].map((x) => Number(x.dataset.min)).sort((a, b) => a - b) : [],
       buffer_before: $("bt-pre").disabled ? 0 : Number($("bt-pre").value), buffer_after: $("bt-post").disabled ? 0 : Number($("bt-post").value),
       max_per_day: $("bt-perday").disabled ? null : Number($("bt-perday").value), max_per_person: Number($("bt-perperson").value),
@@ -1449,33 +1451,66 @@ function btUndo(text, undo) {
   el.querySelector("button").onclick = () => { el.classList.add("hidden"); if (undo) undo(); };
   clearTimeout(btUndoTimer); btUndoTimer = setTimeout(() => el.classList.add("hidden"), 8000);
 }
-// Google カレンダーにつなぐ（便⑤）：Naoki の Google に Apps Script を置き、その URL を貼る
-async function btGcal() {
-  const box = $("bt-gcst"); if (!box) return;
-  const st = await api("/api/admin/gcal", { token });
-  if (!$("bt-gcst")) return;
-  if (st.ok && st.set) {
-    box.innerHTML = `<div class="bt-gcok"><b>● つながっています</b><span>予約は Naoki の Google カレンダーに入ります。</span><button type="button" class="btn ghost small" id="bt-gc-re">つなぎ直す</button></div>`;
-    $("bt-gc-re").onclick = () => btGcalSteps(box);
-    return;
-  }
-  btGcalSteps(box);
+// 担当者（2026-11-06）：担当者ごとに Google カレンダーをつなぐ。予約メニューは担当者を選ぶ
+let btStaff = [];
+async function loadStaff() {
+  const r = await api("/api/admin/staff", { token });
+  btStaff = r.ok ? r.staff : [];
+  const box = $("staff-list"); if (!box) return;
+  $("staff-count").textContent = `${btStaff.length} 人・つながっている ${btStaff.filter((x) => x.set).length}`;
+  box.innerHTML = btStaff.map((x) => `<div class="st-card" data-sid="${x.id}"><div class="st-h"><b>${esc(x.name)}</b><span class="note">${esc(x.email || "メール未設定")}</span><span class="st-${x.set ? "ok" : "ng"}">${x.set ? "● カレンダーとつながっています" : "○ カレンダー未接続"}</span></div>
+    <p class="note" style="margin:6px 0 10px">${x.used.length ? "担当中：" + esc(x.used.join("・")) : "担当中の予約メニューはありません"}</p>
+    <div class="st-a"><button type="button" class="btn small${x.set ? " ghost" : ""}" data-sconn="${x.id}">${x.set ? "つなぎ直す" : "カレンダーをつなぐ"}</button>${x.set ? `<button type="button" class="btn ghost small" data-sping="${x.id}">確認</button>` : ""}<button type="button" class="btn ghost small" data-sedit="${x.id}">編集</button><button type="button" class="btn ghost small" data-sdel="${x.id}">削除</button><span class="note" data-smsg="${x.id}" role="status"></span></div>
+    <div class="st-steps hidden" data-ssteps="${x.id}"></div></div>`).join("") || '<p class="note">担当者はまだいません。</p>';
 }
-function btGcalSteps(box) {
-  box.innerHTML = `<div class="bt-gcsteps"><b>Google カレンダーに書き込めるようにする（1 回だけ・約 5 分）</b>
-    <ol><li><button type="button" class="btn small" id="bt-gc-copy">コードをコピー</button></li>
-      <li><a href="https://script.google.com/create" target="_blank" rel="noopener">Google Apps Script を開く ↗</a> → 中身をすべて消してコードを貼る → 保存</li>
+function staffSteps(id) {
+  const box = document.querySelector(`[data-ssteps="${id}"]`);
+  box.classList.remove("hidden");
+  box.innerHTML = `<div class="bt-gcsteps"><b>この担当者の Google カレンダーにつなぐ（1 回だけ・約 5 分・担当者本人の Google で）</b>
+    <ol><li><button type="button" class="btn small" data-scode="${id}">コードをコピー</button></li>
+      <li><a href="https://script.google.com/create" target="_blank" rel="noopener">Google Apps Script を開く ↗</a> → 中身をすべて消してコードを貼る → 保存（「実行」は押さなくてよい）</li>
       <li>右上の「デプロイ」→「新しいデプロイ」→ 種類「ウェブアプリ」、アクセスできるユーザー「全員」→「デプロイ」→ 権限を許可</li>
-      <li>表示された「ウェブアプリの URL」を貼る<div class="bt-gcin"><input type="url" id="bt-gc-url" placeholder="https://script.google.com/macros/s/…/exec" aria-label="ウェブアプリの URL"><button type="button" class="btn small" id="bt-gc-go">つなぐ</button></div></li></ol>
-    <p class="note" id="bt-gc-msg" role="status"></p></div>`;
-  const msg = (v) => { $("bt-gc-msg").textContent = v; };
-  $("bt-gc-copy").onclick = async () => { const r = await api("/api/admin/gcal/code", { method: "POST", token }); try { await navigator.clipboard.writeText(r.code); msg("コードをコピーしました。次に Google Apps Script に貼ります"); } catch (_) { msg("コピーできませんでした"); } };
-  $("bt-gc-go").onclick = async () => {
-    msg("つないでいます…");
-    const r = await api("/api/admin/gcal", { method: "PUT", token, body: { url: $("bt-gc-url").value } });
-    if (r.ok) { msg(""); btGcal(); btUndo(`Google カレンダー「${r.calendar || ""}」とつながりました`); return; }
-    msg({ bad_url: "「https://script.google.com/macros/s/…/exec」の形の URL を貼ってください", no_secret: "先に「コードをコピー」を押してください", bad_secret: "コードが古いようです。「コードをコピー」から貼り直して、デプロイし直してください", ping_failed: "つながりませんでした。アクセスできるユーザーが「全員」になっているか確かめてください" }[r.error] || "つながりませんでした（" + r.error + "）");
-  };
+      <li>表示された「ウェブアプリの URL」を貼る<div class="bt-gcin"><input type="url" data-surl="${id}" placeholder="https://script.google.com/macros/s/…/exec" aria-label="ウェブアプリの URL"><button type="button" class="btn small" data-sgo="${id}">つなぐ</button></div></li></ol></div>`;
+  box.querySelector("[data-scode]").focus();
+}
+let staffWired = false;
+function wireStaff() {
+  if (staffWired) return; staffWired = true;
+  const form = (x) => { $("staff-form").classList.remove("hidden"); $("staff-id").value = x ? x.id : ""; $("staff-name").value = x ? x.name : ""; $("staff-email").value = x ? x.email : ""; $("staff-fmsg").textContent = ""; $("staff-name").focus(); };
+  $("staff-new").addEventListener("click", () => form(null));
+  $("staff-cancel").addEventListener("click", () => $("staff-form").classList.add("hidden"));
+  $("staff-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const id = $("staff-id").value, body = { name: $("staff-name").value.trim(), email: $("staff-email").value.trim(), ...(id ? { id } : {}) };
+    if (!body.name) { $("staff-fmsg").textContent = "名前を入力してください"; $("staff-name").focus(); return; }
+    const r = await api("/api/admin/staff", { method: "POST", token, body });
+    if (!r.ok) { $("staff-fmsg").textContent = { bad_staff_email: "メールアドレスの形が正しくありません", bad_staff_name: "名前は 60 字まで" }[r.error] || "保存できませんでした（" + r.error + "）"; return; }
+    $("staff-form").classList.add("hidden"); await loadStaff();
+    if (id) btUndo("担当者を保存しました"); else { btUndo(`担当者「${r.staff.name}」を追加しました。次に「カレンダーをつなぐ」`); staffSteps(r.staff.id); }
+  });
+  $("staff-list").addEventListener("click", async (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    const msg = (id, v) => { const m = document.querySelector(`[data-smsg="${id}"]`); if (m) m.textContent = v; };
+    if (b.dataset.sconn) staffSteps(b.dataset.sconn);
+    if (b.dataset.scode) { const r = await api("/api/admin/staff/code", { method: "POST", token, body: { id: b.dataset.scode } }); try { await navigator.clipboard.writeText(r.code); msg(b.dataset.scode, "コードをコピーしました。次に Google Apps Script に貼ります"); } catch (_) { msg(b.dataset.scode, "コピーできませんでした"); } }
+    if (b.dataset.sgo) { const id = b.dataset.sgo; msg(id, "つないでいます…"); const r = await api("/api/admin/staff/connect", { method: "POST", token, body: { id, url: document.querySelector(`[data-surl="${id}"]`).value } });
+      if (r.ok) { await loadStaff(); btUndo(`Google カレンダー「${r.calendar}」とつながりました`); return; }
+      msg(id, { bad_url: "「https://script.google.com/macros/s/…/exec」の形の URL を貼ってください", no_secret: "先に「コードをコピー」を押してください", bad_secret: "コードが古いようです。「コードをコピー」から貼り直して、デプロイし直してください", ping_failed: "つながりませんでした。アクセスできるユーザーが「全員」になっているか確かめてください" }[r.error] || "つながりませんでした（" + r.error + "）"); }
+    if (b.dataset.sping) { msg(b.dataset.sping, "確認しています…"); const r = await api("/api/admin/staff/ping", { method: "POST", token, body: { id: b.dataset.sping } }); msg(b.dataset.sping, r.ok ? `つながっています（${r.calendar}）` : "つながりませんでした。「つなぎ直す」から貼り直してください"); }
+    if (b.dataset.sedit) form(btStaff.find((y) => y.id === b.dataset.sedit));
+    if (b.dataset.sdel) { const x = btStaff.find((y) => y.id === b.dataset.sdel); const r = await api("/api/admin/staff", { method: "POST", token, body: { id: x.id, archived: true } });
+      if (!r.ok) { msg(x.id, r.error === "staff_in_use" ? `担当中のため削除できません（${(r.used || []).join("・")}）。先に予約メニューの担当者を変えてください` : "削除できませんでした"); return; }
+      await loadStaff(); btUndo(`担当者「${x.name}」を削除しました`, async () => { await api("/api/admin/staff", { method: "POST", token, body: { id: x.id, archived: false } }); await loadStaff(); }); }
+  });
+}
+// 予約メニューの「受付時間」：担当者のカレンダーのつながりを表示
+function btGcal() {
+  const box = $("bt-gcst"); if (!box) return;
+  const draw = () => { const x = btStaff.find((y) => y.id === $("bt-staff").value);
+    box.innerHTML = !x ? '<div class="bt-gcok"><span>担当者がいないため、カレンダーには入りません。「基本設定」で担当者を選択してください。</span></div>'
+      : `<div class="bt-gcok"><b class="${x.set ? "" : "ng"}">${x.set ? "●" : "○"} ${esc(x.name)}</b><span>${x.set ? "この人の Google カレンダーで空き時間を確認し、予約を入れます。" : "この担当者はまだカレンダーとつながっていません。"}</span><button type="button" class="btn ghost small" id="bt-gc-staff">担当者の設定へ</button></div>`;
+    const go = $("bt-gc-staff"); if (go) go.onclick = () => { showPane("deals", "list"); document.querySelector('#view-deals [data-vtab="staff"]').click(); scrollTo(0, 0); }; };
+  draw(); $("bt-staff").addEventListener("change", draw);
 }
 // リマインド（便④）：通知の並び（いつ × どのテンプレート）は予約メニューごと、文はテンプレートでメニューをまたいで使い回す
 const BT_WHEN = { booked: "予約した直後", before: "開始前", after: "終了後", canceled: "キャンセルされたとき" };
