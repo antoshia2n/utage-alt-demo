@@ -1516,10 +1516,11 @@ function btGcal() {
 const BT_WHEN = { booked: "予約した直後", before: "開始前", after: "終了後", canceled: "キャンセルされたとき" };
 const BT_OFF = [10, 30, 60, 120, 180, 360, 720, 1440, 2880, 4320, 10080];
 const btOffLab = (m) => (m % 1440 === 0 ? `${m / 1440} 日` : m % 60 === 0 ? `${m / 60} 時間` : `${m} 分`);
-const btWhenLab = (st) => (st.when === "before" ? `開始 ${btOffLab(st.minutes)}前` : st.when === "after" ? `終了 ${btOffLab(st.minutes)}後` : BT_WHEN[st.when]);
+const btStaffEmail = (t) => { const x = btStaff.find((y) => y.id === t.staff_id); return x ? x.email : ""; };
+const btWhenLab = (st) => (st.to === "staff" ? "担当者へ：" : "") + (st.when === "before" ? `開始 ${btOffLab(st.minutes)}前` : st.when === "after" ? `終了 ${btOffLab(st.minutes)}後` : BT_WHEN[st.when]);
 const btWhenOrder = (st) => (st.when === "booked" ? -1e9 : st.when === "before" ? -st.minutes : st.when === "after" ? 1e6 + st.minutes : 1e9);
-const BT_TOK = { name: "名前", title: "メニュー名", date: "日時", end: "終了時刻", zoom: "Zoom の URL", answers: "フォームの回答", booking_url: "予約ページ", sign: "署名", minutes: "所要時間", topic: "相談したいこと" };
-const BT_SAMPLE = { name: "生徒 A", title: "しあらぼの個別相談（30 分）", date: "11月12日（木）20:00", end: "20:30", zoom: "https://us02web.zoom.us/j/…", answers: "■ X アカウント名\n@example\n■ 相談したいこと\nX 記事の構成", booking_url: "https://lab.shia2n.jp/app#booking", sign: "シアニン（シアラボ）", minutes: "30", topic: "X 記事の構成" };
+const BT_TOK = { name: "名前", title: "メニュー名", date: "日時", end: "終了時刻", zoom: "Zoom の URL", answers: "フォームの回答", booking_url: "予約ページ", sign: "署名", minutes: "所要時間", topic: "相談したいこと", email: "予約者のメール", staff: "担当者" };
+const BT_SAMPLE = { name: "生徒 A", title: "しあらぼの個別相談（30 分）", date: "11月12日（木）20:00", end: "20:30", zoom: "https://us02web.zoom.us/j/…", answers: "■ X アカウント名\n@example\n■ 相談したいこと\nX 記事の構成", booking_url: "https://lab.shia2n.jp/app#booking", sign: "シアニン（シアラボ）", minutes: "30", topic: "X 記事の構成", email: "student@example.com", staff: "シアニン" };
 const BT_PHRASES = [
   ["あいさつ", "{{name}} さん\n\nいつもありがとうございます。シアニンです。\n"],
   ["日時と場所", "■ 日時\n{{date}}〜{{end}}\n\n■ 参加の URL（Zoom）\n{{zoom}}\n"],
@@ -1550,12 +1551,12 @@ async function wireBtRemind(t) {
       $("bt-stadd").classList.remove("hidden");
       const order = btSteps.map((st, i) => [st, i]).sort((x, y) => btWhenOrder(x[0]) - btWhenOrder(y[0]));
       $("bt-tl").innerHTML = order.map(([st, i]) => `<div class="bt-st${st.on ? " on" : " off"}">
-        <div class="when"><select data-stw="${i}" aria-label="タイミング">${Object.entries({ booked: "予約した直後", before: "開始前", after: "終了後", canceled: "キャンセルされたとき" }).map(([k, n]) => `<option value="${k}"${k === st.when ? " selected" : ""}>${n}</option>`).join("")}</select>
+        <div class="when"><select data-stw="${i}" aria-label="タイミング">${Object.entries({ booked: "予約した直後", before: "開始前", after: "終了後", canceled: "キャンセル時" }).map(([k, n]) => `<option value="${k}"${k === st.when ? " selected" : ""}>${n}</option>`).join("")}</select>
           ${st.when === "before" || st.when === "after" ? `<select data-stm="${i}" aria-label="どれだけ${st.when === "before" ? "前" : "後"}">${btOpt(BT_OFF, st.minutes, (m) => btOffLab(m) + (st.when === "before" ? "前" : "後"))}</select>` : ""}</div>
-        <span class="ch">メール</span>
+        <select data-stto="${i}" aria-label="送る相手"><option value="booker"${(st.to || "booker") === "booker" ? " selected" : ""}>予約した人へ</option><option value="staff"${st.to === "staff" ? " selected" : ""}>担当者へ</option></select>${st.to === "staff" && !btStaffEmail(t) ? '<span class="ch warn">担当者のメール未設定</span>' : ""}
         <div class="tp"><select data-stt="${i}" aria-label="${esc(btWhenLab(st))} のテンプレート">${btTpls.map((x) => `<option value="${x.id}"${x.id === st.template_id ? " selected" : ""}>${esc(x.name)}</option>`).join("")}${btTpls.some((x) => x.id === st.template_id) ? "" : '<option selected value="">（テンプレートを選択）</option>'}</select><button type="button" class="btn ghost small" data-edt="${st.template_id}">編集</button></div>
         <button type="button" class="sw" role="switch" aria-checked="${st.on}" data-ston="${i}" aria-label="${esc(btWhenLab(st))} を送る"></button>
-        <button type="button" class="btn ghost small" data-stdel="${i}" aria-label="${esc(btWhenLab(st))} の通知を削除">削除</button></div>`).join("") || '<p class="note">通知はありません。「＋ 通知を追加」から追加します。</p>';
+        <button type="button" class="bt-ic" data-stdel="${i}" title="削除" aria-label="${esc(btWhenLab(st))} の通知を削除">✕</button></div>`).join("") || '<p class="note">通知はありません。「＋ 通知を追加」から追加します。</p>';
     }
     $("bt-tpl").innerHTML = btTpls.map((x) => { const used = x.used || []; return `<button type="button" class="bt-tplc" data-edt="${x.id}"><b>${esc(x.name)}</b><span>件名：${esc(x.subject).replace(/\{\{(\w+)\}\}/g, (m, k) => `［${BT_TOK[k] || k}］`)}</span><small>${used.length ? "使用中：" + esc(used.join("・")) : "未使用"}</small></button>`; }).join("")
       + '<button type="button" class="bt-tplc new" data-edt="new">＋ テンプレートを作成</button>';
@@ -1571,10 +1572,11 @@ async function wireBtRemind(t) {
   draw();
   const root = $("bt-tl").closest("[data-btpane]");
   root.addEventListener("change", (e) => {
-    const x = e.target, i = +(x.dataset.stw ?? x.dataset.stm ?? x.dataset.stt ?? -1); if (i < 0 || !btSteps) return;
+    const x = e.target, i = +(x.dataset.stw ?? x.dataset.stm ?? x.dataset.stt ?? x.dataset.stto ?? -1); if (i < 0 || !btSteps) return;
     const was = JSON.stringify(btSteps), st = btSteps[i];
     if (x.dataset.stw != null) { st.when = x.value; if ((st.when === "before" || st.when === "after") && !st.minutes) st.minutes = st.when === "before" ? 1440 : 60; if (st.when === "booked" || st.when === "canceled") st.minutes = 0; }
     if (x.dataset.stm != null) st.minutes = Number(x.value);
+    if (x.dataset.stto != null) st.to = x.value;
     if (x.dataset.stt != null) { if (!x.value) return; st.template_id = x.value; }
     save(`「${btWhenLab(st)}」を保存しました`, () => { btSteps = JSON.parse(was); save("元に戻しました"); });
   });
