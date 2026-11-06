@@ -6,7 +6,8 @@
 //   share_issue  共有リンクを出す（すでにあればそれを返す）
 //   share_set    共有を止める・期限
 //   meta_set     名前と会の種類（まとめて）
-//   suggest_kai  「その他」の録画に会の種類の案を AI で付ける（少しずつ）
+//   suggest_kai  「その他」の録画に会の種類の案を AI で付ける（少しずつ。5 分ごとの処理も 6 本ずつ出す）
+//   labels_edit  ラベルの名前を変える・削除（便 A・2026-11-06）
 //   search       文字起こしの中の言葉で探す（多くても 50 件）
 // 見る画面と短いリンクは v.shia2n.jp（zoom-to-youtube）。
 
@@ -43,6 +44,8 @@ export const recordings = {
       if (args.shared === false) rows = rows.filter((x) => !x.share);
       if (args.with_issues) rows = rows.filter((x) => x.issues.length);
       if (args.with_suggestions) rows = rows.filter((x) => x.suggest_kai || x.suggest_name);
+      if (args.label) rows = rows.filter((x) => (x.labels || []).some((l) => l.normalize("NFKC").toLowerCase() === String(args.label).normalize("NFKC").toLowerCase()));
+      if (args.month) rows = rows.filter((x) => x.date.startsWith(String(args.month)));
       if (args.transcript_words) {
         const hit = await zoom(env).search({ transcript_words: args.transcript_words, kai: args.kai, date_from: args.date_from, date_to: args.date_to, limit: 50 });
         const ids = new Set((hit.rows || []).map((x) => x.rec_id));
@@ -76,10 +79,19 @@ export const recordings = {
         const o = { id: String(m.id || "") };
         if (m.title !== undefined) o.title = String(m.title);
         if (m.kai !== undefined) o.kai = String(m.kai);
+        if (Array.isArray(m.labels_add)) o.labels_add = m.labels_add.slice(0, 20).map(String);
+        if (Array.isArray(m.labels_remove)) o.labels_remove = m.labels_remove.slice(0, 20).map(String);
         return o;
       });
       if (!list.length) return { ok: false, error: "items_required" };
       return zoom(env).meta_set(list);
+    }),
+
+  /** ラベルの名前を変える（action: rename・from・to）・削除（action: delete・from） */
+  labels: (env, { action, from, to } = {}) =>
+    safe(() => {
+      if (!["rename", "delete"].includes(action)) return { ok: false, error: "bad_action" };
+      return zoom(env).labels_edit({ action, from: String(from || ""), ...(action === "rename" ? { to: String(to || "") } : {}) });
     }),
 
   suggest: (env, limit) => safe(() => zoom(env).suggest_kai(Math.max(1, Math.min(20, Number(limit) || 8)))),

@@ -97,6 +97,22 @@ select.mini{border:1px solid var(--field);background:var(--panel);border-radius:
 .undo{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:8px 10px 8px 16px;border-radius:10px;font-size:13px;display:flex;gap:12px;align-items:center;z-index:40}
 .undo[hidden]{display:none}
 .undo button{border:0;background:transparent;color:#fbbf24;font-weight:700;cursor:pointer;min-height:30px}
+.side button.sub{padding-left:28px;font-size:13px}
+.lrow{display:flex;justify-content:space-between;align-items:center;white-space:nowrap;gap:8px}
+.mini-link{border:0;background:none;color:var(--ink);cursor:pointer;font-size:12px;font-weight:700;min-height:28px}
+.lab{display:inline-block;font-size:12px;padding:0 8px;border-radius:999px;background:var(--soft);border:1px solid var(--line);color:var(--fg);font-weight:500;margin:0 4px 2px 0;line-height:20px}
+.labs{display:block;margin-top:3px}
+.lab-chip{background:var(--abg)}
+.lab-in{flex:1;min-width:0;border:1px solid var(--field);background:var(--panel);border-radius:8px;padding:6px 10px;min-height:36px}
+.bulk{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--abg);border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin-bottom:10px}
+.bulk input{border:1px solid var(--field);background:var(--panel);border-radius:8px;padding:4px 10px;min-width:180px;min-height:32px}
+.prog{height:8px;border-radius:4px;background:var(--line);overflow:hidden;margin-top:10px}
+.prog div{height:100%;background:#b45309}
+.modal{position:fixed;left:50%;top:12vh;transform:translateX(-50%);width:min(560px,94vw);max-height:76vh;background:var(--panel);border:1px solid var(--line);border-radius:14px;z-index:45;display:flex;flex-direction:column;box-shadow:0 16px 40px rgba(0,0,0,.2)}
+#mslot .scrim{z-index:44}
+.mlrow{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+.mlrow input{flex:1;min-width:0;border:1px solid var(--field);background:var(--panel);border-radius:8px;padding:4px 10px;min-height:32px}
+.mlrow .c{font-size:12px;color:var(--muted);white-space:nowrap}
 .err{background:var(--warnbg);color:var(--warn);border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:13px}
 @media (max-width:860px){
   .wrap{flex-direction:column}
