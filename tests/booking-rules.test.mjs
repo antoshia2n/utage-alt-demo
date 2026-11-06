@@ -209,3 +209,38 @@ test("テスト送信：見本で差し込み、管理者に【テスト】で�
   assert.equal(r.ok, true);
   assert.equal(mails[0].subject, "【テスト】個別相談"); assert.ok(mails[0].text.startsWith("管理 さん"));
 });
+
+// ---- 便⑤：Google カレンダーに書き込む（Apps Script のウェブアプリ） ----
+import { makeGcal, scriptCode } from "../src/gcal.js";
+test("Google カレンダー：つなぐ・予約で予定を作る・日時の変更とキャンセルで消す", async () => {
+  const st = fakeStore(), calls = [];
+  const fetchImpl = async (url, o) => { const j = JSON.parse(o.body); calls.push(j); if (j.secret !== secret) return new Response(JSON.stringify({ ok: false, error: "bad_secret" })); return new Response(JSON.stringify(j.action === "create" ? { ok: true, id: "ev" + calls.length + "@google.com" } : { ok: true, calendar: "Naoki" })); };
+  const gcal = makeGcal({ db: st.db, logInbound: async () => {}, fetchImpl });
+  const code = (await gcal.makeCode(env, "admin")).code;
+  const secret = code.match(/const SECRET = "([0-9a-f]+)"/)[1];
+  assert.ok(scriptCode("x").includes("CalendarApp.getDefaultCalendar()"));
+  assert.equal((await gcal.connect(env, "https://example.com/x", "admin")).error, "bad_url");
+  const URL1 = "https://script.google.com/macros/s/AKfycbx_abcdefghijklmnopqrstuvwxyz/exec";
+  const c = await gcal.connect(env, URL1, "admin");
+  assert.equal(c.ok, true); assert.equal(c.calendar, "Naoki");
+  assert.equal((await gcal.status(env)).set, true);
+
+  const addEvent = async (e, cid, type, payload, actor = "site") => { const [row] = await st.db(e, "POST", "events", [{ customer_id: cid, type, payload, actor }], "return=representation"); return row; };
+  const bk = makeBooking({ gcal, db: st.db, addEvent, logInbound: async () => {}, bin3: { async sendMail() { return { result: "sent" }; } }, registerPerson: async () => ({ ok: false }), busyBetween: async () => ({ state: "ok", busy: [] }), pagesOrigin: () => "", afterBooked: async () => ({ ok: true }) });
+  await bk.set(env, member({ days_ahead: 3, zoom_url: "https://zoom.us/j/1" }), "mcp");
+  const s = (await bk.forMember(env, stu, basic, false)).types[0].slots;
+  await bk.memberBook(env, stu, basic, false, { slug: "consult", slot: s[5].slot });
+  const ci = calls.findIndex((x) => x.action === "create"), cr = calls[ci];
+  assert.deepEqual(cr.guests, ["s@example.com"]); assert.equal(cr.location, "https://zoom.us/j/1"); assert.ok(cr.title.includes("生徒"));
+  await bk.memberBook(env, stu, basic, false, { slug: "consult", slot: s[9].slot, from: s[5].slot });
+  assert.equal(calls.at(-1).action, "delete"); assert.equal(calls.at(-1).id, `ev${ci + 1}@google.com`);
+  await bk.memberCancel(env, stu, { slot: s[9].slot });
+  assert.equal(calls.at(-1).action, "delete");
+  assert.ok(String(calls.at(-1).id).endsWith("@google.com"));
+  // 書き込まない設定のメニューは呼ばない
+  const n = calls.length;
+  await bk.set(env, { ...member({ slug: "nowrite", gcal_write: false, days_ahead: 3 }) }, "mcp");
+  const s2 = (await bk.forMember(env, stu, basic, false)).types.find((x) => x.slug === "nowrite").slots;
+  await bk.memberBook(env, stu, basic, false, { slug: "nowrite", slot: s2[20].slot });
+  assert.equal(calls.length, n);
+});

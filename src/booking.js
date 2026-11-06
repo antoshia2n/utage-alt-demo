@@ -240,7 +240,7 @@ export function cleanReminders(v) {
 export const remindAt = (r, b) => (r.when === "before" ? Date.parse(b.slot) - r.minutes * 60e3 : r.when === "after" ? Date.parse(b.slot) + ((b.minutes || 30) + r.minutes) * 60e3 : null);
 
 export function makeBooking(h) {
-  const { db, addEvent, logInbound, bin3, registerPerson, busyBetween, pagesOrigin, afterBooked } = h;
+  const { db, addEvent, logInbound, bin3, registerPerson, busyBetween, pagesOrigin, afterBooked, gcal } = h;
 
   async function typeById(env, id) {
     if (!UUID_RE.test(String(id || ""))) return null;
@@ -262,7 +262,7 @@ export function makeBooking(h) {
       const p = e.payload || {};
       if (!p.slot) continue;
       const k = e.customer_id + "|" + p.slot;
-      if (e.type === "consult_booked") map.set(k, { customer_id: e.customer_id, slot: p.slot, type_id: p.type_id || null, type_title: p.type_title || "", minutes: p.minutes || 30, topic: p.topic || "", answers: Array.isArray(p.answers) ? p.answers : [], at: e.occurred_at });
+      if (e.type === "consult_booked") map.set(k, { customer_id: e.customer_id, slot: p.slot, type_id: p.type_id || null, type_title: p.type_title || "", minutes: p.minutes || 30, topic: p.topic || "", answers: Array.isArray(p.answers) ? p.answers : [], gcal_event_id: p.gcal_event_id || null, at: e.occurred_at });
       else map.delete(k);
     }
     return [...map.values()];
@@ -276,7 +276,7 @@ export function makeBooking(h) {
     active: t.active, archived: !!t.archived_at, audience: t.audience || "public", entitlements: t.entitlements || [], questions: t.questions || [], after_actions: t.after_actions || [],
     description: t.description || "", color: t.color || "", allowed_members: t.allowed_members || [],
     week_hours: weekHours(t), date_overrides: t.date_overrides || {}, durations: t.durations || [], slot_step: t.slot_step || null,
-    buffer_before: t.buffer_before || 0, buffer_after: t.buffer_after || 0, max_per_day: t.max_per_day || null, max_per_person: t.max_per_person || 1, cancel_hours: t.cancel_hours ?? null, reminders: Array.isArray(t.reminders) ? t.reminders : null,
+    buffer_before: t.buffer_before || 0, buffer_after: t.buffer_after || 0, max_per_day: t.max_per_day || null, max_per_person: t.max_per_person || 1, cancel_hours: t.cancel_hours ?? null, reminders: Array.isArray(t.reminders) ? t.reminders : null, gcal_write: t.gcal_write !== false, gcal_invite: t.gcal_invite !== false,
     embed: (t.audience || "public") === "public" ? `<div data-lab-part="booking:${t.slug}"></div>` : "", ...extra,
   });
 
@@ -436,6 +436,7 @@ export function makeBooking(h) {
       if (arr.some((k) => !AFTER_ACTIONS.includes(k))) return { ok: false, error: "bad_after_actions", note: "使えるのは shr_next_mtg（しあらぼ管理の次の面談）" };
       row.after_actions = [...new Set(arr)];
     }
+    for (const k of ["gcal_write", "gcal_invite"]) if (k in args) row[k] = !!args[k];
     if ("reminders" in args) {
       if (args.reminders === null) row.reminders = null;
       else {
@@ -535,8 +536,10 @@ export function makeBooking(h) {
     const mine = (await bookings(env)).filter((b) => b.customer_id === reg.id && b.type_id === t.id && Date.parse(b.slot) > Date.now());
     if (mine.length >= (t.max_per_person || 1)) return { ok: false, error: "already_booked", slot: mine[0].slot, label: fmtJst(mine[0].slot) };
     const b = { slot: iso, type_id: t.id, type_title: t.title, minutes: t.minutes, topic, ...(ans.answers.length ? { answers: ans.answers } : {}) };
-    await addEvent(env, reg.id, "consult_booked", b, "site");
     const [person] = await db(env, "GET", `customers?select=id,name,email&id=eq.${reg.id}`);
+    const gev = person ? await gcalCreate(env, t, b, person) : null;
+    if (gev) b.gcal_event_id = gev;
+    await addEvent(env, reg.id, "consult_booked", b, "site");
     const mail = person ? await notifyNow(env, t, b, person, "booked") : "failed";
     await logInbound(env, "booking", { slug: t.slug, slot: iso }, { ok: true, is_new: reg.is_new, mail }, 200);
     let thanks_url = null;
@@ -546,6 +549,10 @@ export function makeBooking(h) {
     }
     return { ok: true, id: reg.id, is_new: reg.is_new, slot: iso, label: fmtJst(iso), mail, thanks_url };
   }
+
+  // Google カレンダー（便⑤）：つないでいれば予定を作る・消す。失敗しても予約は止めない
+  async function gcalCreate(env, t, b, person) { if (!gcal) return null; try { return await gcal.createFor(env, t, b, person); } catch (_) { return null; } }
+  async function gcalRemove(env, id) { if (!gcal || !id) return; try { await gcal.remove(env, id); } catch (_) { /* 予定が残るだけ */ } }
 
   // 定時の処理：開始の◯分前・終わって◯分後の通知（送る時刻から 3 時間のうち・1 人 1 枠 1 通知 1 回）
   // 並びが無いメニューは今までの「前日の知らせ」（remind_minutes・remind_*）
@@ -618,8 +625,10 @@ export function makeBooking(h) {
     if (moving && tooLate(t, moving.slot)) return { ok: false, error: "too_late", cancel_hours: t.cancel_hours };
     if (mine.length >= (t.max_per_person || 1) && !moving) return { ok: false, error: "already_booked", slot: mine[0].slot, label: fmtJst(mine[0].slot) };
     const b = { slot: iso, type_id: t.id, type_title: t.title, minutes: m, topic: (t.questions || []).length ? "" : String((body.answers && body.answers.topic) || "").trim().slice(0, 1000), answers: ans.answers, ...(moving ? { moved_from: moving.slot } : {}) };
+    const gev = await gcalCreate(env, t, b, customer);
+    if (gev) b.gcal_event_id = gev;
     await addEvent(env, customer.id, "consult_booked", b, "site");
-    if (moving) await addEvent(env, customer.id, "consult_canceled", { slot: moving.slot, type_id: t.id, type_title: t.title, moved_to: iso }, "site");
+    if (moving) { await addEvent(env, customer.id, "consult_canceled", { slot: moving.slot, type_id: t.id, type_title: t.title, moved_to: iso }, "site"); await gcalRemove(env, moving.gcal_event_id); }
     const mail = await notifyNow(env, t, b, customer, "booked").catch(() => "failed");
     let after = null;
     if (afterBooked && (t.after_actions || []).length) after = await afterBooked(env, customer.id, t.after_actions, { booked: iso }).catch((e) => ({ error: String(e.message || e) }));
@@ -635,6 +644,7 @@ export function makeBooking(h) {
     if (!t || t.audience !== "member") return { ok: false, error: "not_found" };
     if (tooLate(t, b.slot)) return { ok: false, error: "too_late", cancel_hours: t.cancel_hours };
     await addEvent(env, customer.id, "consult_canceled", { slot: b.slot, type_id: t.id, type_title: t.title }, "site");
+    await gcalRemove(env, b.gcal_event_id);
     const mail = await notifyNow(env, t, b, { id: customer.id, name: customer.name || "", email: customer.email || "" }, "canceled").catch(() => "failed");
     let after = null;
     if (afterBooked && (t.after_actions || []).length) after = await afterBooked(env, customer.id, t.after_actions, { canceled: b.slot }).catch((e) => ({ error: String(e.message || e) }));

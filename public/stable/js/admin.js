@@ -1255,11 +1255,18 @@ function bookingTypeForm(t, r = {}) {
       <div class="bt-toolbar"><button type="button" class="btn ghost small" id="bt-cpweek">月曜を平日にコピー</button><button type="button" class="btn ghost small" id="bt-clrweek">すべてクリア</button><span class="sp"></span><span class="note">30 分ごと・${BT_H0}:00〜24:00（日本時間）</span></div>
       <div class="bt-wkwrap" id="bt-wkwrap"><div class="bt-wkg" id="bt-wkg" role="grid" aria-label="基本の受付時間"></div></div>
       <div class="bt-sum" id="bt-wksum"></div>
-      <label class="check" style="margin-top:14px"><input type="checkbox" id="bt-avoid" ${!t || t.avoid_calendar ? "checked" : ""}> <span>Google カレンダーの予定と重なる時間は表示しない</span></label>
     </section>
     <section class="card hidden" data-btpane="hours" style="margin-top:16px"><h3 class="bt-h">特定日の設定</h3><p class="note bt-hint">日付をクリックすると、その日を休業日にできます（斜線＝休業日）。その日だけ受付時間を変えるときは、一覧の「編集」。</p>
       <div class="bt-two"><div><div class="bt-mhead"><button type="button" class="bt-ic" id="bt-mprev" aria-label="前の月">‹</button><b id="bt-mlabel"></b><button type="button" class="bt-ic" id="bt-mnext" aria-label="次の月">›</button></div><div class="bt-mini" id="bt-mini"></div></div>
         <div><div class="bt-ov" id="bt-ovlist"></div></div></div>
+    </section>
+    <section class="card hidden" data-btpane="hours" style="margin-top:16px"><h3 class="bt-h">Google カレンダー</h3>
+      <div class="bt-gc">
+        <label class="bt-tog"><input type="checkbox" id="bt-avoid" ${!t || t.avoid_calendar ? "checked" : ""}> <span>Google カレンダーの予定と重なる時間は表示しない</span></label>
+        <label class="bt-tog"><input type="checkbox" id="bt-gwrite" ${!t || t.gcal_write !== false ? "checked" : ""}> <span>予約を Google カレンダーに入れる（日時の変更・キャンセルも反映）</span></label>
+        <label class="bt-tog"><input type="checkbox" id="bt-ginvite" ${!t || t.gcal_invite !== false ? "checked" : ""}> <span>予約した人をゲストにして、Google から招待を送る</span></label>
+        <div id="bt-gcst" class="bt-gcst"><span class="note">接続を確認しています…</span></div>
+      </div>
     </section>
     <section class="card hidden" data-btpane="rules"><h3 class="bt-h">予約ルール</h3><p class="note bt-hint">予約の受け付け方を調整します。使わないものはオフにできます。</p>
       <div class="bt-lim">${btRulesHtml(t)}</div>
@@ -1347,6 +1354,7 @@ function wireBookingTypeForm(t, r = {}) {
     if (b.dataset.ovok) { const r = btParseRanges($("bt-ovin").value); if (!r) { $("bt-savebar").classList.remove("hidden"); $("bt-status").textContent = BT_WHY.bad_date_overrides; $("bt-ovin").focus(); return; } ov[b.dataset.ovok] = r; editK = null; drawOv(); markDirty(); } });
   $("bt-ovlist").addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.id === "bt-ovin") { e.preventDefault(); document.querySelector("#bt-ovlist [data-ovok]").click(); } if (e.key === "Escape" && e.target.id === "bt-ovin") { editK = null; drawOv(); } });
   drawOv();
+  btGcal();
   $("bt-min").addEventListener("input", () => document.querySelectorAll("#bt-dur [data-min]").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.min === $("bt-min").value))));
   $("bt-color").addEventListener("click", (e) => { const b = e.target.closest("[data-color]"); if (!b) return; document.querySelectorAll("#bt-color [data-color]").forEach((x) => x.setAttribute("aria-pressed", String(x === b))); markDirty(); });
   // 公開範囲
@@ -1404,6 +1412,7 @@ function wireBookingTypeForm(t, r = {}) {
       description: $("bt-desc").value, color: (document.querySelector('#bt-color [aria-pressed="true"]') || {}).dataset?.color || "",
       days_ahead: Number($("bt-days").value || 14), min_notice_hours: $("bt-notice").disabled ? 0 : Number($("bt-notice").value || 0),
       week_hours: Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map((w) => [w, btRangesOf(grid[w])])), date_overrides: Object.fromEntries(Object.entries(ov).filter(([k]) => k >= todayK)),
+      gcal_write: $("bt-gwrite").checked, gcal_invite: $("bt-ginvite").checked,
       durations: isMulti() ? [...document.querySelectorAll('#bt-dur [data-min][aria-pressed="true"]')].map((x) => Number(x.dataset.min)).sort((a, b) => a - b) : [],
       buffer_before: $("bt-pre").disabled ? 0 : Number($("bt-pre").value), buffer_after: $("bt-post").disabled ? 0 : Number($("bt-post").value),
       max_per_day: $("bt-perday").disabled ? null : Number($("bt-perday").value), max_per_person: Number($("bt-perperson").value),
@@ -1439,6 +1448,34 @@ function btUndo(text, undo) {
   el.querySelector("button").classList.toggle("hidden", !undo);
   el.querySelector("button").onclick = () => { el.classList.add("hidden"); if (undo) undo(); };
   clearTimeout(btUndoTimer); btUndoTimer = setTimeout(() => el.classList.add("hidden"), 8000);
+}
+// Google カレンダーにつなぐ（便⑤）：Naoki の Google に Apps Script を置き、その URL を貼る
+async function btGcal() {
+  const box = $("bt-gcst"); if (!box) return;
+  const st = await api("/api/admin/gcal", { token });
+  if (!$("bt-gcst")) return;
+  if (st.ok && st.set) {
+    box.innerHTML = `<div class="bt-gcok"><b>● つながっています</b><span>予約は Naoki の Google カレンダーに入ります。</span><button type="button" class="btn ghost small" id="bt-gc-re">つなぎ直す</button></div>`;
+    $("bt-gc-re").onclick = () => btGcalSteps(box);
+    return;
+  }
+  btGcalSteps(box);
+}
+function btGcalSteps(box) {
+  box.innerHTML = `<div class="bt-gcsteps"><b>Google カレンダーに書き込めるようにする（1 回だけ・約 5 分）</b>
+    <ol><li><button type="button" class="btn small" id="bt-gc-copy">コードをコピー</button></li>
+      <li><a href="https://script.google.com/create" target="_blank" rel="noopener">Google Apps Script を開く ↗</a> → 中身をすべて消してコードを貼る → 保存</li>
+      <li>右上の「デプロイ」→「新しいデプロイ」→ 種類「ウェブアプリ」、アクセスできるユーザー「全員」→「デプロイ」→ 権限を許可</li>
+      <li>表示された「ウェブアプリの URL」を貼る<div class="bt-gcin"><input type="url" id="bt-gc-url" placeholder="https://script.google.com/macros/s/…/exec" aria-label="ウェブアプリの URL"><button type="button" class="btn small" id="bt-gc-go">つなぐ</button></div></li></ol>
+    <p class="note" id="bt-gc-msg" role="status"></p></div>`;
+  const msg = (v) => { $("bt-gc-msg").textContent = v; };
+  $("bt-gc-copy").onclick = async () => { const r = await api("/api/admin/gcal/code", { method: "POST", token }); try { await navigator.clipboard.writeText(r.code); msg("コードをコピーしました。次に Google Apps Script に貼ります"); } catch (_) { msg("コピーできませんでした"); } };
+  $("bt-gc-go").onclick = async () => {
+    msg("つないでいます…");
+    const r = await api("/api/admin/gcal", { method: "PUT", token, body: { url: $("bt-gc-url").value } });
+    if (r.ok) { msg(""); btGcal(); btUndo(`Google カレンダー「${r.calendar || ""}」とつながりました`); return; }
+    msg({ bad_url: "「https://script.google.com/macros/s/…/exec」の形の URL を貼ってください", no_secret: "先に「コードをコピー」を押してください", bad_secret: "コードが古いようです。「コードをコピー」から貼り直して、デプロイし直してください", ping_failed: "つながりませんでした。アクセスできるユーザーが「全員」になっているか確かめてください" }[r.error] || "つながりませんでした（" + r.error + "）");
+  };
 }
 // リマインド（便④）：通知の並び（いつ × どのテンプレート）は予約メニューごと、文はテンプレートでメニューをまたいで使い回す
 const BT_WHEN = { booked: "予約した直後", before: "開始前", after: "終了後", canceled: "キャンセルされたとき" };
