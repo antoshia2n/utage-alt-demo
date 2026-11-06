@@ -127,3 +127,12 @@ test("動画の住所からまとめて作る：題名は oEmbed から・読め
   assert.deepEqual(made.map((x) => [x.title, x.status]), [["動画の題名", "draft"], ["新しいコンテンツ 2", "draft"]]);
   assert.deepEqual(st.table("b_site_content_courses").filter((l) => r.ids.includes(l.content_id)).map((l) => l.sort), [2, 3]);
 });
+
+// 2026-11-06：直したあとの行を使う PATCH は、行を返してもらう（無いと 204 で空になり、保存できても画面は失敗になる）
+test("行を使う PATCH は return=representation を付ける", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../src/site.js", import.meta.url), "utf8");
+  const uses = src.split("\n").filter((l) => /const rows = await db\(env, "PATCH"/.test(l));
+  assert.ok(uses.length >= 5);
+  for (const l of uses) assert.ok(l.includes('"return=representation"'), l.trim().slice(0, 80));
+});
