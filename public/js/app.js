@@ -2,6 +2,7 @@ import { getClient, api, esc, fmtTime, authImage, shrinkImage, noticeHtml } from
 import { correctionHtml, wireNotes } from "/js/correction.js";
 import { setupStudentPush } from "/js/pushclient.js";
 import { flatten, homeHtml, libraryHtml, searchHtml } from "/js/home.js";
+import { makeWatch } from "/js/watch.js";
 import { planHtml, chainHtml, popHtml, homeCardHtml, tacHtml, recHtml, reviewHtml, growHtml, reportFor, applyAction, applyField, applyWeek, applyNext, carryTry, setPath, weekNo, weekInfo, WEEKS, draftHtml } from "/js/goalplan.js";
 
 
@@ -161,7 +162,10 @@ async function main() {
   // 個別相談の予約（2026-11-05）：予約できる種類が 1 つでもあれば、左のメニューとホームの 1 行に出す
   const bookingReady = r.booking_ready === true;
   const sections = ["home", "mypage", "goals", "lessons", "lesson", "news", "room", "review", "booking", "contract", "apps"];
+  let watch = null;
   const showTab = (name) => {
+    if (name !== "lesson" && watch) watch.leave();
+    document.body.classList.toggle("watching", name === "lesson"); // 便 B2：教材を見ている間は、画面いっぱいに使う
     sections.forEach((s) => $("tab-" + s).classList.toggle("hidden", s !== name));
     if (name === "room") room.open();
     if (name === "review") loadReview(token);
@@ -181,7 +185,6 @@ async function main() {
     });
   };
   document.querySelectorAll(".side [data-tab]").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
-  $("back").addEventListener("click", (e) => { e.preventDefault(); showTab("lessons"); });
   // ホーム：版ごとの段。テーマはこのブラウザに覚える
   const THEME_KEY = "lab:theme";
   const drawHome = () => {
@@ -202,86 +205,26 @@ async function main() {
     openLesson(a.dataset.id);
   });
 
-  const openLesson = async (id) => {
-    const l = lessons[id]; if (!l) return;
-    $("l-title").textContent = l.title;
-    $("l-summary").textContent = l.summary || "";
-    $("l-mindmap").innerHTML = l.mindmap_url ? `<a class="btn ghost small" href="${esc(l.mindmap_url)}" target="_blank" rel="noopener">マインドマップを開く</a>` : "";
-    $("l-player").classList.toggle("hidden", !l.youtube_id && !l.rec && lib.source === "manabu");
-    $("l-player").classList.toggle("rec", !!l.rec);
-    const frame = (start) => `<iframe src="https://www.youtube-nocookie.com/embed/${esc(l.youtube_id)}${start ? `?start=${start}&autoplay=1` : ""}" title="${esc(l.title)} の動画" style="width:100%;height:100%;border:0;border-radius:10px" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>`;
-    if (l.rec) {
-      // 便B（2026-11-06）：録画の棚から流す。開くたびにログインと権利を確かめ、6 時間の住所をもらう（無ければ YouTube の枠へ戻す）
-      $("l-player").innerHTML = "読み込み中…";
-      api("/api/me/rec/" + encodeURIComponent(id), { token }).catch(() => ({ ok: false })).then((r) => {
-        if (lessons[id] !== l || !document.getElementById("l-player")) return;
-        if (r && r.ok && r.url) {
-          $("l-player").innerHTML = `<iframe src="${esc(r.url)}" title="${esc(l.title)} の動画" allow="fullscreen; picture-in-picture" allowfullscreen></iframe>`;
-        } else {
-          $("l-player").classList.remove("rec");
-          $("l-player").innerHTML = l.youtube_id ? frame(0) : "いまは再生できません。読み込み直してください";
-        }
-      });
-    } else $("l-player").innerHTML = l.youtube_id ? frame(0) : "この教材には動画がありません";
-    // 会員サイトの管理（便 22）：目次（押すとその時間から再生）と資料
-    const secs = (t) => String(t).split(":").reduce((a, x) => a * 60 + (Number(x) || 0), 0);
-    const toc = Array.isArray(l.toc) ? l.toc : [], files = Array.isArray(l.files) ? l.files : [];
-    // 目次は一旦出さない（2026-10-29 11:31 Naoki「うまくいかない、一旦なくていい」）。資料だけ出す
-    $("l-extra").innerHTML = (false && toc.length ? `<section class="card stack"><h3 style="margin:0">目次</h3><div class="stack" style="gap:4px">${toc.map((x) => l.youtube_id
-      ? `<button type="button" class="btn ghost small" style="justify-content:flex-start;text-align:left" data-at="${secs(x.at)}"><b style="font-variant-numeric:tabular-nums;margin-right:8px">${esc(x.at)}</b>${esc(x.label)}</button>`
-      : `<div><b style="font-variant-numeric:tabular-nums;margin-right:8px">${esc(x.at)}</b>${esc(x.label)}</div>`).join("")}</div></section>` : "")
-      + (files.length ? `<section class="card stack"><h3 style="margin:0">資料</h3>${files.map((f) => `<a class="btn ghost small" style="justify-content:flex-start" href="${esc(f.url)}" target="_blank" rel="noopener">${esc(f.label)}</a>`).join("")}</section>` : "");
-    $("l-extra").querySelectorAll("[data-at]").forEach((b) => b.addEventListener("click", () => {
-      $("l-player").innerHTML = frame(Number(b.dataset.at));
-      $("l-player").scrollIntoView({ block: "nearest" });
-    }));
+  // 教材を見る画面（便 B2・2026-11-06）：public/js/watch.js。印（お気に入り・視聴済み・ラベル）は本人だけ
+  const watchFlat = flat.length ? flat : Object.values(lessons).map((x, i) => ({ ...x, program: "教材", programId: "all", course: "教材", courseId: "all", order: [0, 0, i] }));
+  watch = makeWatch({
+    root: $("tab-lesson"), token, flat: watchFlat, lessons, marks: r.marks || {},
+    onBack: () => { history.pushState(null, "", "#lessons"); showTab("lessons"); },
+    onViewed: async (id) => {
+      const res = await api("/api/events", { method: "POST", token, body: { type: "lesson_viewed", lesson_id: id } });
+      // 記録できたら一覧の印をその場で付ける（読み直さなくても見える）
+      if (res.ok && !viewed.has(id)) {
+        viewed.add(id);
+        document.querySelectorAll(`.lesson[data-id="${CSS.escape(id)}"] .meta`).forEach((meta) => meta.insertAdjacentHTML("beforeend", ' <span class="pill">視聴済み</span>'));
+      }
+    },
+  });
+  const openLesson = (id, start) => {
+    if (!lessons[id]) return;
     showTab("lesson");
     window.scrollTo(0, 0);
-    loadLessonNotes(id);
-    const res = await api("/api/events", { method: "POST", token, body: { type: "lesson_viewed", lesson_id: id } });
-    // 記録できたら一覧の印をその場で付ける（読み直さなくても見える）
-    if (res.ok && !viewed.has(id)) {
-      viewed.add(id);
-      document.querySelectorAll(`.lesson[data-id="${CSS.escape(id)}"] .meta`).forEach((meta) => meta.insertAdjacentHTML("beforeend", ' <span class="pill">視聴済み</span>'));
-    }
+    watch.open(id, start);
   };
-  // 便 15：教材の下の質問と答え・自分のメモ
-  let qaLesson = null;
-  const fmtQa = (t) => `<time class="note">${esc(fmtTime(t))}</time>`;
-  async function loadLessonNotes(id) {
-    qaLesson = id;
-    $("l-q").value = ""; $("l-q-status").textContent = ""; $("l-memo-status").textContent = "";
-    const n = await api("/api/lesson/notes?lesson_id=" + encodeURIComponent(id), { token });
-    if (qaLesson !== id) return; // 読み込みの間に別の教材を開いた
-    $("l-qa").classList.toggle("hidden", !n.ok);
-    $("l-memo-box").classList.toggle("hidden", !n.ok);
-    if (!n.ok) return;
-    // 便 22：質問を受け付けないコンテンツは、送る欄を出さない（前の質問と答えは見える）
-    const canAsk = !lessons[id] || lessons[id].can_ask !== false;
-    ["l-q", "l-ask"].forEach((k) => $(k).classList.toggle("hidden", !canAsk));
-    $("l-q-status").textContent = canAsk ? "" : "このコンテンツは質問を受け付けていません";
-    $("l-questions").innerHTML = n.questions.map((q) => `<div class="qa">
-      <div class="msg-me"><div class="bubble chat mine"><div class="pre">${esc(q.text)}</div></div><div class="meta">${fmtQa(q.at)}</div></div>
-      ${q.answers.length ? q.answers.map((a) => `<div class="msg-them"><div class="bubble chat"><div class="pre">${esc(a.text)}</div></div><div class="meta">${fmtQa(a.at)}<span class="pill gray">シアニンの答え</span></div></div>`).join("")
-        : '<p class="note" style="margin:4px 0 0">答えを待っています</p>'}
-    </div>`).join("");
-    $("l-memo").value = n.memo ? n.memo.text : "";
-  }
-  $("l-ask").addEventListener("click", async () => {
-    const text = $("l-q").value.trim();
-    if (!qaLesson || !text) { $("l-q-status").textContent = "質問を入れてください"; return; }
-    $("l-ask").disabled = true;
-    const r2 = await api("/api/room", { method: "POST", token, body: { kind: "chat", lesson_id: qaLesson, text } });
-    $("l-ask").disabled = false;
-    if (!r2.ok) { $("l-q-status").textContent = "送れませんでした。" + errText(r2); return; }
-    await loadLessonNotes(qaLesson);
-    $("l-q-status").textContent = "送りました";
-  });
-  $("l-memo-save").addEventListener("click", async () => {
-    if (!qaLesson) return;
-    const r2 = await api("/api/lesson/memo", { method: "POST", token, body: { lesson_id: qaLesson, text: $("l-memo").value } });
-    $("l-memo-status").textContent = r2.ok ? "保存しました" : "保存できませんでした。" + errText(r2);
-  });
   document.querySelectorAll(".lesson").forEach((el) => {
     el.addEventListener("click", () => openLesson(el.dataset.id));
     el.addEventListener("keydown", (e) => { if (e.key === "Enter") openLesson(el.dataset.id); });
@@ -305,7 +248,8 @@ async function main() {
   }
   // マイページの枠の中のリンク：#lesson/<番号> はそのコンテンツ、#news はお知らせ
   const routeLesson = () => {
-    const m = location.hash.match(/^#lesson[/](.+)$/); if (m) { openLesson(decodeURIComponent(m[1])); return true; }
+    // #lesson/<番号>/t<秒>：会員用リンク（その時間から）
+    const m = location.hash.match(/^#lesson[/]([^/]+)(?:[/]t(\d{1,6}))?$/); if (m) { openLesson(decodeURIComponent(m[1]), m[2] != null ? Number(m[2]) : undefined); return true; }
     // #program/<番号>：教材の一覧で、そのプログラムを開いて見えるところまで動かす。#lessons：教材の一覧
     const pg = location.hash.match(/^#program[/](.+)$/);
     if (pg || location.hash === "#lessons") {

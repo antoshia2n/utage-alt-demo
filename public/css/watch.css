@@ -1,0 +1,197 @@
+/* 教材を見る画面（便 B2・2026-11-06 Naoki OK 19:05「ボタンや線やフォントのスタイリッシュさだけ統一」）
+   色と字は生徒の画面（student.css）の値だけを読む。ボタンは 3 種類だけ：丸い印のボタン（.wt-ib）・操作の札（.wt-pill）・文字のボタン（.wt-btn）。
+   線は 1 本の細い線（--line）だけ。数字は字の幅をそろえる（tabular-nums）。 */
+
+/* 見ている間は、左のメニューと上の帯をしまって画面いっぱいに使う */
+body.student.watching .shell { grid-template-columns: minmax(0, 1fr); }
+body.student.watching .shell > .side,
+body.student.watching .topnav,
+body.student.watching footer.site { display: none !important; }
+body.student.watching .content { max-width: none !important; padding: 0 !important; }
+body.student.watching #member { display: none !important; }
+
+body.student .wt { --wt-top: 60px; --wt-side: 380px; --wt-nav: 300px; color: var(--ink); font-size: 14px; line-height: 1.7; }
+body.student .wt svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+body.student .wt .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+body.student .wt button { font: inherit; color: inherit; }
+body.student .wt :focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: 2px; }
+body.student .wt [hidden] { display: none !important; }
+/* 読み上げ用の隠し字（.sr）が動く枠の外へはみ出してページを伸ばさないよう、動く枠を基準にする */
+body.student .wt-watch, body.student .wt-pane, body.student .wt-nav, body.student .wt-side { position: relative; }
+
+/* ---- 3 種類のボタン ---- */
+body.student .wt-ib { height: 40px; min-width: 40px; border: 0; border-radius: 99px; background: transparent; display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding: 0 10px; cursor: pointer; white-space: nowrap; font-weight: 500; }
+body.student .wt-ib:hover:not(:disabled) { background: var(--soft); }
+body.student .wt-ib:disabled { color: var(--muted); opacity: .45; cursor: default; }
+body.student .wt-ib[aria-pressed=true] { background: var(--soft); }
+body.student .wt-pill { height: 36px; border: 0; border-radius: 99px; background: color-mix(in srgb, var(--ink) 6%, var(--surface)); display: inline-flex; align-items: center; gap: 6px; padding: 0 14px 0 12px; cursor: pointer; font-weight: 600; font-size: 13px; white-space: nowrap; transition: background .15s, color .15s; }
+body.student .wt-pill svg { width: 18px; height: 18px; }
+body.student .wt-pill:hover { background: color-mix(in srgb, var(--ink) 9%, var(--surface)); }
+body.student .wt-pill[aria-pressed=true] { background: var(--accent-soft); color: var(--accent); }
+body.student #wt-star[aria-pressed=true] svg { fill: currentColor; }
+body.student .wt-btn { height: 36px; border: 0; border-radius: 10px; background: color-mix(in srgb, var(--ink) 6%, var(--surface)); display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 14px; cursor: pointer; font-weight: 600; font-size: 13px; text-decoration: none; color: var(--ink); white-space: nowrap; }
+body.student .wt-btn:hover { background: color-mix(in srgb, var(--ink) 9%, var(--surface)); }
+body.student .wt-btn.pri { background: var(--accent); color: var(--accent-ink); }
+body.student .wt-btn.pri:hover { background: color-mix(in srgb, var(--accent) 88%, #000); }
+body.student .wt-btn:disabled { opacity: .5; cursor: default; }
+body.student .wt-mini { height: 30px; border: 0; border-radius: 8px; background: transparent; padding: 0 8px; font-size: 13px; cursor: pointer; color: var(--muted); }
+body.student .wt-mini:hover { background: var(--soft); color: var(--ink); }
+body.student .wt-mini.pri { background: var(--accent); color: var(--accent-ink); }
+body.student .wt-note { font-size: 13px; color: var(--muted); }
+body.student .wt-grow { flex: 1; }
+body.student .wt-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+body.student .wt-chk { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); white-space: nowrap; cursor: pointer; }
+body.student .wt-chk input { width: 16px; height: 16px; accent-color: var(--accent); }
+body.student .wt-tag { display: inline-block; font-size: 12px; line-height: 20px; padding: 0 8px; border-radius: 99px; background: var(--soft); color: var(--muted); margin: 0 4px 0 0; }
+body.student .wt-tag.lg { font-size: 13px; line-height: 24px; padding: 0 10px; color: var(--ink); }
+
+/* ---- 上の帯 ---- */
+body.student .wt-top { position: sticky; top: 0; z-index: 30; height: var(--wt-top); display: flex; align-items: center; gap: 4px; padding: 0 12px; background: color-mix(in srgb, var(--surface) 88%, transparent); backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px); border-bottom: 1px solid var(--line); }
+body.student .wt-crumb { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.35; padding: 0 8px; }
+body.student .wt-crumb small { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.student .wt-crumb b { font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.student .wt-prog { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); white-space: nowrap; margin-right: 8px; font-variant-numeric: tabular-nums; }
+body.student .wt-bar { width: 96px; height: 4px; border-radius: 99px; background: var(--line); overflow: hidden; }
+body.student .wt-bar i { display: block; height: 100%; background: var(--accent); border-radius: 99px; transition: width .3s; }
+
+/* ---- 3 列 ---- */
+body.student .wt-body { display: grid; grid-template-columns: var(--wt-nav) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: calc(100dvh - var(--wt-top)); transition: grid-template-columns .2s; }
+body.student .wt-body.nonav { grid-template-columns: 0 minmax(0, 1fr); }
+body.student .wt-body.nonav .wt-nav { visibility: hidden; }
+body.student .wt-main { display: grid; grid-template-columns: minmax(0, 1fr) var(--wt-side); grid-template-rows: minmax(0, 1fr); min-height: 0; background: var(--surface); }
+
+/* 左：教材の一覧 */
+body.student .wt-nav { overflow: auto; border-right: 1px solid var(--line); background: var(--surface); overscroll-behavior: contain; }
+body.student .wt-nh { position: sticky; top: 0; z-index: 2; background: var(--surface); padding: 14px 14px 10px; border-bottom: 1px solid var(--line); }
+body.student .wt-nh h2 { font-size: 13px; font-weight: 600; margin: 0 0 8px; color: var(--muted); }
+body.student .wt-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+body.student .wt-chips button { height: 30px; border: 0; border-radius: 99px; background: var(--soft); padding: 0 12px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+body.student .wt-chips button[aria-pressed=true] { background: var(--ink); color: var(--surface); }
+body.student .wt-grp { border-bottom: 1px solid var(--line); }
+body.student .wt-gh { width: 100%; display: flex; align-items: center; gap: 6px; padding: 12px 14px; background: none; border: 0; cursor: pointer; text-align: left; font-weight: 600; font-size: 13px; }
+body.student .wt-gh:hover { background: var(--soft); }
+body.student .wt-car { width: 14px; color: var(--muted); font-size: 11px; }
+body.student .wt-gt { flex: 1; min-width: 0; }
+body.student .wt-gc { font-size: 12px; color: var(--muted); font-weight: 500; font-variant-numeric: tabular-nums; }
+body.student .wt-les { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 9px 14px 9px 11px; border-left: 3px solid transparent; color: inherit; text-decoration: none; }
+body.student .wt-les:hover { background: var(--soft); }
+body.student .wt-les.on { background: var(--accent-soft); border-left-color: var(--accent); }
+body.student .wt-ck { width: 18px; height: 18px; margin-top: 2px; border-radius: 99px; border: 1.5px solid var(--field); display: grid; place-items: center; }
+body.student .wt-ck.done { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+body.student .wt-ck svg { width: 13px; height: 13px; stroke-width: 2.6; }
+body.student .wt-lt { display: flex; flex-direction: column; min-width: 0; }
+body.student .wt-lname { font-size: 13px; line-height: 1.5; }
+body.student .wt-les.on .wt-lname { font-weight: 600; }
+body.student .wt-lmeta { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+body.student .wt-lmeta .wt-tag { margin: 2px 0 0 6px; line-height: 18px; font-size: 11px; }
+body.student .wt-st { color: var(--accent); margin-top: 2px; }
+body.student .wt-st svg { width: 15px; height: 15px; fill: currentColor; }
+
+/* 真ん中：動画と下の中身（ここだけが縦に動く） */
+body.student .wt-watch { overflow: auto; padding: 20px 28px 48px; min-width: 0; overscroll-behavior: contain; }
+body.student .wt-stage { max-width: 1280px; }
+body.student .wt-frame { position: relative; aspect-ratio: 16 / 9; background: #000; border-radius: 14px; overflow: hidden; }
+body.student .wt-frame video, body.student .wt-frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #000; }
+body.student .wt-frame.wt-wait { display: grid; place-items: center; color: #a1a1a6; font-size: 13px; padding: 20px; text-align: center; background: var(--soft); }
+body.student .wt-cap { position: absolute; left: 50%; bottom: 64px; transform: translateX(-50%); max-width: 86%; background: rgba(0, 0, 0, .72); color: #fff; padding: 4px 12px; border-radius: 8px; font-size: 15px; line-height: 1.55; text-align: center; pointer-events: none; }
+body.student .wt-tools { display: flex; align-items: center; gap: 4px; margin-top: 8px; max-width: 1280px; }
+body.student .wt-tl { height: 34px; border: 0; border-radius: 99px; background: transparent; display: inline-flex; align-items: center; gap: 4px; padding: 0 10px; cursor: pointer; font-size: 12px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+body.student .wt-tl:hover { background: var(--soft); color: var(--ink); }
+body.student .wt-tl[aria-pressed=true] { color: var(--accent); background: var(--accent-soft); }
+body.student .wt-tl svg { width: 18px; height: 18px; }
+body.student .wt-rate select { height: 34px; border: 0; border-radius: 99px; background: var(--soft); padding: 0 12px; font: inherit; font-size: 12px; font-weight: 600; color: var(--ink); cursor: pointer; font-variant-numeric: tabular-nums; }
+body.student .wt-h1 { font-size: 24px; font-weight: 700; line-height: 1.4; letter-spacing: .005em; margin: 18px 0 2px; max-width: 1280px; }
+body.student .wt-meta { margin: 0 0 14px; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+body.student .wt-acts { display: flex; gap: 8px; flex-wrap: wrap; }
+body.student .wt-labs { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0; }
+body.student .wt-labs:empty { display: none; }
+body.student #wt-cards, body.student #wt-qa { max-width: 1280px; }
+body.student .wt-card { margin-top: 16px; padding: 18px 20px; border-radius: 14px; background: var(--soft); }
+body.student .wt-card h3 { margin: 0 0 8px; font-size: 15px; font-weight: 600; }
+body.student .wt-pre { white-space: pre-wrap; margin: 0; }
+body.student .wt-files { display: flex; gap: 8px; flex-wrap: wrap; }
+body.student .wt-nextc { display: flex; align-items: center; gap: 16px; }
+body.student .wt-nextc > div { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+body.student .wt-nextc b { font-weight: 600; }
+body.student #wt-qa textarea, body.student .wt-memo textarea, body.student .wt-add input, body.student .wt-lrow input:not([type=checkbox]) { width: 100%; border: 1px solid var(--field); border-radius: 10px; padding: 10px 12px; font: inherit; background: var(--surface); color: var(--ink); }
+body.student #wt-qa textarea { margin: 10px 0 8px; resize: vertical; }
+body.student .wt-qlist { display: flex; flex-direction: column; gap: 12px; }
+body.student .wt-qa1 { display: flex; flex-direction: column; gap: 6px; }
+body.student .wt-qme, body.student .wt-qans { padding: 10px 12px; border-radius: 12px; background: var(--surface); }
+body.student .wt-qans { background: var(--accent-soft); margin-left: 20px; }
+body.student .wt-qa1 time { font-size: 12px; color: var(--muted); }
+body.student .wt-who { display: block; font-size: 12px; font-weight: 600; color: var(--muted); }
+
+/* 右：文字起こし・目次・メモ（枠の中だけが動く） */
+body.student .wt-side { display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--line); background: var(--surface); }
+body.student .wt-tabs { display: flex; gap: 4px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+body.student .wt-tabs button { flex: 1; height: 34px; border: 0; border-radius: 99px; background: transparent; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--muted); }
+body.student .wt-tabs button:hover { color: var(--ink); }
+body.student .wt-tabs button[aria-selected=true] { background: var(--soft); color: var(--ink); }
+body.student .wt-pane { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+body.student .wt-find { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--surface); border-bottom: 1px solid var(--line); }
+body.student .wt-si { position: absolute; left: 22px; color: var(--muted); display: flex; }
+body.student .wt-si svg { width: 16px; height: 16px; }
+body.student .wt-find input { flex: 1; min-width: 0; height: 34px; border: 0; border-radius: 10px; background: var(--soft); padding: 0 10px 0 32px; font: inherit; font-size: 13px; color: var(--ink); }
+body.student .wt-cue, body.student .wt-ch { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 8px; width: 100%; text-align: left; padding: 9px 14px 9px 11px; background: none; border: 0; border-left: 3px solid transparent; cursor: pointer; line-height: 1.65; }
+body.student .wt-cue:hover, body.student .wt-ch:hover { background: var(--soft); }
+body.student .wt-cue.now, body.student .wt-ch.now { background: var(--accent-soft); border-left-color: var(--accent); }
+body.student .wt-at { font-size: 12px; color: var(--accent); font-variant-numeric: tabular-nums; padding-top: 2px; font-weight: 600; }
+body.student .wt-cx { font-size: 14px; }
+body.student .wt-cue mark { background: color-mix(in srgb, #ffcc00 45%, transparent); color: inherit; border-radius: 3px; }
+body.student .wt-ch { border-bottom: 1px solid var(--line); padding-top: 12px; padding-bottom: 12px; }
+body.student .wt-memo { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+body.student .wt-memo textarea { min-height: 260px; resize: vertical; line-height: 1.75; }
+body.student .wt-memo .wt-note { margin: 0; }
+
+/* 窓とメニュー */
+body.student .wt-scrim { position: fixed; inset: 0; z-index: 60; background: rgba(0, 0, 0, .28); }
+body.student .wt-scrim.clear { background: transparent; }
+body.student .wt-modal { position: fixed; z-index: 61; left: 50%; top: 12vh; transform: translateX(-50%); width: min(460px, 94vw); max-height: 76vh; overflow: auto; background: var(--surface); border-radius: 16px; box-shadow: 0 20px 60px rgba(0, 0, 0, .22); }
+body.student .wt-mh { display: flex; align-items: center; justify-content: space-between; padding: 12px 12px 12px 20px; border-bottom: 1px solid var(--line); }
+body.student .wt-mh h2 { margin: 0; font-size: 16px; font-weight: 600; }
+body.student .wt-mb { padding: 14px 20px 18px; display: flex; flex-direction: column; gap: 4px; }
+body.student .wt-lrow { display: flex; align-items: center; gap: 8px; min-height: 40px; }
+body.student .wt-lrow input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); flex: none; }
+body.student .wt-lrow label { flex: 1; min-width: 0; }
+body.student .wt-lrow input:not([type=checkbox]) { height: 34px; padding: 0 10px; flex: 1; }
+body.student .wt-add { display: flex; gap: 8px; margin-top: 8px; }
+body.student .wt-add input { height: 36px; padding: 0 12px; flex: 1; }
+body.student .wt-menu { position: fixed; z-index: 61; min-width: 200px; max-width: 280px; max-height: 50vh; overflow: auto; padding: 6px; background: var(--surface); border-radius: 12px; box-shadow: 0 12px 36px rgba(0, 0, 0, .18); border: 1px solid var(--line); }
+body.student .wt-menu button { width: 100%; display: flex; justify-content: space-between; gap: 12px; height: 36px; padding: 0 10px; border: 0; background: none; border-radius: 8px; cursor: pointer; font-size: 13px; text-align: left; }
+body.student .wt-menu button:hover, body.student .wt-menu button:focus-visible { background: var(--soft); }
+body.student .wt-menu button span { color: var(--muted); font-variant-numeric: tabular-nums; }
+body.student .wt-toast { position: fixed; z-index: 70; left: 50%; bottom: 24px; transform: translateX(-50%); display: flex; align-items: center; gap: 14px; max-width: min(560px, 92vw); padding: 10px 12px 10px 18px; border-radius: 12px; background: var(--ink); color: var(--surface); font-size: 13px; box-shadow: 0 10px 30px rgba(0, 0, 0, .2); }
+body.student .wt-toast button { border: 0; background: none; color: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; min-height: 32px; }
+
+/* 少し狭い画面 */
+@media (max-width: 1240px) { body.student .wt { --wt-side: 340px; --wt-nav: 260px; } body.student .wt-watch { padding: 16px 20px 40px; } body.student .wt-prog .wt-bar { display: none; } }
+@media (max-width: 1060px) { body.student .wt-txt span { display: none; } }
+
+/* スマホ・タブレット：動画を上に貼り、その下にタブ。一覧は左から出す */
+@media (max-width: 860px) {
+  body.student .wt { --wt-top: 56px; }
+  body.student .wt-top { padding: 0 6px; }
+  body.student .wt-prog { display: none; }
+  body.student .wt-ib { min-width: 44px; height: 44px; }
+  body.student .wt-body, body.student .wt-body.nonav { display: block; height: auto; }
+  body.student .wt-nav { position: fixed; z-index: 40; top: var(--wt-top); bottom: 0; left: 0; width: min(88vw, 360px); box-shadow: 12px 0 40px rgba(0, 0, 0, .2); }
+  body.student .wt-body.nonav .wt-nav { display: none; }
+  body.student .wt-main { display: flex; flex-direction: column; }
+  body.student .wt-watch { overflow: visible; padding: 0 0 8px; display: contents; }
+  body.student .wt-stage { position: sticky; top: var(--wt-top); z-index: 20; order: 1; }
+  body.student .wt-frame { border-radius: 0; }
+  body.student .wt-tools { order: 2; margin: 6px 12px 0; }
+  body.student .wt-h1 { order: 3; font-size: 20px; margin: 12px 16px 2px; }
+  body.student .wt-meta { order: 4; margin: 0 16px 12px; }
+  body.student .wt-acts { order: 5; margin: 0 16px; }
+  body.student .wt-labs { order: 6; margin: 10px 16px 0; }
+  body.student .wt-side { order: 7; border-left: 0; border-top: 1px solid var(--line); margin-top: 16px; height: 62dvh; }
+  body.student #wt-cards { order: 8; margin: 0 16px; }
+  body.student #wt-qa { order: 9; margin: 16px 16px calc(24px + env(safe-area-inset-bottom)); }
+  body.student .wt-pill, body.student .wt-btn, body.student .wt-tabs button, body.student .wt-tl, body.student .wt-rate select { min-height: 44px; }
+  body.student .wt-mini { min-height: 44px; }
+  body.student .wt-find input, body.student .wt-memo textarea, body.student #wt-qa textarea, body.student .wt-add input, body.student .wt-lrow input:not([type=checkbox]) { font-size: 16px; }
+  body.student .wt-les, body.student .wt-gh { min-height: 44px; }
+  body.student .wt-cap { bottom: 44px; font-size: 13px; }
+}

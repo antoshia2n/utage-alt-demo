@@ -77,6 +77,7 @@ import { mailText, mailHtml } from "./mailhtml.js";
 import { makeNews, newsQuery } from "./news.js";
 import { recordings } from "./recordings.js";
 import { makeRecToken, handleRecPlay } from "./recplay.js";
+import { makeMarks } from "./marks.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
 const VERSION = "0.65.0-bgoaldraft";
@@ -142,7 +143,7 @@ async function route(request, env, ctx, url, path) {
   if (isPagesHost(env, url)) return await handlePagesHost(request, env, url);
   if (path === "/mcp" || path.startsWith("/mcp/")) return await handleMcp(request, env, url);
   // 便B（2026-11-06）：会員サイトの中で録画を流す（合言葉つきの住所。合言葉は下の /api/me/rec/ が渡す）
-  if (path === "/learn/rec" || path === "/learn/rec/video") return await handleRecPlay(request, env, url);
+  if (path === "/learn/rec/video") return await handleRecPlay(request, env, url);
   if (path.startsWith("/api/")) return await handleApi(request, env, url);
   // B の便 5：メールの中のリンク（押したら記録して元の住所へ）
   const rl = path.match(/^[/]r[/]([0-9a-f]{12})$/);
@@ -203,6 +204,7 @@ const deliver = makeDeliver({ db, addEvent, logInbound, bin3, sell, mailcfg, con
 const learn = makeLearn({ db });
 // B の便 15：教材の質問とメモ（中身は src/lessonqa.js）
 const lessonqa = makeLessonQA({ db, addEvent, learn });
+const marks = makeMarks({ db, addEvent });
 const pages = makePages({ db, addEvent, logInbound, forms, sell });
 // マイページ（中身は src/mypage.js・仕組みはページと同じ表）
 const mypage = makeMypage({ db, pages, learn, names: (env) => students.load(env) });
@@ -1035,7 +1037,12 @@ async function handleApi(request, env, url) {
     if ((await studentAccess(env, customer, v.email)).access !== "full") return json(NOT_MEMBER, 403);
     const l = await learn.recFor(env, customer, v.email, mr[1]);
     if (!l) return json({ ok: false, error: "not_found" }, 404);
-    return json({ ok: true, url: "/learn/rec?t=" + encodeURIComponent(await makeRecToken(env.MCP_SECRET, { lesson: mr[1], rec: l.rec_id, title: l.title })) }, 200, { "cache-control": "no-store" });
+    if (!env.ZOOM) return json({ ok: false, error: "no_binding" }, 503);
+    // 便 B2：見る画面はマーケくんで組む。文字起こし・目次・要約と、映像の置き場を入れた合言葉の住所を返す
+    const d = await env.ZOOM.member_data(l.rec_id);
+    if (!d || !d.ok) return json({ ok: false, error: "not_found" }, 404);
+    const t = await makeRecToken(env.MCP_SECRET, { lesson: mr[1], key: d.video_key });
+    return json({ ok: true, video: "/learn/rec/video?t=" + encodeURIComponent(t), date: d.date || null, summary: d.summary || "", chapters: d.chapters || [], cues: d.cues || [] }, 200, { "cache-control": "no-store" });
   }
   // 生徒：自分の情報・教材・お知らせ
   if (path === "/api/me" && method === "GET") {
@@ -1071,6 +1078,7 @@ async function handleApi(request, env, url) {
         return PUBLISH_APPS.filter((a) => APP_URLS[a.target]).map((a) => ({ target: a.target, name: a.name, url: APP_URLS[a.target], open: !open || open.has(a.target) })); })(),
       me: { name: customer.name, email: customer.email, source: customer.source },
       lessons: lib.flat, announcements, viewed: viewedIds, views,
+      marks: await marks.all(env, customer.id), // 便 B2：お気に入り・視聴済み・自分のラベル
       // 版（ホームの段の並びを決める）：メンシプだけの人は mem、モニターは mon、ほかは lab
       tier: homeTier(sa.admin, ent),
       // 版ごとのホームの段（管理画面で決めた並び。空なら決まった並び）
@@ -1186,7 +1194,7 @@ async function handleApi(request, env, url) {
   }
 
   // 生徒：教材の下の質問と答え・自分のメモ（便 15）
-  if (path === "/api/lesson/notes" || path === "/api/lesson/memo") {
+  if (path === "/api/lesson/notes" || path === "/api/lesson/memo" || path === "/api/lesson/mark" || path === "/api/lesson/labels") {
     const v = await verifyUser(request, env);
     if (v.error) return json({ ok: false, error: v.error }, 401);
     const customer = await customerByEmail(env, v.email);
@@ -1198,6 +1206,15 @@ async function handleApi(request, env, url) {
     }
     if (path === "/api/lesson/memo" && method === "POST") {
       const r = await lessonqa.setMemo(env, customer, v.email, await request.json().catch(() => ({})));
+      return json(r, r.ok ? 200 : 400);
+    }
+    // 便 B2（2026-11-06）：お気に入り・視聴済み・自分のラベル
+    if (path === "/api/lesson/mark" && method === "POST") {
+      const r = await marks.set(env, customer, await request.json().catch(() => ({})));
+      return json(r, r.ok ? 200 : 400);
+    }
+    if (path === "/api/lesson/labels" && method === "POST") {
+      const r = await marks.editLabel(env, customer, await request.json().catch(() => ({})));
       return json(r, r.ok ? 200 : 400);
     }
     return json({ ok: false, error: "method_not_allowed" }, 405);

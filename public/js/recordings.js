@@ -5,7 +5,7 @@
 import { api } from "/js/common.js";
 
 const KAI = { "セミナー": "#2563eb", "打ち合わせ": "#7c3aed", "個別相談": "#0d9488", "Zoom添削": "#db2777", "その他": "#a39a90" };
-const ISSUE_ORDER = ["名前の日付と収録日が合わない", "ほぼ空（1 分未満か 10MB 未満）", "見る画面で流せる動画が無い（音声だけなど）"];
+const ISSUE_ORDER = ["名前の日付と収録日が合わない", "ほぼ空（1 分未満か 10MB 未満）", "見る画面で流せる動画が無い（音声だけなど）", "同じ名前の録画がほかにもある"];
 const lkey = (s) => String(s || "").normalize("NFKC").replace(/\s+/g, "").toLowerCase();
 const ERR = {
   not_found: "録画が見つかりませんでした（消されたかもしれません）",
@@ -174,6 +174,7 @@ export function mountRecordings(host, { getToken }) {
       [ISSUE_ORDER[0]]: "別の回の名前や YouTube が付いている見込み。行を押して名前を直します。",
       [ISSUE_ORDER[1]]: "録り間違いの見込み。消すかどうかは Naoki が決めます（消すのは AI との壁打ちのあと・zoom_archive__delete）。",
       [ISSUE_ORDER[2]]: "画面つきの動画が無いので、共有リンクを出せません。",
+      [ISSUE_ORDER[3]]: "会員サイトに入れるときや共有のときに取り違えやすい録画です。収録日と中身を見て、片方の名前を直します。",
     };
     return `<h1>点検</h1><p class="lead">怪しいものを集めました。ここでは何も消しません。</p>
     ${groups.map(([name, rs]) => `<div class="card"><h2>${esc(name)}（${rs.length} 本）</h2><p>${NOTE[name]}</p></div>
@@ -313,6 +314,8 @@ export function mountRecordings(host, { getToken }) {
       <div class="dh"><h2 id="sm-t">会員サイトに入れる</h2><button class="x" type="button" id="sm-close" aria-label="閉じる">✕</button></div>
       <div class="db">
         <div class="f"><label for="sm-course">入れるコース</label><select id="sm-course">${m.courses.map((c) => `<option value="${esc(c.id)}">${esc(c.path.split(" › ").pop())}</option>`).join("")}</select><p class="hint" id="sm-path">${pathNote(m.courses[0])}</p></div>
+        <div class="sm-rec"><b>入れる録画</b><span>${esc(r.date)}・${esc(r.kai)}${r.minutes != null ? "・" + hm(r.minutes) : ""}</span></div>
+        ${r.issues.includes(ISSUE_ORDER[3]) ? `<p class="warn">同じ名前の録画がほかにもあります。収録日と会の種類がこの回で合っているか確かめてください。</p>` : ""}
         <div class="f"><label for="sm-title">コンテンツの名前（生徒に見える名前）</label><input id="sm-title" value="${esc(m.info.title)}"></div>
         <div class="f"><label for="sm-pub">公開</label><select id="sm-pub"><option value="draft">下書きで入れる（会員サイトの画面で確かめてから公開）</option><option value="published">すぐ公開する</option></select></div>
         <p class="hint">要約と目次は録画から写します（会員サイトの画面であとから直せます）。話者の名前は伏せたまま出します。</p>
