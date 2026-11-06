@@ -64,6 +64,15 @@ export const DEFAULT_MODES = {
   get_seminar: "auto", set_seminar: "approve", set_seminar_notice: "approve", send_seminar_notice: "approve",
   // 便 13b：予約の種類を読む・空き時間を見るのは自動。種類を作る・直すのは承認（外から予約できる枠が増えるため）
   list_booking_types: "auto", get_booking_type: "auto", get_booking_slots: "auto", set_booking_type: "approve",
+  // 2026-11-06 画面だけだった機能を AI からも（Naoki OK）：読む・下書き・自分への試しは自動。生徒や外の人に見える・届く・権利が動くものは承認
+  list_booking_templates: "auto", save_booking_template: "approve", test_booking_template: "auto",
+  list_staff: "auto", save_staff: "approve", check_staff_calendar: "auto",
+  get_mypage: "auto", save_mypage_draft: "auto", publish_mypage: "approve", set_site_look: "approve",
+  list_news: "auto", save_news: "approve",
+  list_invites: "auto", save_invite: "approve", set_workspace_member: "approve",
+  list_app_access: "auto", set_app_access: "approve", test_push: "auto",
+  list_entitlement_keys: "auto", set_entitlement: "approve", get_person_values: "auto",
+  get_site: "auto", save_site: "approve",
 };
 
 // 権限を問わず通す道具（承認待ちを見るための道具が承認待ちになると回らないため）
