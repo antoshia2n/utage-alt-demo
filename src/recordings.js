@@ -9,6 +9,7 @@
 //   suggest_kai  「その他」の録画に会の種類の案を AI で付ける（少しずつ。5 分ごとの処理も 6 本ずつ出す）
 //   labels_edit  ラベルの名前を変える・削除（便 A・2026-11-06）
 //   search       文字起こしの中の言葉で探す（多くても 50 件）
+//   upload_*     便 C（2026-11-06 Naoki OK 19:47）：Zoom 以外の動画・音声を 16MB ずつ R2 へ入れ、棚に「アップロード」で並べる
 // 見る画面と短いリンクは v.shia2n.jp（zoom-to-youtube）。
 
 export const KAIS = ["セミナー", "打ち合わせ", "個別相談", "Zoom添削", "その他"];
@@ -110,6 +111,17 @@ export const recordings = {
     }),
 
   issue: (env, id) => safe(() => zoom(env).share_issue(String(id || ""))),
+
+  /** 便 C：手で上げる。始める（同じファイルの書きかけがあれば続きを返す） */
+  uploadStart: (env, b = {}, by = "") =>
+    safe(() => zoom(env).upload_start({
+      file_name: String(b.file_name || ""), size: Number(b.size), date: String(b.date || ""), title: String(b.title || ""),
+      kai: KAIS.includes(b.kai) ? b.kai : "その他", labels: Array.isArray(b.labels) ? b.labels.slice(0, 20).map(String) : [], by,
+    })),
+  /** 1 片（届いた本文の流れをそのまま渡す） */
+  uploadPart: (env, id, n, body) => safe(() => zoom(env).upload_part(String(id || ""), Number(n), body)),
+  uploadComplete: (env, id) => safe(() => zoom(env).upload_complete(String(id || ""))),
+  uploadAbort: (env, id) => safe(() => zoom(env).upload_abort(String(id || ""))),
 
   setLink: (env, id, { stopped, expires } = {}) =>
     safe(() => {

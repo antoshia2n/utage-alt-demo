@@ -1342,6 +1342,16 @@ async function handleApi(request, env, url) {
     if (path === "/api/admin/recordings/labels" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await recordings.labels(env, b); return json(r, r.ok ? 200 : 400); }
     if (path === "/api/admin/recordings/member" && method === "GET") { const r = await recordings.member(env, site, url.searchParams.get("id")); return json(r, r.ok ? 200 : 400); }
     if (path === "/api/admin/recordings/member" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await recordings.putInSite(env, site, "admin:" + a.email, b); return json(r, r.ok ? 200 : 400); }
+    // 便 C（2026-11-06）：手で上げる。1 片は 16MB（本文はそのまま録画の保管へ流す）
+    if (path === "/api/admin/recordings/upload/start" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await recordings.uploadStart(env, b, "admin:" + a.email); return json(r, r.ok ? 200 : 400); }
+    if (path === "/api/admin/recordings/upload/part" && method === "PUT") {
+      const len = Number(request.headers.get("content-length") || 0);
+      if (len > 17 * 1024 * 1024) return json({ ok: false, error: "too_large_part" }, 413);
+      const r = await recordings.uploadPart(env, url.searchParams.get("id"), url.searchParams.get("n"), request.body);
+      return json(r, r.ok ? 200 : 400);
+    }
+    if (path === "/api/admin/recordings/upload/complete" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await recordings.uploadComplete(env, b.id); return json(r, r.ok ? 200 : 400); }
+    if (path === "/api/admin/recordings/upload/abort" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await recordings.uploadAbort(env, b.id); return json(r, r.ok ? 200 : 400); }
     if (path === "/api/admin/recordings/suggest" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await recordings.suggest(env, b.limit); return json(r, r.ok ? 200 : 400); }
     // 便 7a：オプチャの招待リンク（読む・差し替える）
     if (path === "/api/admin/community" && method === "GET") return json({ ok: true, store: "production", ...(await communityLink(env)) });
