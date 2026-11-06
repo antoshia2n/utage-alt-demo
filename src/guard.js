@@ -16,7 +16,7 @@ export const DEFAULT_MODES = {
   list_approvals: "auto", get_approval: "auto", list_permissions: "auto",
   send_seminar_reminder: "auto",
   // 録画（2026-11-06）：リンクを出す・止める・名前を直すは Naoki の手元の整理で、人へは届かない（渡すのは Naoki）
-  list_recordings: "auto", issue_recording_link: "auto", set_recording_link: "auto", set_recording_meta: "auto", suggest_recording_kai: "auto",
+  list_recordings: "auto", issue_recording_link: "auto", set_recording_link: "auto", set_recording_meta: "auto", edit_recording_label: "auto", suggest_recording_kai: "auto",
   send_email: "approve", return_correction: "approve", set_deal_stage: "approve",
   set_note_member: "approve", send_seminar_archive: "approve",
   list_products: "auto", set_product: "approve",
