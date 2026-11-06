@@ -24,6 +24,11 @@ export const COVERAGE = {
   "DELETE /api/admin/push": H("スマホを通知の受け取り先から外す（その端末で本人がする）"),
   "POST /api/admin/staff/code": H("担当者の Google カレンダーをつなぐ（担当者本人の Google でする）"),
   "POST /api/admin/staff/connect": H("担当者の Google カレンダーをつなぐ（担当者本人の Google でする）"),
+  // 便 C（2026-11-06）：ファイルは Naoki の手元にあり、AI は持っていない。入れたあとの名前・ラベル・共有は録画の道具でできる
+  "POST /api/admin/recordings/upload/start": H("手元のファイルを選んで上げる（ファイルは Naoki のパソコンにある）"),
+  "PUT /api/admin/recordings/upload/part": H("手元のファイルを選んで上げる（ファイルは Naoki のパソコンにある）"),
+  "POST /api/admin/recordings/upload/complete": H("手元のファイルを選んで上げる（ファイルは Naoki のパソコンにある）"),
+  "POST /api/admin/recordings/upload/abort": H("手元のファイルを選んで上げる（ファイルは Naoki のパソコンにある）"),
 
   // ---- AI の道具が受け持つ ----
   "ANY /api/admin/stats": ["stats"],

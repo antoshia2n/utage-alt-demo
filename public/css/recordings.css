@@ -140,3 +140,7 @@ select.mini{border:1px solid var(--field);background:var(--panel);border-radius:
 .sm-rec{display:flex;gap:10px;align-items:baseline;font-size:13px;padding:8px 10px;border-radius:10px;background:var(--soft)}
 .sm-rec span{color:var(--muted)}
 #sm .warn{margin:0;font-size:13px;padding:8px 10px;border-radius:10px;background:var(--warnbg);color:var(--warn)}
+/* 便 C（2026-11-06）：手で上げた録画の印・上の帯のアップロード */
+.upl{display:inline-block;font-size:12px;padding:0 8px;border-radius:999px;background:var(--soft);color:var(--muted);border:1px solid var(--line);margin-left:6px;line-height:18px;vertical-align:1px}
+.up-btn{margin-left:10px}
+@media (max-width:600px){.note-top{display:none}.top .btn.up-btn{margin-left:4px;min-height:44px;height:auto}}
