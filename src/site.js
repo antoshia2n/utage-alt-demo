@@ -123,7 +123,7 @@ export function makeSite({ db }) {
     const name = str(b.name, 100);
     if (!name) return { ok: false, error: "name_required", field: "name" };
     if (!ID_RE.test(String(b.id || ""))) return { ok: false, error: "bad_id" };
-    const rows = await db(env, "PATCH", `${T.sites}?id=eq.${encodeURIComponent(b.id)}`, { name, description: str(b.description, TEXT_MAX), active: b.active !== false, updated_at: now(), updated_by: by });
+    const rows = await db(env, "PATCH", `${T.sites}?id=eq.${encodeURIComponent(b.id)}`, { name, description: str(b.description, TEXT_MAX), active: b.active !== false, updated_at: now(), updated_by: by }, "return=representation");
     return rows.length ? { ok: true, site: rows[0] } : { ok: false, error: "not_found" };
   }
 
@@ -134,7 +134,7 @@ export function makeSite({ db }) {
     let id = b.id;
     if (id) {
       if (!ID_RE.test(String(id))) return { ok: false, error: "bad_id" };
-      const rows = await db(env, "PATCH", `${T.curricula}?id=eq.${encodeURIComponent(id)}`, fields);
+      const rows = await db(env, "PATCH", `${T.curricula}?id=eq.${encodeURIComponent(id)}`, fields, "return=representation");
       if (!rows.length) return { ok: false, error: "not_found" };
     } else {
       if (!ID_RE.test(String(b.site_id || ""))) return { ok: false, error: "bad_site" };
@@ -163,7 +163,7 @@ export function makeSite({ db }) {
     const fields = { title, description: str(b.description, TEXT_MAX), active: b.active !== false, updated_at: now(), updated_by: by };
     if (b.id) {
       if (!ID_RE.test(String(b.id))) return { ok: false, error: "bad_id" };
-      const rows = await db(env, "PATCH", `${T.programs}?id=eq.${encodeURIComponent(b.id)}`, fields);
+      const rows = await db(env, "PATCH", `${T.programs}?id=eq.${encodeURIComponent(b.id)}`, fields, "return=representation");
       return rows.length ? { ok: true, id: b.id } : { ok: false, error: "not_found" };
     }
     if (!ID_RE.test(String(b.site_id || ""))) return { ok: false, error: "bad_site" };
@@ -186,7 +186,7 @@ export function makeSite({ db }) {
     const fields = { title, active: b.active !== false, updated_at: now(), updated_by: by };
     if (b.id) {
       if (!ID_RE.test(String(b.id))) return { ok: false, error: "bad_id" };
-      const rows = await db(env, "PATCH", `${T.courses}?id=eq.${encodeURIComponent(b.id)}`, fields);
+      const rows = await db(env, "PATCH", `${T.courses}?id=eq.${encodeURIComponent(b.id)}`, fields, "return=representation");
       return rows.length ? { ok: true, id: b.id } : { ok: false, error: "not_found" };
     }
     if (!ID_RE.test(String(b.program_id || ""))) return { ok: false, error: "bad_program" };
@@ -228,7 +228,7 @@ export function makeSite({ db }) {
     let id = b.id;
     if (id) {
       if (!ID_RE.test(String(id))) return { ok: false, error: "bad_id" };
-      const rows = await db(env, "PATCH", `${T.contents}?id=eq.${encodeURIComponent(id)}`, { ...c.row, updated_at: now(), updated_by: by });
+      const rows = await db(env, "PATCH", `${T.contents}?id=eq.${encodeURIComponent(id)}`, { ...c.row, updated_at: now(), updated_by: by }, "return=representation");
       if (!rows.length) return { ok: false, error: "not_found" };
     } else {
       if (!courses) return { ok: false, error: "course_required", field: "courses" };
