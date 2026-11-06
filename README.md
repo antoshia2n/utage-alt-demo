@@ -161,3 +161,10 @@ UTAGE の代わりになるサイト兼アプリ（PWA）のデモ。架空の�
 - ログインのメール（Supabase の Send Email Hook）は、台帳にいる人とシアニンにだけ送る（`not_in_ledger`）
 - 状態は `/api/health` の `shield`
 - 試験：`node --test tests/shield.test.mjs`
+
+## 便 L2：LINE のキーワードの自動応答（2026-11-06）
+
+- 表 `b_line_replies`・`b_line_templates`（`supabase/b_line_replies.sql`）
+- 有効な応答を並び順に見て、最初に合った 1 件だけ返す。返事の番号で返すので送信数を使わない
+- 下書きを作るのは自動、有効にするのは承認（`set_line_reply_active`）
+- 試験：`node --test tests/line-l2.test.mjs`
