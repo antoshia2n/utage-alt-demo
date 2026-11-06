@@ -508,7 +508,7 @@
     <!-- 便 18：セミナーと予約。一覧（個別相談の予約／セミナー）→ セミナーの詳細。予約の行は顧客管理の詳細へ -->
     <div id="view-deals" style="display:none">
       <div id="deals-list">
-        <div class="tabs view-tabs" data-vtabs><button type="button" data-vtab="consults" aria-selected="true">個別相談の予約</button><button type="button" data-vtab="btypes" aria-selected="false">予約メニュー</button><button type="button" data-vtab="seminars" aria-selected="false">セミナー</button></div>
+        <div class="tabs view-tabs" data-vtabs><button type="button" data-vtab="consults" aria-selected="true">個別相談の予約</button><button type="button" data-vtab="btypes" aria-selected="false">予約メニュー</button><button type="button" data-vtab="seminars" aria-selected="false">セミナー</button><button type="button" data-vtab="staff" aria-selected="false">担当者</button></div>
         <div class="card" data-vpane="consults">
           <div class="list-bar"><p class="note" id="consults-count"></p></div>
           <div id="consults" class="table-wrap"></div>
@@ -521,6 +521,12 @@
         <div class="card hidden" data-vpane="seminars">
           <div class="list-bar"><p class="note" id="sem-count"></p><div class="cust-actions"><span data-camp-slot="seminars"></span><button class="btn small hidden" type="button" id="sem-new">新しく作る</button></div></div>
           <div id="seminars" class="table-wrap"></div>
+        </div>
+        <div class="card hidden" data-vpane="staff">
+          <div class="list-bar"><p class="note" id="staff-count"></p><div class="cust-actions"><button class="btn small" type="button" id="staff-new">担当者を追加</button></div></div>
+          <p class="note" style="margin:0 0 12px">担当者ごとに Google カレンダーをつなぎます。予約メニューで担当者を選択すると、その人の空き時間で受け付け、予約はその人のカレンダーに入ります。</p>
+          <form id="staff-form" class="st-form hidden" novalidate><input type="hidden" id="staff-id"><div><label for="staff-name">名前</label><input id="staff-name" type="text" maxlength="60" placeholder="例 るりさん"></div><div><label for="staff-email">メールアドレス（空欄でも可）</label><input id="staff-email" type="email" maxlength="200" placeholder="例 name@example.com"></div><div class="st-fa"><button type="submit" class="btn small">保存</button><button type="button" class="btn ghost small" id="staff-cancel">キャンセル</button><span class="note" id="staff-fmsg" role="status"></span></div></form>
+          <div id="staff-list" class="st-list"></div>
         </div>
       </div>
       <div id="deals-detail" class="hidden"><button type="button" class="back-link" data-back="deals">← 一覧へ</button><div id="seminar-detail"></div></div>

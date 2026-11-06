@@ -352,3 +352,17 @@ body { font-family: "Geist", "Noto Sans JP", "Hiragino Sans", "Hiragino Kaku Got
 .bt-gcsteps ol { margin: 10px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 10px; font-size: 14px; }
 .bt-gcin { display: flex; gap: 8px; margin-top: 6px; }
 .bt-gcin input { flex: 1; min-width: 0; }
+/* 2026-11-06 担当者 */
+.st-list { display: flex; flex-direction: column; gap: 10px; }
+.st-card { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+.st-h { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.st-h b { font-size: 16px; }
+.st-ok { color: #15803d; font-size: 13px; font-weight: 600; margin-left: auto; }
+.st-ng { color: var(--muted); font-size: 13px; margin-left: auto; }
+.st-a { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.st-steps { margin-top: 12px; }
+.st-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; }
+.st-form.hidden { display: none; }
+.st-fa { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; }
+.bt-gcok b.ng { color: var(--muted); }
+@media (max-width: 700px) { .st-form { grid-template-columns: 1fr; } }
