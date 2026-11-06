@@ -100,6 +100,10 @@ footer.site a { color: var(--muted); margin-right: 14px; }
   display: flex; align-items: center; justify-content: center; color: var(--accent); font-size: 14px; text-align: center; padding: 16px;
 }
 
+/* 便B（2026-11-06）：録画の棚から流すとき。見る画面に文字起こしと目次が並ぶので、16:9 ではなく縦に広く取る */
+.player.rec { aspect-ratio: auto; height: min(86vh, 900px); padding: 0; display: block; background: var(--surface); }
+.player.rec iframe { width: 100%; height: 100%; border: 0; border-radius: 10px; display: block; }
+
 /* ホーム画面に追加の案内（1 画面だけ） */
 .sheet-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: flex-end; justify-content: center; z-index: 50; }
 .sheet { background: var(--surface); width: 100%; max-width: 520px; border-radius: 20px 20px 0 0; padding: 24px 20px 32px; }

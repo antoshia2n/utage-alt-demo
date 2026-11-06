@@ -47,7 +47,7 @@ export function mountSite(host, { getToken, openPerson }) {
       lessons.set(c.id, {
         id: c.id, title: c.title || "", summary: c.summary || "", status: c.status || "draft", active: c.active !== false,
         at: c.publish_at || "", days: c.drip_days ?? 7, minutes: c.minutes || 0, video: c.video_url || "", kind: c.kind || "",
-        files: Array.isArray(c.files) ? c.files : [], qa: c.can_ask !== false, toc: null,
+        files: Array.isArray(c.files) ? c.files : [], qa: c.can_ask !== false, toc: null, rec: !!c.rec_id,
       });
     }
     const coursesOf = new Map();
@@ -407,7 +407,7 @@ export function mountSite(host, { getToken, openPerson }) {
         <div class="f"><label for="sm">要約 <span class="hint">生徒の画面で題名の下に出る</span></label><textarea id="sm" style="min-height:70px">${esc(l.summary)}</textarea></div>
         <div class="frow2"><div class="f" style="max-width:240px"><label for="kd">種類 <span class="hint">生徒の画面の札と棚</span></label><select id="kd"><option value="">自動（プログラムとコースから）</option>${KINDS.map((k) => `<option${l.kind === k ? " selected" : ""}>${k}</option>`).join("")}</select><span class="err" id="kde"></span></div>
         <div class="f" style="max-width:240px"><label for="mn">見る時間のめやす（分）</label><input type="number" id="mn" min="0" value="${l.minutes || ""}"><span class="err" id="mne"></span></div></div></div>
-      <div class="sec"><h3>動画</h3><div class="f"><label for="v">YouTube の住所</label><input type="url" id="v" value="${esc(l.video)}" placeholder="https://www.youtube.com/watch?v=…"><span class="err" id="ve"></span></div>
+      <div class="sec"><h3>動画</h3>${l.rec ? '<p class="hint">録画の棚の録画を流します（生徒にはログインと権利を確かめてから出します）。YouTube の住所は空のままで大丈夫です。</p>' : ""}<div class="f"><label for="v">YouTube の住所</label><input type="url" id="v" value="${esc(l.video)}" placeholder="https://www.youtube.com/watch?v=…"><span class="err" id="ve"></span></div>
 </div>
       <div class="sec"><h3>資料 <span class="hint">生徒が開ける。PDF・スライド・マインドマップの住所</span></h3>
         <div class="rows" id="files">${l.files.map((x, k) => `<div class="rowx file"><input type="text" value="${esc(x.label)}" aria-label="${k + 1} つ目の資料の名前" placeholder="名前"><input type="url" value="${esc(x.url)}" aria-label="${k + 1} つ目の資料の住所" placeholder="https://"><button class="x" data-flx="${k}" aria-label="${k + 1} つ目の資料を消す">×</button></div>`).join("") || '<span class="hint">まだありません</span>'}</div>
@@ -477,7 +477,7 @@ export function mountSite(host, { getToken, openPerson }) {
     return `<div class="pv-wrap"><div class="pv ${pv === "sp" ? "phone" : ""}"><div class="hint">${esc(c.title)} › ${esc(ch.title)}　${idx + 1} / ${ch.lessons.length}</div>
       <h2 style="margin:2px 0 0;font-size:${pv === "sp" ? 17 : 20}px">${esc(l.title || "（題名なし）")}</h2>${l.minutes ? `<div class="hint">約 ${l.minutes} 分</div>` : ""}
       ${locked ? `<div class="locked" style="margin-top:10px">${l.status === "draft" ? "下書きなので、生徒には出ていません" : l.status === "scheduled" ? `${esc(fmtDT(l.at)) || "（日時未設定）"} に開きます` : `入会から ${l.days} 日後に開きます`}</div>` : ""}
-      ${l.video ? '<div class="video">▶ 動画（YouTube）</div>' : ""}${l.summary ? `<p style="white-space:pre-wrap">${esc(l.summary)}</p>` : ""}
+      ${l.video ? '<div class="video">▶ 動画（YouTube）</div>' : l.rec ? '<div class="video">▶ 動画（録画の棚）</div>' : ""}${l.summary ? `<p style="white-space:pre-wrap">${esc(l.summary)}</p>` : ""}
       ${l.files.length ? `<div class="lbl" style="margin-top:8px">資料</div><div class="dl">${l.files.map((x) => `<span>📄 ${esc(x.label)}</span>`).join("")}</div>` : ""}
       <div class="pvfoot">${l.qa ? '<button class="btn" type="button" tabindex="-1">このコンテンツについて質問する</button>' : ""}</div></div></div>`;
   }
