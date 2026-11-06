@@ -875,7 +875,99 @@ function lineBcBody(dry) {
   return { account: lineAccount, mode, filter, text: $("line-bc-text").value, dry };
 }
 const lineCountText = (r) => `送る相手 ${r.targets} 人（ブロック ${r.blocked}・除外 ${r.excluded}${r.not_linked ? `・メール未登録で LINE に送れない ${r.not_linked}` : ""}）`;
+// ---------- 便 L2：キーワードの自動応答 ----------
+let arAccount = null, arRows = [];
+const arJoin = (msgs) => (msgs || []).map((m) => m.type === "image" ? "画像 " + m.url : m.text).join("\n---\n");
+const arSplit = (t) => String(t || "").split(/\n-{3,}\n/).map((x) => x.trim()).filter(Boolean).map((x) => /^画像 https:[/][/]\S+$/.test(x) ? { type: "image", url: x.slice(3) } : { type: "text", text: x });
+async function loadReplies() {
+  const q = arAccount ? `?account=${encodeURIComponent(arAccount)}` : "";
+  const r = await api("/api/admin/line/replies" + q, { token });
+  if (!r.ok) { $("line-ar-sum").textContent = "読めませんでした（" + (r.error || r.status) + "）"; return; }
+  arAccount = r.account;
+  if (r.accounts) $("line-ar-account").innerHTML = r.accounts.map((a) => `<option value="${esc(a)}" ${a === arAccount ? "selected" : ""}>${esc(a)}</option>`).join("");
+  arRows = r.replies || [];
+  $("line-ar-sum").textContent = `${r.count} 件（有効 ${r.active} 件）`;
+  $("line-ar-rows").innerHTML = arRows.map((x) => `<tr>
+    <td>${x.active ? pill("有効") : pill("下書き", "gray")}</td>
+    <td>${esc(x.name)}${x.source ? `<div class="sub">${esc(x.source.startsWith("utage:") ? "UTAGE から写した" : x.source)}</div>` : ""}</td>
+    <td>${x.keywords.map((k) => esc(k)).join("・")}<div class="sub">${x.match === "part" ? "文に入っている" : "同じ文"}</div></td>
+    <td class="ellip" style="max-width:260px">${x.template_name ? "テンプレート「" + esc(x.template_name) + "」" : esc(arJoin(x.messages).slice(0, 80))}</td>
+    <td>${x.hits} 回${x.last_hit_at ? `<div class="sub">${fmtTime(x.last_hit_at)}</div>` : ""}</td>
+    <td style="white-space:nowrap"><button class="btn ghost small" type="button" data-ar-edit="${esc(x.id)}" aria-label="「${esc(x.name)}」を編集">編集</button>
+      <button class="btn ${x.active ? "ghost " : ""}small" type="button" data-ar-toggle="${esc(x.id)}" aria-label="「${esc(x.name)}」を${x.active ? "止める" : "有効にする"}">${x.active ? "止める" : "有効にする"}</button></td>
+  </tr>`).join("") || '<tr><td colspan="6" class="note">まだありません。「新規作成」から作れます</td></tr>';
+  document.querySelectorAll("[data-ar-edit]").forEach((b) => b.addEventListener("click", () => arEdit(b.dataset.arEdit, b)));
+  document.querySelectorAll("[data-ar-toggle]").forEach((b) => b.addEventListener("click", async () => {
+    const x = arRows.find((y) => y.id === b.dataset.arToggle); if (!x) return;
+    b.disabled = true;
+    const res = await api("/api/admin/line/replies/active", { method: "POST", token, body: { account: arAccount, ids: [x.id], active: !x.active } });
+    b.disabled = false;
+    $("line-ar-sum").textContent = res.ok ? `「${x.name}」を${x.active ? "止めました" : "有効にしました"}` : "変えられませんでした（" + (res.error || res.status) + "）";
+    if (res.ok) await loadReplies();
+    const again = document.querySelector(`[data-ar-toggle="${CSS.escape(x.id)}"]`); if (again) again.focus();
+  }));
+}
+let arOpener = null;
+function arEdit(id, opener) {
+  arOpener = opener || null;
+  const x = arRows.find((y) => y.id === id) || null;
+  $("ar-id").value = x ? x.id : "";
+  $("ar-name").value = x ? x.name : "";
+  $("ar-keywords").value = x ? x.keywords.join("\n") : "";
+  $("ar-match").value = x ? x.match : "all";
+  $("ar-messages").value = x ? arJoin(x.messages) : "";
+  $("ar-sort").value = x ? x.sort : 100;
+  const tpl = x && x.template_name;
+  $("ar-msg-wrap").classList.toggle("hidden", !!tpl);
+  $("ar-tpl-note").classList.toggle("hidden", !tpl);
+  $("ar-tpl-note").textContent = tpl ? `返す中身はテンプレート「${x.template_name}」です（AI の道具 save_line_template で直せます）` : "";
+  $("ar-remove").classList.toggle("hidden", !x);
+  $("ar-status").textContent = "";
+  $("line-ar-form").classList.remove("hidden");
+  $("ar-name").focus();
+}
+function arClose() { $("line-ar-form").classList.add("hidden"); if (arOpener && document.body.contains(arOpener)) arOpener.focus(); }
+function setupReplies() {
+  $("line-ar-open").addEventListener("click", () => {
+    const open = $("line-ar").classList.toggle("hidden") === false;
+    $("line-ar-open").setAttribute("aria-expanded", String(open));
+    $("line-ar-open").textContent = open ? "キーワードの自動応答 ▲" : "キーワードの自動応答 ▼";
+    if (open) loadReplies();
+  });
+  $("line-ar-account").addEventListener("change", () => { arAccount = $("line-ar-account").value; arClose(); loadReplies(); });
+  $("line-ar-new").addEventListener("click", (e) => arEdit(null, e.currentTarget));
+  $("ar-cancel").addEventListener("click", arClose);
+  $("line-ar-form").addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); arClose(); } });
+  $("ar-remove").addEventListener("click", async () => {
+    const id = $("ar-id").value; if (!id) return;
+    const x = arRows.find((y) => y.id === id);
+    if (x && x.active) { $("ar-status").textContent = "有効のままは削除できません。先に「止める」を押してください"; return; }
+    if (!confirm(`「${x ? x.name : ""}」を削除します。よろしいですか？`)) return;
+    const res = await api("/api/admin/line/replies", { method: "POST", token, body: { account: arAccount, id, remove: true } });
+    if (!res.ok) { $("ar-status").textContent = "削除できませんでした（" + (res.error || res.status) + "）"; return; }
+    arClose(); await loadReplies(); $("line-ar-sum").textContent = "削除しました";
+  });
+  $("line-ar-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const id = $("ar-id").value;
+    const keywords = $("ar-keywords").value.split(/\n+/).map((k) => k.trim()).filter(Boolean);
+    if (!keywords.length) { $("ar-status").textContent = "キーワードを 1 つ以上入れてください"; $("ar-keywords").focus(); return; }
+    const x = arRows.find((y) => y.id === id);
+    const body = { account: arAccount, id: id || undefined, name: $("ar-name").value, keywords, match: $("ar-match").value, sort: Number($("ar-sort").value) };
+    if (!(x && x.template_id)) {
+      body.messages = arSplit($("ar-messages").value);
+      if (!body.messages.length) { $("ar-status").textContent = "返す文を入れてください"; $("ar-messages").focus(); return; }
+    }
+    $("ar-save").disabled = true; $("ar-status").textContent = "保存しています…";
+    const res = await api("/api/admin/line/replies", { method: "POST", token, body });
+    $("ar-save").disabled = false;
+    if (!res.ok) { $("ar-status").textContent = "保存できませんでした（" + (res.error || res.status) + (res.max ? `・${res.max} まで` : "") + "）"; return; }
+    arClose(); await loadReplies();
+    $("line-ar-sum").textContent = `「${body.name || keywords[0]}」を保存しました` + (res.overlap ? `（有効な「${res.overlap.join("・")}」とキーワードが重なっています）` : "");
+  });
+}
 function setupLine() {
+  setupReplies();
   $("line-bc-open").addEventListener("click", () => $("line-bc").classList.toggle("hidden"));
   document.querySelectorAll('input[name="line-mode"]').forEach((x) => x.addEventListener("change", () => $("line-bc-filter").classList.toggle("hidden", x.value !== "filter" || !x.checked)));
   $("line-bc-count").addEventListener("click", async () => {

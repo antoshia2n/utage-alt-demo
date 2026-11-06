@@ -118,6 +118,8 @@ export function makeLine(h) {
     const events = Array.isArray(body.events) ? body.events : [];
     const request_ = { account, destination: body.destination || null, count: events.length, events: events.slice(0, 50).map(summarizeEvent) };
     const work = (async () => {
+      // 便 L2：自動応答は転送と同時に返す（返事の番号は先に使った側だけが通る）
+      const ar = autoReply(env, account, events).catch((err) => logInbound(env, "line_autoreply", { account }, { ok: false, error: String(err && err.message || err).slice(0, 200) }, 500));
       const fw = await forwardUrl(env, account);
       const r = fw.url ? await forward(env, fw.url, raw, sig) : { ok: false, status: 0, ms: 0, error: "no_forward_url" };
       await logInbound(env, r.ok ? "line" : "line_forward_failed", request_, { forward: r }, r.ok ? 200 : (r.status || 502));
@@ -127,6 +129,7 @@ export function makeLine(h) {
         if (!inviteOnFollow(env, account)) continue;
         try { await sendLinkInvite(env, account, e.source.userId, secret); } catch (err) { await logInbound(env, "line_link_invite", { account }, { ok: false, error: String(err && err.message || err).slice(0, 200) }, 500); }
       }
+      await ar;
     })();
     if (ctx && ctx.waitUntil) ctx.waitUntil(work); else await work;
     return res({ ok: true }, 200);
@@ -455,5 +458,163 @@ export function makeLine(h) {
     return { ok: r.failed === 0, ...counts, ...r };
   }
 
-  return { handleWebhook, settings, setForward, inbound, forwardUrl, link, friends, send, quota, sendLinkInvite, board, thread, reply, broadcast };
+  // ---------- 便 L2（2026-11-06 Naoki OK 23:40）：キーワードの自動応答とテンプレート ----------
+  // 表 b_line_replies（キーワード → 返す吹き出し）と b_line_templates（使い回す吹き出しのまとまり）。正本は supabase/b_line_replies.sql
+  // 受け口に文のメッセージが来たら、有効な応答を並び順に見て最初に合った 1 件だけ返す（UTAGE と同じ決まり）。
+  // 返すのは返事の番号（replyToken・送信数を使わない）。番号がもう使われていたら push（送信数を 1 通使う）。
+  // 下書き（active=false）を作る・直すのは自動、有効にするのは承認（友だちに届くようになるため）
+  const R_TABLE = "b_line_replies", T_TABLE = "b_line_templates";
+  async function replyRows(env, account) {
+    return await db(env, "GET", `${R_TABLE}?select=*&account=eq.${account}&order=sort.asc,created_at.asc&limit=500`);
+  }
+  async function templateRows(env, account) {
+    return await db(env, "GET", `${T_TABLE}?select=*&account=eq.${account}&order=created_at.asc&limit=500`);
+  }
+  async function listReplies(env, { account }) {
+    if (!ACCOUNT_RE.test(String(account || ""))) return { ok: false, error: "bad_account" };
+    const [rows, tpls] = await Promise.all([replyRows(env, account), templateRows(env, account)]);
+    const tn = new Map(tpls.map((t) => [t.id, t.name]));
+    const replies = rows.map((r) => ({ id: r.id, name: r.name, keywords: r.keywords || [], match: r.match, active: !!r.active, sort: r.sort,
+      messages: r.messages || [], template_id: r.template_id || null, template_name: r.template_id ? tn.get(r.template_id) || "（消えたテンプレート）" : null,
+      source: r.source || "", hits: r.hits || 0, last_hit_at: r.last_hit_at || null, updated_at: r.updated_at, updated_by: r.updated_by }));
+    return { ok: true, account, count: replies.length, active: replies.filter((x) => x.active).length, replies, rule: "有効なものを並び順に見て、最初に合った 1 件だけ返す。match all＝送られた文がキーワードと同じ・part＝送られた文にキーワードが入っている" };
+  }
+  async function listTemplates(env, { account }) {
+    if (!ACCOUNT_RE.test(String(account || ""))) return { ok: false, error: "bad_account" };
+    const [rows, reps] = await Promise.all([templateRows(env, account), replyRows(env, account)]);
+    const templates = rows.map((t) => ({ id: t.id, name: t.name, messages: t.messages || [], source: t.source || "", used_by: reps.filter((r) => r.template_id === t.id).map((r) => r.name), updated_at: t.updated_at }));
+    return { ok: true, account, count: templates.length, templates };
+  }
+  async function saveTemplate(env, { account, id, name, messages, source, remove }, actor) {
+    if (!ACCOUNT_RE.test(String(account || ""))) return { ok: false, error: "bad_account" };
+    if (remove) {
+      if (!id) return { ok: false, error: "need_id" };
+      const reps = (await replyRows(env, account)).filter((r) => r.template_id === id);
+      if (reps.length) return { ok: false, error: "in_use", used_by: reps.map((r) => r.name), note: "使っている自動応答から外してから消す" };
+      await db(env, "DELETE", `${T_TABLE}?id=eq.${id}&account=eq.${account}`);
+      await logInbound(env, "line_template_set", { account, id, actor, removed: true }, { ok: true }, 200);
+      return { ok: true, removed: true, id };
+    }
+    const nm = String(name || "").trim().slice(0, 120);
+    if (!nm) return { ok: false, error: "need_name" };
+    const m = checkMessages(messages);
+    if (m.error) return { ok: false, ...m };
+    if (id) { const ex = await db(env, "GET", `${T_TABLE}?select=id&id=eq.${id}&account=eq.${account}`); if (!ex.length) return { ok: false, error: "not_found" }; }
+    const row = { id: id || crypto.randomUUID(), account, name: nm, messages: m.messages, updated_at: new Date().toISOString(), updated_by: String(actor).slice(0, 200) };
+    if (!id) row.source = String(source || "").slice(0, 80);
+    await db(env, "POST", `${T_TABLE}?on_conflict=id`, [row], "resolution=merge-duplicates,return=minimal");
+    await logInbound(env, "line_template_set", { account, id: row.id, actor }, { ok: true }, 200);
+    return { ok: true, id: row.id, name: nm, messages: m.messages.length };
+  }
+  // 作る・直す・消す（有効・無効は変えない。新しく作ったものは下書き）
+  async function saveReply(env, { account, id, name, keywords, match, messages, template_id, sort, source, remove }, actor) {
+    if (!ACCOUNT_RE.test(String(account || ""))) return { ok: false, error: "bad_account" };
+    const ex = id ? (await db(env, "GET", `${R_TABLE}?select=*&id=eq.${id}&account=eq.${account}`))[0] : null;
+    if (id && !ex) return { ok: false, error: "not_found" };
+    if (remove) {
+      if (!ex) return { ok: false, error: "need_id" };
+      if (ex.active) return { ok: false, error: "active", note: "有効のままは消せない。先に set_line_reply_active で無効にする" };
+      await db(env, "DELETE", `${R_TABLE}?id=eq.${id}&account=eq.${account}`);
+      await logInbound(env, "line_reply_set", { account, id, actor, removed: true }, { ok: true }, 200);
+      return { ok: true, removed: true, id };
+    }
+    const nm = String(name == null ? (ex ? ex.name : "") : name).trim().slice(0, 120);
+    const kws = [...new Set((Array.isArray(keywords) ? keywords : ex ? ex.keywords || [] : []).map((k) => String(k || "").trim()).filter(Boolean))].slice(0, 20);
+    if (!kws.length) return { ok: false, error: "need_keywords" };
+    if (kws.some((k) => k.length > 100)) return { ok: false, error: "keyword_too_long", max: 100 };
+    const mt = match == null ? (ex ? ex.match : "all") : String(match);
+    if (!["all", "part"].includes(mt)) return { ok: false, error: "bad_match", note: "all（同じ文）か part（文に入っている）" };
+    const tid = template_id === undefined ? (ex ? ex.template_id || null : null) : (template_id || null);
+    let msgs = [];
+    if (tid) {
+      const t = await db(env, "GET", `${T_TABLE}?select=id&id=eq.${tid}&account=eq.${account}`);
+      if (!t.length) return { ok: false, error: "template_not_found" };
+    } else {
+      const m = checkMessages(messages === undefined && ex ? ex.messages : messages);
+      if (m.error) return { ok: false, ...m };
+      msgs = m.messages;
+    }
+    const row = { id: ex ? ex.id : crypto.randomUUID(), account, name: nm || kws[0], keywords: kws, match: mt, messages: msgs, template_id: tid,
+      sort: Number.isFinite(Number(sort)) ? Math.max(0, Math.min(9999, Math.round(Number(sort)))) : ex ? ex.sort : 100,
+      updated_at: new Date().toISOString(), updated_by: String(actor).slice(0, 200) };
+    if (!ex) { row.active = false; row.source = String(source || "").slice(0, 80); }
+    await db(env, "POST", `${R_TABLE}?on_conflict=id`, [row], "resolution=merge-duplicates,return=minimal");
+    await logInbound(env, "line_reply_set", { account, id: row.id, actor }, { ok: true }, 200);
+    // ほかの有効な応答と同じキーワードがあれば知らせる（先に並んだほうだけが返る）
+    const others = (await replyRows(env, account)).filter((r) => r.id !== row.id && r.active && (r.keywords || []).some((k) => kws.includes(String(k).trim())));
+    return { ok: true, id: row.id, created: !ex, active: ex ? !!ex.active : false, ...(others.length ? { overlap: others.map((r) => r.name) } : {}) };
+  }
+  // 有効にする・無効にする（承認の道具）。ids で何件でも 1 回で
+  async function setReplyActive(env, { account, ids, active }, actor) {
+    if (!ACCOUNT_RE.test(String(account || ""))) return { ok: false, error: "bad_account" };
+    const list = [...new Set((Array.isArray(ids) ? ids : [ids]).map(String).filter(Boolean))].slice(0, 100);
+    if (!list.length) return { ok: false, error: "need_ids" };
+    const rows = (await replyRows(env, account)).filter((r) => list.includes(String(r.id)));
+    const missing = list.filter((x) => !rows.some((r) => String(r.id) === x));
+    if (active && !env[tokenName(account)]) return { ok: false, error: "no_token", need: tokenName(account) };
+    const now = new Date().toISOString();
+    for (const r of rows) await db(env, "PATCH", `${R_TABLE}?id=eq.${r.id}`, { active: !!active, updated_at: now, updated_by: String(actor).slice(0, 200) }, "return=minimal");
+    await logInbound(env, "line_reply_active", { account, ids: rows.map((r) => r.id), active: !!active, actor }, { ok: true }, 200);
+    if (changes) await changes.record(env, { kind: "setting", target: `line_replies_${account}`, before: rows.map((r) => `${r.name}:${r.active ? "有効" : "無効"}`).join("、").slice(0, 400), after: `${rows.length} 件を${active ? "有効" : "無効"}に`, summary: `LINE（${account}）の自動応答 ${rows.length} 件を${active ? "有効" : "無効"}にした`, actor });
+    return { ok: true, account, changed: rows.length, active: !!active, ...(missing.length ? { not_found: missing } : {}) };
+  }
+  // 受け口から：文のメッセージに自動応答を返す
+  async function autoReply(env, account, events) {
+    const texts = events.filter((e) => e.type === "message" && e.message && e.message.type === "text" && e.source && e.source.userId);
+    if (!texts.length || !env[tokenName(account)]) return;
+    const rows = (await replyRows(env, account)).filter((r) => r.active);
+    if (!rows.length) return;
+    let tpls = null;
+    for (const e of texts) {
+      const r = matchReply(rows, e.message.text);
+      if (!r) continue;
+      let msgs = r.messages || [];
+      if (r.template_id) { tpls = tpls || await templateRows(env, account); const t = tpls.find((x) => x.id === r.template_id); msgs = t ? t.messages || [] : []; }
+      const out = toLineMessages(msgs);
+      if (!out.length) continue;
+      let res = e.replyToken ? await api(env, account, "POST", "/message/reply", { replyToken: e.replyToken, messages: out }) : { ok: false, error: "no_reply_token" };
+      let via = "reply";
+      if (!res.ok) { via = "push"; res = await api(env, account, "POST", "/message/push", { to: e.source.userId, messages: out }); }
+      await db(env, "PATCH", `${R_TABLE}?id=eq.${r.id}`, { hits: (r.hits || 0) + 1, last_hit_at: new Date().toISOString() }, "return=minimal");
+      r.hits = (r.hits || 0) + 1;
+      await logInbound(env, "line_autoreply", { account, user: e.source.userId, reply_id: r.id, name: r.name, text: String(e.message.text).slice(0, 200) }, { ok: res.ok, via, status: res.status, ...(res.ok ? {} : { error: String(res.error).slice(0, 120) }) }, res.ok ? 200 : (res.status || 502));
+      const { byUser } = await links(env, account);
+      const pid = byUser.get(e.source.userId);
+      if (pid) await db(env, "POST", "events", [{ customer_id: pid, type: "line_keyword", payload: { account, name: r.name, keyword: String(e.message.text).slice(0, 100), ok: res.ok }, actor: "system" }], "return=minimal");
+    }
+  }
+
+  return { handleWebhook, settings, setForward, inbound, forwardUrl, link, friends, send, quota, sendLinkInvite, board, thread, reply, broadcast,
+    listReplies, saveReply, setReplyActive, listTemplates, saveTemplate, autoReply };
+}
+
+// ---------- 便 L2：応答の決まり（試験から直接呼ぶ） ----------
+const IMG_RE = /^https:[/][/][^\s<>"']{4,1990}$/;
+// 吹き出しは 1〜5 つ（LINE の 1 回に送れる数）。文は 5000 字まで、画像は https の住所
+export function checkMessages(messages) {
+  const list = Array.isArray(messages) ? messages : [];
+  if (!list.length) return { error: "need_messages", note: "吹き出しを 1 つ以上（{type:'text',text} か {type:'image',url}）" };
+  if (list.length > 5) return { error: "too_many_messages", max: 5 };
+  const out = [];
+  for (const m of list) {
+    if (!m || typeof m !== "object") return { error: "bad_message" };
+    if (m.type === "text") { const t = String(m.text || "").replace(/\r\n/g, "\n").trim(); if (!t) return { error: "empty_text" }; if (t.length > 5000) return { error: "text_too_long", max: 5000 }; out.push({ type: "text", text: t }); }
+    else if (m.type === "image") { const u = String(m.url || "").trim(); if (!IMG_RE.test(u)) return { error: "bad_image_url", note: "https:// で始まる画像の住所" }; out.push({ type: "image", url: u }); }
+    else return { error: "bad_message_type", note: "text か image" };
+  }
+  return { messages: out };
+}
+export function toLineMessages(msgs) {
+  return (msgs || []).slice(0, 5).map((m) => m.type === "image" ? { type: "image", originalContentUrl: m.url, previewImageUrl: m.url } : { type: "text", text: String(m.text || "") }).filter((m) => m.type === "image" || m.text);
+}
+// 並び順に見て最初に合った 1 件（all＝同じ文・part＝文に入っている）。前後の空白は見ない
+export function matchReply(rows, text) {
+  const t = String(text || "").trim();
+  if (!t) return null;
+  for (const r of rows) {
+    if (!r.active) continue;
+    const kws = (r.keywords || []).map((k) => String(k).trim()).filter(Boolean);
+    if (r.match === "part" ? kws.some((k) => t.includes(k)) : kws.includes(t)) return r;
+  }
+  return null;
 }

@@ -81,7 +81,7 @@ import { makeRecToken, handleRecPlay } from "./recplay.js";
 import { makeMarks } from "./marks.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.65.0-bgoaldraft";
+const VERSION = "0.66.0-blinereply";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -1576,6 +1576,12 @@ async function handleApi(request, env, url) {
       else if (path === "/api/admin/line/thread" && method === "GET") r = await line.thread(env, { account, user: url.searchParams.get("user") });
       else if (path === "/api/admin/line/reply" && method === "POST") r = await line.reply(env, { account, user: lb.user, text: lb.text }, a.email);
       else if (path === "/api/admin/line/broadcast" && method === "POST") r = await line.broadcast(env, { account, mode: lb.mode, filter: lb.filter, text: lb.text, dry: lb.dry === true }, a.email);
+      // 便 L2：自動応答とテンプレート（画面は Naoki 本人の操作なので承認は通さない）
+      else if (path === "/api/admin/line/replies" && method === "GET") { r = await line.listReplies(env, { account }); if (r.ok) r.accounts = ((await line.settings(env)).accounts || []).map((x) => x.account); }
+      else if (path === "/api/admin/line/replies" && method === "POST") r = await line.saveReply(env, { ...lb, account }, a.email);
+      else if (path === "/api/admin/line/replies/active" && method === "POST") r = await line.setReplyActive(env, { account, ids: lb.ids, active: lb.active === true }, a.email);
+      else if (path === "/api/admin/line/templates" && method === "GET") r = await line.listTemplates(env, { account });
+      else if (path === "/api/admin/line/templates" && method === "POST") r = await line.saveTemplate(env, { ...lb, account }, a.email);
       if (r) return json(r, r.ok === false ? 400 : 200);
     }
     // 便 8g-2：紹介（紹介者ごとの集計・払ったことの記録）
@@ -1968,6 +1974,41 @@ const TOOLS = [
     say: "LINE の受け口が受けた数と転送の失敗を数える",
     description: "LINE の受け口が days 日（既定 7・最大 90）に受けた知らせを、アカウントごとに数える：受けた回数 received・UTAGE へ転送できた forwarded・転送の失敗 forward_failed（直近 5 件の時刻と理由 failures）・署名が合わなかった bad_signature・知らせの数 events（友だち追加 follows・ブロック unfollows・メッセージ messages）・LINE の人の数 people・最後に受けた時刻。account で 1 つに絞れる。0 件は count: 0。",
     inputSchema: { type: "object", properties: { account: { type: "string" }, days: { type: "integer" } } },
+  },
+  {
+    name: "list_line_replies",
+    screen: "line",
+    say: "LINE のキーワードの自動応答を見る",
+    description: "LINE のキーワードの自動応答（便 L2）をアカウントごとに並び順で返す：名前 name・キーワード keywords・合い方 match（all＝送られた文がキーワードと同じ／part＝文にキーワードが入っている）・有効か active・返す吹き出し messages（{type:'text',text}・{type:'image',url}）かテンプレート template_id・どこから写したか source（例 utage:3fnT…）・返した回数 hits と最後の時刻。有効なものを並び順に見て、最初に合った 1 件だけ返す。",
+    inputSchema: { type: "object", properties: { account: { type: "string", description: "例 shianin" } }, required: ["account"] },
+  },
+  {
+    name: "save_line_reply",
+    screen: "line",
+    say: "LINE の自動応答を作る・直す・消す（下書き）",
+    description: "LINE のキーワードの自動応答を作る・直す・消す（便 L2）。新しく作ったものは下書き（active=false）で、まだ返さない。有効にするのは set_line_reply_active。欄：account・id（直す・消すとき）・name・keywords（1〜20 個・各 100 字まで）・match（all／part・既定 all）・messages（吹き出し 1〜5 つ。{type:'text',text}（5000 字まで）か {type:'image',url}（https））か template_id（list_line_templates の id）・sort（小さいほど先に見る・既定 100）・source（写した元・作るときだけ）・remove（true で消す。有効なものは消せない）。ほかの有効な応答とキーワードが重なると overlap で名前を返す。",
+    inputSchema: { type: "object", properties: { account: { type: "string" }, id: { type: "string" }, name: { type: "string" }, keywords: { type: "array", items: { type: "string" } }, match: { type: "string", enum: ["all", "part"] }, messages: { type: "array", items: { type: "object" } }, template_id: { type: "string" }, sort: { type: "integer" }, source: { type: "string" }, remove: { type: "boolean" } }, required: ["account"] },
+  },
+  {
+    name: "set_line_reply_active",
+    screen: "line",
+    say: "LINE の自動応答を有効にする・止める",
+    description: "LINE の自動応答を有効にする（active true）・止める（false）。ids で何件でも 1 回で。有効にすると、合うキーワードを送ってきた友だちに返事が届く（返事の番号で返すので送信数は使わない。使えなかったときだけ push で 1 通使う）。UTAGE に同じキーワードが残っていると返事が 2 回届くことがあるので、有効にしたら UTAGE 側を消す。承認が要る道具：呼ぶと承認待ちになり approval_url が返る。",
+    inputSchema: { type: "object", properties: { account: { type: "string" }, ids: { type: "array", items: { type: "string" } }, active: { type: "boolean" } }, required: ["account", "ids", "active"] },
+  },
+  {
+    name: "list_line_templates",
+    screen: "line",
+    say: "LINE のテンプレートを見る",
+    description: "LINE のテンプレート（便 L2・使い回す吹き出しのまとまり）をアカウントごとに返す：名前・吹き出し messages・写した元 source・使っている自動応答の名前 used_by。",
+    inputSchema: { type: "object", properties: { account: { type: "string" } }, required: ["account"] },
+  },
+  {
+    name: "save_line_template",
+    screen: "line",
+    say: "LINE のテンプレートを作る・直す・消す",
+    description: "LINE のテンプレートを作る・直す・消す（便 L2）。欄：account・id（直す・消すとき）・name・messages（吹き出し 1〜5 つ。{type:'text',text} か {type:'image',url}）・source（写した元・作るときだけ）・remove（true で消す。自動応答が使っているものは消せない）。直すと、使っている有効な自動応答の返事もすぐ変わる。承認が要る道具：呼ぶと承認待ちになり approval_url が返る（有効な自動応答から友だちに届く文が変わるため）。",
+    inputSchema: { type: "object", properties: { account: { type: "string" }, id: { type: "string" }, name: { type: "string" }, messages: { type: "array", items: { type: "object" } }, source: { type: "string" }, remove: { type: "boolean" } }, required: ["account"] },
   },
   {
     name: "get_community_link",
@@ -2605,6 +2646,11 @@ async function runTool(env, name, args) {
   if (name === "get_line_quota") return await line.quota(env, { account: args.account });
   if (name === "set_line_forward") return await line.setForward(env, { account: args.account, url: args.url }, "mcp");
   if (name === "list_line_inbound") return await line.inbound(env, { account: args.account, days: args.days });
+  if (name === "list_line_replies") return await line.listReplies(env, { account: args.account });
+  if (name === "save_line_reply") return await line.saveReply(env, args, "mcp");
+  if (name === "set_line_reply_active") return await line.setReplyActive(env, { account: args.account, ids: args.ids, active: args.active === true }, "mcp");
+  if (name === "list_line_templates") return await line.listTemplates(env, { account: args.account });
+  if (name === "save_line_template") return await line.saveTemplate(env, args, "mcp");
   if (name === "get_community_link") return { ok: true, ...(await communityLink(env)) };
   if (name === "set_community_link") return await setCommunityLink(env, { url: args.url }, "mcp");
   if (name === "get_mail_settings") return { ok: true, settings: mailcfg.view(await mailcfg.get(env)) };

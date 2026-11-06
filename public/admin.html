@@ -552,7 +552,27 @@
     <!-- 便 14c：LINE。上に今月の残り・転送の失敗・「絞って送る」、左に友だち（最後に動いた順）、右にやりとりと返す欄 -->
     <div id="view-line" style="display:none">
       <div class="card" style="margin-bottom:16px">
-        <div style="display:flex;gap:8px 12px;flex-wrap:wrap;align-items:center"><span class="note" id="line-sum" style="margin:0">読み込んでいます…</span><span style="flex:1"></span><button class="btn small" type="button" id="line-bc-open">絞って送る</button></div>
+        <div style="display:flex;gap:8px 12px;flex-wrap:wrap;align-items:center"><span class="note" id="line-sum" style="margin:0">読み込んでいます…</span><span style="flex:1"></span><button class="btn ghost small" type="button" id="line-ar-open" aria-expanded="false" aria-controls="line-ar">キーワードの自動応答 ▼</button><button class="btn small" type="button" id="line-bc-open">絞って送る</button></div>
+        <!-- 便 L2：キーワードの自動応答（下書き → 有効）。テンプレートを使う応答は、中身をテンプレートで直す -->
+        <section id="line-ar" class="stack hidden" style="margin-top:12px" aria-label="キーワードの自動応答">
+          <div style="display:flex;gap:8px 12px;flex-wrap:wrap;align-items:center">
+            <label for="line-ar-account" class="sr">アカウント</label><select id="line-ar-account" class="inline"></select>
+            <span class="note" id="line-ar-sum" style="margin:0"></span><span style="flex:1"></span>
+            <button class="btn ghost small" type="button" id="line-ar-new">新規作成</button>
+          </div>
+          <p class="note" style="margin:0">有効なものを上から見て、最初に合った 1 件だけ返します。返事は送信数を使いません。UTAGE に同じキーワードが残っていると 2 回届くので、有効にしたら UTAGE 側を消してください。</p>
+          <form id="line-ar-form" class="stack hidden card" novalidate>
+            <input type="hidden" id="ar-id">
+            <div><label for="ar-name">名前（自分用）</label><input id="ar-name" type="text" maxlength="120"></div>
+            <div><label for="ar-keywords">キーワード（1 行に 1 つ）</label><textarea id="ar-keywords" rows="2"></textarea></div>
+            <div><label for="ar-match">合い方</label><select id="ar-match" class="inline"><option value="all">送られた文がキーワードと同じ</option><option value="part">送られた文にキーワードが入っている</option></select></div>
+            <div id="ar-msg-wrap"><label for="ar-messages">返す文（吹き出しを分けるときは「---」だけの行をはさむ・5 つまで）</label><textarea id="ar-messages" rows="6"></textarea></div>
+            <p class="note hidden" id="ar-tpl-note" style="margin:0"></p>
+            <div><label for="ar-sort">並び順（小さいほど先に見る）</label><input id="ar-sort" type="number" min="0" max="9999" class="inline" style="width:7em"></div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn small" type="submit" id="ar-save">保存（下書きのまま）</button><button class="btn ghost small" type="button" id="ar-cancel">キャンセル</button><span class="spacer" style="flex:1"></span><button class="btn ghost small" type="button" id="ar-remove">削除</button><span class="note" id="ar-status" role="status"></span></div>
+          </form>
+          <div class="table-wrap"><table class="cust-table"><thead><tr><th>状態</th><th>名前</th><th>キーワード</th><th>返す中身</th><th>返した回数</th><th></th></tr></thead><tbody id="line-ar-rows"></tbody></table></div>
+        </section>
         <form id="line-bc" class="stack hidden" style="margin-top:12px" novalidate>
           <div role="radiogroup" aria-label="誰に送るか" style="display:flex;gap:10px 16px;flex-wrap:wrap">
             <label class="check" style="margin:0"><input type="radio" name="line-mode" value="all" checked> <span>友だち全員（ブロックした人・ラベル「除外」の人は外れる）</span></label>
