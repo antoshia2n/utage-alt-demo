@@ -209,7 +209,7 @@ export const rangesText = (rs) => rs.map(([a, b]) => `${hm(a)}-${hm(b)}`).join("
 export const SIGN = "シアニン（シアラボ）";
 export function render(text, type, b, person, extra = {}) {
   const map = {
-    booking_url: (type.audience || "public") === "member" ? "https://lab.shia2n.jp/app#booking" : "", sign: SIGN, ...extra,
+    booking_url: (type.audience || "public") === "member" ? "https://lab.shia2n.jp/app#booking" : "", sign: SIGN, email: (person && person.email) || "", staff: "", ...extra,
     name: (person && person.name) || "", email: (person && person.email) || "",
     title: type.title, date: fmtJst(b.slot), minutes: String(b.minutes || type.minutes),
     zoom: type.zoom_url || "（追ってお知らせします）", end: endLabel(b.slot, b.minutes || type.minutes), topic: b.topic || "（未記入）", answers: answersText(b.answers),
@@ -219,7 +219,7 @@ export function render(text, type, b, person, extra = {}) {
 
 // 通知の並び（便④）：いつ（予約した直後・開始の◯分前・終わって◯分後・キャンセルされたとき）× どのテンプレート
 // 差し込み項目（テンプレートの {{…}}）
-export const TPL_KEYS = { name: "名前", title: "メニュー名", date: "日時", end: "終了時刻", minutes: "所要時間", zoom: "Zoom の URL", answers: "フォームの回答", topic: "相談したいこと", booking_url: "予約ページ", sign: "署名" };
+export const TPL_KEYS = { name: "名前", title: "メニュー名", date: "日時", end: "終了時刻", minutes: "所要時間", zoom: "Zoom の URL", answers: "フォームの回答", topic: "相談したいこと", booking_url: "予約ページ", sign: "署名", email: "予約者のメール", staff: "担当者" };
 export const REMIND_WHEN = ["booked", "before", "after", "canceled"];
 export function cleanReminders(v) {
   if (!Array.isArray(v) || v.length > 10) return { error: "bad_reminders", note: "通知は 10 件まで" };
@@ -232,7 +232,7 @@ export function cleanReminders(v) {
     let key = String(r.key || "").trim();
     if (!/^[a-z0-9_-]{1,20}$/.test(key) || keys.has(key)) { let n = i + 1; while (keys.has("s" + n) || v.some((x, j) => j !== i && x && x.key === "s" + n)) n++; key = "s" + n; }
     keys.add(key);
-    out.push({ key, when: r.when, minutes, template_id: r.template_id, on: r.on !== false });
+    out.push({ key, when: r.when, minutes, template_id: r.template_id, on: r.on !== false, to: r.to === "staff" ? "staff" : "booker" });
   }
   return { reminders: out };
 }
@@ -519,14 +519,34 @@ export function makeBooking(h) {
     if (list && !list.length) return [];
     return await db(env, "GET", "b_booking_templates?select=*&order=created_at.asc" + (list ? `&id=in.(${list.join(",")})` : "&archived_at=is.null"));
   }
+  // person は予約した人（差し込みの名前など）。担当者宛ての通知は、担当者のメールに送る
   async function sendTemplate(env, t, b, person, tpl, step, actor) {
-    const r = await bin3.sendMail(env, person, { kind: "booking_notice", subject: render(tpl.subject, t, b, person), text: render(tpl.body, t, b, person), actor, extra: { booking_type: t.id, slot: b.slot, which: step.when, step: step.key, template: tpl.id } });
+    let to = person, extra = {};
+    if (step.to === "staff") {
+      const st = await staffRecipient(env, t);
+      if (!st) return "no_staff";
+      to = st.person; extra = { staff: st.name };
+    } else if (t.staff_id && gcal) { const x = await gcal.staffById(env, t.staff_id).catch(() => null); if (x) extra = { staff: x.name }; }
+    const r = await bin3.sendMail(env, to, { kind: "booking_notice", subject: render(tpl.subject, t, b, person, extra), text: render(tpl.body, t, b, person, extra), actor, extra: { booking_type: t.id, slot: b.slot, which: step.when, step: step.key, template: tpl.id, to: step.to || "booker", ...(step.to === "staff" ? { booker: person.id || null } : {}) } });
     return r.result;
   }
+  // 担当者の宛先：担当者のメールの人（顧客の表に無ければ作る。送った記録をその人に積むため）
+  async function staffRecipient(env, t) {
+    if (!t.staff_id || !gcal) return null;
+    const x = await gcal.staffById(env, t.staff_id).catch(() => null);
+    if (!x || !x.email) return null;
+    const em = String(x.email).toLowerCase();
+    let [p] = await db(env, "GET", `customers?select=id,name,email&email=eq.${encodeURIComponent(em)}`);
+    if (!p) {
+      [p] = await db(env, "POST", "customers", [{ email: em, name: x.name, source: "direct", consent_at: new Date().toISOString() }], "return=representation");
+      await addEvent(env, p.id, "registered", { source: "direct", via: "staff" }, "site");
+    }
+    return { person: p, name: x.name };
+  }
   // 予約した直後・キャンセルされたときの通知。並びが無いメニューは今までどおり（予約した直後だけ）
-  async function notifyNow(env, t, b, person, when, actor = "site") {
-    if (!Array.isArray(t.reminders)) return when === "booked" ? await sendNotice(env, t, b, person, "confirm", actor) : "none";
-    const steps = t.reminders.filter((r) => r.on && r.when === when);
+  async function notifyNow(env, t, b, person, when, actor = "site", onlyTo = null) {
+    if (!Array.isArray(t.reminders)) return when === "booked" && !onlyTo ? await sendNotice(env, t, b, person, "confirm", actor) : "none";
+    const steps = t.reminders.filter((r) => r.on && r.when === when && (!onlyTo || (r.to || "booker") === onlyTo));
     if (!steps.length) return "none";
     const tpls = new Map((await templates(env, steps.map((r) => r.template_id))).map((x) => [x.id, x]));
     let out = "none";
@@ -644,7 +664,7 @@ export function makeBooking(h) {
     const gev = await gcalCreate(env, t, b, customer);
     if (gev) { b.gcal_event_id = gev.id; b.gcal_staff_id = gev.staff_id; }
     await addEvent(env, customer.id, "consult_booked", b, "site");
-    if (moving) { await addEvent(env, customer.id, "consult_canceled", { slot: moving.slot, type_id: t.id, type_title: t.title, moved_to: iso }, "site"); await gcalRemove(env, moving, t); }
+    if (moving) { await addEvent(env, customer.id, "consult_canceled", { slot: moving.slot, type_id: t.id, type_title: t.title, moved_to: iso }, "site"); await gcalRemove(env, moving, t); await notifyNow(env, t, moving, customer, "canceled", "site", "staff").catch(() => "failed"); }
     const mail = await notifyNow(env, t, b, customer, "booked").catch(() => "failed");
     let after = null;
     if (afterBooked && (t.after_actions || []).length) after = await afterBooked(env, customer.id, t.after_actions, { booked: iso }).catch((e) => ({ error: String(e.message || e) }));

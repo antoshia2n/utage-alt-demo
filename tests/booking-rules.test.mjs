@@ -276,3 +276,28 @@ test("担当者：空き時間はその人の予定とその人の予約だけ�
   assert.ok(!after.types.find((x) => x.slug === "ma").slots.map((x) => x.slot).includes(s1));
   assert.ok(after.types.find((x) => x.slug === "mb").slots.map((x) => x.slot).includes(s1));
 });
+
+// ---- 担当者への通知 ----
+test("担当者への通知：予約・日時の変更（キャンセル＋予約）・キャンセルで担当者に届く。予約した人には届かない通知", async () => {
+  const st = fakeStore(), mails = [];
+  const addEvent = async (e, cid, type, payload, actor = "site") => { const [row] = await st.db(e, "POST", "events", [{ customer_id: cid, type, payload, actor }], "return=representation"); return row; };
+  const gcal = makeGcal({ db: st.db, logInbound: async () => {}, fetchImpl: async () => new Response("{}") });
+  const bk = makeBooking({ gcal, db: st.db, addEvent, logInbound: async () => {}, bin3: { async sendMail(e, p, m) { mails.push({ to: p.email, ...m }); return { result: "sent" }; } }, registerPerson: async () => ({ ok: false }), busyBetween: async () => ({ state: "ok", busy: [] }), pagesOrigin: () => "", afterBooked: async () => ({ ok: true }) });
+  const sid = "58888888-5555-4555-8555-555555555555";
+  st.table("b_staff").push({ id: sid, name: "るり", email: "ruri@example.com", script_url: "", script_secret: "", created_at: "2026-01-01T00:00:00Z", archived_at: null });
+  const tp = (id, subject) => { st.table("b_booking_templates").push({ id, name: subject, subject, body: "{{name}}（{{email}}）{{date}} 担当 {{staff}}", created_at: "2026-01-01T00:00:00Z", archived_at: null }); return id; };
+  const A = tp("41111111-4444-4444-8444-444444444444", "受付"), N = tp("42222222-4444-4444-8444-444444444444", "新しい予約"), X = tp("43333333-4444-4444-8444-444444444444", "キャンセル");
+  await bk.set(env, member({ days_ahead: 3, staff_id: sid, reminders: [{ when: "booked", template_id: A }, { when: "booked", template_id: N, to: "staff" }, { when: "canceled", template_id: X, to: "staff" }] }), "mcp");
+  const s = (await bk.forMember(env, stu, basic, false)).types[0].slots;
+  await bk.memberBook(env, stu, basic, false, { slug: "consult", slot: s[3].slot });
+  assert.deepEqual(mails.map((m) => [m.to, m.subject]), [["s@example.com", "受付"], ["ruri@example.com", "新しい予約"]]);
+  assert.ok(mails[1].text.startsWith("生徒（s@example.com）") && mails[1].text.endsWith("担当 るり"));
+  assert.equal(st.table("customers").filter((c) => c.email === "ruri@example.com").length, 1);
+  mails.length = 0;
+  await bk.memberBook(env, stu, basic, false, { slug: "consult", slot: s[8].slot, from: s[3].slot });
+  assert.deepEqual(mails.map((m) => [m.to, m.subject]).sort(), [["ruri@example.com", "キャンセル"], ["ruri@example.com", "新しい予約"], ["s@example.com", "受付"]]);
+  mails.length = 0;
+  await bk.memberCancel(env, stu, { slot: s[8].slot });
+  assert.deepEqual(mails.map((m) => [m.to, m.subject]), [["ruri@example.com", "キャンセル"]]);
+  assert.equal(st.table("customers").filter((c) => c.email === "ruri@example.com").length, 1);
+});
