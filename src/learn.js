@@ -34,6 +34,7 @@ export function groupLessons(rows) {
       id: r.lesson_id, title: r.title,
       summary: String(r.summary || "").slice(0, SUMMARY_MAX),
       youtube_id: r.youtube_id || null, mindmap_url: safeUrl(r.mindmap_url),
+      rec: !!r.rec_id, // 便B：録画の棚から流す（id そのものは生徒に渡さない）
       // 会員サイトの管理（便 22）：見る時間・目次・資料・質問を受け付けるか
       minutes: Number.isInteger(r.minutes) ? r.minutes : null,
       kind: r.kind || null, // 種類のラベル（2026-11-04）。空なら生徒の画面がプログラムとコースから決める
@@ -90,7 +91,7 @@ export function makeLearn(h) {
       curricula = [...new Set(acc.map((a) => a.curriculum_id))];
       if (!curricula.length) return { source: "manabu", member: false, programs: [], lesson_count: 0, flat: [] };
     }
-    let q = "mn_lessons?select=curriculum_id,program_id,program_title,program_sort,course_id,course_title,course_sort,lesson_id,sort,title,summary,youtube_id,mindmap_url,minutes,toc,files,can_ask,status,drip_days,kind&limit=5000";
+    let q = "mn_lessons?select=curriculum_id,program_id,program_title,program_sort,course_id,course_title,course_sort,lesson_id,sort,title,summary,youtube_id,mindmap_url,minutes,toc,files,can_ask,status,drip_days,kind,rec_id&limit=5000";
     if (curricula) q += `&curriculum_id=in.(${curricula.map(encodeURIComponent).join(",")})`;
     let rows = await db(env, "GET", q);
     // 便 22：入会から日数で開くものは、その人がそのプログラムを開けるようになった日から数える（シアニンは全部見える）
@@ -139,5 +140,24 @@ export function makeLearn(h) {
     };
   }
 
-  return { lessonsFor, listLessons, publicFront, isAdminEmail };
+  // 便B（2026-11-06）：その人がそのコンテンツを今見られるなら、録画の棚の id と名前を返す（見られなければ null）
+  async function recFor(env, customer, email, lessonId) {
+    const admin = await isAdminEmail(env, email);
+    let q = `mn_lessons?select=curriculum_id,lesson_id,title,status,drip_days,rec_id&lesson_id=eq.${encodeURIComponent(lessonId)}&rec_id=not.is.null&limit=50`;
+    let acc = null;
+    if (!admin) {
+      acc = await db(env, "GET", `mn_access?select=curriculum_id,opened_at&member_id=eq.${customer.id}`);
+      const cur = [...new Set(acc.map((a) => a.curriculum_id))];
+      if (!cur.length) return null;
+      q += `&curriculum_id=in.(${cur.map(encodeURIComponent).join(",")})`;
+    }
+    let rows = await db(env, "GET", q);
+    if (acc) {
+      const opened = new Map(acc.map((a) => [a.curriculum_id, a.opened_at]));
+      rows = rows.filter((r) => dripOpen(r, opened.get(r.curriculum_id)));
+    }
+    return rows[0] ? { rec_id: rows[0].rec_id, title: rows[0].title } : null;
+  }
+
+  return { lessonsFor, listLessons, publicFront, isAdminEmail, recFor };
 }

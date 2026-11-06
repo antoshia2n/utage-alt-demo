@@ -43,12 +43,16 @@ export function mountRecordings(host, { getToken }) {
   let D = null, tab = "list", shelf = "all", q = "", inTx = false, txIds = null, filters = new Set(), shown = PAGE, sel = null, lastFocus = null, undoFn = null, undoTimer = 0, busy = false;
   const checked = new Set();
   let mlFrom = null;
+  // 便B（2026-11-06）：会員サイトに入れた録画（コンテンツとコース）
+  let placed = [], smFrom = null, smData = null;
+  const placedOf = (id) => placed.filter((p) => p.rec_id === id);
   // 便 A：ラベルの一覧（多い順）
   const allLabels = () => { const m = new Map(); D.rows.forEach((r) => (r.labels || []).forEach((l) => m.set(l, (m.get(l) || 0) + 1))); return [...m].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ja")); };
   const labDatalist = (id) => `<datalist id="${id}">${allLabels().map(([l]) => `<option value="${esc(l)}">`).join("")}</datalist>`;
 
   async function load() {
-    const r = await call("");
+    const [r, m] = await Promise.all([call(""), call("/member")]);
+    if (m && m.ok) placed = m.placed || [];
     if (!r.ok) { $("#main").innerHTML = `<div class="err">録画の一覧を読めませんでした：${esc(errText(r))}</div>`; return; }
     D = r;
     render();
@@ -137,7 +141,7 @@ export function mountRecordings(host, { getToken }) {
     <div class="tbl list"><table><thead><tr><th><input type="checkbox" id="ck-all" aria-label="表に出ている録画を全部選ぶ" ${page.length && page.every((r) => checked.has(r.id)) ? "checked" : ""}></th><th>収録日</th><th>名前</th><th>会</th><th style="text-align:right">長さ</th><th>YouTube</th><th>共有リンク</th><th style="text-align:right">開かれた数</th><th><span class="sr">操作</span></th></tr></thead><tbody>
     ${page.map((r) => `<tr class="rw ${sel === r.id ? "sel" : ""}" data-id="${esc(r.id)}" tabindex="0" aria-label="${esc(r.date)} ${esc(r.title)} の詳細を開く">
       <td class="hide-sp"><input type="checkbox" class="ck" data-ck="${esc(r.id)}" ${checked.has(r.id) ? "checked" : ""} aria-label="「${esc(r.title)}」を選ぶ"></td>
-      <td class="date">${esc(r.date)}</td><td class="nm">${esc(r.title)}${(r.labels || []).length ? `<span class="labs">${r.labels.map((l) => `<span class="lab">${esc(l)}</span>`).join("")}</span>` : ""}${r.issues.length ? `<small>点検：${esc(r.issues[0])}</small>` : ""}</td><td class="hide-sp">${kaiTag(r.kai)}</td>
+      <td class="date">${esc(r.date)}</td><td class="nm">${esc(r.title)}${placedOf(r.id).length ? `<span class="insite">会員サイト ${placedOf(r.id).length}</span>` : ""}${(r.labels || []).length ? `<span class="labs">${r.labels.map((l) => `<span class="lab">${esc(l)}</span>`).join("")}</span>` : ""}${r.issues.length ? `<small>点検：${esc(r.issues[0])}</small>` : ""}</td><td class="hide-sp">${kaiTag(r.kai)}</td>
       <td class="num hide-sp">${hm(r.minutes) || (r.size_gb != null ? r.size_gb.toFixed(2) + " GB" : "")}</td><td class="hide-sp" style="font-size:12px;color:var(--muted)">${r.youtube ? "あり" : "―"}</td>
       <td>${stLabel(r.share)}</td><td class="num hide-sp">${r.share ? r.share.views : ""}</td><td>${act(r)}</td></tr>`).join("") || `<tr><td colspan="9" class="empty">合う録画がありません</td></tr>`}
     </tbody></table>${rs.length > shown ? `<div class="more"><button class="btn" type="button" id="more">さらに ${Math.min(PAGE, rs.length - shown)} 本を出す（残り ${rs.length - shown} 本）</button></div>` : ""}</div>`;
@@ -194,6 +198,11 @@ export function mountRecordings(host, { getToken }) {
         <a class="btn" href="${esc(s.link)}" target="_blank" rel="noopener">見る画面を別タブで開く ↗</a>`
       : r.issues.includes(ISSUE_ORDER[2]) ? `<div class="issue"><p>画面つきの動画が無いので、リンクを出せません（音声だけなど）。</p></div>`
       : `<div class="issue"><p>まだリンクはありません。発行すると、リンクを知っている人は誰でも見られます（検索には出ません）。</p><button class="btn pri" type="button" data-issue="${esc(r.id)}">リンクを発行してコピー</button></div>`}
+      </div>
+      <div class="sec"><h3>会員サイト</h3>
+        ${placedOf(r.id).map((p) => `<div class="site-in"><span>${esc(p.path)} › ${esc(p.title)}</span><span class="st ${p.status === "published" ? "on" : ""}">${p.status === "published" ? "● 公開中" : "下書き"}</span></div>`).join("") || '<p class="why" style="margin:0 0 8px">まだどのコースにも入っていません。</p>'}
+        ${r.issues.includes(ISSUE_ORDER[2]) ? "" : `<button class="btn ${placedOf(r.id).length ? "" : "pri"}" type="button" id="d-site">${placedOf(r.id).length ? "別のコースにも入れる" : "会員サイトに入れる"}</button>`}
+        <p class="hint">会員サイトでは、会員のログインと権利を確かめてから流します。共有リンクとは別で、外へ持ち出せるリンクは作りません。</p>
       </div>
       <div class="sec"><h3>録画</h3><dl class="meta"><dt>収録日</dt><dd>${esc(r.date)}</dd>${r.minutes != null ? `<dt>長さ</dt><dd>${hm(r.minutes)}</dd>` : ""}<dt>大きさ</dt><dd>${r.size_gb != null ? r.size_gb.toFixed(2) + " GB" : "―"}</dd><dt>YouTube</dt><dd>${r.youtube ? "あり（限定公開）" : "なし"}</dd><dt>名前の正本</dt><dd>${r.managed ? "管理シートの E 列" : "この画面"}</dd>${r.issues.length ? `<dt>点検</dt><dd>${r.issues.map(esc).join("・")}</dd>` : ""}</dl></div>
       <div class="sec"><h3>ラベル</h3>
@@ -292,6 +301,41 @@ export function mountRecordings(host, { getToken }) {
       <p class="hint">名前を変える・削除は、付いている録画すべてに効きます。「元に戻す」で戻せます。</p></div></div>`;
     if (!keep) setTimeout(() => $("#ml input, #ml button")?.focus(), 30);
   }
+  async function openSite() {
+    const r = D.rows.find((x) => x.id === sel); if (!r) return;
+    smFrom = root.activeElement;
+    const m = await call("/member?id=" + encodeURIComponent(r.id));
+    if (!m.ok) { undo(errText(m), null); return; }
+    if (!m.courses.length) { undo("会員サイトにコースがありません。先に会員サイトの画面でコースを作ってください", null); return; }
+    smData = m;
+    const pathNote = (c) => `${esc(c.path)}${c.rights.length ? `（見られる権利：${c.rights.map(esc).join("・")}）` : "（見られる権利がまだありません）"}`;
+    $("#mslot").innerHTML = `<div class="scrim" id="sm-scrim"></div><div class="modal" id="sm" role="dialog" aria-modal="true" aria-labelledby="sm-t">
+      <div class="dh"><h2 id="sm-t">会員サイトに入れる</h2><button class="x" type="button" id="sm-close" aria-label="閉じる">✕</button></div>
+      <div class="db">
+        <div class="f"><label for="sm-course">入れるコース</label><select id="sm-course">${m.courses.map((c) => `<option value="${esc(c.id)}">${esc(c.path.split(" › ").pop())}</option>`).join("")}</select><p class="hint" id="sm-path">${pathNote(m.courses[0])}</p></div>
+        <div class="f"><label for="sm-title">コンテンツの名前（生徒に見える名前）</label><input id="sm-title" value="${esc(m.info.title)}"></div>
+        <div class="f"><label for="sm-pub">公開</label><select id="sm-pub"><option value="draft">下書きで入れる（会員サイトの画面で確かめてから公開）</option><option value="published">すぐ公開する</option></select></div>
+        <p class="hint">要約と目次は録画から写します（会員サイトの画面であとから直せます）。話者の名前は伏せたまま出します。</p>
+        <div class="row2"><button class="btn" type="button" id="sm-cancel">キャンセル</button><button class="btn pri" type="button" id="sm-go">入れる</button></div>
+      </div></div>`;
+    $("#sm-course").addEventListener("change", (e) => { const c = smData.courses.find((x) => x.id === e.target.value); $("#sm-path").innerHTML = pathNote(c); });
+    setTimeout(() => $("#sm-course")?.focus(), 30);
+  }
+  function closeSite() { $("#mslot").innerHTML = ""; smData = null; (root.getElementById("d-site") || smFrom)?.focus?.(); smFrom = null; }
+  async function putSite() {
+    if (busy || !sel) return;
+    const title = $("#sm-title").value.trim();
+    if (!title) { undo("コンテンツの名前を入れてください", null); $("#sm-title").focus(); return; }
+    const status = $("#sm-pub").value, course = $("#sm-course").selectedOptions[0].textContent;
+    busy = true; $("#sm-go").disabled = true;
+    const r = await call("/member", "POST", { id: sel, course_id: $("#sm-course").value, title, status });
+    busy = false;
+    if (!r.ok) { $("#sm-go").disabled = false; undo(errText(r), null); return; }
+    closeSite();
+    await load();
+    root.getElementById("d-site")?.focus();
+    undo(status === "published" ? `「${course}」に入れて公開しました` : `「${course}」に下書きで入れました（会員サイトの画面で公開してください）`, null);
+  }
   function closeManage() { $("#mslot").innerHTML = ""; mlFrom?.focus?.(); mlFrom = null; }
 
   root.addEventListener("click", async (e) => {
@@ -305,6 +349,9 @@ export function mountRecordings(host, { getToken }) {
     if (t.closest("[data-rmtx]")) { txIds = null; q = ""; render(); return; }
     if (t.id === "more") { shown += PAGE; render(); return; }
     if (t.id === "d-close" || t.id === "scrim") return closeDetail();
+    if (t.id === "d-site") return openSite();
+    if (t.id === "sm-close" || t.id === "sm-cancel" || t.id === "sm-scrim") return closeSite();
+    if (t.id === "sm-go") return putSite();
     if (t.id === "d-save") {
       const r = D.rows.find((x) => x.id === sel); if (!r) return;
       const kai = $("#d-kai").value, name = $("#d-name").value.trim();
@@ -389,6 +436,7 @@ export function mountRecordings(host, { getToken }) {
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape" || e.composedPath().includes(host) || !host.isConnected || host.offsetParent === null) return;
     if ($("#ml")) { closeManage(); return; }
+    if ($("#sm")) { closeSite(); return; }
     const m = $("#fmenu");
     if (m && !m.hidden) { m.hidden = true; $("#fbtn").setAttribute("aria-expanded", "false"); return; }
     if (sel) closeDetail();
@@ -397,6 +445,7 @@ export function mountRecordings(host, { getToken }) {
     if (e.key === "Enter" && e.target.id === "d-lab") { e.preventDefault(); return addOne(); }
     if (e.key === "Enter" && e.target.id === "bulk-l") { e.preventDefault(); return addBulk(); }
     if (e.key === "Escape" && $("#ml")) { e.stopPropagation(); return closeManage(); }
+    if (e.key === "Escape" && $("#sm")) { e.stopPropagation(); return closeSite(); }
     if (e.key === "Escape") {
       const m = $("#fmenu");
       if (m && !m.hidden) { m.hidden = true; $("#fbtn").setAttribute("aria-expanded", "false"); $("#fbtn").focus(); return; }

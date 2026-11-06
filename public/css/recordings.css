@@ -132,3 +132,8 @@ select.mini{border:1px solid var(--field);background:var(--panel);border-radius:
   .drawer{width:100%}
   .f input,.f select{font-size:16px;min-height:44px}
 }
+/* 便B（2026-11-06）：会員サイトに入れた録画 */
+.site-in{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;font-size:13px}
+.site-in .st:not(.on){background:var(--soft);color:var(--muted)}
+.insite{display:inline-block;font-size:11px;padding:0 8px;border-radius:999px;background:var(--onbg);color:var(--on);margin-left:6px;line-height:18px;vertical-align:1px}
+#sm .row2{justify-content:flex-end;margin-top:8px}

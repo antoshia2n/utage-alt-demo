@@ -120,7 +120,7 @@ async function main() {
     lessons[l.id] = l;
     return `<div class="card lesson" data-id="${esc(l.id)}" data-q="${esc(String(l.title).toLowerCase())}" tabindex="0" role="button">
       <div class="num">${String(i + 1).padStart(2, "0")}</div>
-      <div style="flex:1;min-width:0"><h3>${esc(l.title)}</h3><div class="meta">${l.youtube_id ? "動画" : "文章"}${l.mindmap_url ? "・マインドマップ" : ""}${l.minutes ? "・" + l.minutes + " 分" : ""}${pill(l.id)}</div></div>
+      <div style="flex:1;min-width:0"><h3>${esc(l.title)}</h3><div class="meta">${l.youtube_id || l.rec ? "動画" : "文章"}${l.mindmap_url ? "・マインドマップ" : ""}${l.minutes ? "・" + l.minutes + " 分" : ""}${pill(l.id)}</div></div>
     </div>`;
   };
   if (lib.source === "manabu" && !lib.member) {
@@ -207,9 +207,22 @@ async function main() {
     $("l-title").textContent = l.title;
     $("l-summary").textContent = l.summary || "";
     $("l-mindmap").innerHTML = l.mindmap_url ? `<a class="btn ghost small" href="${esc(l.mindmap_url)}" target="_blank" rel="noopener">マインドマップを開く</a>` : "";
-    $("l-player").classList.toggle("hidden", !l.youtube_id && lib.source === "manabu");
+    $("l-player").classList.toggle("hidden", !l.youtube_id && !l.rec && lib.source === "manabu");
+    $("l-player").classList.toggle("rec", !!l.rec);
     const frame = (start) => `<iframe src="https://www.youtube-nocookie.com/embed/${esc(l.youtube_id)}${start ? `?start=${start}&autoplay=1` : ""}" title="${esc(l.title)} の動画" style="width:100%;height:100%;border:0;border-radius:10px" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>`;
-    $("l-player").innerHTML = l.youtube_id ? frame(0) : "この教材には動画がありません";
+    if (l.rec) {
+      // 便B（2026-11-06）：録画の棚から流す。開くたびにログインと権利を確かめ、6 時間の住所をもらう（無ければ YouTube の枠へ戻す）
+      $("l-player").innerHTML = "読み込み中…";
+      api("/api/me/rec/" + encodeURIComponent(id), { token }).catch(() => ({ ok: false })).then((r) => {
+        if (lessons[id] !== l || !document.getElementById("l-player")) return;
+        if (r && r.ok && r.url) {
+          $("l-player").innerHTML = `<iframe src="${esc(r.url)}" title="${esc(l.title)} の動画" allow="fullscreen; picture-in-picture" allowfullscreen></iframe>`;
+        } else {
+          $("l-player").classList.remove("rec");
+          $("l-player").innerHTML = l.youtube_id ? frame(0) : "いまは再生できません。読み込み直してください";
+        }
+      });
+    } else $("l-player").innerHTML = l.youtube_id ? frame(0) : "この教材には動画がありません";
     // 会員サイトの管理（便 22）：目次（押すとその時間から再生）と資料
     const secs = (t) => String(t).split(":").reduce((a, x) => a * 60 + (Number(x) || 0), 0);
     const toc = Array.isArray(l.toc) ? l.toc : [], files = Array.isArray(l.files) ? l.files : [];

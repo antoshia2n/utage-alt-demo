@@ -26,8 +26,54 @@ async function safe(fn) {
   }
 }
 
+// 便B（2026-11-06）：会員サイトのコースの一覧（名前の道筋と、見られる権利）
+function coursePaths(t) {
+  const siteName = new Map(t.sites.map((x) => [x.id, x.name]));
+  const prog = new Map(t.programs.map((x) => [x.id, x]));
+  const cur = new Map(t.curricula.map((x) => [x.id, x]));
+  const rightsOf = (programId) => {
+    const ks = new Set();
+    t.cprog.filter((x) => x.program_id === programId).forEach((x) => { if (cur.get(x.curriculum_id)?.active !== false) t.rights.filter((r) => r.curriculum_id === x.curriculum_id).forEach((r) => ks.add(r.entitlement_key)); });
+    return [...ks];
+  };
+  return t.courses.filter((c) => c.active !== false && prog.get(c.program_id)?.active !== false).map((c) => {
+    const p = prog.get(c.program_id);
+    return { id: c.id, path: [siteName.get(p?.site_id), p?.title, c.title].filter(Boolean).join(" › "), rights: rightsOf(c.program_id), sort: [p?.sort ?? 0, c.sort ?? 0] };
+  }).sort((a, b) => a.sort[0] - b.sort[0] || a.sort[1] - b.sort[1]).map(({ sort, ...x }) => x);
+}
+
 export const recordings = {
   list: (env) => safe(() => zoom(env).shelf()),
+
+  /** 便B：この録画がどのコースに入っているか・入れられるコース・写す中身 */
+  member: (env, site, id) =>
+    safe(async () => {
+      const t = await site.tree(env);
+      const paths = new Map(coursePaths(t).map((c) => [c.id, c]));
+      const rec = (id && String(id)) || "";
+      const placed = [];
+      for (const c of t.contents.filter((x) => x.rec_id && (!rec || x.rec_id === rec) && x.active !== false)) {
+        for (const l of t.links.filter((x) => x.content_id === c.id)) placed.push({ rec_id: c.rec_id, content_id: c.id, title: c.title, status: c.status, course_id: l.course_id, path: paths.get(l.course_id)?.path || "" });
+      }
+      if (!rec) return { ok: true, placed };
+      const info = await zoom(env).member_info(rec);
+      if (!info.ok) return info;
+      return { ok: true, info, placed, courses: [...paths.values()] };
+    }),
+
+  /** 便B：録画を会員サイトのコースに入れる（コンテンツを 1 本作る。要約と目次は録画から写す） */
+  putInSite: (env, site, by, b = {}) =>
+    safe(async () => {
+      const info = await zoom(env).member_info(String(b.id || ""));
+      if (!info.ok) return info;
+      const status = b.status === "published" ? "published" : "draft";
+      const minutes = Number.isFinite(info.minutes) ? Math.min(1440, Math.max(0, Math.round(info.minutes))) : null;
+      const r = await site.saveContent(env, {
+        title: String(b.title || "").trim() || info.title, summary: info.summary || "", status,
+        minutes, toc: info.toc || [], files: [], can_ask: true, rec_id: info.id, courses: [String(b.course_id || "")],
+      }, by);
+      return r.ok ? { ok: true, content_id: r.id, status } : r;
+    }),
 
   /** AI 向け：棚を絞って小さく返す */
   find: (env, args = {}) =>
