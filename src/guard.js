@@ -39,6 +39,7 @@ export const DEFAULT_MODES = {
   list_line_richmenus: "auto",
   // メディアの便 M1：棚を読む・写す・スライドのリンク・名前を直すは自動（人へは届かない）。消すのは承認（ファイルが戻らない）
   list_media: "auto", import_utage_media: "auto", media_import_status: "auto", add_media_slide: "auto", save_media: "auto", remove_media: "approve",
+  list_media_links: "auto", create_media_link: "approve", stop_media_link: "auto",
   // 便 16a：UTAGE の取り込みの様子
   get_utage_import: "auto",
   list_campaigns: "auto", get_blueprint: "auto", create_campaign: "auto", set_part_campaign: "auto",

@@ -176,3 +176,10 @@ UTAGE の代わりになるサイト兼アプリ（PWA）のデモ。架空の�
 - 画面「メディア」・AI の道具 `list_media`・`import_utage_media`・`add_media_slide`・`save_media`・`remove_media`
 - 試験：`node --test tests/media.test.mjs`
 - UTAGE からの写しは「写す待ち」に入れ、毎時の定時の処理が 60 個ずつ写す（進み具合は `media_import_status`）
+
+### メディアの便 M2：共有リンク（2026-11-07・版 0.69.0-bmedialink）
+
+- 表 b_media_links（supabase/b_media_links.sql・本番に適用済み・RLS 有効）。1 つのファイルに何本でも作れ、本ごとに止める・期限・開かれた数
+- 公開の住所 /m/<24 桁>（lab.shia2n.jp と lp.shia2n.jp の両方・ログイン不要・接続元ごとに 60 秒 60 回まで）。止めた・期限切れ・無いは同じ「このリンクは開けません」
+- 開かれた数は最初から読むとき（Range なし・bytes=0-）だけ足す。スライドは元の Google の住所へ送る。画像・PDF・動画・音声のほかは保存させる
+- 画面：メディアの行の「共有」。道具 list_media_links・stop_media_link（自動）、create_media_link（承認）
