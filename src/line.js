@@ -16,6 +16,12 @@
 //   画面から送ったものは b_inbound_log に line_out として 1 人 1 行。友だち全員の番号は認証済みアカウントだけ LINE から取り出せる。
 
 export const ACCOUNT_RE = /^[a-z][a-z_]{1,19}$/;
+// 便 L1（2026-11-06 Naoki OK 22:15）：友だち追加のときに「メールを登録」のリンクを送るアカウント。
+// 既定は college_ops だけ。シアニンのように UTAGE があいさつを送っている間は、2 通目にならないよう入れない（受けて記録し UTAGE へ回すだけ）
+export function inviteOnFollow(env, account) {
+  const list = String((env && env.LINE_INVITE_ACCOUNTS) || "college_ops").split(/[\s,]+/).filter(Boolean);
+  return list.includes(account);
+}
 export const FORWARD_PREFIX = "line_forward_";
 const URL_RE = /^https:[/][/][^\s<>"']{4,490}$/;
 const FORWARD_TIMEOUT_MS = 10000;
@@ -118,6 +124,7 @@ export function makeLine(h) {
       // 便 14b：友だち追加の人へ「メールを登録」のリンクを 1 通（鍵があり、まだ結ばれていない人だけ）
       for (const e of events) {
         if (e.type !== "follow" || !e.source || !e.source.userId) continue;
+        if (!inviteOnFollow(env, account)) continue;
         try { await sendLinkInvite(env, account, e.source.userId, secret); } catch (err) { await logInbound(env, "line_link_invite", { account }, { ok: false, error: String(err && err.message || err).slice(0, 200) }, 500); }
       }
     })();
