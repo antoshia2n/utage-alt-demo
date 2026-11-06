@@ -169,3 +169,9 @@ UTAGE の代わりになるサイト兼アプリ（PWA）のデモ。架空の�
 - 下書きを作るのは自動、有効にするのは承認（`set_line_reply_active`）
 - 試験：`node --test tests/line-l2.test.mjs`
 - 便 L3（読むだけ）：`list_line_richmenus` で LINE のリッチメニューと押せる場所の行き先を読む
+
+## メディアの便 M1（2026-11-07）
+
+- 表 `b_media`（`supabase/b_media.sql`）・中身は R2 の `media/`
+- 画面「メディア」・AI の道具 `list_media`・`import_utage_media`・`add_media_slide`・`save_media`・`remove_media`
+- 試験：`node --test tests/media.test.mjs`
