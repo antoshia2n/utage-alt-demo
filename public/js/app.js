@@ -208,7 +208,7 @@ async function main() {
   // 教材を見る画面（便 B2・2026-11-06）：public/js/watch.js。印（お気に入り・視聴済み・ラベル）は本人だけ
   const watchFlat = flat.length ? flat : Object.values(lessons).map((x, i) => ({ ...x, program: "教材", programId: "all", course: "教材", courseId: "all", order: [0, 0, i] }));
   watch = makeWatch({
-    root: $("tab-lesson"), token, flat: watchFlat, lessons, marks: r.marks || {},
+    root: $("tab-lesson"), token, flat: watchFlat, lessons, marks: r.marks || {}, apps: r.app_catalog || [],
     onBack: () => { history.pushState(null, "", "#lessons"); showTab("lessons"); },
     onViewed: async (id) => {
       const res = await api("/api/events", { method: "POST", token, body: { type: "lesson_viewed", lesson_id: id } });
