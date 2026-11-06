@@ -27,6 +27,12 @@ export const COVERAGE = {
 
   // ---- AI の道具が受け持つ ----
   "ANY /api/admin/stats": ["stats"],
+  "GET /api/admin/recordings": ["list_recordings"],
+  "GET /api/admin/recordings/search": ["list_recordings"],
+  "POST /api/admin/recordings/link": ["issue_recording_link"],
+  "POST /api/admin/recordings/share": ["set_recording_link"],
+  "POST /api/admin/recordings/meta": ["set_recording_meta"],
+  "POST /api/admin/recordings/suggest": ["suggest_recording_kai"],
   "GET /api/admin/access": ["list_app_access"],
   "POST /api/admin/access": ["set_app_access"],
   "GET /api/admin/approvals": ["list_approvals"],
