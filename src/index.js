@@ -2473,6 +2473,30 @@ const TOOLS = [
     description: "フォームの回答を新しい順に返す。form_id でフォームごと、person_id で 1 人の回答の履歴。答えは項目の名前つき。0 件は count: 0。",
     inputSchema: { type: "object", properties: { form_id: { type: "string" }, person_id: { type: "string" }, limit: { type: "integer" } } },
   },
+  // ---- 2026-11-06 画面だけだった機能を AI からも（Naoki OK）。どの画面の機能をどの道具が受け持つかは src/coverage.js ----
+  { name: "list_booking_templates", screen: "deals", say: "予約のメールのテンプレートを見る", description: "予約のリマインドで使うメールのテンプレートの一覧（名前・件名・本文・使っている予約メニュー）と、使える差し込み項目（{{name}} など）。", inputSchema: { type: "object", properties: {} } },
+  { name: "save_booking_template", screen: "deals", say: "予約のメールのテンプレートを作る・直す・削除する", description: "予約のメールのテンプレートを作る・直す。承認が要る道具。作るときは name・subject・body が要る。id を渡すと直す。archived true で削除（使っている予約メニューがあると削除できない）、false で戻す。本文の差し込みは list_booking_templates の placeholders。", inputSchema: { type: "object", properties: { id: { type: "string" }, name: { type: "string" }, subject: { type: "string" }, body: { type: "string" }, archived: { type: "boolean" } } } },
+  { name: "test_booking_template", screen: "deals", say: "予約のメールを試しに送る", description: "件名と本文を見本の予約（11 月の平日 20:00 など）で差し込んで、管理者（呼んだ AI のつながりの持ち主ではなく、シアニン用の画面に入れるメールの 1 人目）に【テスト】で送る。type_id を渡すとその予約メニューの名前・Zoom で差し込む。", inputSchema: { type: "object", properties: { subject: { type: "string" }, body: { type: "string" }, type_id: { type: "string" } }, required: ["subject", "body"] } },
+  { name: "list_staff", screen: "deals", say: "担当者を見る", description: "予約の担当者の一覧（名前・メール・Google カレンダーとつながっているか・担当している予約メニュー）。カレンダーの URL と合言葉は返さない。", inputSchema: { type: "object", properties: {} } },
+  { name: "save_staff", screen: "deals", say: "担当者を足す・直す・削除する", description: "予約の担当者を足す・直す。承認が要る道具。足すときは name が要る。email は担当者宛ての通知の届け先。id を渡すと直す。archived true で削除（担当している予約メニューがあると削除できない）。Google カレンダーをつなぐのは担当者本人の手（管理画面「セミナーと予約 → 担当者」）。", inputSchema: { type: "object", properties: { id: { type: "string" }, name: { type: "string" }, email: { type: "string" }, archived: { type: "boolean" } } } },
+  { name: "check_staff_calendar", screen: "deals", say: "担当者のカレンダーのつながりを確かめる", description: "担当者の Google カレンダーにいまつながるかを確かめる（カレンダーの名前を返す）。", inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
+  { name: "get_mypage", screen: "site", say: "マイページの作りを見る", description: "会員のマイページの今の作り（テンプレと部品の形 config、HTML の版の一覧と選んだ版の HTML、公開中の版）。version で版を選ぶ。", inputSchema: { type: "object", properties: { version: { type: "integer" } } } },
+  { name: "save_mypage_draft", screen: "site", say: "マイページの下書きを保存する", description: "マイページの HTML を新しい版として保存する（公開はしない・生徒には見えない）。html が要る。note は版のメモ。", inputSchema: { type: "object", properties: { html: { type: "string" }, note: { type: "string" } }, required: ["html"] } },
+  { name: "publish_mypage", screen: "site", say: "マイページを公開する", description: "マイページを公開する。承認が要る道具（生徒の画面が変わる）。config を渡すとテンプレと部品の形を公開、version を渡すとその HTML の版を公開。stop true で HTML の版の公開をやめる。", inputSchema: { type: "object", properties: { config: { type: "object" }, version: { type: "integer" }, stop: { type: "boolean" } } } },
+  { name: "set_site_look", screen: "site", say: "ログイン画面の見た目と最初の画面を変える", description: "会員サイトのログイン後に最初に出す画面（landing：mypage／lessons）と、ログイン画面の見た目（login：{logo, color #rrggbb, msg}）。承認が要る道具。", inputSchema: { type: "object", properties: { landing: { type: "string", enum: ["mypage", "lessons"] }, login: { type: "object" } } } },
+  { name: "list_news", screen: "site", say: "お知らせを見る", description: "会員サイトのお知らせの一覧（題名・本文・出す日時・状態 live／scheduled／draft／hidden）。", inputSchema: { type: "object", properties: {} } },
+  { name: "save_news", screen: "site", say: "お知らせを書く・出す・取り下げる", description: "お知らせを書く・直す・出す・取り下げる。承認が要る道具（生徒の画面に出る）。書く・直す：title・body・mode（now＝すぐ出す／at＝published_at の日時に出す／draft＝下書き）、id で直す。取り下げる・戻す：id と status（published／hidden／draft）だけを渡す。", inputSchema: { type: "object", properties: { id: { type: "integer" }, title: { type: "string" }, body: { type: "string" }, mode: { type: "string", enum: ["now", "at", "draft"] }, published_at: { type: "string" }, status: { type: "string" } } } },
+  { name: "list_invites", screen: "invites", say: "招待リンクを見る", description: "招待リンクの一覧（名前・付く権利・使える回数と使った人・期限・止めたか）。", inputSchema: { type: "object", properties: {} } },
+  { name: "save_invite", screen: "invites", say: "招待リンクを作る・止める・メールで送る", description: "招待リンクを作る・止める・メールで送る。承認が要る道具。action：create（name・key・max_uses・link_until が要る。grant_until・workspace_id／workspace_name は任意）／stop（id）／send（id・emails・note）。", inputSchema: { type: "object", properties: { action: { type: "string", enum: ["create", "stop", "send"] }, id: { type: "string" }, name: { type: "string" }, key: { type: "string" }, max_uses: { type: "integer" }, link_until: { type: "string" }, grant_until: { type: "string" }, workspace_id: { type: "string" }, workspace_name: { type: "string" }, emails: { type: "array", items: { type: "string" } }, note: { type: "string" } }, required: ["action"] } },
+  { name: "set_workspace_member", screen: "invites", say: "場所から人を外す・戻す", description: "招待で入った場所（ws_ で始まる番号）から人を外す・戻す。承認が要る道具。action：remove（uid）／restore（uid・person_id・via_invite）。", inputSchema: { type: "object", properties: { workspace_id: { type: "string" }, action: { type: "string", enum: ["remove", "restore"] }, uid: { type: "string" }, person_id: { type: "string" }, via_invite: { type: "string" } }, required: ["workspace_id", "action", "uid"] } },
+  { name: "list_app_access", screen: "access", say: "アプリの公開スイッチを見る", description: "先行で試すアプリの公開スイッチ（どのアプリを、どの権利の人に開いているか）。key を省くと先行の権利。", inputSchema: { type: "object", properties: { key: { type: "string" } } } },
+  { name: "set_app_access", screen: "access", say: "アプリの公開スイッチを切り替える", description: "先行で試すアプリを開く・閉じる。承認が要る道具（生徒の画面にアプリが出る・消える）。target はアプリ、on は true／false。", inputSchema: { type: "object", properties: { target: { type: "string" }, on: { type: "boolean" }, key: { type: "string" } }, required: ["target", "on"] } },
+  { name: "test_push", screen: "settings", say: "スマホへの通知を試しに送る", description: "Naoki のスマホ（購読している端末）に試しの通知を送る。", inputSchema: { type: "object", properties: {} } },
+  { name: "list_entitlement_keys", screen: "people", say: "手で付けられる権利を見る", description: "人に手で付けられる権利のキーの一覧。", inputSchema: { type: "object", properties: {} } },
+  { name: "set_entitlement", screen: "people", say: "人に権利を手で付ける・外す", description: "人に権利を手で付ける・外す（手で付けたものだけ外せる）。承認が要る道具。action：grant（person_id・key・reason が要る。expires_at は任意）／revoke（person_id・entitlement_id・reason）。", inputSchema: { type: "object", properties: { action: { type: "string", enum: ["grant", "revoke"] }, person_id: { type: "string" }, key: { type: "string" }, entitlement_id: { type: "string" }, reason: { type: "string" }, expires_at: { type: "string" } }, required: ["action", "person_id", "reason"] } },
+  { name: "get_person_values", screen: "people", say: "人の項目の答えを見る", description: "その人の項目の答え（フォームで答えた値など）。", inputSchema: { type: "object", properties: { person_id: { type: "string" } }, required: ["person_id"] } },
+  { name: "get_site", screen: "site", say: "会員サイトの中身を見る", description: "会員サイト（サイト › カリキュラム › プログラム › コース › コンテンツ）を読む。what：tree（全体の木）／content（id のコンテンツ 1 つ）／home（ホームの並び）／students（生徒と見られる範囲）。", inputSchema: { type: "object", properties: { what: { type: "string", enum: ["tree", "content", "home", "students"] }, id: { type: "string" } }, required: ["what"] } },
+  { name: "save_site", screen: "site", say: "会員サイトの中身を作る・直す・公開する", description: "会員サイトを作る・直す・並べ替える・公開する。承認が要る道具（生徒の画面が変わる）。kind：site／curriculum／program／course／content（各 id なしで作る・ありで直す。中身は画面と同じ欄）／home（rows）／course_order（program_id・course_ids）／course_contents（course_id・content_ids）／content_status（ids・status published／draft）／from_videos（course_id・urls：YouTube の URL からコンテンツを作る）。data に欄を入れる。", inputSchema: { type: "object", properties: { kind: { type: "string", enum: ["site", "curriculum", "program", "course", "content", "home", "course_order", "course_contents", "content_status", "from_videos"] }, data: { type: "object" } }, required: ["kind", "data"] } },
 ];
 
 
@@ -2585,6 +2609,49 @@ async function runTool(env, name, args) {
   if (name === "list_forms") return await forms.listForms(env, { origin: env.PUBLIC_ORIGIN || "" });
   if (name === "set_form") return await forms.setForm(env, args, "mcp");
   if (name === "list_answers") return await forms.listAnswers(env, args);
+  // 2026-11-06 画面だけだった機能
+  if (name === "list_booking_templates") return await booking.listTemplates(env);
+  if (name === "save_booking_template") return await booking.setTemplate(env, args, "mcp");
+  if (name === "test_booking_template") { const [ad] = await db(env, "GET", "admins?select=email&order=email.asc&limit=1"); return await booking.testTemplate(env, args, ad ? ad.email : ""); }
+  if (name === "list_staff") return await gcal.list(env);
+  if (name === "save_staff") return await gcal.set(env, args, "mcp");
+  if (name === "check_staff_calendar") return await gcal.ping(env, args.id);
+  if (name === "get_mypage") return await mypage.adminGet(env, { version: args.version }, "mcp");
+  if (name === "save_mypage_draft") return await mypage.save(env, { html: args.html, note: args.note }, "mcp");
+  if (name === "publish_mypage") return args.config ? await mypage.publishConfig(env, { config: args.config }, "mcp") : await mypage.publish(env, { version: args.version, stop: args.stop }, "mcp");
+  if (name === "set_site_look") return await mypage.saveSiteLook(env, { landing: args.landing, login: args.login }, "mcp");
+  if (name === "list_news") return await news.list(env);
+  if (name === "save_news") return args.status && !args.title && !args.body ? await news.setStatus(env, { id: args.id, status: args.status }, "mcp") : await news.save(env, args, "mcp");
+  if (name === "list_invites") return await invite.list(env);
+  if (name === "save_invite") {
+    if (args.action === "create") return await invite.create(env, args, "mcp");
+    if (args.action === "stop") return await invite.stop(env, args.id);
+    if (args.action === "send") return await invite.send(env, args.id, { emails: args.emails, note: args.note }, "mcp");
+    return { ok: false, error: "bad_action", allowed: ["create", "stop", "send"] };
+  }
+  if (name === "set_workspace_member") {
+    if (!/^ws_[0-9a-f]{32}$/.test(String(args.workspace_id || ""))) return { ok: false, error: "bad_workspace" };
+    return args.action === "remove" ? await invite.removeMember(env, args.workspace_id, args.uid, "mcp") : args.action === "restore" ? await invite.restoreMember(env, args.workspace_id, args, "mcp") : { ok: false, error: "bad_action" };
+  }
+  if (name === "list_app_access") return await bridge.accessList(env, { key: args.key });
+  if (name === "set_app_access") return await bridge.setAccess(env, { target: args.target, on: args.on, key: args.key });
+  if (name === "test_push") return await push.send(env, { title: "マーケくんの通知の試し", body: "この知らせが見えたら、スマホへの通知は届いています", url: "/admin", tag: "test" });
+  if (name === "list_entitlement_keys") return await bridge.entitlementKeys(env);
+  if (name === "set_entitlement") return args.action === "grant" ? await bridge.grantManual(env, args, "mcp") : args.action === "revoke" ? await bridge.revokeManual(env, args, "mcp") : { ok: false, error: "bad_action" };
+  if (name === "get_person_values") return await forms.personValues(env, args.person_id);
+  if (name === "get_site") {
+    if (args.what === "tree") return await site.tree(env);
+    if (args.what === "content") return await site.content(env, args.id);
+    if (args.what === "home") return await site.homeRows(env);
+    if (args.what === "students") return await site.studentsOf(env, { names: (await students.load(env)).byEmail });
+    return { ok: false, error: "bad_what" };
+  }
+  if (name === "save_site") {
+    const d = args.data || {}, by = "mcp";
+    const f = { site: () => site.saveSite(env, d, by), curriculum: () => site.saveCurriculum(env, d, by), program: () => site.saveProgram(env, d, by), course: () => site.saveCourse(env, d, by), content: () => site.saveContent(env, d, by),
+      home: () => site.saveHomeRows(env, d, by), course_order: () => site.orderCourses(env, d), course_contents: () => site.setCourseContents(env, d), content_status: () => site.setStatus(env, d, by), from_videos: () => site.fromVideos(env, d, by) }[args.kind];
+    return f ? await f() : { ok: false, error: "bad_kind" };
+  }
   // 便 12a
   if (name === "list_page_requests") return await pages.listRequests(env, args);
   if (name === "get_page_request") return await pages.getRequest(env, args);
