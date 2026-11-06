@@ -25,8 +25,15 @@ const ICON = {
   search: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg>',
 };
 
+// 便 B2-5（2026-11-06）：メモの行き先。開けるアプリ（app_catalog の open）にだけ出す。「開くだけ」もある（Naoki 19:24）
+const DEST = [
+  { target: "mindmap", name: "思考整理くん", mark: "思", color: "#7c3aed", send: "マップにして開く", note: "メモの箇条書きがそのまま枝になります" },
+  { target: "content-os", name: "コンテンツくん", mark: "コ", color: "#ea580c", send: "ネタにして開く", note: "アイデアメモに入ります（題名はこの教材）" },
+];
+const b64u = (str) => { const b = new TextEncoder().encode(str); let s = ""; b.forEach((x) => (s += String.fromCharCode(x))); return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); };
+
 /**
- * ctx = { root, token, flat, lessons, marks, onBack(), onViewed(id) }
+ * ctx = { root, token, flat, lessons, marks, apps: [{ target, name, url, open }], onBack(), onViewed(id) }
  * 返すもの：{ open(id, startSec), close() }
  */
 export function makeWatch(ctx) {
@@ -98,6 +105,7 @@ export function makeWatch(ctx) {
               <textarea id="wt-memo" maxlength="4000" placeholder="- 気づいたこと&#10;  - Tab で一段下げる"></textarea>
               <div class="wt-row"><button type="button" class="wt-btn" id="wt-stamp" hidden>＋ 今の時間（<span class="wt-now">00:00</span>）</button><span class="wt-grow"></span><button type="button" class="wt-btn pri" id="wt-msave">保存</button></div>
               <p class="wt-note" id="wt-mst" role="status">⌘／Ctrl＋Enter でも保存。あなただけが見られます</p>
+              <div id="wt-dest"></div>
             </div>
           </div>
         </aside>
@@ -462,6 +470,27 @@ export function makeWatch(ctx) {
     else ta.setRangeText("\n" + (m ? m[1] : "- ") + stamp, le, le, "end");
   };
   $("wt-ask").onclick = ask;
+  // メモの行き先（別タブ）。押した瞬間に開く（あとから開くと窓を止められるため）。書きかけのメモは裏で保存する
+  const apps = (ctx.apps || []).filter((a) => a.open && a.url);
+  $("wt-dest").innerHTML = DEST.filter((d) => apps.some((a) => a.target === d.target)).map((d) => `<div class="wt-dest">
+      <span class="wt-dm" style="background:${d.color}" aria-hidden="true">${d.mark}</span>
+      <span class="wt-dt"><b>${esc(d.name)}</b><small>${esc(d.note)}</small></span>
+      <span class="wt-da"><button type="button" class="wt-btn" data-send="${d.target}">${esc(d.send)} ↗</button><button type="button" class="wt-mini" data-openapp="${d.target}" aria-label="${esc(d.name)}を別タブで開く">開くだけ ↗</button></span></div>`).join("");
+  if ($("wt-dest").innerHTML) $("wt-dest").insertAdjacentHTML("afterbegin", '<p class="wt-dh">メモを続きのアプリで育てる</p>');
+  $("wt-dest").addEventListener("click", (e) => {
+    const sd = e.target.closest("[data-send]"), op = e.target.closest("[data-openapp]");
+    const a = apps.find((x) => x.target === (sd || op || {}).dataset?.[sd ? "send" : "openapp"]);
+    if (!a) return;
+    if (op) { window.open(a.url, "_blank", "noopener"); return; }
+    const text = $("wt-memo").value.replace(/^\s*-\s*$/, "").trim();
+    if (!text) { toast("メモが空です。書いてから送ってください"); $("wt-memo").focus(); return; }
+    const t = video ? Math.floor(video.currentTime) : 0;
+    const src = `${location.origin}/app#lesson/${encodeURIComponent(cur)}${t > 0 ? "/t" + t : ""}`;
+    const url = new URL("/new", a.url).href + "#d=" + b64u(JSON.stringify({ title: curL.title, text, src }));
+    window.open(url, "_blank", "noopener");
+    if (text !== memoSaved.trim()) saveMemo();
+    toast(`${DEST.find((d) => d.target === a.target).name}を別タブで開きました`);
+  });
   $("wt-q").addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); ask(); } });
   root.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && e.target.id === "wt-newlab") { e.preventDefault(); addLabel(); return; }
