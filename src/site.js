@@ -31,7 +31,7 @@ const T = {
   sites: "b_site_sites", curricula: "b_site_curricula", cprog: "b_site_curriculum_programs", rights: "b_site_curriculum_rights",
   programs: "b_site_programs", courses: "b_site_courses", contents: "b_site_contents", links: "b_site_content_courses",
 };
-const CONTENT_LIST = "id,title,summary,status,active,publish_at,drip_days,minutes,video_url,can_ask,files,kind,updated_at";
+const CONTENT_LIST = "id,title,summary,status,active,publish_at,drip_days,minutes,video_url,rec_id,can_ask,files,kind,updated_at";
 const CONTENT_FULL = CONTENT_LIST + ",toc,body";
 const inList = (ids) => `in.(${ids.map((x) => `"${encodeURIComponent(String(x))}"`).join(",")})`;
 const now = () => new Date().toISOString();
@@ -59,6 +59,10 @@ export function checkContent(b = {}) {
   if (kind && !KINDS.includes(kind)) return { ok: false, error: "bad_kind", field: "kind" };
   const video_url = str(b.video_url, 500) || null;
   if (video_url && !/^https?:\/\/(www\.|m\.)?(youtube\.com|youtu\.be)\//i.test(video_url)) return { ok: false, error: "bad_video_url", field: "video_url" };
+  // 便B（2026-11-06）：録画の棚の id。送られてこなければ今の値を変えない
+  const hasRec = Object.prototype.hasOwnProperty.call(b, "rec_id");
+  const rec_id = hasRec ? (str(b.rec_id, 120) || null) : undefined;
+  if (rec_id && !/^[A-Za-z0-9._=+\/-]{4,120}$/.test(rec_id)) return { ok: false, error: "bad_rec_id", field: "rec_id" };
   const toc = [];
   for (const r of Array.isArray(b.toc) ? b.toc.slice(0, LIST_MAX) : []) {
     const at = str(r && r.at, 10), label = str(r && r.label, 200);
@@ -76,7 +80,7 @@ export function checkContent(b = {}) {
   return {
     ok: true,
     // 目次は画面から外した（2026-10-29 11:31 Naoki「一旦なくていい」）。送られてこなければ今の値を変えない
-    row: { title, summary: str(b.summary, TEXT_MAX), status, publish_at, drip_days, minutes: m, video_url, kind, ...(Array.isArray(b.toc) ? { toc } : {}), files, can_ask: b.can_ask !== false, active: true },
+    row: { title, summary: str(b.summary, TEXT_MAX), status, publish_at, drip_days, minutes: m, video_url, kind, ...(hasRec ? { rec_id } : {}), ...(Array.isArray(b.toc) ? { toc } : {}), files, can_ask: b.can_ask !== false, active: true },
   };
 }
 
@@ -229,7 +233,7 @@ export function makeSite({ db }) {
     } else {
       if (!courses) return { ok: false, error: "course_required", field: "courses" };
       id = newId();
-      await db(env, "POST", T.contents, [{ id, ...c.row, content_type: c.row.video_url ? "video" : "text", updated_by: by }], "return=minimal");
+      await db(env, "POST", T.contents, [{ id, ...c.row, content_type: c.row.video_url || c.row.rec_id ? "video" : "text", updated_by: by }], "return=minimal");
     }
     if (courses) {
       const cur = await get(env, `${T.links}?select=course_id&content_id=eq.${encodeURIComponent(id)}`);

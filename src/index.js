@@ -76,6 +76,7 @@ import { makeGoals } from "./goals.js";
 import { mailText, mailHtml } from "./mailhtml.js";
 import { makeNews, newsQuery } from "./news.js";
 import { recordings } from "./recordings.js";
+import { makeRecToken, handleRecPlay } from "./recplay.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
 const VERSION = "0.65.0-bgoaldraft";
@@ -140,6 +141,8 @@ async function route(request, env, ctx, url, path) {
   // 便 12a：公開のページの住所（lp.shia2n.jp）では、ページと /api/p/ の下だけを返す（シアニン用の画面や API はこの住所では開かない）
   if (isPagesHost(env, url)) return await handlePagesHost(request, env, url);
   if (path === "/mcp" || path.startsWith("/mcp/")) return await handleMcp(request, env, url);
+  // 便B（2026-11-06）：会員サイトの中で録画を流す（合言葉つきの住所。合言葉は下の /api/me/rec/ が渡す）
+  if (path === "/learn/rec" || path === "/learn/rec/video") return await handleRecPlay(request, env, url);
   if (path.startsWith("/api/")) return await handleApi(request, env, url);
   // B の便 5：メールの中のリンク（押したら記録して元の住所へ）
   const rl = path.match(/^[/]r[/]([0-9a-f]{12})$/);
@@ -1022,6 +1025,18 @@ async function handleApi(request, env, url) {
     if ((await studentAccess(env, customer, v.email)).access !== "full") return json(NOT_MEMBER, 403);
     return json(await mypage.forStudent(env, customer, v.email));
   }
+  // 便B（2026-11-06）：録画のコンテンツを開く。ログインとそのコンテンツを見られるかを確かめてから、6 時間の住所を渡す
+  const mr = path.match(/^[/]api[/]me[/]rec[/]([A-Za-z0-9-]{8,64})$/);
+  if (mr && method === "GET") {
+    const v = await verifyUser(request, env);
+    if (v.error) return json({ ok: false, error: v.error }, 401);
+    const customer = await customerByEmail(env, v.email);
+    if (!customer) return json({ ok: false, error: "not_registered" }, 404);
+    if ((await studentAccess(env, customer, v.email)).access !== "full") return json(NOT_MEMBER, 403);
+    const l = await learn.recFor(env, customer, v.email, mr[1]);
+    if (!l) return json({ ok: false, error: "not_found" }, 404);
+    return json({ ok: true, url: "/learn/rec?t=" + encodeURIComponent(await makeRecToken(env.MCP_SECRET, { lesson: mr[1], rec: l.rec_id, title: l.title })) }, 200, { "cache-control": "no-store" });
+  }
   // 生徒：自分の情報・教材・お知らせ
   if (path === "/api/me" && method === "GET") {
     const v = await verifyUser(request, env);
@@ -1308,6 +1323,8 @@ async function handleApi(request, env, url) {
     if (path === "/api/admin/recordings/share" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await recordings.setLink(env, b.id, b); return json(r, r.ok ? 200 : 400); }
     if (path === "/api/admin/recordings/meta" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await recordings.setMeta(env, b.items); return json(r, r.done ? 200 : 400); }
     if (path === "/api/admin/recordings/labels" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await recordings.labels(env, b); return json(r, r.ok ? 200 : 400); }
+    if (path === "/api/admin/recordings/member" && method === "GET") { const r = await recordings.member(env, site, url.searchParams.get("id")); return json(r, r.ok ? 200 : 400); }
+    if (path === "/api/admin/recordings/member" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await recordings.putInSite(env, site, "admin:" + a.email, b); return json(r, r.ok ? 200 : 400); }
     if (path === "/api/admin/recordings/suggest" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await recordings.suggest(env, b.limit); return json(r, r.ok ? 200 : 400); }
     // 便 7a：オプチャの招待リンク（読む・差し替える）
     if (path === "/api/admin/community" && method === "GET") return json({ ok: true, store: "production", ...(await communityLink(env)) });
@@ -2510,8 +2527,10 @@ const TOOLS = [
   { name: "set_recording_meta", screen: "recordings", say: "録画の名前・会の種類・ラベルを直す", description: "録画の名前（title）・会の種類（kai）・ラベル（labels_add・labels_remove）をまとめて直す。items：[{ id, title?, kai?, labels_add?, labels_remove? }]。ラベルは全角半角・空白・大文字小文字の揺れを、すでにある同じラベルにそろえる。管理シートに行がある録画の名前はシートの E 列が正本なので断られる（会の種類とラベルは直せる）。", inputSchema: { type: "object", properties: { items: { type: "array", items: { type: "object", properties: { id: { type: "string" }, title: { type: "string" }, kai: { type: "string" }, labels_add: { type: "array", items: { type: "string" } }, labels_remove: { type: "array", items: { type: "string" } } }, required: ["id"] } } }, required: ["items"] } },
   { name: "edit_recording_label", screen: "recordings", say: "録画のラベルの名前を変える・削除する", description: "ラベルの名前を変える（action: rename・from・to）か削除する（action: delete・from）。付いている録画すべてに効く。", inputSchema: { type: "object", properties: { action: { type: "string", enum: ["rename", "delete"] }, from: { type: "string" }, to: { type: "string" } }, required: ["action", "from"] } },
   { name: "suggest_recording_kai", screen: "recordings", say: "「その他」の録画に会の種類の案を付ける", description: "会の種類が「その他」の録画に、文字起こしから AI（Workers AI）で会の種類の案を付ける。1 回に limit 本（既定 8・最大 20）。案は list_recordings の suggest_kai に出る。反映は set_recording_meta。", inputSchema: { type: "object", properties: { limit: { type: "number" } } } },
+  { name: "recording_site_places", screen: "recordings", say: "録画が会員サイトのどこに入っているかを見る", description: "録画（list_recordings の id）が会員サイトのどのコースに入っているか、入れられるコース（名前の道筋と見られる権利）、写す名前・要約・目次。id を省くと、録画を入れたコンテンツの全部。", inputSchema: { type: "object", properties: { id: { type: "string" } } } },
+  { name: "put_recording_in_site", screen: "recordings", say: "録画を会員サイトのコースに下書きで入れる", description: "録画 1 本を会員サイトのコースに、コンテンツ（下書き）として入れる。要約・目次・長さは録画から写す。生徒には、会員のログインと権利を確かめてから R2 から流す（共有リンクとは別）。公開は save_site（content_status）か画面で。course_id は recording_site_places の courses の id。", inputSchema: { type: "object", properties: { id: { type: "string" }, course_id: { type: "string" }, title: { type: "string" } }, required: ["id", "course_id"] } },
   { name: "get_site", screen: "site", say: "会員サイトの中身を見る", description: "会員サイト（サイト › カリキュラム › プログラム › コース › コンテンツ）を読む。what：tree（全体の木）／content（id のコンテンツ 1 つ）／home（ホームの並び）／students（生徒と見られる範囲）。", inputSchema: { type: "object", properties: { what: { type: "string", enum: ["tree", "content", "home", "students"] }, id: { type: "string" } }, required: ["what"] } },
-  { name: "save_site", screen: "site", say: "会員サイトの中身を作る・直す・公開する", description: "会員サイトを作る・直す・並べ替える・公開する。承認が要る道具（生徒の画面が変わる）。kind：site／curriculum／program／course／content（各 id なしで作る・ありで直す。中身は画面と同じ欄）／home（rows）／course_order（program_id・course_ids）／course_contents（course_id・content_ids）／content_status（ids・status published／draft）／from_videos（course_id・urls：YouTube の URL からコンテンツを作る）。data に欄を入れる。", inputSchema: { type: "object", properties: { kind: { type: "string", enum: ["site", "curriculum", "program", "course", "content", "home", "course_order", "course_contents", "content_status", "from_videos"] }, data: { type: "object" } }, required: ["kind", "data"] } },
+  { name: "save_site", screen: "site", say: "会員サイトの中身を作る・直す・公開する", description: "会員サイトを作る・直す・並べ替える・公開する。承認が要る道具（生徒の画面が変わる）。kind：site／curriculum／program／course／content（各 id なしで作る・ありで直す。中身は画面と同じ欄。content の rec_id は録画の棚の id で、あれば生徒の画面は R2 から流す）／home（rows）／course_order（program_id・course_ids）／course_contents（course_id・content_ids）／content_status（ids・status published／draft）／from_videos（course_id・urls：YouTube の URL からコンテンツを作る）。data に欄を入れる。", inputSchema: { type: "object", properties: { kind: { type: "string", enum: ["site", "curriculum", "program", "course", "content", "home", "course_order", "course_contents", "content_status", "from_videos"] }, data: { type: "object" } }, required: ["kind", "data"] } },
 ];
 
 
@@ -2660,6 +2679,8 @@ async function runTool(env, name, args) {
   if (name === "set_recording_meta") return await recordings.setMeta(env, args.items);
   if (name === "edit_recording_label") return await recordings.labels(env, args);
   if (name === "suggest_recording_kai") return await recordings.suggest(env, args.limit);
+  if (name === "put_recording_in_site") return await recordings.putInSite(env, site, "ai", { id: args.id, course_id: args.course_id, title: args.title, status: "draft" });
+  if (name === "recording_site_places") return await recordings.member(env, site, args.id);
   if (name === "get_site") {
     if (args.what === "tree") return await site.tree(env);
     if (args.what === "content") return await site.content(env, args.id);
