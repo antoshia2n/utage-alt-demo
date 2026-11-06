@@ -75,6 +75,7 @@ import { makeInvite } from "./invite.js";
 import { makeGoals } from "./goals.js";
 import { mailText, mailHtml } from "./mailhtml.js";
 import { makeNews, newsQuery } from "./news.js";
+import { recordings } from "./recordings.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
 const VERSION = "0.65.0-bgoaldraft";
@@ -1300,6 +1301,13 @@ async function handleApi(request, env, url) {
       const r = wsm[2] === "remove" ? await invite.removeMember(env, wsm[1], body.uid, a.email) : await invite.restoreMember(env, wsm[1], body, a.email);
       return json(r, r.ok ? 200 : 400);
     }
+    // 録画（2026-11-06）：録画の棚。中身と共有リンクの正本は zoom-to-youtube（結び ZOOM）
+    if (path === "/api/admin/recordings" && method === "GET") { const r = await recordings.list(env); return json(r, r.ok ? 200 : 502); }
+    if (path === "/api/admin/recordings/search" && method === "GET") { const r = await recordings.search(env, url.searchParams.get("q")); return json(r, r.ok ? 200 : 400); }
+    if (path === "/api/admin/recordings/link" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await recordings.issue(env, b.id); return json(r, r.ok ? 200 : 400); }
+    if (path === "/api/admin/recordings/share" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await recordings.setLink(env, b.id, b); return json(r, r.ok ? 200 : 400); }
+    if (path === "/api/admin/recordings/meta" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await recordings.setMeta(env, b.items); return json(r, r.done ? 200 : 400); }
+    if (path === "/api/admin/recordings/suggest" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await recordings.suggest(env, b.limit); return json(r, r.ok ? 200 : 400); }
     // 便 7a：オプチャの招待リンク（読む・差し替える）
     if (path === "/api/admin/community" && method === "GET") return json({ ok: true, store: "production", ...(await communityLink(env)) });
     if (path === "/api/admin/community" && method === "PUT") {
@@ -2495,6 +2503,11 @@ const TOOLS = [
   { name: "list_entitlement_keys", screen: "people", say: "手で付けられる権利を見る", description: "人に手で付けられる権利のキーの一覧。", inputSchema: { type: "object", properties: {} } },
   { name: "set_entitlement", screen: "people", say: "人に権利を手で付ける・外す", description: "人に権利を手で付ける・外す（手で付けたものだけ外せる）。承認が要る道具。action：grant（person_id・key・reason が要る。expires_at は任意）／revoke（person_id・entitlement_id・reason）。", inputSchema: { type: "object", properties: { action: { type: "string", enum: ["grant", "revoke"] }, person_id: { type: "string" }, key: { type: "string" }, entitlement_id: { type: "string" }, reason: { type: "string" }, expires_at: { type: "string" } }, required: ["action", "person_id", "reason"] } },
   { name: "get_person_values", screen: "people", say: "人の項目の答えを見る", description: "その人の項目の答え（フォームで答えた値など）。", inputSchema: { type: "object", properties: { person_id: { type: "string" } }, required: ["person_id"] } },
+  { name: "list_recordings", screen: "recordings", say: "録画の棚を見る", description: "R2 に保管した Zoom の録画の棚（全部で 500 本ほど）。絞り込み：kai（セミナー・打ち合わせ・個別相談・Zoom添削・その他）・date_from／date_to（YYYY-MM-DD）・words（題名の言葉）・transcript_words（文字起こしの中の言葉）・shared（true＝共有中／false＝未発行）・with_issues（点検の録画）・with_suggestions（整理の案がある録画）・limit（既定 30・最大 100）。行の id を issue_recording_link などに渡す。", inputSchema: { type: "object", properties: { kai: { type: "string", enum: ["セミナー", "打ち合わせ", "個別相談", "Zoom添削", "その他"] }, date_from: { type: "string" }, date_to: { type: "string" }, words: { type: "string" }, transcript_words: { type: "string" }, shared: { type: "boolean" }, with_issues: { type: "boolean" }, with_suggestions: { type: "boolean" }, limit: { type: "number" } } } },
+  { name: "issue_recording_link", screen: "recordings", say: "録画の共有リンクを出す", description: "録画 1 本の共有リンク（https://v.shia2n.jp/…）を出す。すでにあればそれを返す。リンクを知っている人は誰でも見られる（検索には出ない）。id は list_recordings の id。", inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
+  { name: "set_recording_link", screen: "recordings", say: "録画の共有を止める・期限を決める", description: "録画の共有リンクを止める（stopped: true）・再開する（false）・期限（expires: YYYY-MM-DD、その日の終わりまで。空で期限なし）。", inputSchema: { type: "object", properties: { id: { type: "string" }, stopped: { type: "boolean" }, expires: { type: "string" } }, required: ["id"] } },
+  { name: "set_recording_meta", screen: "recordings", say: "録画の名前と会の種類を直す", description: "録画の名前（title）と会の種類（kai）をまとめて直す。items：[{ id, title?, kai? }]。管理シートに行がある録画の名前はシートの E 列が正本なので断られる（会の種類は直せる）。", inputSchema: { type: "object", properties: { items: { type: "array", items: { type: "object", properties: { id: { type: "string" }, title: { type: "string" }, kai: { type: "string" } }, required: ["id"] } } }, required: ["items"] } },
+  { name: "suggest_recording_kai", screen: "recordings", say: "「その他」の録画に会の種類の案を付ける", description: "会の種類が「その他」の録画に、文字起こしから AI（Workers AI）で会の種類の案を付ける。1 回に limit 本（既定 8・最大 20）。案は list_recordings の suggest_kai に出る。反映は set_recording_meta。", inputSchema: { type: "object", properties: { limit: { type: "number" } } } },
   { name: "get_site", screen: "site", say: "会員サイトの中身を見る", description: "会員サイト（サイト › カリキュラム › プログラム › コース › コンテンツ）を読む。what：tree（全体の木）／content（id のコンテンツ 1 つ）／home（ホームの並び）／students（生徒と見られる範囲）。", inputSchema: { type: "object", properties: { what: { type: "string", enum: ["tree", "content", "home", "students"] }, id: { type: "string" } }, required: ["what"] } },
   { name: "save_site", screen: "site", say: "会員サイトの中身を作る・直す・公開する", description: "会員サイトを作る・直す・並べ替える・公開する。承認が要る道具（生徒の画面が変わる）。kind：site／curriculum／program／course／content（各 id なしで作る・ありで直す。中身は画面と同じ欄）／home（rows）／course_order（program_id・course_ids）／course_contents（course_id・content_ids）／content_status（ids・status published／draft）／from_videos（course_id・urls：YouTube の URL からコンテンツを作る）。data に欄を入れる。", inputSchema: { type: "object", properties: { kind: { type: "string", enum: ["site", "curriculum", "program", "course", "content", "home", "course_order", "course_contents", "content_status", "from_videos"] }, data: { type: "object" } }, required: ["kind", "data"] } },
 ];
@@ -2639,6 +2652,11 @@ async function runTool(env, name, args) {
   if (name === "list_entitlement_keys") return await bridge.entitlementKeys(env);
   if (name === "set_entitlement") return args.action === "grant" ? await bridge.grantManual(env, args, "mcp") : args.action === "revoke" ? await bridge.revokeManual(env, args, "mcp") : { ok: false, error: "bad_action" };
   if (name === "get_person_values") return await forms.personValues(env, args.person_id);
+  if (name === "list_recordings") return await recordings.find(env, args);
+  if (name === "issue_recording_link") return await recordings.issue(env, args.id);
+  if (name === "set_recording_link") return await recordings.setLink(env, args.id, args);
+  if (name === "set_recording_meta") return await recordings.setMeta(env, args.items);
+  if (name === "suggest_recording_kai") return await recordings.suggest(env, args.limit);
   if (name === "get_site") {
     if (args.what === "tree") return await site.tree(env);
     if (args.what === "content") return await site.content(env, args.id);
