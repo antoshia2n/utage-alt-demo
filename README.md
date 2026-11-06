@@ -168,3 +168,4 @@ UTAGE の代わりになるサイト兼アプリ（PWA）のデモ。架空の�
 - 有効な応答を並び順に見て、最初に合った 1 件だけ返す。返事の番号で返すので送信数を使わない
 - 下書きを作るのは自動、有効にするのは承認（`set_line_reply_active`）
 - 試験：`node --test tests/line-l2.test.mjs`
+- 便 L3（読むだけ）：`list_line_richmenus` で LINE のリッチメニューと押せる場所の行き先を読む
