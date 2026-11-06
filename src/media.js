@@ -3,7 +3,8 @@
 //  ・Google スライドはファイルではなくリンク（kind=slide・url）。見るときは埋め込みの住所へ直す
 //  ・UTAGE の置き場（utagesystem の S3・wasabi）にある画像と動画を、解約で消える前にまとめて写す（import_utage_media）
 //    写すのは住所が UTAGE の置き場のものだけ（ほかの住所は取りに行かない）。同じ元（source）は 2 回写さない
-//  ・2 本目（M2）で共有リンク（止める・期限・開かれた数）と「メディアから選ぶ」を足す
+//  ・M2（2026-11-07）：共有リンク。表 b_media_links（正本は supabase/b_media_links.sql）。住所は /m/<24 桁>（lab と lp の両方で開く）。
+//    本ごとに止める・期限・開かれた数。ログインは要らない。止めた・期限切れ・ファイルが無いは同じ「開けません」の頁
 export const KINDS = ["image", "pdf", "slide", "video", "audio", "other"];
 const UTAGE_FILE_RE = /^https:[/][/]utagesystem[.]s3[.]ap-northeast-1[.](amazonaws|wasabisys)[.]com[/][^\s?#]{4,400}$/;
 const SLIDE_RE = /^https:[/][/]docs[.]google[.]com[/]presentation[/]d[/]([A-Za-z0-9_-]{20,80})/;
@@ -12,6 +13,9 @@ const EXT_TYPE = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif:
 export const MAX_UPLOAD = 95 * 1024 * 1024; // 画面から 1 回で上げられる大きさ（Workers の受け取りの上限 100MB の内側）
 const MAX_IMPORT = 2 * 1024 * 1024 * 1024;
 const T = "b_media";
+const L = "b_media_links";
+export const TOKEN_RE = /^[0-9a-f]{24}$/;
+const MAX_DAYS = 3650;
 
 export const extOf = (name) => { const m = String(name || "").toLowerCase().match(/[.]([a-z0-9]{2,5})$/); return m ? m[1] : ""; };
 export const kindOf = (name) => EXT_KIND[extOf(name)] || "other";
@@ -33,7 +37,8 @@ export function makeMedia(h) {
     const all = await db(env, "GET", `${T}?select=kind,folder,size&limit=5000`);
     const folders = {}; const kinds = {}; let bytes = 0;
     for (const r of all) { folders[r.folder || ""] = (folders[r.folder || ""] || 0) + 1; kinds[r.kind] = (kinds[r.kind] || 0) + 1; bytes += r.size || 0; }
-    return { ok: true, count: rows.length, total: all.length, bytes, kinds, folders: Object.entries(folders).map(([name, n]) => ({ name, count: n })).sort((a, b) => a.name.localeCompare(b.name, "ja")), items: rows.map(view) };
+    const lk = {}; for (const k of await db(env, "GET", `${L}?select=media_id,stopped_at,expires_at,opens&limit=5000`).catch(() => [])) { const o = lk[k.media_id] || (lk[k.media_id] = { links: 0, live: 0, opens: 0 }); o.links++; o.opens += k.opens || 0; if (linkState(k) === "live") o.live++; }
+    return { ok: true, count: rows.length, total: all.length, bytes, kinds, folders: Object.entries(folders).map(([name, n]) => ({ name, count: n })).sort((a, b) => a.name.localeCompare(b.name, "ja")), items: rows.map((r) => ({ ...view(r), ...(lk[r.id] || { links: 0, live: 0, opens: 0 }) })) };
   }
 
   async function putFile(env, { id, ext, body, size, type }) {
@@ -158,5 +163,78 @@ export function makeMedia(h) {
       "content-disposition": `inline; filename*=UTF-8''${encodeURIComponent(r.name)}` } });
   }
 
-  return { list, upload, addSlide, save, importUtage, drain, importStatus, file };
+  // ---------- M2：共有リンク ----------
+  const linkState = (k, now = Date.now()) => k.stopped_at ? "stopped" : k.expires_at && Date.parse(k.expires_at) <= now ? "expired" : "live";
+  const linkView = (k, origin) => ({ id: k.id, media_id: k.media_id, label: k.label || "", url: `${origin}/m/${k.token}`, state: linkState(k), expires_at: k.expires_at, stopped_at: k.stopped_at, opens: k.opens || 0, last_open_at: k.last_open_at, created_at: k.created_at });
+
+  async function links(env, { media_id } = {}, origin) {
+    let path = `${L}?select=*&order=created_at.desc&limit=1000`;
+    if (media_id) path += `&media_id=eq.${encodeURIComponent(String(media_id))}`;
+    const rows = await db(env, "GET", path);
+    return { ok: true, count: rows.length, links: rows.map((k) => linkView(k, origin)) };
+  }
+
+  // 作る。days（1〜3650）か expires_at（日時）で期限。どちらも無ければ期限なし
+  async function makeLink(env, { media_id, label, days, expires_at }, actor, origin) {
+    const [r] = await db(env, "GET", `${T}?select=id,kind,name,r2_key,url&id=eq.${encodeURIComponent(String(media_id || ""))}`);
+    if (!r) return { ok: false, error: "not_found" };
+    if (r.kind !== "slide" && !r.r2_key) return { ok: false, error: "no_file", note: "まだ写し終わっていないか、写せなかったファイル" };
+    let exp = null;
+    if (days != null && days !== "") {
+      const d = Number(days);
+      if (!Number.isInteger(d) || d < 1 || d > MAX_DAYS) return { ok: false, error: "bad_days", note: "1〜3650 の整数" };
+      exp = new Date(Date.now() + d * 86400000).toISOString();
+    } else if (expires_at) {
+      const t = Date.parse(expires_at);
+      if (isNaN(t) || t <= Date.now()) return { ok: false, error: "bad_expires", note: "これから先の日時" };
+      exp = new Date(t).toISOString();
+    }
+    const token = [...crypto.getRandomValues(new Uint8Array(12))].map((b) => b.toString(16).padStart(2, "0")).join("");
+    const row = { id: crypto.randomUUID(), media_id: r.id, token, label: String(label || "").replace(/[\u0000-\u001f]/g, "").trim().slice(0, 60), expires_at: exp, created_by: String(actor).slice(0, 200) };
+    await db(env, "POST", L, [row], "return=minimal");
+    await logInbound(env, "media_link", { id: row.id, media_id: r.id, expires_at: exp, actor }, { ok: true }, 200);
+    return { ok: true, ...linkView({ ...row, opens: 0 }, origin), name: r.name };
+  }
+
+  // 止める（stop:false で止めたのを戻す。期限切れは戻らないので作り直す）
+  async function stopLink(env, { id, stop = true }, actor) {
+    const [k] = await db(env, "GET", `${L}?select=*&id=eq.${encodeURIComponent(String(id || ""))}`);
+    if (!k) return { ok: false, error: "not_found" };
+    const stopped_at = stop === false ? null : new Date().toISOString();
+    await db(env, "PATCH", `${L}?id=eq.${k.id}`, { stopped_at }, "return=minimal");
+    await logInbound(env, stop === false ? "media_link_restart" : "media_link_stop", { id: k.id, actor }, { ok: true }, 200);
+    return { ok: true, id: k.id, state: linkState({ ...k, stopped_at }) };
+  }
+
+  // 公開の住所 /m/<token>。開けないときは null（呼ぶ側が同じ頁を出す）。
+  // 開かれた数は、最初から読むとき（Range なし・bytes=0- から）だけ 1 足す（動画の続き読みで数が増えないように）
+  async function serveLink(env, token, request) {
+    if (!TOKEN_RE.test(String(token || ""))) return null;
+    const [k] = await db(env, "GET", `${L}?select=*&token=eq.${token}`);
+    if (!k || linkState(k) !== "live") return null;
+    const [r] = await db(env, "GET", `${T}?select=*&id=eq.${k.media_id}`);
+    if (!r) return null;
+    const rangeH = request.headers.get("range");
+    const first = request.method === "GET" && (!rangeH || /^bytes=0-/.test(rangeH));
+    const count = async () => { if (first) await db(env, "PATCH", `${L}?id=eq.${k.id}`, { opens: (k.opens || 0) + 1, last_open_at: new Date().toISOString() }, "return=minimal"); };
+    const base = { "x-content-type-options": "nosniff", "x-robots-tag": "noindex", "referrer-policy": "no-referrer", "cache-control": "private, no-store" };
+    if (r.kind === "slide") { if (!r.url) return null; await count(); return new Response(null, { status: 302, headers: { ...base, location: r.url } }); }
+    if (!r.r2_key || !env.IMAGES) return null;
+    const obj = await env.IMAGES.get(r.r2_key, rangeH ? { range: request.headers } : undefined);
+    if (!obj) return null;
+    await count();
+    const headers = { ...base, "content-type": r.content_type && !r.content_type.startsWith("error:") ? r.content_type : "application/octet-stream", "accept-ranges": "bytes",
+      "content-disposition": `inline; filename*=UTF-8''${encodeURIComponent(r.name)}` };
+    // 画像・PDF・動画・音声のほかは、その場で開かせず保存させる（HTML などを住所の上で動かさないため）
+    if (!/^(image[/](png|jpeg|gif|webp)|application[/]pdf|video[/]|audio[/])/.test(headers["content-type"])) { headers["content-type"] = "application/octet-stream"; headers["content-disposition"] = headers["content-disposition"].replace("inline", "attachment"); }
+    const total = obj.size;
+    if (rangeH && obj.range && total != null) {
+      const off = obj.range.offset || 0; const len = obj.range.length != null ? obj.range.length : total - off;
+      return new Response(request.method === "HEAD" ? null : obj.body, { status: 206, headers: { ...headers, "content-range": `bytes ${off}-${off + len - 1}/${total}`, "content-length": String(len) } });
+    }
+    if (total != null) headers["content-length"] = String(total);
+    return new Response(request.method === "HEAD" ? null : obj.body, { headers });
+  }
+
+  return { list, upload, addSlide, save, importUtage, drain, importStatus, file, links, makeLink, stopLink, serveLink };
 }

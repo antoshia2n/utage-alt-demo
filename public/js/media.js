@@ -2,7 +2,7 @@
 //  ・録画（recordings.js）と同じ見た目（recordings.css）と影の DOM
 //  ・左＝種類とフォルダ、真ん中＝表。上の帯に「アップロード」（95MB まで）と「スライドを追加」
 //  ・中身は /api/admin/media*。見るときはログインの印つきで読み、画面の中だけの住所（blob:）にして開く
-//  ・2 本目（M2）で共有リンク（止める・期限・開かれた数）と「メディアから選ぶ」を足す
+//  ・M2（2026-11-07）：行の「共有」で共有リンクの枠を開く（作る・住所を写す・止める・戻す・開かれた数）
 import { api } from "/js/common.js";
 
 const KIND = { image: "画像", pdf: "PDF", slide: "スライド", video: "動画", audio: "音声", other: "そのほか" };
@@ -13,6 +13,8 @@ const ERR = {
   need_name: "名前を入れてください",
   no_store: "置き場につながっていません",
   not_found: "見つかりませんでした（消されたかもしれません）",
+  no_file: "まだ写し終わっていないファイルです。写し終わってから作ってください",
+  bad_days: "日数は 1〜3650 で入れてください",
 };
 const MAX = 95 * 1024 * 1024;
 const size = (n) => !n ? "" : n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB";
@@ -32,7 +34,8 @@ export function mountMedia(host, { getToken }) {
   const say = (t) => { $("#note-top").textContent = t; $("#live").textContent = ""; setTimeout(() => ($("#live").textContent = t), 30); };
   const errText = (r) => ERR[r.error] || `うまくいきませんでした（${r.error || r.status}）`;
 
-  let S = null, kind = "", folder = null, q = "", editId = null, back = null;
+  let S = null, kind = "", folder = null, q = "", editId = null, back = null, shareId = null, shareLinks = null;
+  const STATE = { live: "配布中", stopped: "止めた", expired: "期限切れ" };
 
   async function load() {
     const p = new URLSearchParams();
@@ -60,9 +63,10 @@ export function mountMedia(host, { getToken }) {
       <td class="nm">${editId === x.id ? `<label class="sr" for="ed-name">名前</label><input id="ed-name" value="${esc(x.name)}" style="width:100%;padding:4px 8px;border:1px solid var(--field);border-radius:8px;background:var(--panel)">` : esc(x.name)}<small>${x.source.startsWith("utage:") ? "UTAGE から写した" : x.source === "link" ? "リンク" : "アップロード"}</small></td>
       <td>${editId === x.id ? `<label class="sr" for="ed-folder">フォルダ</label><input id="ed-folder" value="${esc(x.folder)}" list="folders" style="width:100%;padding:4px 8px;border:1px solid var(--field);border-radius:8px;background:var(--panel)">` : esc(x.folder)}</td>
       <td class="num">${size(x.size)}</td><td class="date">${day(x.created_at)}</td>
+      <td class="num">${x.links ? `${x.live ? `<span class="st on">配布中 ${x.live}</span>` : `<span class="st off">止めた</span>`}<small>開いた ${x.opens} 回</small>` : ""}</td>
       <td style="white-space:nowrap;text-align:right">${editId === x.id
         ? `<button class="btn sm pri" type="button" data-save="${esc(x.id)}">保存</button> <button class="btn sm" type="button" data-cancel>キャンセル</button> <button class="btn sm" type="button" data-remove="${esc(x.id)}">削除</button>`
-        : `<button class="btn sm" type="button" data-open="${esc(x.id)}" aria-label="「${esc(x.name)}」を別タブで開く">開く ↗</button> <button class="btn sm" type="button" data-edit="${esc(x.id)}" aria-label="「${esc(x.name)}」を編集">編集</button>`}</td></tr>`).join("");
+        : `<button class="btn sm" type="button" data-open="${esc(x.id)}" aria-label="「${esc(x.name)}」を別タブで開く">開く ↗</button> <button class="btn sm" type="button" data-share="${esc(x.id)}" aria-expanded="${shareId === x.id}" aria-label="「${esc(x.name)}」の共有リンク">共有</button> <button class="btn sm" type="button" data-edit="${esc(x.id)}" aria-label="「${esc(x.name)}」を編集">編集</button>`}</td></tr>${shareId === x.id ? sharePanel(x) : ""}`).join("");
     $("#main").innerHTML = `<h1>メディア</h1><p class="lead">画像・PDF・Google スライド・動画を置く棚です。全部で ${S.total} 個・${size(S.bytes) || "0 KB"}。UTAGE の置き場の分は AI が写します。</p>
       <div class="bar"><div class="search"><label for="q">探す</label><input type="search" id="q" value="${esc(q)}" placeholder="名前かフォルダの言葉"></div></div>
       <datalist id="folders">${(S.folders || []).map((f) => `<option value="${esc(f.name)}">`).join("")}</datalist>
@@ -71,10 +75,12 @@ export function mountMedia(host, { getToken }) {
         <div class="bar"><label for="sl-name" style="min-width:8em">名前</label><input id="sl-name" style="flex:1;min-width:240px;padding:6px 8px;border:1px solid var(--field);border-radius:8px;background:var(--panel)"></div>
         <div class="bar"><button class="btn sm pri" type="submit">追加</button><button class="btn sm" type="button" id="sl-cancel">キャンセル</button><span class="lead" style="margin:0">スライドは Google 側で「リンクを知っている人が見られる」にしてください</span></div>
       </form>
-      ${S.items.length ? `<div class="tbl"><table><thead><tr><th>種類</th><th>名前</th><th>フォルダ</th><th class="num">大きさ</th><th>入れた日</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="lead">まだありません。右上の「アップロード」か「スライドを追加」から入れられます。</p>'}`;
+      ${S.items.length ? `<div class="tbl"><table><thead><tr><th>種類</th><th>名前</th><th>フォルダ</th><th class="num">大きさ</th><th>入れた日</th><th class="num">共有</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="lead">まだありません。右上の「アップロード」か「スライドを追加」から入れられます。</p>'}`;
     const qi = $("#q");
     qi.addEventListener("keydown", (e) => { if (e.key === "Enter") { q = qi.value.trim(); load(); } });
     $("#main").querySelectorAll("[data-open]").forEach((b) => b.addEventListener("click", () => openItem(b.dataset.open)));
+    $("#main").querySelectorAll("[data-share]").forEach((b) => b.addEventListener("click", () => toggleShare(b.dataset.share)));
+    wireShare();
     $("#main").querySelectorAll("[data-edit]").forEach((b) => b.addEventListener("click", () => { back = b.dataset.edit; editId = b.dataset.edit; draw(); const f = $("#ed-name"); if (f) f.focus(); }));
     $("#main").querySelectorAll("[data-cancel]").forEach((b) => b.addEventListener("click", stopEdit));
     $("#main").querySelectorAll("[data-save]").forEach((b) => b.addEventListener("click", () => saveItem(b.dataset.save)));
@@ -83,6 +89,63 @@ export function mountMedia(host, { getToken }) {
     if (row) row.addEventListener("keydown", (e) => { if (e.key === "Escape") stopEdit(); if (e.key === "Enter" && e.target.tagName === "INPUT") saveItem(editId); });
     $("#slide-form").addEventListener("submit", addSlide);
     $("#sl-cancel").addEventListener("click", () => { $("#slide-form").hidden = true; $("#slide-open").focus(); });
+  }
+  const inp = 'style="padding:6px 8px;border:1px solid var(--field);border-radius:8px;background:var(--panel)"';
+  function sharePanel(x) {
+    const ls = shareLinks || [];
+    const rows = ls.map((k) => `<li style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 0;border-top:1px solid var(--line, #e5e5e5)">
+      <span class="st ${k.state === "live" ? "on" : "off"}">${STATE[k.state] || k.state}</span>
+      <span style="min-width:8em">${esc(k.label || "（名前なし）")}</span>
+      <code style="font-size:12px;word-break:break-all">${esc(k.url)}</code>
+      <span class="lead" style="margin:0">開いた ${k.opens} 回${k.expires_at ? `・期限 ${day(k.expires_at)}` : "・期限なし"}</span>
+      <span class="grow" style="flex:1"></span>
+      <button class="btn sm" type="button" data-copy="${esc(k.url)}" aria-label="「${esc(k.label || "共有リンク")}」の住所を写す">住所を写す</button>
+      ${k.state === "live" ? `<button class="btn sm" type="button" data-stop="${esc(k.id)}">止める</button>` : k.state === "stopped" ? `<button class="btn sm" type="button" data-restart="${esc(k.id)}">戻す</button>` : ""}</li>`).join("");
+    return `<tr class="share-row"><td colspan="7" style="background:var(--panel2, transparent)">
+      <form id="lk-form" class="bar" style="flex-wrap:wrap">
+        <label for="lk-label">何に配るか</label><input id="lk-label" maxlength="60" placeholder="例：LINE の特典" ${inp}>
+        <label for="lk-days">期限</label><select id="lk-days" ${inp}><option value="">なし</option><option value="1">1 日</option><option value="7">7 日</option><option value="30">30 日</option><option value="90">90 日</option></select>
+        <button class="btn sm pri" type="submit">共有リンクを作る</button>
+        <span class="lead" style="margin:0">住所を知っている人はログインなしで開けます</span>
+      </form>
+      ${shareLinks === null ? '<p class="lead">読み込んでいます…</p>' : ls.length ? `<ul style="list-style:none;margin:0;padding:0">${rows}</ul>` : '<p class="lead">まだ共有リンクはありません</p>'}
+    </td></tr>`;
+  }
+  async function loadLinks(id) {
+    const r = await api("/api/admin/media/links?media_id=" + encodeURIComponent(id), { token: getToken() });
+    shareLinks = r.ok ? r.links : [];
+    if (!r.ok) say(errText(r));
+  }
+  async function toggleShare(id) {
+    if (shareId === id) { shareId = null; shareLinks = null; draw(); const b = $("#main").querySelector(`[data-share="${CSS.escape(id)}"]`); if (b) b.focus(); return; }
+    shareId = id; shareLinks = null; draw(); await loadLinks(id); draw();
+    const f = $("#lk-label"); if (f) f.focus();
+  }
+  function wireShare() {
+    const f = $("#lk-form"); if (!f) return;
+    f.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const days = $("#lk-days").value;
+      const r = await api("/api/admin/media/links", { method: "POST", token: getToken(), body: { media_id: shareId, label: $("#lk-label").value.trim(), days: days ? Number(days) : null } });
+      if (!r.ok) { say(errText(r)); return; }
+      try { await navigator.clipboard.writeText(r.url); say("共有リンクを作り、住所を写しました"); } catch (_) { say("共有リンクを作りました"); }
+      await reloadShare();
+    });
+    $("#main").querySelectorAll("[data-copy]").forEach((b) => b.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(b.dataset.copy); say("住所を写しました"); } catch (_) { say("写せませんでした。住所を選んで写してください"); }
+    }));
+    $("#main").querySelectorAll("[data-stop]").forEach((b) => b.addEventListener("click", () => setStop(b.dataset.stop, true)));
+    $("#main").querySelectorAll("[data-restart]").forEach((b) => b.addEventListener("click", () => setStop(b.dataset.restart, false)));
+  }
+  async function setStop(id, stop) {
+    if (stop && !confirm("この共有リンクを止めます。住所を開いても見られなくなります（あとで戻せます）。よろしいですか？")) return;
+    const r = await api("/api/admin/media/links/stop", { method: "POST", token: getToken(), body: { id, stop } });
+    if (!r.ok) { say(errText(r)); return; }
+    await reloadShare(); say(stop ? "止めました" : "戻しました");
+  }
+  async function reloadShare() {
+    const id = shareId; await loadLinks(id); await load();
+    const b = $("#main").querySelector(`[data-share="${CSS.escape(id)}"]`); if (b) b.focus();
   }
   function stopEdit() { editId = null; draw(); const b = back && $("#main").querySelector(`[data-edit="${CSS.escape(back)}"]`); if (b) b.focus(); }
 

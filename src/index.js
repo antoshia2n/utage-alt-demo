@@ -82,7 +82,7 @@ import { makeMarks } from "./marks.js";
 import { makeMedia } from "./media.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.68.1-bmedia";
+const VERSION = "0.69.0-bmedialink";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -149,6 +149,9 @@ async function route(request, env, ctx, url, path) {
   if (path === "/mcp" || path.startsWith("/mcp/")) return await handleMcp(request, env, url);
   // 便B（2026-11-06）：会員サイトの中で録画を流す（合言葉つきの住所。合言葉は下の /api/me/rec/ が渡す）
   if (path === "/learn/rec/video") return await handleRecPlay(request, env, url);
+  // メディアの便 M2（2026-11-07）：メディアの共有リンク（ログイン不要・止める・期限・開かれた数）
+  const mlk = path.match(/^[/]m[/]([0-9a-f]{24})$/);
+  if (mlk && !missingConfig(env).length) return await serveMediaLink(request, env, mlk[1]);
   if (path.startsWith("/api/")) return await handleApi(request, env, url);
   // B の便 5：メールの中のリンク（押したら記録して元の住所へ）
   const rl = path.match(/^[/]r[/]([0-9a-f]{12})$/);
@@ -251,6 +254,15 @@ const blocks = makeBlocks({ db, logInbound, plan, deliver, draftFlow: (env, a, a
 // B の便 14a：LINE の受け口（中身は src/line.js）
 // メディアの便 M1（2026-11-07）：メディアの棚（R2 の IMAGES の箱の media/ と表 b_media）
 const media = makeMedia({ db, logInbound });
+const mediaOrigin = (env) => String(env.PUBLIC_ORIGIN || "https://lab.shia2n.jp").replace(/[/]+$/, "");
+const MEDIA_GONE = `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>開けません</title></head><body style="font-family:system-ui,sans-serif;max-width:560px;margin:15vh auto;padding:0 16px;color:#333"><h1 style="font-size:20px">このリンクは開けません</h1><p>配布が終わったか、住所が違います。送ってくれた人に確かめてください。</p></body></html>`;
+async function serveMediaLink(request, env, token) {
+  if (request.method !== "GET" && request.method !== "HEAD") return new Response("", { status: 405 });
+  const stop = await guardPublic(request, env, "media_link", { ip: "hit" });
+  if (stop) return stop;
+  const r = await media.serveLink(env, token, request);
+  return r || new Response(MEDIA_GONE, { status: 404, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex" } });
+}
 const line = makeLine({ db, logInbound, changes, addEvent, registerPerson: (env, a) => registerPerson(env, a), audience: (env, f) => deliver.audience(env, f), excluded: (env) => connect.excludedIds(env) });
 // B の便 16a：UTAGE の読者と予約者の取り込み（中身は src/utageimport.js）。新しい人は関数 b_register で入れる
 const utageImport = makeUtageImport({ db, addEvent, logInbound, register: async (env, email, name) => {
@@ -448,6 +460,8 @@ async function handlePagesHost(request, env, url) {
     const r = await pages.submitBooking(env, booking, pb[1], body);
     return json(r, r.ok ? 200 : r.error === "not_found" ? 404 : 400);
   }
+  const mlk = path.match(/^[/]m[/]([0-9a-f]{24})$/);
+  if (mlk) return await serveMediaLink(request, env, mlk[1]);
   const pp = path.match(/^[/]api[/]p[/]product[/]([a-z0-9-]{2,40})$/);
   if (pp && method === "GET") { const r = await pages.publicProduct(env, pp[1]); return json(r, r.ok ? 200 : 404); }
   if (path.startsWith("/api/")) return json({ ok: false, error: "not_found" }, 404);
@@ -1328,6 +1342,9 @@ async function handleApi(request, env, url) {
     }
     if (path === "/api/admin/media/slide" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await media.addSlide(env, b, a.email); return json(r, r.ok ? 200 : 400); }
     if (path === "/api/admin/media/save" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await media.save(env, b, a.email); return json(r, r.ok ? 200 : 400); }
+    if (path === "/api/admin/media/links" && method === "GET") return json(await media.links(env, { media_id: url.searchParams.get("media_id") || "" }, mediaOrigin(env)));
+    if (path === "/api/admin/media/links" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await media.makeLink(env, b, a.email, mediaOrigin(env)); return json(r, r.ok ? 200 : 400); }
+    if (path === "/api/admin/media/links/stop" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await media.stopLink(env, b, a.email); return json(r, r.ok ? 200 : 400); }
     if (path === "/api/admin/media/file" && method === "GET") { const r = await media.file(env, url.searchParams.get("id")); return r || json({ ok: false, error: "not_found" }, 404); }
     // 招待リンク（2026-10-30）：作る・一覧（使った人つき）・止める・メールで送る
     if (path === "/api/admin/invites" && method === "GET") return json(await invite.list(env));
@@ -2075,6 +2092,27 @@ const TOOLS = [
     inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
   },
   {
+    name: "list_media_links",
+    screen: "media",
+    say: "メディアの共有リンクと開かれた数を見る",
+    description: "メディアの共有リンク（メディアの便 M2）を見る。media_id で 1 つのファイルの分だけ。返すもの：id・名前 label・住所 url（/m/<24 桁>・ログイン不要）・状態 state（live／stopped／expired）・期限 expires_at・開かれた数 opens（最初から読んだ回数。動画の続き読みは数えない）・最後に開かれた last_open_at。",
+    inputSchema: { type: "object", properties: { media_id: { type: "string" } } },
+  },
+  {
+    name: "create_media_link",
+    screen: "media",
+    say: "メディアの共有リンクを作る（ログインなしで開ける住所）",
+    description: "メディアの棚の 1 つ（media_id）に共有リンクを作る。ログインなしで誰でも開ける住所 url が返る（LINE・メール・ページに貼る）。label（何に配ったか・60 字まで）・期限は days（1〜3650）か expires_at（日時）、どちらも無ければ期限なし。1 つのファイルに何本でも作れ、本ごとに止める・開かれた数を持つ。写し終わっていないファイルは no_file。承認が要る道具：呼ぶと承認待ちになり approval_url が返る。",
+    inputSchema: { type: "object", properties: { media_id: { type: "string" }, label: { type: "string" }, days: { type: "integer" }, expires_at: { type: "string" } }, required: ["media_id"] },
+  },
+  {
+    name: "stop_media_link",
+    screen: "media",
+    say: "メディアの共有リンクを止める",
+    description: "共有リンク（id）を止める。止めると住所を開いても「このリンクは開けません」になる。止めたのを戻すのは画面だけ（AI からは create_media_link で作り直す）。",
+    inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+  },
+  {
     name: "get_community_link",
     screen: "settings",
     say: "オプチャの招待リンクを見る",
@@ -2720,6 +2758,9 @@ async function runTool(env, name, args) {
   if (name === "media_import_status") return await media.importStatus(env);
   if (name === "add_media_slide") return await media.addSlide(env, args, "mcp");
   if (name === "save_media") return await media.save(env, { id: args.id, name: args.name, folder: args.folder }, "mcp");
+  if (name === "list_media_links") return await media.links(env, { media_id: args.media_id }, mediaOrigin(env));
+  if (name === "create_media_link") return await media.makeLink(env, args, "mcp", mediaOrigin(env));
+  if (name === "stop_media_link") return await media.stopLink(env, { id: args.id, stop: true }, "mcp");
   if (name === "remove_media") return await media.save(env, { id: args.id, remove: true }, "mcp");
   if (name === "save_line_template") return await line.saveTemplate(env, args, "mcp");
   if (name === "get_community_link") return { ok: true, ...(await communityLink(env)) };
