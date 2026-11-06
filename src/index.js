@@ -79,9 +79,10 @@ import { recordings } from "./recordings.js";
 import { utageCopy } from "./utagecopy.js";
 import { makeRecToken, handleRecPlay } from "./recplay.js";
 import { makeMarks } from "./marks.js";
+import { makeMedia } from "./media.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.67.0-blinerich";
+const VERSION = "0.68.0-bmedia";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -245,6 +246,8 @@ const plan = makePlan({ db, logInbound, communityLink, changes, pages, seminars,
 // B の便 8g-4：ブロックとテンプレ。中身は src/blocks.js（draftFlow は下の関数）
 const blocks = makeBlocks({ db, logInbound, plan, deliver, draftFlow: (env, a, actor) => draftFlow(env, a, actor) });
 // B の便 14a：LINE の受け口（中身は src/line.js）
+// メディアの便 M1（2026-11-07）：メディアの棚（R2 の IMAGES の箱の media/ と表 b_media）
+const media = makeMedia({ db, logInbound });
 const line = makeLine({ db, logInbound, changes, addEvent, registerPerson: (env, a) => registerPerson(env, a), audience: (env, f) => deliver.audience(env, f), excluded: (env) => connect.excludedIds(env) });
 // B の便 16a：UTAGE の読者と予約者の取り込み（中身は src/utageimport.js）。新しい人は関数 b_register で入れる
 const utageImport = makeUtageImport({ db, addEvent, logInbound, register: async (env, email, name) => {
@@ -1314,6 +1317,15 @@ async function handleApi(request, env, url) {
     const a = await requireAdmin(request, env);
     if (a.error) return json({ ok: false, error: a.error }, a.status);
     if (path === "/api/admin/whoami") return json({ ok: true, email: a.email });
+    // メディアの便 M1（2026-11-07）：メディアの棚
+    if (path === "/api/admin/media" && method === "GET") return json(await media.list(env, { kind: url.searchParams.get("kind") || "", folder: url.searchParams.get("folder") || "", q: url.searchParams.get("q") || "" }));
+    if (path === "/api/admin/media/upload" && method === "POST") {
+      const r = await media.upload(env, { name: url.searchParams.get("name"), folder: url.searchParams.get("folder"), size: request.headers.get("content-length"), type: request.headers.get("content-type"), body: request.body }, a.email);
+      return json(r, r.ok ? 200 : 400);
+    }
+    if (path === "/api/admin/media/slide" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await media.addSlide(env, b, a.email); return json(r, r.ok ? 200 : 400); }
+    if (path === "/api/admin/media/save" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await media.save(env, b, a.email); return json(r, r.ok ? 200 : 400); }
+    if (path === "/api/admin/media/file" && method === "GET") { const r = await media.file(env, url.searchParams.get("id")); return r || json({ ok: false, error: "not_found" }, 404); }
     // 招待リンク（2026-10-30）：作る・一覧（使った人つき）・止める・メールで送る
     if (path === "/api/admin/invites" && method === "GET") return json(await invite.list(env));
     if (path === "/api/admin/invites" && method === "POST") {
@@ -2018,6 +2030,41 @@ const TOOLS = [
     inputSchema: { type: "object", properties: { account: { type: "string", description: "例 shianin" } }, required: ["account"] },
   },
   {
+    name: "list_media",
+    screen: "media",
+    say: "メディアの棚を見る",
+    description: "メディアの棚（メディアの便 M1）を見る。画像・PDF・Google スライド・動画・音声。kind（image／pdf／slide／video／audio／other）・folder・q（名前とフォルダの言葉）で絞る。返すもの：id・種類・名前・フォルダ・大きさ・元 source（upload／link／utage:<UTAGE のメディアの番号>）・スライドの住所 url と埋め込み embed。全体の数 total・種類ごとの数 kinds・フォルダの一覧 folders・合計の大きさ bytes。",
+    inputSchema: { type: "object", properties: { kind: { type: "string" }, folder: { type: "string" }, q: { type: "string" }, limit: { type: "integer" } } },
+  },
+  {
+    name: "import_utage_media",
+    screen: "media",
+    say: "UTAGE の置き場の画像と動画をメディアの棚へ写す",
+    description: "UTAGE の置き場（utagesystem の S3・wasabi）にある画像と動画を、メディアの棚（R2）へ写す（解約で消える前に）。items：[{ url, name, folder?（既定「UTAGE から」）, utage_id?（UTAGE のメディアの番号。元 source になる）}]・1 回に 30 個まで。住所が UTAGE の置き場でないものは取りに行かない。同じ元はとばす（skipped）。元の一覧は shia2n-mcp の utage_archive__read（media）。",
+    inputSchema: { type: "object", properties: { items: { type: "array", items: { type: "object", properties: { url: { type: "string" }, name: { type: "string" }, folder: { type: "string" }, utage_id: { type: "string" } }, required: ["url"] } } }, required: ["items"] },
+  },
+  {
+    name: "add_media_slide",
+    screen: "media",
+    say: "Google スライドをメディアの棚にリンクで置く",
+    description: "Google スライド（https://docs.google.com/presentation/d/…）をメディアの棚にリンクで置く。name・url・folder。埋め込みの住所 embed を返す。スライドの共有設定（リンクを知っている人が見られる）は Google 側で。",
+    inputSchema: { type: "object", properties: { name: { type: "string" }, url: { type: "string" }, folder: { type: "string" } }, required: ["url"] },
+  },
+  {
+    name: "save_media",
+    screen: "media",
+    say: "メディアの名前とフォルダを直す",
+    description: "メディアの棚の 1 つ（id）の名前 name・フォルダ folder を直す。消すのは remove_media。",
+    inputSchema: { type: "object", properties: { id: { type: "string" }, name: { type: "string" }, folder: { type: "string" } }, required: ["id"] },
+  },
+  {
+    name: "remove_media",
+    screen: "media",
+    say: "メディアを消す（ファイルも消える）",
+    description: "メディアの棚の 1 つ（id）を消す。R2 のファイルも消え、戻せない。承認が要る道具：呼ぶと承認待ちになり approval_url が返る。",
+    inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+  },
+  {
     name: "get_community_link",
     screen: "settings",
     say: "オプチャの招待リンクを見る",
@@ -2658,6 +2705,11 @@ async function runTool(env, name, args) {
   if (name === "set_line_reply_active") return await line.setReplyActive(env, { account: args.account, ids: args.ids, active: args.active === true }, "mcp");
   if (name === "list_line_templates") return await line.listTemplates(env, { account: args.account });
   if (name === "list_line_richmenus") return await line.richMenus(env, { account: args.account });
+  if (name === "list_media") return await media.list(env, args);
+  if (name === "import_utage_media") return await media.importUtage(env, { items: args.items }, "mcp");
+  if (name === "add_media_slide") return await media.addSlide(env, args, "mcp");
+  if (name === "save_media") return await media.save(env, { id: args.id, name: args.name, folder: args.folder }, "mcp");
+  if (name === "remove_media") return await media.save(env, { id: args.id, remove: true }, "mcp");
   if (name === "save_line_template") return await line.saveTemplate(env, args, "mcp");
   if (name === "get_community_link") return { ok: true, ...(await communityLink(env)) };
   if (name === "set_community_link") return await setCommunityLink(env, { url: args.url }, "mcp");
