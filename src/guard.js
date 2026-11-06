@@ -37,6 +37,8 @@ export const DEFAULT_MODES = {
   list_line_replies: "auto", save_line_reply: "auto", set_line_reply_active: "approve", list_line_templates: "auto", save_line_template: "approve",
   // 便 L3：リッチメニューを読むだけ
   list_line_richmenus: "auto",
+  // メディアの便 M1：棚を読む・写す・スライドのリンク・名前を直すは自動（人へは届かない）。消すのは承認（ファイルが戻らない）
+  list_media: "auto", import_utage_media: "auto", add_media_slide: "auto", save_media: "auto", remove_media: "approve",
   // 便 16a：UTAGE の取り込みの様子
   get_utage_import: "auto",
   list_campaigns: "auto", get_blueprint: "auto", create_campaign: "auto", set_part_campaign: "auto",

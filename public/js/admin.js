@@ -3,6 +3,7 @@ import { correctionHtml, wireNotes } from "/js/correction.js";
 import { makeBlueprint } from "/js/blueprint.js";
 import { mountSite } from "/js/site.js";
 import { mountRecordings } from "/js/recordings.js";
+import { mountMedia } from "/js/media.js";
 import { mountUtageCopy } from "/js/utagecopy.js";
 import { watchEdges, revealSelected } from "/js/fbar-edges.js";
 
@@ -735,11 +736,11 @@ const pill = (t, kind = "") => `<span class="pill ${kind}">${esc(t)}</span>`;
 // ---------- 添削ルーム ----------
 let currentRoom = null;
 // 便 8c：左のメニュー。押した項目の画面だけを出し、上のナビにその名前を出す
-const VIEWS = ["home", "blueprint", "people", "rooms", "deals", "ai", "products", "deliver", "settings", "refer", "guide", "forms", "pages", "line", "access", "invites", "site", "recordings", "utagecopy"];
+const VIEWS = ["home", "blueprint", "people", "rooms", "deals", "ai", "products", "deliver", "settings", "refer", "guide", "forms", "pages", "line", "access", "invites", "site", "recordings", "media", "utagecopy"];
 // 会員サイト（2026-10-29）：影の DOM の中に描く。顧客管理のその人の画面へは openPerson で移る
 let siteUi = null;
 // 録画（2026-11-06）：録画の棚も影の DOM の中に描く（public/js/recordings.js）
-let recUi = null;
+let recUi = null, mediaUi = null;
 let ucUi = null;
 // 便 20：コネクタだけの画面は無くした。"connect" は行き先の名前としてだけ残す。
 // メールを送るコネクタ（ステップ配信）は メール、送らないもの（自動の動き）は ファネル構築 のタブで開く。part を渡すとその 1 件を開く
@@ -792,6 +793,10 @@ function setupViews() {
     if (b.dataset.view === "utagecopy") {
       if (!ucUi) ucUi = mountUtageCopy($("uc-host"), { getToken: () => token });
       ucUi.open();
+    }
+    if (b.dataset.view === "media") {
+      if (!mediaUi) mediaUi = mountMedia($("media-host"), { getToken: () => token });
+      mediaUi.open();
     }
     if (b.dataset.view === "recordings") {
       if (!recUi) recUi = mountRecordings($("rec-host"), { getToken: () => token });
