@@ -175,3 +175,4 @@ UTAGE の代わりになるサイト兼アプリ（PWA）のデモ。架空の�
 - 表 `b_media`（`supabase/b_media.sql`）・中身は R2 の `media/`
 - 画面「メディア」・AI の道具 `list_media`・`import_utage_media`・`add_media_slide`・`save_media`・`remove_media`
 - 試験：`node --test tests/media.test.mjs`
+- UTAGE からの写しは「写す待ち」に入れ、毎時の定時の処理が 60 個ずつ写す（進み具合は `media_import_status`）
