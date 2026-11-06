@@ -22,7 +22,7 @@ const cleanFolder = (s) => String(s || "").replace(/[\u0000-\u001f/]/g, "").trim
 export function makeMedia(h) {
   const { db, logInbound } = h;
   const view = (r) => ({ id: r.id, kind: r.kind, name: r.name, folder: r.folder || "", size: r.size || 0, content_type: r.content_type || "", source: r.source || "",
-    url: r.kind === "slide" ? r.url : null, embed: r.kind === "slide" ? slideEmbed(r.url) : null, has_file: !!r.r2_key, created_at: r.created_at, updated_at: r.updated_at });
+    url: r.kind === "slide" ? r.url : null, embed: r.kind === "slide" ? slideEmbed(r.url) : null, has_file: !!r.r2_key, waiting: !r.r2_key && String(r.source || "").startsWith("utage:") && !String(r.content_type || "").startsWith("error:"), created_at: r.created_at, updated_at: r.updated_at });
 
   async function list(env, { kind, folder, q, limit } = {}) {
     let path = `${T}?select=*&order=created_at.desc&limit=${Math.min(Math.max(parseInt(limit, 10) || 500, 1), 2000)}`;
@@ -85,37 +85,67 @@ export function makeMedia(h) {
     return { ok: true, id: r.id, ...patch };
   }
 
-  // UTAGE の置き場から写す。items：[{ url, name, folder?, utage_id? }]（1 回に 30 個まで）。同じ元はとばす
+  // UTAGE の置き場から写す。items：[{ url, name, folder?, utage_id? }]（1 回に 300 個まで）。
+  // まず一覧に「写す待ち」（r2_key が空）で全部入れ、時間の許す分（既定 8 秒）だけその場で写す。残りは毎時の定時の処理（drain）が写す
   async function importUtage(env, { items }, actor) {
     if (!env.IMAGES) return { ok: false, error: "no_store" };
-    const list = (Array.isArray(items) ? items : []).slice(0, 30);
+    const list = (Array.isArray(items) ? items : []).slice(0, 300);
     if (!list.length) return { ok: false, error: "need_items" };
-    const out = { ok: true, copied: 0, skipped: 0, failed: 0, bytes: 0, results: [] };
+    let queued = 0, skipped = 0, rejected = 0;
+    const have = new Set((await db(env, "GET", `${T}?select=source&limit=5000`)).map((r) => r.source));
+    const rows = [];
     for (const it of list) {
       const url = String(it && it.url || "").trim();
-      if (!UTAGE_FILE_RE.test(url)) { out.failed++; out.results.push({ url: url.slice(0, 120), error: "not_utage_store" }); continue; }
+      if (!UTAGE_FILE_RE.test(url)) { rejected++; continue; }
       const source = "utage:" + (it.utage_id ? String(it.utage_id).slice(0, 40) : url.slice(-60));
-      const ex = await db(env, "GET", `${T}?select=id&source=eq.${encodeURIComponent(source)}`);
-      if (ex.length) { out.skipped++; out.results.push({ source, skipped: "already", id: ex[0].id }); continue; }
+      if (have.has(source)) { skipped++; continue; }
+      have.add(source);
+      const nm = cleanName(it.name) || url.split("/").pop();
+      const ext = extOf(url) || extOf(nm);
+      rows.push({ id: crypto.randomUUID(), kind: EXT_KIND[ext] || kindOf(nm), name: nm, folder: cleanFolder(it.folder || "UTAGE から"), r2_key: null, size: 0, content_type: "", source, url: url.slice(0, 500), updated_by: String(actor).slice(0, 200) });
+    }
+    for (let i = 0; i < rows.length; i += 100) await db(env, "POST", T, rows.slice(i, i + 100), "return=minimal");
+    queued = rows.length;
+    const d = await drain(env, { budgetMs: 8000 });
+    await logInbound(env, "media_import_utage", { count: list.length, actor }, { queued, skipped, rejected, copied: d.copied, failed: d.failed }, 200);
+    return { ok: true, queued, skipped, rejected, copied_now: d.copied, failed_now: d.failed, waiting: d.waiting, note: "残り（waiting）は毎時の定時の処理が写す。進み具合は media_import_status" };
+  }
+
+  // 写す待ちを写す（時間の許す分だけ）。失敗したものは content_type に error: を入れて、次からはとばす
+  async function drain(env, { limit = 60, budgetMs = 8000 } = {}) {
+    const out = { copied: 0, failed: 0, bytes: 0, waiting: 0 };
+    if (!env.IMAGES) return out;
+    const t0 = Date.now();
+    const wait = (await db(env, "GET", `${T}?select=*&r2_key=is.null&order=created_at.asc&limit=1000`)).filter((r) => String(r.source).startsWith("utage:") && r.url && !String(r.content_type).startsWith("error:"));
+    for (const r of wait.slice(0, limit)) {
+      if (Date.now() - t0 > budgetMs) break;
       try {
-        const res = await (h.fetch || fetch)(url);
-        if (!res.ok) { out.failed++; out.results.push({ source, error: `http_${res.status}` }); continue; }
+        const res = await (h.fetch || fetch)(r.url);
+        if (!res.ok) throw new Error(`http_${res.status}`);
         const len = Number(res.headers.get("content-length")) || 0;
-        if (len > MAX_IMPORT) { out.failed++; out.results.push({ source, error: "too_big", size: len }); continue; }
-        const nm = cleanName(it.name) || url.split("/").pop();
-        const ext = extOf(url) || extOf(nm);
-        const id = crypto.randomUUID();
-        const type = res.headers.get("content-type") || EXT_TYPE[ext] || "application/octet-stream";
+        if (len > MAX_IMPORT) throw new Error("too_big");
+        const ext = extOf(r.url) || extOf(r.name);
+        const type = (res.headers.get("content-type") || EXT_TYPE[ext] || "application/octet-stream").slice(0, 100);
         const body = len ? res.body : await res.arrayBuffer();
         const size = len || body.byteLength;
-        const key = await putFile(env, { id, ext, body, size, type });
-        await db(env, "POST", T, [{ id, kind: EXT_KIND[ext] || kindOf(nm), name: nm, folder: cleanFolder(it.folder || "UTAGE から"), r2_key: key, size, content_type: type.slice(0, 100), source, url: url.slice(0, 500), updated_by: String(actor).slice(0, 200) }], "return=minimal");
-        out.copied++; out.bytes += size; out.results.push({ source, id, size });
-      } catch (e) { out.failed++; out.results.push({ source, error: String(e && e.message || e).slice(0, 120) }); }
+        const key = await putFile(env, { id: r.id, ext, body, size, type });
+        await db(env, "PATCH", `${T}?id=eq.${r.id}`, { r2_key: key, size, content_type: type, updated_at: new Date().toISOString() }, "return=minimal");
+        out.copied++; out.bytes += size;
+      } catch (e) {
+        await db(env, "PATCH", `${T}?id=eq.${r.id}`, { content_type: ("error:" + String(e && e.message || e)).slice(0, 100) }, "return=minimal");
+        out.failed++;
+      }
     }
-    out.ok = out.failed === 0;
-    await logInbound(env, "media_import_utage", { count: list.length, actor }, { copied: out.copied, skipped: out.skipped, failed: out.failed, bytes: out.bytes }, out.failed ? 207 : 200);
+    out.waiting = Math.max(0, wait.length - out.copied - out.failed);
     return out;
+  }
+
+  // 進み具合（UTAGE から写したもの）
+  async function importStatus(env) {
+    const rows = (await db(env, "GET", `${T}?select=id,name,size,r2_key,content_type,source&limit=5000`)).filter((r) => String(r.source).startsWith("utage:"));
+    const done = rows.filter((r) => r.r2_key), failed = rows.filter((r) => !r.r2_key && String(r.content_type).startsWith("error:"));
+    return { ok: true, total: rows.length, copied: done.length, failed: failed.length, waiting: rows.length - done.length - failed.length, bytes: done.reduce((s, r) => s + (r.size || 0), 0),
+      failures: failed.slice(0, 20).map((r) => ({ id: r.id, name: r.name, error: String(r.content_type).slice(6) })) };
   }
 
   // 画面で見る（シアニン用の画面から・ログインの確かめは呼ぶ側）
@@ -128,5 +158,5 @@ export function makeMedia(h) {
       "content-disposition": `inline; filename*=UTF-8''${encodeURIComponent(r.name)}` } });
   }
 
-  return { list, upload, addSlide, save, importUtage, file };
+  return { list, upload, addSlide, save, importUtage, drain, importStatus, file };
 }

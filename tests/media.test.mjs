@@ -46,15 +46,31 @@ test("スライドのリンク・名前を直す・消すと R2 からも消え�
   assert.equal((await media.list(env, { kind: "slide" })).items[0].name, "講義");
 });
 
-test("UTAGE から写す：UTAGE の置き場だけ取りに行く。同じ元は 2 回写さない", async () => {
+test("UTAGE から写す：UTAGE の置き場だけ。まず写す待ちに入れ、その場で写す。同じ元は 2 回入れない。残りは drain が写す", async () => {
   const { media, env, calls, r2 } = setup();
   const r = await media.importUtage(env, { items: [{ url: U, name: "表紙.png", utage_id: "MrReMOq0brrd" }, { url: "https://evil.example.com/a.png", name: "x" }] }, "mcp");
-  assert.equal(r.copied, 1); assert.equal(r.failed, 1);
+  assert.equal(r.queued, 1); assert.equal(r.rejected, 1); assert.equal(r.copied_now, 1);
   assert.equal(calls.length, 1, "ほかの住所は取りに行かない");
   const again = await media.importUtage(env, { items: [{ url: U, name: "表紙.png", utage_id: "MrReMOq0brrd" }] }, "mcp");
   assert.equal(again.skipped, 1); assert.equal(r2.size, 1);
   const l = await media.list(env, { folder: "UTAGE から" });
   assert.equal(l.items[0].source, "utage:MrReMOq0brrd"); assert.equal(l.items[0].size, 1234);
+  const st = await media.importStatus(env);
+  assert.equal(st.copied, 1); assert.equal(st.waiting, 0);
+});
+
+test("時間切れで残ったものは drain が写す。失敗はとばして理由を残す", async () => {
+  const { media, env, s } = setup();
+  const items = Array.from({ length: 3 }, (_, i) => ({ url: U.replace("abc123", "f" + i), name: `f${i}.png`, utage_id: "id" + i }));
+  await media.importUtage(env, { items }, "mcp");
+  for (const r of s.table("b_media")) { r.r2_key = null; r.size = 0; }
+  s.table("b_media")[0].url = "https://utagesystem.s3.ap-northeast-1.amazonaws.com/5zsIIoZZ4z84/x/bad.png";
+  const f = env; const bad = makeMedia({ db: s.db, logInbound: async () => {}, fetch: async (u) => u.endsWith("bad.png") ? new Response("", { status: 403 }) : new Response(new Uint8Array(10), { headers: { "content-length": "10" } }) });
+  const d = await bad.drain(f, { limit: 60 });
+  assert.equal(d.copied, 2); assert.equal(d.failed, 1);
+  const st = await bad.importStatus(f);
+  assert.equal(st.failed, 1); assert.equal(st.failures[0].error, "http_403");
+  assert.equal((await bad.drain(f, {})).copied, 0, "失敗はとばす");
 });
 
 test("権限の最初の値：消すのだけ承認", () => {

@@ -82,7 +82,7 @@ import { makeMarks } from "./marks.js";
 import { makeMedia } from "./media.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.68.0-bmedia";
+const VERSION = "0.68.1-bmedia";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -127,6 +127,9 @@ export default {
         await logInbound(env, "cron", { cron: event.cron }, { room: r, seminars: s, booking: bk, deliver: d }, 200);
         // 便 16a：UTAGE の読者と予約者の取り込み（失敗しても上の処理には響かない。結果は utage_import の記録）
         await utageImport.run(env);
+        // メディアの便 M1：UTAGE の置き場から写す待ちを写す（1 回に 60 個まで）
+        const md = await media.drain(env, { limit: 60, budgetMs: 600000 });
+        if (md.copied || md.failed) await logInbound(env, "media_drain", { cron: event.cron }, md, 200);
       } catch (e) {
         await logInbound(env, "cron", { cron: event.cron }, { ok: false, error: String(e.message).slice(0, 200) }, 500);
       }
@@ -2040,8 +2043,15 @@ const TOOLS = [
     name: "import_utage_media",
     screen: "media",
     say: "UTAGE の置き場の画像と動画をメディアの棚へ写す",
-    description: "UTAGE の置き場（utagesystem の S3・wasabi）にある画像と動画を、メディアの棚（R2）へ写す（解約で消える前に）。items：[{ url, name, folder?（既定「UTAGE から」）, utage_id?（UTAGE のメディアの番号。元 source になる）}]・1 回に 30 個まで。住所が UTAGE の置き場でないものは取りに行かない。同じ元はとばす（skipped）。元の一覧は shia2n-mcp の utage_archive__read（media）。",
+    description: "UTAGE の置き場（utagesystem の S3・wasabi）にある画像と動画を、メディアの棚（R2）へ写す（解約で消える前に）。items：[{ url, name, folder?（既定「UTAGE から」）, utage_id?（UTAGE のメディアの番号。元 source になる）}]・1 回に 300 個まで。まず全部を「写す待ち」で一覧に入れ、8 秒の分だけその場で写し、残りは毎時の定時の処理が 60 個ずつ写す。進み具合は media_import_status。住所が UTAGE の置き場でないものは取りに行かない。同じ元はとばす（skipped）。元の一覧は shia2n-mcp の utage_archive__read（media）。",
     inputSchema: { type: "object", properties: { items: { type: "array", items: { type: "object", properties: { url: { type: "string" }, name: { type: "string" }, folder: { type: "string" }, utage_id: { type: "string" } }, required: ["url"] } } }, required: ["items"] },
+  },
+  {
+    name: "media_import_status",
+    screen: "media",
+    say: "UTAGE から写したメディアの進み具合を見る",
+    description: "UTAGE の置き場から写したメディアの進み具合：全部 total・写せた copied・失敗 failed（理由つきで 20 件まで failures）・写す待ち waiting・写せた大きさ bytes。",
+    inputSchema: { type: "object", properties: {} },
   },
   {
     name: "add_media_slide",
@@ -2707,6 +2717,7 @@ async function runTool(env, name, args) {
   if (name === "list_line_richmenus") return await line.richMenus(env, { account: args.account });
   if (name === "list_media") return await media.list(env, args);
   if (name === "import_utage_media") return await media.importUtage(env, { items: args.items }, "mcp");
+  if (name === "media_import_status") return await media.importStatus(env);
   if (name === "add_media_slide") return await media.addSlide(env, args, "mcp");
   if (name === "save_media") return await media.save(env, { id: args.id, name: args.name, folder: args.folder }, "mcp");
   if (name === "remove_media") return await media.save(env, { id: args.id, remove: true }, "mcp");
