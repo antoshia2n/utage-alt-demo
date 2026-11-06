@@ -81,7 +81,7 @@ import { makeRecToken, handleRecPlay } from "./recplay.js";
 import { makeMarks } from "./marks.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.66.0-blinereply";
+const VERSION = "0.67.0-blinerich";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -2011,6 +2011,13 @@ const TOOLS = [
     inputSchema: { type: "object", properties: { account: { type: "string" }, id: { type: "string" }, name: { type: "string" }, messages: { type: "array", items: { type: "object" } }, source: { type: "string" }, remove: { type: "boolean" } }, required: ["account"] },
   },
   {
+    name: "list_line_richmenus",
+    screen: "line",
+    say: "LINE のリッチメニューを見る（読むだけ）",
+    description: "LINE のリッチメニュー（便 L3）を LINE から読む。UTAGE が作ったものも同じアカウントなら読める。返すもの：id・名前・トークの下の文字 chat_bar・大きさ・いつも出るものか is_default・押せる場所 areas（場所 bounds・種類 type（uri／message／postback など）・行き先 target・UTAGE の住所か utage・押した知らせを受けて動くか needs_handler）・UTAGE の住所の数 utage_links・postback の数 postbacks。読むだけで何も変えない。",
+    inputSchema: { type: "object", properties: { account: { type: "string", description: "例 shianin" } }, required: ["account"] },
+  },
+  {
     name: "get_community_link",
     screen: "settings",
     say: "オプチャの招待リンクを見る",
@@ -2650,6 +2657,7 @@ async function runTool(env, name, args) {
   if (name === "save_line_reply") return await line.saveReply(env, args, "mcp");
   if (name === "set_line_reply_active") return await line.setReplyActive(env, { account: args.account, ids: args.ids, active: args.active === true }, "mcp");
   if (name === "list_line_templates") return await line.listTemplates(env, { account: args.account });
+  if (name === "list_line_richmenus") return await line.richMenus(env, { account: args.account });
   if (name === "save_line_template") return await line.saveTemplate(env, args, "mcp");
   if (name === "get_community_link") return { ok: true, ...(await communityLink(env)) };
   if (name === "set_community_link") return await setCommunityLink(env, { url: args.url }, "mcp");

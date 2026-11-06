@@ -118,3 +118,24 @@ test("権限の最初の値：読む・下書きは自動、有効にする・�
   assert.equal(DEFAULT_MODES.list_line_templates, "auto");
   assert.equal(DEFAULT_MODES.save_line_template, "approve");
 });
+
+test("リッチメニューを読む：いつも出るもの・UTAGE の住所・postback を数える", async () => {
+  const s = fakeStore();
+  const fetch = async (url) => {
+    if (url.endsWith("/richmenu/list")) return Response.json({ richmenus: [
+      { richMenuId: "richmenu-a", name: "A", chatBarText: "メニュー", size: { width: 2500, height: 1686 }, selected: true, areas: [
+        { bounds: { x: 0, y: 0, width: 1250, height: 843 }, action: { type: "uri", uri: "https://utage-system.com/p/xx" } },
+        { bounds: { x: 1250, y: 0, width: 1250, height: 843 }, action: { type: "postback", data: "a=1" } },
+        { bounds: { x: 0, y: 843, width: 2500, height: 843 }, action: { type: "uri", uri: "https://lab.shia2n.jp/" } } ] },
+      { richMenuId: "richmenu-b", name: "B", chatBarText: "B", size: { width: 2500, height: 843 }, selected: false, areas: [] } ] });
+    if (url.endsWith("/user/all/richmenu")) return Response.json({ richMenuId: "richmenu-a" });
+    return Response.json({});
+  };
+  const line = makeLine({ db: s.db, logInbound: async () => {}, changes: null, addEvent: async () => {}, registerPerson: async () => ({}), audience: async () => ({ people: [] }), fetch });
+  const r = await line.richMenus({ [tokenName("shianin")]: "tok" }, { account: "shianin" });
+  assert.equal(r.count, 2); assert.equal(r.default_id, "richmenu-a");
+  const a = r.menus.find((m) => m.id === "richmenu-a");
+  assert.equal(a.is_default, true); assert.equal(a.utage_links, 1); assert.equal(a.postbacks, 1);
+  assert.equal((await line.richMenus({}, { account: "shianin" })).error, "no_token");
+  assert.equal(DEFAULT_MODES.list_line_richmenus, "auto");
+});

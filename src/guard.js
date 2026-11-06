@@ -35,6 +35,8 @@ export const DEFAULT_MODES = {
   list_line_friends: "auto", get_line_quota: "auto", send_line: "approve",
   // 便 L2：自動応答。読む・下書きを作る・直すは自動（まだ返さない）。有効にする・テンプレートを直すは承認（友だちに届く文が変わる）
   list_line_replies: "auto", save_line_reply: "auto", set_line_reply_active: "approve", list_line_templates: "auto", save_line_template: "approve",
+  // 便 L3：リッチメニューを読むだけ
+  list_line_richmenus: "auto",
   // 便 16a：UTAGE の取り込みの様子
   get_utage_import: "auto",
   list_campaigns: "auto", get_blueprint: "auto", create_campaign: "auto", set_part_campaign: "auto",

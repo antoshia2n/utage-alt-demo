@@ -584,8 +584,31 @@ export function makeLine(h) {
     }
   }
 
+  // 便 L3（2026-11-07）：リッチメニューを読む（読むだけ）。リッチメニューは LINE 側にあるので、UTAGE が作ったものも同じ鍵で読める。
+  // 押したときの行き先に UTAGE の住所があるか（解約で切れる）と、postback（押した知らせを UTAGE が受けて動く）を印にする
+  const UTAGE_HOST_RE = /utage-system[.]com|utagesystem[.]s3/i;
+  async function richMenus(env, { account }) {
+    if (!ACCOUNT_RE.test(String(account || ""))) return { ok: false, error: "bad_account" };
+    if (!env[tokenName(account)]) return { ok: false, error: "no_token", need: tokenName(account) };
+    const [list, def] = await Promise.all([api(env, account, "GET", "/richmenu/list"), api(env, account, "GET", "/user/all/richmenu")]);
+    if (!list.ok) return { ok: false, error: list.error, status: list.status };
+    const defaultId = def.ok && def.data ? def.data.richMenuId || null : null;
+    const menus = ((list.data && list.data.richmenus) || []).map((m) => {
+      const areas = (m.areas || []).map((a, i) => {
+        const ac = a.action || {};
+        const target = ac.uri || ac.text || ac.data || ac.richMenuAliasId || "";
+        return { n: i + 1, bounds: a.bounds, type: ac.type, label: ac.label || null, target: String(target).slice(0, 300),
+          utage: UTAGE_HOST_RE.test(String(ac.uri || "")), needs_handler: ac.type === "postback" };
+      });
+      return { id: m.richMenuId, name: m.name, chat_bar: m.chatBarText, size: m.size, selected: !!m.selected, is_default: m.richMenuId === defaultId,
+        areas, utage_links: areas.filter((x) => x.utage).length, postbacks: areas.filter((x) => x.needs_handler).length };
+    });
+    return { ok: true, account, count: menus.length, default_id: defaultId, menus,
+      note: "utage_links は押すと UTAGE の住所へ行く場所の数（解約で切れる）。postbacks は押した知らせを受けて動く場所の数（いまは UTAGE が受けている）" };
+  }
+
   return { handleWebhook, settings, setForward, inbound, forwardUrl, link, friends, send, quota, sendLinkInvite, board, thread, reply, broadcast,
-    listReplies, saveReply, setReplyActive, listTemplates, saveTemplate, autoReply };
+    listReplies, saveReply, setReplyActive, listTemplates, saveTemplate, autoReply, richMenus };
 }
 
 // ---------- 便 L2：応答の決まり（試験から直接呼ぶ） ----------
