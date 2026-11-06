@@ -130,7 +130,9 @@ export function mountRecordings(host, { getToken }) {
       <div class="pop"><button class="btn" type="button" id="fbtn" aria-haspopup="menu" aria-expanded="false">絞り込み ▾</button>
         <div class="menu" id="fmenu" role="menu" hidden>${Object.entries(FILTERS).map(([k, l]) => `<button type="button" role="menuitemcheckbox" data-f="${k}" aria-checked="${filters.has(k)}">${l}</button>`).join("")}</div></div>
     </div>
-    ${checked.size ? `<div class="bulk" role="region" aria-label="まとめて"><b>${checked.size} 本を選択中</b><input id="bulk-l" list="lab-a" placeholder="ラベルを入れて Enter" aria-label="選んだ録画に付けるラベル">${labDatalist("lab-a")}<button class="btn sm pri" type="button" id="bulk-add">ラベルを追加</button><button class="btn sm" type="button" id="bulk-clear">選択を外す</button></div>` : ""}
+    ${checked.size ? `<div class="bulk" role="region" aria-label="まとめて"><b>${checked.size} 本を選択中</b><input id="bulk-l" list="lab-a" placeholder="ラベルを入れて Enter" aria-label="選んだ録画に付けるラベル">${labDatalist("lab-a")}<button class="btn sm pri" type="button" id="bulk-add">ラベルを追加</button>
+      <span class="sep" aria-hidden="true"></span><select id="bulk-k" class="mini" aria-label="選んだ録画の会の種類">${Object.keys(KAI).map((k) => `<option>${k}</option>`).join("")}</select><button class="btn sm pri" type="button" id="bulk-kai">会の種類を変える</button>
+      <button class="btn sm" type="button" id="bulk-clear">選択を外す</button></div>` : ""}
     <div class="chips">${[...filters].map((f) => `<span class="chip">${FILTERS[f]}<button type="button" data-rmf="${f}" aria-label="「${FILTERS[f]}」を外す">✕</button></span>`).join("")}${inTx && txIds ? `<span class="chip">文字起こしに「${esc(q)}」<button type="button" data-rmtx aria-label="文字起こしの絞り込みを外す">✕</button></span>` : ""}</div>
     <div class="tbl list"><table><thead><tr><th><input type="checkbox" id="ck-all" aria-label="表に出ている録画を全部選ぶ" ${page.length && page.every((r) => checked.has(r.id)) ? "checked" : ""}></th><th>収録日</th><th>名前</th><th>会</th><th style="text-align:right">長さ</th><th>YouTube</th><th>共有リンク</th><th style="text-align:right">開かれた数</th><th><span class="sr">操作</span></th></tr></thead><tbody>
     ${page.map((r) => `<tr class="rw ${sel === r.id ? "sel" : ""}" data-id="${esc(r.id)}" tabindex="0" aria-label="${esc(r.date)} ${esc(r.title)} の詳細を開く">
@@ -146,9 +148,9 @@ export function mountRecordings(host, { getToken }) {
     const ks = D.rows.filter((r) => r.suggest_kai), ns = D.rows.filter((r) => r.suggest_name);
     const left = D.rows.filter((r) => r.kai === "その他").length;
     return `<h1>整理</h1><p class="lead">案を見て、まとめて承認するだけ。承認しないものはそのまま残ります。承認したあとも「元に戻す」で戻せます。</p>
-    <div class="card"><h2>会の種類の案（「その他」${left} 本）</h2><p>5 分ごとに AI が 6 本ずつ文字起こしを読んで案を出しています。違うものは右の選びから直してから承認します。</p>
+    <div class="card"><h2>会の種類の案（「その他」${left} 本）</h2><p>5 分ごとに AI が 6 本ずつ文字起こしを読んで案を出しています（文字起こしがある録画だけ）。違うものは右の選びから直してから承認します。</p>
       ${(() => { const pend = D.counts.sug_pending || 0, done = Math.max(0, left - pend), pct = left ? Math.round((done / left) * 100) : 100; return `<div class="prog" role="progressbar" aria-label="案の進み具合" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><div style="width:${pct}%"></div></div>
-      <p style="margin-top:6px">読み終えた ${done} 本／残り ${pend} 本${pend ? `（あと約 ${Math.ceil(pend / 6) * 5} 分）` : ""}${D.counts.sug_none ? `・文字起こしが無いなどで案を出せない ${D.counts.sug_none} 本` : ""}</p>`; })()}
+      <p style="margin-top:6px">読み終えた ${done} 本／残り ${pend} 本${pend ? `（あと約 ${Math.ceil(pend / 6) * 5} 分）` : ""}${D.counts.sug_none ? `・案が出ない ${D.counts.sug_none} 本（文字起こしが無いなど。棚の「その他」で選んで「会の種類を変える」でまとめて変えられます）` : ""}</p>`; })()}
       <div class="row2" style="margin-top:10px"><button class="btn sm" type="button" id="suggest">今すぐ 8 本読ませる</button><span class="why" id="sug-note"></span></div></div>
     ${ks.length ? `<div class="tbl" style="margin-bottom:12px"><table><thead><tr><th><input type="checkbox" id="all-k" checked aria-label="会の種類の案を全部選ぶ"></th><th>収録日</th><th>名前</th><th>案</th><th>理由</th></tr></thead><tbody>
       ${ks.map((r) => `<tr><td><input type="checkbox" class="ck-k" data-id="${esc(r.id)}" checked aria-label="「${esc(r.title)}」を承認に入れる"></td><td class="date">${esc(r.date)}</td><td class="nm">${esc(r.title)}</td>
@@ -337,6 +339,14 @@ export function mountRecordings(host, { getToken }) {
     const ck = t.closest("[data-ck]"); if (ck) { e.stopPropagation(); ck.checked ? checked.add(ck.dataset.ck) : checked.delete(ck.dataset.ck); render(); return; }
     if (t.id === "ck-all") { rows().slice(0, shown).forEach((r) => (t.checked ? checked.add(r.id) : checked.delete(r.id))); render(); return; }
     if (t.id === "bulk-clear") { checked.clear(); render(); return; }
+    if (t.id === "bulk-kai") {
+      // 2026-11-06：文字起こしの無い「その他」は AI の案が出ないので、棚でまとめて変える（Naoki OK 18:15）
+      const k = $("#bulk-k").value;
+      const items = [...checked].filter((id) => D.rows.find((r) => r.id === id)?.kai !== k).map((id) => ({ id, kai: k }));
+      if (!items.length) { undo(`選んだ録画はもう「${k}」です`, null); return; }
+      checked.clear();
+      return setMeta(items, `会の種類を「${k}」に変えました`);
+    }
     if (t.id === "bulk-add") return addBulk();
     if (t.id === "d-lab-add") return addOne();
     const rl = t.closest("[data-rmlab]"); if (rl) { const l = rl.dataset.rmlab; return setMeta([{ id: sel, labels_remove: [l] }], `ラベル「${l}」を外しました`, [{ id: sel, labels_add: [l] }]); }
