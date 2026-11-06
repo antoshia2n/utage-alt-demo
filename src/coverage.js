@@ -29,6 +29,11 @@ export const COVERAGE = {
   "PUT /api/admin/recordings/upload/part": H("手元のファイルを選んで上げる（ファイルは Naoki のパソコンにある）"),
   "POST /api/admin/recordings/upload/complete": H("手元のファイルを選んで上げる（ファイルは Naoki のパソコンにある）"),
   "POST /api/admin/recordings/upload/abort": H("手元のファイルを選んで上げる（ファイルは Naoki のパソコンにある）"),
+  // UTAGE の写し（2026-11-06 便 U1）：AI は shia2n-mcp の utage_archive__status・read・search・get で同じものを読む
+  "GET /api/admin/utage-copy": H("UTAGE の写しの画面（AI は shia2n-mcp の utage_archive__status）"),
+  "GET /api/admin/utage-copy/doc": H("UTAGE の写しの画面（AI は shia2n-mcp の utage_archive__read）"),
+  "GET /api/admin/utage-copy/search": H("UTAGE の写しの画面（AI は shia2n-mcp の utage_archive__search）"),
+  "GET /api/admin/utage-copy/item": H("UTAGE の写しの画面（AI は shia2n-mcp の utage_archive__get）"),
 
   // ---- AI の道具が受け持つ ----
   "ANY /api/admin/stats": ["stats"],

@@ -76,6 +76,7 @@ import { makeGoals } from "./goals.js";
 import { mailText, mailHtml } from "./mailhtml.js";
 import { makeNews, newsQuery } from "./news.js";
 import { recordings } from "./recordings.js";
+import { utageCopy } from "./utagecopy.js";
 import { makeRecToken, handleRecPlay } from "./recplay.js";
 import { makeMarks } from "./marks.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
@@ -1334,6 +1335,11 @@ async function handleApi(request, env, url) {
       return json(r, r.ok ? 200 : 400);
     }
     // 録画（2026-11-06）：録画の棚。中身と共有リンクの正本は zoom-to-youtube（結び ZOOM）
+    // UTAGE の写し（2026-11-06 便 U1）：読むだけ。正本は shia2n-mcp
+    if (path === "/api/admin/utage-copy" && method === "GET") { const r = await utageCopy.status(env); return json(r, r.ok ? 200 : 502); }
+    if (path === "/api/admin/utage-copy/doc" && method === "GET") { const r = await utageCopy.doc(env, url.searchParams.get("name")); return json(r, r.ok ? 200 : 400); }
+    if (path === "/api/admin/utage-copy/search" && method === "GET") { const r = await utageCopy.search(env, url.searchParams.get("q"), url.searchParams.get("kind")); return json(r, r.ok ? 200 : 400); }
+    if (path === "/api/admin/utage-copy/item" && method === "GET") { const r = await utageCopy.item(env, url.searchParams.get("ref")); return json(r, r.ok ? 200 : 400); }
     if (path === "/api/admin/recordings" && method === "GET") { const r = await recordings.list(env); return json(r, r.ok ? 200 : 502); }
     if (path === "/api/admin/recordings/search" && method === "GET") { const r = await recordings.search(env, url.searchParams.get("q")); return json(r, r.ok ? 200 : 400); }
     if (path === "/api/admin/recordings/link" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await recordings.issue(env, b.id); return json(r, r.ok ? 200 : 400); }

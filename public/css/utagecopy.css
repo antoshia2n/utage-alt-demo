@@ -1,0 +1,9 @@
+/* UTAGE の写し（2026-11-06 便 U1）：読み物の見出し・箇条・引用・全文。地と字は recordings.css の値 */
+.uc-h2{font-size:18px;font-weight:800;margin:22px 0 8px}
+.uc-h3{font-size:14px;font-weight:700;margin:16px 0 6px;color:var(--muted)}
+.uc-li{margin:6px 0 2px;padding-left:12px;border-left:3px solid var(--line);line-height:1.7}
+.uc-li .btn{margin-left:6px;vertical-align:1px}
+.uc-q{margin:0 0 8px 15px;color:var(--muted);font-size:13px;line-height:1.7}
+.uc-text{white-space:pre-wrap;line-height:1.8;font-size:14px;background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:14px;margin:10px 0;max-height:60vh;overflow:auto}
+main code{font-size:12px;background:var(--soft);padding:0 4px;border-radius:4px}
+@media (max-width:600px){.side .hint{display:none}}
