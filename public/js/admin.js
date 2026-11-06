@@ -3,6 +3,7 @@ import { correctionHtml, wireNotes } from "/js/correction.js";
 import { makeBlueprint } from "/js/blueprint.js";
 import { mountSite } from "/js/site.js";
 import { mountRecordings } from "/js/recordings.js";
+import { mountUtageCopy } from "/js/utagecopy.js";
 import { watchEdges, revealSelected } from "/js/fbar-edges.js";
 
 // ムダ 12（2026-10-29）：フォーム・人の項目・ページ・配信の一覧は、画面ごとに読み直さず 20 秒だけ使い回す（シナリオの一覧と同じ）。
@@ -734,11 +735,12 @@ const pill = (t, kind = "") => `<span class="pill ${kind}">${esc(t)}</span>`;
 // ---------- 添削ルーム ----------
 let currentRoom = null;
 // 便 8c：左のメニュー。押した項目の画面だけを出し、上のナビにその名前を出す
-const VIEWS = ["home", "blueprint", "people", "rooms", "deals", "ai", "products", "deliver", "settings", "refer", "guide", "forms", "pages", "line", "access", "invites", "site", "recordings"];
+const VIEWS = ["home", "blueprint", "people", "rooms", "deals", "ai", "products", "deliver", "settings", "refer", "guide", "forms", "pages", "line", "access", "invites", "site", "recordings", "utagecopy"];
 // 会員サイト（2026-10-29）：影の DOM の中に描く。顧客管理のその人の画面へは openPerson で移る
 let siteUi = null;
 // 録画（2026-11-06）：録画の棚も影の DOM の中に描く（public/js/recordings.js）
 let recUi = null;
+let ucUi = null;
 // 便 20：コネクタだけの画面は無くした。"connect" は行き先の名前としてだけ残す。
 // メールを送るコネクタ（ステップ配信）は メール、送らないもの（自動の動き）は ファネル構築 のタブで開く。part を渡すとその 1 件を開く
 function openView(name, part) {
@@ -787,6 +789,10 @@ function setupViews() {
     if (b.dataset.view === "forms") loadForms();
     if (b.dataset.view === "pages") loadPages();
     if (b.dataset.view === "line") loadLine();
+    if (b.dataset.view === "utagecopy") {
+      if (!ucUi) ucUi = mountUtageCopy($("uc-host"), { getToken: () => token });
+      ucUi.open();
+    }
     if (b.dataset.view === "recordings") {
       if (!recUi) recUi = mountRecordings($("rec-host"), { getToken: () => token });
       recUi.open();
