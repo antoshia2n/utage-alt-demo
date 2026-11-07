@@ -60,6 +60,8 @@ export const DEFAULT_MODES = {
   get_today: "auto", get_stage_board: "auto", set_calendar_url: "approve",
   // 便 8f-3：生徒へのメッセージは承認（添削の返信と同じ）、Naoki への通知と端末の一覧は自動
   send_chat: "approve", notify_naoki: "auto",
+  // チャットの便 C1：読む・探す・メモ・後で・メモとして転送・タスクへは自動（生徒へは何も届かない）。生徒へ送るのは今までどおり send_chat の承認
+  get_chat: "auto", list_chats: "auto", search_chats: "auto", add_chat_note: "auto", set_chat_later: "auto", forward_chat: "auto", add_chat_task: "auto",
   // 目標達成くん 6 便目：生徒の画面に出るので承認
   set_goal_draft: "approve", get_push_status: "auto",
   // 版と入口の守りを読むだけ（統括 2026-10-11 の決め 2）
