@@ -2,6 +2,7 @@
 //  ・呼ぶ側：LINE の自動応答の画像（mode "line"）／マイページの背景の画像（mode "image"）／レッスンの資料（mode "file"）
 //  ・LINE は png か jpg・元が 10MB まで。1MB を超える画像は、ここでプレビュー（1024px までの jpg・1MB まで）を作って棚に置く
 //  ・窓は自分の影の DOM（どの画面の見た目ともぶつからない）。開くと探す欄へ・Tab は中で回る・Esc で閉じる・閉じたら開いたボタンへ戻る
+//  ・サーバー側の試験は tests/media-pick.test.mjs。窓そのもの（プレビューの大きさ・戻る先）は手元の試し台で確かめた（2026-11-07）
 import { api } from "/js/common.js";
 
 const KIND = { image: "画像", pdf: "PDF", slide: "スライド", video: "動画", audio: "音声", other: "そのほか" };
