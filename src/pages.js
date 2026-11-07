@@ -13,6 +13,8 @@
 //   data-lab-part="booking:slug"     … 便 13b：個別相談の予約の枠（空き時間を選び、名前とメールで予約する）
 //   data-lab-part="part:名前"         … 便 S2（2026-11-07）：公開サイトの部品（src/web.js）。中身は読者の段階で変わる
 // 便 S1（2026-11-07）：embed.js は /_lab/look.css（公開サイトの見た目・src/web.js）も head の先頭に足す。ページは var(--lab-c) などで色を当てる
+// 便 T2（2026-11-07 Naoki OK 23:05）：期間限定の公開。b_pages の closes_at を過ぎたら、closed_to のページ（公開中・自分以外）か
+//   決まった「公開は終了しました」の画面を出す。ページの中の data-lab-countdown の所には「あと 2日 3時間」のように残りが入る。
 // 経路：ページの住所の後ろの ?r=名前。初めて登録したときの経路をその人の経路にする（registered の payload.route）。
 
 import { SLUG_RE } from "./forms.js";
@@ -59,6 +61,31 @@ export function injectEmbed(html, attrs) {
   const s = String(html || "").replace(/<script[^>]+src=["'][^"']*_lab[/]embed[.]js["'][^>]*>\s*<\/script>/gi, "");
   const i = s.search(/<\/body>/i);
   return i < 0 ? s + tag : s.slice(0, i) + tag + s.slice(i);
+}
+
+// 便 T2：期間限定の公開
+export function isClosed(page, at = Date.now()) {
+  return !!(page && page.closes_at && new Date(page.closes_at).getTime() <= at);
+}
+// 日本時間の「2026-11-12 23:59」（秒・T 区切りも可）か、時差つきの ISO を受ける。読めなければ null
+export function parseJstTime(v) {
+  const s = String(v || "").trim();
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (m) { const t = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4] - 9, +m[5], +(m[6] || 0)); return Number.isFinite(t) ? new Date(t).toISOString() : null; }
+  if (/(Z|[+-]\d{2}:?\d{2})$/.test(s)) { const t = new Date(s).getTime(); return Number.isFinite(t) ? new Date(t).toISOString() : null; }
+  return null;
+}
+export function jstLabel(iso) {
+  const d = new Date(new Date(iso).getTime() + 9 * 3600e3);
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}（日本時間）`;
+}
+// 終わったあとのページが無いときに出す画面。ページの題名だけを出す（中身は出さない）
+export function closedHtml(page) {
+  const t = String((page && page.title) || "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>公開は終了しました</title>`
+    + `<style>body{margin:0;font-family:"Noto Sans JP",system-ui,sans-serif;background:#f5f0eb;color:#1a1a1a;display:grid;place-items:center;min-height:100vh;padding:24px;box-sizing:border-box}main{max-width:520px;background:#fff;border:1px solid #e6dfd6;border-radius:12px;padding:32px 24px;text-align:center;line-height:1.8}h1{font-size:20px;margin:0 0 12px}p{margin:0;color:#6b6259;font-size:15px}</style></head>`
+    + `<body><main><h1>公開は終了しました</h1>${t ? `<p>「${t}」の公開期間は終わりました。</p>` : ""}<p>次のお知らせをお待ちください。</p></main></body></html>`;
 }
 
 // 署名（lp の住所で「誰か」を名乗るための印・下書きを見るための印）。鍵は MCP_SECRET から作る
@@ -197,6 +224,7 @@ export function makePages(h) {
       style: "差し込む枠は class lab-form・lab-checkout・lab-btn・lab-input・lab-note を持つ。ページの CSS で上書きして見た目をそろえる",
       legal: `特商法 ${labOrigin(env)}/legal/tokushoho・プライバシーポリシー ${labOrigin(env)}/legal/privacy・利用規約 ${labOrigin(env)}/legal/terms。ページの下に置く`,
       dont: "鍵・会員の個人情報・実在しない実績や数字を書かない。公開はしない（publish_page は Naoki が承認する）",
+      countdown: "期間限定の残り（便 T2）：<span data-lab-countdown></span> の所に「あと 2日 3時間 4分」が入る（set_page_close で期限を決めたページだけ）。期限を過ぎると、決めたページか「公開は終了しました」の画面になる",
       booking: "予約の枠：<div data-lab-part=\"booking:予約の種類の住所の名前\"></div>。空き時間の一覧と、名前・メール・相談したいこと・同意の欄が入る。予約した人は台帳に入り、受付のメールが届く",
       look: "公開サイトの見た目（便 S1）：B が /_lab/look.css を自分で読ませる。色は var(--lab-c)（主の色）・var(--lab-c2)（差し色）・var(--lab-bg)・var(--lab-card)・var(--lab-line)・var(--lab-fg)・var(--lab-mut)、角は var(--lab-r)、字は var(--lab-font)・var(--lab-head) を使う（テーマを替えると全ページが変わる）。記事の装飾は class lab-toc（目次）・lab-box（ボックス）・lab-fuki（ふきだし）",
       part: "公開サイトの部品（便 S2）：<div data-lab-part=\"part:部品の名前\"></div>。中身（題・文・ボタンか申込の枠）は読者の段階で変わり、マーケくんの「公開サイト › 部品」で 1 か所を直すと全部のページで変わる。使える部品は get_web の parts",
@@ -300,6 +328,7 @@ export function makePages(h) {
       p.week_viewers = new Set(mine.filter((x) => x.kind === "view").map((x) => x.vid)).size;
       p.week_clicks = mine.filter((x) => x.kind === "click").length;
       p.open_requests = open.filter((r) => r.page_id === p.id).length;
+      if (p.closes_at) { p.closes_label = jstLabel(p.closes_at); p.closed_now = isClosed(p); }
       p.url = `${pagesOrigin(env)}/${p.slug}`;
       p.purpose_label = PURPOSES[p.purpose] || p.purpose;
     }
@@ -465,10 +494,46 @@ export function makePages(h) {
     } else {
       if (page.status !== "published" || !page.published_version) return null;
       v = page.published_version;
+      // 便 T2：公開の期限を過ぎたら、終わったあとのページ（1 段だけ・自分以外・公開中）か、決まった終了の画面
+      if (isClosed(page)) {
+        const to = page.closed_to && page.closed_to !== page.slug ? await pageBySlug(env, page.closed_to) : null;
+        if (to && to.status === "published" && to.published_version && to.purpose !== "mypage" && !isClosed(to)) {
+          const r2 = await version(env, to.id, to.published_version);
+          if (r2) return { html: injectEmbed(r2.html, { page: to.id, preview: "0", lab: labOrigin(env) }), preview: false, page: to, closed_from: page.slug };
+        }
+        return { html: closedHtml(page), preview: false, page, closed: true };
+      }
     }
     const row = await version(env, page.id, v);
     if (!row) return null;
-    return { html: injectEmbed(row.html, { page: page.id, preview: preview ? "1" : "0", lab: labOrigin(env) }), preview, page };
+    return { html: injectEmbed(row.html, { page: page.id, preview: preview ? "1" : "0", lab: labOrigin(env), ...(page.closes_at ? { closes: page.closes_at } : {}) }), preview, page };
+  }
+
+  // 便 T2：公開の期限を決める・外す（承認の道具）。closes_at は日本時間の「2026-11-12 23:59」か ISO。空で外す。
+  //   closed_to は期限のあとに出すページの住所の名前（空なら決まった終了の画面）
+  async function setClose(env, { page_id, closes_at, closed_to } = {}, by = "admin") {
+    const page = await pageById(env, page_id);
+    if (!page) return { ok: false, error: "page_not_found" };
+    const patch = { updated_at: now(), updated_by: String(by).slice(0, 200) };
+    if (closes_at !== undefined) {
+      if (closes_at === null || String(closes_at).trim() === "") patch.closes_at = null;
+      else { const t = parseJstTime(closes_at); if (!t) return { ok: false, error: "bad_closes_at", note: "日本時間の「2026-11-12 23:59」か ISO の時刻" }; patch.closes_at = t; }
+    }
+    if (closed_to !== undefined) {
+      const c = String(closed_to || "").trim().toLowerCase();
+      if (!c) patch.closed_to = null;
+      else {
+        if (c === page.slug) return { ok: false, error: "closed_to_self" };
+        const to = await pageBySlug(env, c);
+        if (!to || to.purpose === "mypage") return { ok: false, error: "closed_to_not_found" };
+        patch.closed_to = c;
+      }
+    }
+    const before = { closes_at: page.closes_at || null, closed_to: page.closed_to || null };
+    await db(env, "PATCH", `b_pages?id=eq.${page.id}`, patch, "return=minimal");
+    await logInbound(env, "change", { kind: "page_close", id: page.id, before, after: { closes_at: patch.closes_at !== undefined ? patch.closes_at : before.closes_at, closed_to: patch.closed_to !== undefined ? patch.closed_to : before.closed_to }, by }, { ok: true }, 200);
+    const next = { ...page, ...patch };
+    return { ok: true, page_id: page.id, slug: page.slug, closes_at: next.closes_at || null, closes_label: next.closes_at ? jstLabel(next.closes_at) : null, closed_to: next.closed_to || null, closed_now: isClosed(next) };
   }
 
   // 設計図に使う：ページと、公開中（無ければ最新）の版の印
@@ -486,7 +551,7 @@ export function makePages(h) {
     return { pages, partsOf };
   }
 
-  return { createRequest, getRequest, listRequests, saveDraft, listPages, getPage, publish, routeStats, hit, publicProduct, submitForm, submitBooking, serve, forPlan, hitsSince, pagesOrigin, rules };
+  return { createRequest, getRequest, listRequests, saveDraft, listPages, getPage, publish, setClose, routeStats, hit, publicProduct, submitForm, submitBooking, serve, forPlan, hitsSince, pagesOrigin, rules };
 }
 
 // 公開のページに差し込む仕掛け（lp の住所の /_lab/embed.js）。ページの中の印を本物の枠に変え、見た・押したを送る
@@ -510,6 +575,18 @@ export const EMBED_JS = `(() => {
     fetch("/api/p/hit", { method: "POST", headers: { "content-type": "application/json" }, body, keepalive: true }).catch(() => {});
   };
   send("view");
+  // 便 T2：期限の残り。data-lab-countdown の所に「あと 2日 3時間 4分」。過ぎたら読み直して終わったあとの画面へ
+  const CLOSES = me && me.dataset.closes ? new Date(me.dataset.closes).getTime() : NaN;
+  if (Number.isFinite(CLOSES)) {
+    const tick = () => {
+      const ms = CLOSES - Date.now();
+      if (ms <= 0) { if (!PREVIEW) location.reload(); return; }
+      const d = Math.floor(ms / 864e5), h = Math.floor(ms % 864e5 / 36e5), m = Math.floor(ms % 36e5 / 6e4);
+      const txt = "あと " + (d ? d + "日 " : "") + (d || h ? h + "時間 " : "") + m + "分";
+      document.querySelectorAll("[data-lab-countdown]").forEach((el) => { el.textContent = txt; });
+    };
+    tick(); setInterval(tick, 30000);
+  }
   document.addEventListener("click", (ev) => {
     const b = ev.target.closest && ev.target.closest("[data-lab-button]");
     if (b) send("click", b.getAttribute("data-lab-button"));

@@ -2629,7 +2629,7 @@ async function loadPages() {
   const rows = campRows("pages", "page", r.pages, (p) => p.id, () => loadPages());
   table("pages-table", [
     { key: "title", label: "ページ", html: (p) => `<div class="c-name">${esc(p.title)}</div><div class="sub">${esc(p.purpose_label)}・/${esc(p.slug)}</div>` },
-    { key: "status", label: "状態", html: (p) => pageState(p) + (p.open_requests ? " " + pill(`依頼 ${p.open_requests}`, "gray") : "") },
+    { key: "status", label: "状態", html: (p) => pageState(p) + (p.open_requests ? " " + pill(`依頼 ${p.open_requests}`, "gray") : "") + (p.closes_label ? `<div class="sub">${p.closed_now ? "期限切れ" : "期限"} ${esc(String(p.closes_label).replace("（日本時間）", ""))}${p.closed_to ? " → /" + esc(p.closed_to) : ""}</div>` : "") },
     { key: "week_viewers", label: "先週見た人", html: (p) => String(p.week_viewers) },
     { key: "latest_version", label: "版", html: (p) => `最新 ${p.latest_version}${p.published_version ? `<div class="sub">公開 ${p.published_version}</div>` : ""}` },
     campCol("page", (p) => p.id),
