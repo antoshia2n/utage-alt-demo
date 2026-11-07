@@ -292,6 +292,7 @@
             <div data-tr="form_submitted"><label for="sf-tform">答えたフォーム（空ならどれでも）</label><select id="sf-tform" class="inline"><option value="">どれでも</option></select></div>
             <div data-tr="page_viewed page_clicked"><label for="sf-tpage">ページ（空ならどれでも）</label><select id="sf-tpage" class="inline"><option value="">どれでも</option></select></div>
             <div data-tr="page_clicked"><label for="sf-tbutton">ボタンの名前（空ならどれでも）</label><input id="sf-tbutton" type="text" maxlength="49" autocapitalize="off" placeholder="例 cta-1"></div>
+            <div data-tr="line_linked"><label for="sf-taccount">LINE のアカウント（空ならどれでも）</label><select id="sf-taccount" class="inline"><option value="">どれでも</option><option value="shianin">シアニン</option><option value="college_ops">言語化ライティングカレッジ運営</option></select></div>
             <div><label for="sf-delay">何時間後</label><input id="sf-delay" type="text" inputmode="numeric" value="0" style="max-width:120px"></div>
           </div>
           </section>
@@ -310,9 +311,11 @@
             <div data-ac="move_to"><label for="sf-astep">移す先（きっかけが「ほかの自動の動きから移された」のもの）</label><select id="sf-astep" class="inline"><option value="">（選ぶ）</option></select></div>
             <div data-ac="set_field"><label for="sf-afield">書く項目</label><select id="sf-afield" class="inline"><option value="">（選ぶ）</option></select></div>
             <div data-ac="set_field"><label for="sf-avalue">書く値</label><input id="sf-avalue" type="text" maxlength="200"></div>
+            <div data-ac="send_line"><label for="sf-aaccount">送る LINE のアカウント</label><select id="sf-aaccount" class="inline"><option value="shianin">シアニン</option><option value="college_ops">言語化ライティングカレッジ運営</option></select></div>
           </div>
+          <div data-ac="send_line" class="note">LINE と結ばれていない人・ブロックした人には送りません。今月の残りが 20 通以下になると送らずに待たせ、Naoki に知らせます</div>
           <div data-ac="send_email notify_admin"><label for="sf-subject">件名（Naoki への知らせは空でもよい）</label><input id="sf-subject" type="text" maxlength="200"></div>
-          <div data-ac="send_email notify_admin"><label for="sf-body">本文（{{name}}・{{email}}・{{product}}・{{label}} が置き換わる。[[ボタンの文字|https://…]] と書くとボタンになる）</label><textarea id="sf-body" rows="5"></textarea></div>
+          <div data-ac="send_email notify_admin send_line"><label for="sf-body">本文（LINE は 2000 字まで・件名なし）／メールは（{{name}}・{{email}}・{{product}}・{{label}} が置き換わる。[[ボタンの文字|https://…]] と書くとボタンになる）</label><textarea id="sf-body" rows="5"></textarea></div>
           </section>
           <datalist id="label-names"></datalist>
           <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="submit">保存</button><span class="note" id="sf-status"></span></div>

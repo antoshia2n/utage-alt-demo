@@ -24,18 +24,25 @@ export const TRIGGERS = {
   page_clicked:         { type: "page_clicked",         label: "ページのボタンを押した" },
   // 便 11b：ほかの自動の動きの「別の自動の動きへ移す」で、この自動の動きへ移された（出来事 step_entered の payload.to がこの番号）
   moved:                { type: "step_entered",         label: "ほかの自動の動きから移された" },
+  // 便 T1：LINE と台帳の人が結ばれた（trigger_args.account にアカウントを入れると、そのアカウントだけ）
+  line_linked:          { type: "line_linked",          label: "LINE と結ばれた" },
 };
 
 export const ACTIONS = { send_email: "メールを送る", notify_admin: "Naoki に知らせる", add_label: "ラベルを付ける",
   // 便 11b：別の自動の動きへ移す（action_args.step_id）・人の項目に値を書く（action_args.field・value）
-  move_to: "別の自動の動きへ移す", set_field: "人の項目に値を書く" };
+  move_to: "別の自動の動きへ移す", set_field: "人の項目に値を書く",
+  // 便 T1：LINE を送る（action_args.account・本文は body。結ばれていない人・ブロックした人には送らない）
+  send_line: "LINE を送る" };
+
+// 便 T1：LINE の今月の残りがこの数以下になったら、ステップの LINE は送らずに待たせ、Naoki に知らせる（1 日 1 回）
+export const LINE_QUOTA_HOLD = 20;
 
 // 便 11b：移す・移されるの連なりは 5 段まで（A → B → A のような回り続けを止める）
 export const MOVE_DEPTH_MAX = 5;
 
 // コネクタが積む出来事（同じきっかけで 2 回動かないように数える）。failed は 3 回まで試し直す
-export const DONE_TYPES = ["email_sent", "email_blocked", "email_failed", "admin_notified", "admin_notify_failed", "label_added", "connector_skipped", "step_entered", "field_set"];
-export const FAIL_TYPES = ["email_failed", "admin_notify_failed"];
+export const DONE_TYPES = ["email_sent", "email_blocked", "email_failed", "admin_notified", "admin_notify_failed", "label_added", "connector_skipped", "step_entered", "field_set", "line_sent", "line_step_failed"];
+export const FAIL_TYPES = ["email_failed", "admin_notify_failed", "line_step_failed"];
 
 // ラベルの名前：空白・カンマ・山かっこ・引用符を含まない 1〜40 文字
 export const LABEL_RE = /^[^\s,<>"'`]{1,40}$/u;
