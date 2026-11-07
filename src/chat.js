@@ -5,7 +5,7 @@
 //   chat_task  … メッセージから TaskMaster にタスクを足した印（payload.event_id・task_id・title）
 //   chat_fwd   … 別のチャットへメモとして転送した印は、転送先の chat_note（payload.forwarded_from）で持つ
 // 右の「履歴」は、その人の出来事（顧客管理の 1 枚と同じ getTimeline）を種類ごとに分けて返す。部屋の出来事と読んだ印・通知の購読は出さない
-// 試験は tests/chat.test.mjs。画面は public/js/chat.js（手元の試し台で、ホバー・右クリック・1 キー・後で・メモ・⌘K・探す・右の幅・スマホを確かめた）
+// 0.71.1：履歴の「そのほか」もチップで絞れるように CATS に足した（本番の 1 人分で見つけた）。試験は tests/chat.test.mjs。画面は public/js/chat.js（手元の試し台で、ホバー・右クリック・1 キー・後で・メモ・⌘K・探す・右の幅・スマホを確かめた）
 export const NOTE_MAX = 8000;
 export const CHAT_TYPES = ["chat_note", "chat_later", "chat_task"];
 const UUID_RE = /^[0-9a-f-]{36}$/i;
