@@ -69,6 +69,7 @@
       <button class="grp" type="button" aria-expanded="true">顧客</button>
       <div class="grp-items">
         <button class="it" type="button" data-view="people" aria-selected="false">顧客管理</button>
+        <button class="it" type="button" data-view="chat" aria-selected="false">チャット<span class="badge hidden" id="chat-badge"></span></button>
         <button class="it" type="button" data-view="rooms" aria-selected="false">添削ルーム<span class="badge hidden" id="rooms-badge"></span></button>
         <button class="it" type="button" data-view="refer" aria-selected="false">紹介</button>
         <button class="it" type="button" data-view="line" aria-selected="false">LINE</button>
@@ -367,6 +368,8 @@
       <div id="view-site" style="display:none"><div id="site-host"></div></div>
       <div id="view-recordings" style="display:none"><div id="rec-host"></div></div>
       <div id="view-media" style="display:none"><div id="media-host"></div></div>
+      <!-- チャットの便 C1（2026-11-07）：人ごとのやり取り・メモ・後で・タスクへ・履歴（public/js/chat.js） -->
+      <div id="view-chat" style="display:none"><div id="chat-host"></div></div>
       <div id="view-utagecopy" style="display:none"><div id="uc-host"></div></div>
       <div id="view-access" style="display:none">
         <section class="card acc-card">

@@ -1,0 +1,157 @@
+/* チャットの便 C1（2026-11-07）：チャットの画面。値は claude/app-design-rules.md の 5・5b（recordings.css と同じ） */
+:host{--bg:#f5f0eb;--panel:#fff;--soft:#f7f3ee;--line:#e6dfd6;--fg:#1a1a1a;--muted:#6b6259;--faint:#736a62;--field:#a39a90;--ink:#b45309;--abg:#fef3c7;--me:#fff4dd;--note:#fff7d6;--warn:#b91c1c;--rw:360px;color-scheme:light}
+@media (prefers-color-scheme:dark){:host{--bg:#1b1916;--panel:#24211d;--soft:#2b2823;--line:#38332c;--fg:#f1ece6;--muted:#b0a69b;--faint:#a0968b;--field:#6f665c;--ink:#fbbf24;--abg:rgba(251,191,36,.14);--me:rgba(251,191,36,.10);--note:rgba(251,191,36,.07);--warn:#f87171;color-scheme:dark}}
+*{box-sizing:border-box}
+:host{display:block;color:var(--fg);font:14px/1.6 "Geist","Noto Sans JP",system-ui,sans-serif}
+button,input,textarea{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--ink);outline-offset:2px;border-radius:6px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.app{display:grid;grid-template-columns:272px minmax(0,1fr) var(--rw);height:calc(100vh - 64px);background:var(--bg)}
+.app.noside{grid-template-columns:272px minmax(0,1fr) 0}
+/* 左 */
+.left{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.lsearch{padding:12px;border-bottom:1px solid var(--line)}
+.lsearch input{width:100%;padding:7px 10px;border:1px solid var(--field);border-radius:8px;background:var(--panel)}
+.lsearch .hint{font-size:12px;color:var(--muted);margin-top:4px}
+.list{overflow:auto;flex:1;padding:6px 6px 12px}
+.sv{display:flex;align-items:center;gap:8px;width:100%;border:0;background:none;padding:7px 8px;border-radius:9px;cursor:pointer;text-align:left;font-size:13.5px;min-height:36px}
+.sv:hover{background:var(--soft)}.sv[aria-pressed=true]{background:var(--abg);color:var(--ink);font-weight:700}
+.sv .n{margin-left:auto;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.lh{font-size:12px;font-weight:700;color:var(--faint);padding:10px 8px 4px}
+.ci{display:flex;align-items:center;gap:10px;width:100%;border:0;background:none;padding:8px;border-radius:10px;cursor:pointer;text-align:left;min-height:44px}
+.ci:hover{background:var(--soft)}
+.ci[aria-current=true]{background:var(--abg)}
+.av{width:32px;height:32px;border-radius:50%;flex:none;display:grid;place-items:center;font-size:12px;font-weight:700;color:#fff}
+.ci .t{flex:1;min-width:0}
+.ci b{display:block;font-weight:600;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ci small{display:block;color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ci .flag{font-size:12px;color:var(--warn);font-weight:700;white-space:nowrap}
+.ci .lt{font-size:12px;color:var(--muted);white-space:nowrap}
+.badge{background:var(--warn);color:#fff;font-size:12px;font-weight:700;border-radius:99px;min-width:20px;height:20px;display:grid;place-items:center;padding:0 6px}
+.empty{color:var(--muted);font-size:13px;padding:10px 8px}
+/* 真ん中 */
+.mid{display:flex;flex-direction:column;min-width:0;min-height:0}
+.mh{display:flex;align-items:center;gap:10px;padding:10px 16px;background:var(--panel);border-bottom:1px solid var(--line)}
+.mh h1{font-size:16px;margin:0;font-weight:800;line-height:1.3}
+.mh small{color:var(--muted);font-size:12px}
+.mh .g{flex:1}
+.btn{border:1px solid var(--field);background:var(--panel);border-radius:8px;padding:5px 12px;font-size:13px;cursor:pointer;white-space:nowrap;min-height:32px;display:inline-flex;align-items:center;gap:6px}
+.btn:hover{background:var(--soft)}
+.btn.pri{background:#b45309;border-color:#b45309;color:#fff;font-weight:700}
+a.btn,a{color:inherit}
+.msgs{flex:1;overflow:auto;padding:16px 20px 8px}
+.day{text-align:center;font-size:12px;color:var(--muted);margin:12px 0}
+.msg{position:relative;display:flex;padding:8px;border-radius:10px;max-width:780px}
+.msg:hover,.msg:focus-within,.msg:focus{background:var(--soft)}
+.msg.me{margin-left:auto;justify-content:flex-end}
+.msg>div{min-width:0}
+.bub{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 12px;white-space:pre-wrap;word-break:break-word}
+.msg.me .bub{background:var(--me)}
+.msg.note .bub{background:var(--note);border-style:dashed;border-color:#c9a64a}
+.msg.line .bub{background:transparent;border-style:dashed;color:var(--muted);font-size:13px}
+.meta{font-size:12px;color:var(--muted);margin-bottom:2px}
+.msg.me .meta{text-align:right}
+.tags{display:flex;gap:4px;margin-top:4px;flex-wrap:wrap}
+.msg.me .tags{justify-content:flex-end}
+.tag{font-size:12px;border-radius:6px;padding:0 6px;background:var(--soft);color:var(--muted)}
+.tag.warn{background:#fee2e2;color:#991b1b}
+.msg.hit .bub{box-shadow:0 0 0 2px #f59e0b}
+.imgs{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.imgs img{max-width:180px;max-height:180px;border-radius:8px;border:1px solid var(--line);object-fit:cover}
+.hb{position:absolute;top:-14px;right:12px;display:none;gap:2px;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:2px;box-shadow:0 4px 12px rgba(0,0,0,.08);z-index:5}
+.msg.me .hb{right:auto;left:12px}
+.msg:hover .hb,.msg:focus-within .hb,.msg:focus .hb{display:flex}
+.hb button{border:0;background:none;border-radius:7px;padding:3px 8px;font-size:12.5px;cursor:pointer;white-space:nowrap;min-height:28px}
+.hb button:hover,.hb button:focus-visible{background:var(--soft)}
+.comp{background:var(--panel);border-top:1px solid var(--line);padding:10px 16px}
+.comp.notemode textarea{background:var(--note);border-style:dashed}
+.comp textarea{width:100%;min-height:52px;max-height:200px;resize:vertical;border:1px solid var(--field);border-radius:10px;padding:8px 10px;background:var(--panel)}
+.comp .row{display:flex;gap:8px;align-items:center;margin-top:6px;font-size:12px;color:var(--muted)}
+.comp .row .g{flex:1}
+.mode{display:inline-flex;border:1px solid var(--field);border-radius:8px;overflow:hidden}
+.mode button{border:0;background:var(--panel);padding:4px 12px;font-size:12.5px;cursor:pointer;min-height:30px}
+.mode button[aria-pressed=true]{background:#b45309;color:#fff;font-weight:700}
+.kbd{font-size:11.5px;border:1px solid var(--line);border-radius:5px;padding:0 5px;color:var(--muted)}
+.results{flex:1;overflow:auto;padding:16px 20px}
+.res{display:block;width:100%;text-align:left;border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:10px 12px;margin-bottom:8px;cursor:pointer}
+.res small{color:var(--muted);font-size:12px;display:block}
+mark{background:var(--abg);color:inherit;border-radius:3px}
+.welcome{margin:auto;max-width:420px;text-align:center;color:var(--muted);padding:24px}
+/* 右 */
+.right{position:relative;background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.split{position:absolute;left:-4px;top:0;bottom:0;width:8px;cursor:col-resize;z-index:6;background:transparent;border:0;padding:0}
+.split:hover,.split:focus-visible{background:linear-gradient(90deg,transparent 3px,var(--ink) 3px,var(--ink) 5px,transparent 5px);outline:none}
+.card{border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:12px 12px 0;font-size:12.5px}
+.card .h{display:flex;gap:8px;align-items:baseline}
+.card b{font-size:14px}
+.card .h a{margin-left:auto;font-size:12.5px;white-space:nowrap}
+.card dl{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;margin:8px 0 0}
+.card dt{color:var(--muted)}.card dd{margin:0;min-width:0;word-break:break-word}
+.ent{display:inline-block;font-size:12px;border-radius:6px;padding:0 6px;margin:0 4px 2px 0;background:var(--soft)}
+.tabs{display:flex;gap:2px;padding:8px 10px 0;border-bottom:1px solid var(--line);margin-top:6px}
+.tabs button{border:0;background:none;padding:8px 12px;border-bottom:2px solid transparent;cursor:pointer;color:var(--muted);font-weight:600;min-height:36px}
+.tabs button[aria-selected=true]{color:var(--fg);border-color:var(--ink)}
+.tabs .g{flex:1}
+.pane{flex:1;overflow:auto;padding:12px 14px}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.chip{border:1px solid var(--field);background:var(--panel);border-radius:999px;padding:3px 10px;font-size:12.5px;cursor:pointer;min-height:28px}
+.chip[aria-pressed=true]{background:#b45309;border-color:#b45309;color:#fff}
+.ev{display:grid;grid-template-columns:24px 1fr;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}
+.ev .ic{width:24px;height:24px;border-radius:6px;display:grid;place-items:center;font-size:11px;font-weight:700;color:#fff}
+.ev b{font-weight:600;font-size:13px}
+.ev small{display:block;color:var(--muted);font-size:12px;word-break:break-word}
+.who{font-size:12px;color:var(--muted);margin:0 0 8px}
+.grab{display:none}
+.back{display:none}
+.md{display:none}
+.sm{display:none}
+/* 右クリックの窓・確かめの窓・⌘K・通知 */
+.menu{position:fixed;z-index:50;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.18);padding:6px;min-width:230px}
+.menu button{display:flex;gap:10px;width:100%;border:0;background:none;padding:8px 10px;border-radius:8px;cursor:pointer;text-align:left;min-height:34px}
+.menu button:hover,.menu button:focus-visible{background:var(--soft);outline:none}
+.menu small{color:var(--muted);margin-left:auto;font-size:12px}
+.menu hr{border:0;border-top:1px solid var(--line);margin:4px 0}
+.dlgbg{position:fixed;inset:0;background:rgba(20,16,12,.4);display:grid;place-items:center;z-index:60;padding:16px}
+.dlg{background:var(--panel);border-radius:14px;width:min(460px,100%);max-height:86vh;overflow:auto;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.25)}
+.dlg h2{margin:0 0 8px;font-size:17px}
+.dlg .opt{display:flex;align-items:center;gap:10px;width:100%;border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:9px 10px;margin-top:6px;cursor:pointer;text-align:left;min-height:44px}
+.dlg .opt:hover{background:var(--soft)}
+.dlg label{display:block;font-size:13px;margin-top:8px}
+.dlg input,.dlg textarea{width:100%;border:1px solid var(--field);border-radius:8px;padding:7px 10px;background:var(--panel)}
+.dlg .acts{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+.dlg .err{color:var(--warn);font-size:13px;min-height:1.2em;margin:6px 0 0}
+.ks{position:fixed;inset:0;background:rgba(20,16,12,.35);display:flex;justify-content:center;align-items:flex-start;padding-top:14vh;z-index:80}
+.ks .box{background:var(--panel);border-radius:14px;width:min(540px,94vw);box-shadow:0 20px 60px rgba(0,0,0,.25);overflow:hidden}
+.ks input{width:100%;border:0;border-bottom:1px solid var(--line);padding:14px 16px;font-size:16px;background:var(--panel);outline:none}
+.ks ul{list-style:none;margin:0;padding:6px;max-height:50vh;overflow:auto}
+.ks li{display:flex;gap:10px;align-items:center;padding:8px 10px;border-radius:9px;cursor:pointer}
+.ks li[aria-selected=true]{background:var(--abg)}
+.ks small{color:var(--muted);margin-left:auto;font-size:12px}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:9px 14px;border-radius:10px;font-size:13px;z-index:70;display:flex;gap:12px;align-items:center;max-width:92vw}
+.toast button{background:none;border:0;color:#f59e0b;font-weight:700;cursor:pointer;min-height:28px}
+/* 中くらいの幅：フォルダの列（左）をたたむ */
+@media (min-width:901px) and (max-width:1199px){
+  .app{grid-template-columns:minmax(0,1fr) var(--rw)}
+  .app.noside{grid-template-columns:minmax(0,1fr) 0}
+  .app>.left{display:none}
+  .app.leftopen>.left{display:flex;position:fixed;left:0;top:64px;bottom:0;width:290px;z-index:30;box-shadow:8px 0 24px rgba(0,0,0,.15)}
+  .md{display:inline-flex}
+}
+/* スマホ：一覧 → チャット。サブは下から半分だけ出す（チャットは上に見えたまま） */
+@media (max-width:900px){
+  .app,.app.noside{grid-template-columns:1fr;height:calc(100vh - 56px)}
+  .app>.left,.app>.mid,.app>.right{display:none}
+  .app[data-v=list]>.left,.app[data-v=chat]>.mid,.app[data-v=side]>.mid,.app[data-v=side]>.right{display:flex}
+  .app[data-v=side]>.right{position:fixed;left:0;right:0;bottom:0;height:var(--sh,52vh);z-index:40;border-left:0;border-top:1px solid var(--line);border-radius:16px 16px 0 0;box-shadow:0 -10px 30px rgba(0,0,0,.18)}
+  .app[data-v=side]>.mid{padding-bottom:var(--sh,52vh)}
+  .app[data-v=side] .comp{display:none}
+  .grab{display:flex;justify-content:center;align-items:center;gap:8px;border:0;background:none;width:100%;padding:6px 0 0;min-height:32px;cursor:pointer;color:var(--muted);font-size:12px}
+  .grab i{width:40px;height:5px;border-radius:3px;background:var(--line)}
+  .split,.hb{display:none!important}
+  .card{display:none}
+  .app[data-v=side].full .card{display:block}
+  .back,.sm{display:inline-flex}
+  .lg,.mh small,.comp .row .g{display:none}
+  .btn,.chip,.ci,.sv,.tabs button,.mode button,.menu button{min-height:44px}
+  input,textarea{font-size:16px!important}
+}

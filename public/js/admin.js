@@ -4,6 +4,7 @@ import { makeBlueprint } from "/js/blueprint.js";
 import { mountSite } from "/js/site.js";
 import { mountRecordings } from "/js/recordings.js";
 import { mountMedia } from "/js/media.js";
+import { mountChat } from "/js/chat.js";
 import { pickMedia } from "/js/mediapick.js";
 import { mountUtageCopy } from "/js/utagecopy.js";
 import { watchEdges, revealSelected } from "/js/fbar-edges.js";
@@ -133,6 +134,14 @@ async function openConsole() {
   $("src").addEventListener("change", () => (custFull ? search() : renderCustomers()));
 }
 
+// チャットの便 C1：チャットの画面（public/js/chat.js）。開くたびに一覧を読み直す。左のメニューの数は要返信の数
+let chatUi = null;
+async function openChatView(id, focusId) {
+  if (!chatUi) chatUi = mountChat($("chat-host"), { getToken: () => token, openPerson: (pid) => { openView("people"); detail(pid); }, openRoom: (pid, pane) => { openView("rooms"); openRoom(pid, null, pane); } });
+  await chatUi.open(id, focusId);
+  const n = chatUi.needCount(), b = $("chat-badge");
+  if (b) { b.textContent = n > 0 ? String(n) : ""; b.classList.toggle("hidden", !(n > 0)); }
+}
 function routeHash() {
   const h = location.hash;
   if (h.startsWith("#approval/")) { document.querySelector('[data-view="ai"]').click(); return true; }
@@ -143,6 +152,9 @@ function routeHash() {
   const pm = h.match(/^#page[/]([0-9a-f-]{36})$/i);
   if (pm) { openView("pages"); openPage(pm[1]); return true; }
   // 2026-11-02 シアニンパネルの「今日の動き」から（/admin#person/人の番号）：顧客管理のその人の画面を開く
+  // チャットの便 C1：#chat/<人の番号>/<メッセージの番号>（TaskMaster のタスクのリンクから戻る）
+  const cm = h.match(/^#chat(?:[/]([0-9a-f-]{36})(?:[/](\d+))?)?$/i);
+  if (cm) { openView("chat"); openChatView(cm[1], cm[2] ? Number(cm[2]) : null); return true; }
   const ps = h.match(/^#person[/]([0-9a-f-]{36})$/i);
   if (ps) { openView("people"); detail(ps[1]); return true; }
   return false;
@@ -737,7 +749,7 @@ const pill = (t, kind = "") => `<span class="pill ${kind}">${esc(t)}</span>`;
 // ---------- 添削ルーム ----------
 let currentRoom = null;
 // 便 8c：左のメニュー。押した項目の画面だけを出し、上のナビにその名前を出す
-const VIEWS = ["home", "blueprint", "people", "rooms", "deals", "ai", "products", "deliver", "settings", "refer", "guide", "forms", "pages", "line", "access", "invites", "site", "recordings", "media", "utagecopy"];
+const VIEWS = ["home", "blueprint", "people", "chat", "rooms", "deals", "ai", "products", "deliver", "settings", "refer", "guide", "forms", "pages", "line", "access", "invites", "site", "recordings", "media", "utagecopy"];
 // 会員サイト（2026-10-29）：影の DOM の中に描く。顧客管理のその人の画面へは openPerson で移る
 let siteUi = null;
 // 録画（2026-11-06）：録画の棚も影の DOM の中に描く（public/js/recordings.js）
@@ -795,6 +807,7 @@ function setupViews() {
       if (!ucUi) ucUi = mountUtageCopy($("uc-host"), { getToken: () => token });
       ucUi.open();
     }
+    if (b.dataset.view === "chat") openChatView();
     if (b.dataset.view === "media") {
       if (!mediaUi) mediaUi = mountMedia($("media-host"), { getToken: () => token });
       mediaUi.open();
