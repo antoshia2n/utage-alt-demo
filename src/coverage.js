@@ -146,7 +146,7 @@ export const COVERAGE = {
   "GET /api/admin/chat/groups": ["list_chats"],
   "POST /api/admin/chat/groups": ["save_chat_group"],
   "MATCH /^[/]api[/]admin[/]chat[/]groups[/]([0-9a-f-]{36})(?:[/](message|react|task))?$/i": ["get_chat_group", "send_chat_group", "save_chat_group", "add_chat_task"],
-  "MATCH /^[/]api[/]admin[/]chat[/]([0-9a-f-]{36})(?:[/](note|later|forward|task|folder|keep|line))?$/i": ["get_chat", "add_chat_note", "set_chat_later", "forward_chat", "add_chat_task", "set_chat_folder", "keep_chat_item", "link_chat_line"],
+  "MATCH /^[/]api[/]admin[/]chat[/]([0-9a-f-]{36})(?:[/](note|later|forward|task|folder|keep|line|nickname))?$/i": ["get_chat", "add_chat_note", "set_chat_later", "forward_chat", "add_chat_task", "set_chat_folder", "keep_chat_item", "link_chat_line", "set_nickname"],
   "MATCH /^\\/api\\/admin\\/rooms\\/([0-9a-f-]{36})$/i": ["get_room"],
   "MATCH /^\\/api\\/admin\\/rooms\\/([0-9a-f-]{36})\\/reply$/i": ["return_correction"],
   "MATCH /^[/]api[/]admin[/]rooms[/]([0-9a-f-]{36})[/]message$/i": ["send_chat"],

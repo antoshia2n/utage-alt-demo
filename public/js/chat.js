@@ -6,7 +6,8 @@
 //  ・⌘／Ctrl＋K で人を探して開く（部屋の無い人も）・] で右を開閉・? でキーの一覧。右の幅は左端を引いて変えられる（このブラウザに覚える）
 //  ・C2a（2026-11-07）：左のフォルダ（作る・名前・並べ替え・消す・入れる）とフォルダの中で探す・右の「資料」タブ（リンクと画像を自動で集める・資料に入れたもの・探す）
 //    ・右クリックの「資料に入れる」（S）と「連携」（タスクへ）。グループは C2b、「AI」タブは C3
-//  ・C2b（2026-11-07）：左に「グループ」（作る・人を入れる／外す・名前・閉じる）。グループは本流＋スレッド・スタンプ 6 つ・既読の数・吹き出しの右クリック
+//  ・C2b（2026-11-07）：左に「グループ」（新規作成・メンバーを招待／削除・グループ設定・アーカイブ）。グループは本流＋スレッド・スタンプ 6 つ・既読の人数・吹き出しの右クリック
+//    文言は一般の呼び名にそろえる（2026-11-07 13:12 Naoki「人を入れる→招待など一般的な名称に統一」「既読は人数だけ」）
 //    （スタンプ・スレッドで返信・コピー・タスクへ・その人の 1 対 1・顧客管理・Claude に聞く）。右は スレッド／メンバー／資料。中身は src/groups.js
 //  ・C2a-2：見出しの「顧客管理で開く」（詳細へ飛ぶだけ）と「サイト｜LINE」の切り替え。LINE は結ばれた人だけ読めて返せる。結ばれていなければ友だちから選んで結ぶ
 import { api, esc, fmtTime, authImage, EVENT_LABEL } from "/js/common.js";
@@ -71,7 +72,7 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
     const fbtn = (id, label, n, need) => `<button class="fd" data-fd="${id}" aria-pressed="${fsel === (id || null)}"><span class="fi" aria-hidden="true">${id ? "▸" : "•"}</span>${esc(label)}<span class="n">${n}${need ? `・<b>${need}</b>` : ""}</span></button>`;
     $("#q").placeholder = fsel ? `「${fname(fsel)}」の中を探す（Enter）` : "やり取りとメモを探す（Enter）";
     $("#list").innerHTML = `<div role="group" aria-label="絞り込み">${btn("need", "要返信", inF.filter((c) => c.need).length)}${btn("later", "後で", inF.filter((c) => c.later_until).length)}${btn("all", "すべて", inF.length)}</div>
-      ${fsel ? "" : `<div class="fh"><span>グループ</span><button class="lk" id="gnew">＋ 作る</button></div>${(L.groups || []).filter((g) => filter !== "later" && (filter !== "need" || g.need)).map((g) => `<button class="ci" data-gr="${g.id}" aria-current="${cur === "group:" + g.id && !hits}">${av(g.id, g.name).replace('class="av"', 'class="av sq"')}<span class="t"><b>${esc(g.name)}<span class="gtag">${g.members} 人</span></b><small>${g.last_text ? esc(g.last_name) + "：" + esc(g.last_text) : "まだメッセージはありません"}</small></span>${g.unread_for_admin ? `<span class="badge" aria-label="未読 ${g.unread_for_admin}">${g.unread_for_admin}</span>` : ""}</button>`).join("") || (L.groups_note === "need_sql" ? '<p class="fnone">グループの表を作る前です</p>' : (L.groups || []).length ? "" : '<p class="fnone">「＋ 作る」でグループを作れます</p>')}`}
+      ${fsel ? "" : `<div class="fh"><span>グループ</span><button class="lk" id="gnew">＋ 新規作成</button></div>${(L.groups || []).filter((g) => filter !== "later" && (filter !== "need" || g.need)).map((g) => `<button class="ci" data-gr="${g.id}" aria-current="${cur === "group:" + g.id && !hits}">${av(g.id, g.name).replace('class="av"', 'class="av sq"')}<span class="t"><b>${esc(g.name)}<span class="gtag">${g.members} 人</span></b><small>${g.last_text ? esc(g.last_name) + "：" + esc(g.last_text) : "まだメッセージはありません"}</small></span>${g.unread_for_admin ? `<span class="badge" aria-label="未読 ${g.unread_for_admin}">${g.unread_for_admin}</span>` : ""}</button>`).join("") || (L.groups_note === "need_sql" ? '<p class="fnone">グループの表を作る前です</p>' : (L.groups || []).length ? "" : '<p class="fnone">「＋ 新規作成」でグループを作れます</p>')}`}
       <div class="fh"><span>フォルダ</span><button class="lk" id="fedit">編集</button></div>
       <div role="group" aria-label="フォルダ" class="fds">${fbtn("", "すべてのチャット", L.count, 0)}${L.folders.map((f) => fbtn(f.id, f.name, f.count, f.need)).join("")}${L.folders.length ? "" : '<p class="fnone">「編集」からフォルダを作れます</p>'}</div>
       <div class="lh">${fsel ? esc(fname(fsel)) + "・" : ""}${filter === "need" ? "要返信" : filter === "later" ? "後で" : "すべて"}</div>
@@ -287,7 +288,11 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
   // ---------- 右 ----------
   function cardHtml() {
     const c = D.card;
+    const N = D.names || { real: c.name, nickname: "", line: [] };
     return `<div class="card"><div class="h"><b>${esc(c.name || c.email)}</b><a href="#person/${D.id}" id="cust">顧客管理へ移動 →</a></div><dl>
+      <dt>本名</dt><dd>${esc(N.real || "—")}</dd>
+      <dt>ニックネーム</dt><dd>${N.nickname ? esc(N.nickname) : '<span style="color:var(--muted)">まだ無い</span>'} <button class="lk" id="nickEdit">編集</button></dd>
+      ${N.line.length ? `<dt>LINE 名</dt><dd>${N.line.map((l) => esc(l.name || "（読めない）")).join("、")}</dd>` : ""}
       <dt>段階</dt><dd>${esc(c.stage || "—")}</dd>
       <dt>権利</dt><dd>${c.entitlements.length ? c.entitlements.map((x) => `<span class="ent">${esc(KEY_LABEL[x.key] || x.key)}${x.expires_at ? "（" + esc(fmtTime(x.expires_at).slice(0, 10)) + " まで）" : ""}</span>`).join("") : "なし"}</dd>
       <dt>次の予約</dt><dd>${c.next_booking ? `${esc(c.next_booking.title)} ${esc(fmtTime(c.next_booking.slot))}` : "—"}</dd>
@@ -309,6 +314,11 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
       <div class="pane" id="pane" role="tabpanel" tabindex="-1"></div>`;
     $("#cust").onclick = (e) => { e.preventDefault(); openPerson(D.id); };
     $$("[data-og]").forEach((b) => (b.onclick = () => openGroup(b.dataset.og)));
+    $("#nickEdit").onclick = (e) => { lastFocus = e.currentTarget; const now = (D.names || {}).nickname || "";
+      dialog(`<h2>ニックネーム</h2><p style="margin:0;color:var(--muted);font-size:13px">グループでは、ほかの生徒にこの名前だけが出ます（本名は出ません）。生徒も自分で変えられます。空にすると消します。</p><label for="nk">ニックネーム（20 字まで）</label><input id="nk" maxlength="20" value="${esc(now)}"><p class="err" id="nkerr" role="alert"></p><div class="acts"><button class="btn" data-x>キャンセル</button><button class="btn pri" data-ok>保存</button></div>`, async (d) => {
+        const r = await call(`/api/admin/chat/${D.id}/nickname`, "POST", { nickname: $("#nk", d).value });
+        if (!r.ok) { $("#nkerr", d).textContent = r.error === "bad_nickname" ? "20 字まで・メールや < > は使えません" : errText(r); return false; }
+        D.names = { ...(D.names || {}), nickname: r.nickname }; drawRight(); toast(r.nickname ? "ニックネームを保存しました" : "ニックネームを消しました"); }); };
     $("#toChat").onclick = () => { app.classList.remove("full"); setView("chat"); };
     $("#grab").onclick = () => { const f = app.classList.toggle("full"); app.style.setProperty("--sh", f ? "86vh" : "52vh"); drawRight(); $("#grab").focus(); };
     const sp = $("#split");
@@ -482,7 +492,7 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
 
   // ---------- グループ（C2b） ----------
   const EMO = ["👍", "❤️", "😂", "🙏", "🔥", "👀"];
-  const GERR = { not_found: "グループが見つかりません（閉じられたかもしれません）", need_sql: "グループの表がまだありません（SQL を流す前です）", bad_name: "グループの名前は 1〜40 字です", bad_thread: "スレッドの元のメッセージが見つかりません", bad_emoji: "そのスタンプは使えません" };
+  const GERR = { not_found: "グループが見つかりません（アーカイブされたかもしれません）", need_sql: "グループの表がまだありません（SQL を流す前です）", bad_name: "グループの名前は 1〜40 字です", bad_thread: "スレッドの元のメッセージが見つかりません", bad_emoji: "そのスタンプは使えません" };
   const gErr = (r) => GERR[r.error] || errText(r);
   const mini = (who, name) => who === "cyanin" ? '<span class="av mini" style="background:#b45309" aria-hidden="true">シ</span>' : av(who, name).replace('class="av"', 'class="av mini"');
   async function openGroup(gid, focusId) {
@@ -505,13 +515,13 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
     return `<div class="msg ${m.mine ? "me" : ""}" tabindex="0" data-g="${m.id}" aria-label="${esc(m.name)} ${esc(fmtTime(m.at))}：${esc(m.text.slice(0, 60))}。Enter で操作の一覧">
       ${inThread ? "" : `<span class="hb" role="toolbar" aria-label="このメッセージの操作"><button data-gh="react" aria-label="スタンプ">😊</button><button data-gh="thread">スレッドで返信</button><button data-gh="copy">コピー</button><button data-gh="more" aria-label="ほかの操作">…</button></span>`}
       ${m.mine ? "" : av(m.who, m.name)}<div style="min-width:0"><div class="meta">${esc(m.name)}・${hm(m.at)}</div><div class="bub">${esc(m.text)}${imgs}</div>
-      <div class="rcs">${reactsHtml(m)}</div>${th}${m.mine && !inThread ? `<div class="read">既読 ${m.read}／${m.of}</div>` : ""}</div></div>`;
+      <div class="rcs">${reactsHtml(m)}</div>${th}${m.mine && !inThread ? `<div class="read">既読 ${m.read}</div>` : ""}</div></div>`;
   }
   function drawGroupMid(focusId) {
     let last = "";
     $("#mid").innerHTML = `<div class="mh"><button class="btn back" id="toList" aria-label="一覧へ戻る">←</button><button class="btn md" id="leftBtn" aria-expanded="${app.classList.contains("leftopen")}">一覧</button>${av(G.id, G.group.name).replace('class="av"', 'class="av sq"')}
-      <div style="min-width:0"><h1>${esc(G.group.name)}</h1><small>グループ・${G.members.length} 人とシアニン・生徒の画面とスマホに届きます</small></div><span class="g"></span>
-      <button class="btn" id="gAdd">＋ 人を入れる</button><button class="btn" id="gEdit">名前・閉じる</button>
+      <div style="min-width:0"><h1>${esc(G.group.name)}</h1><small>グループ・メンバー ${G.members.length} 人・生徒の画面とスマホに届きます</small></div><span class="g"></span>
+      <button class="btn" id="gAdd">＋ メンバーを招待</button><button class="btn" id="gEdit">グループ設定</button>
       <button class="btn" id="sideBtn" aria-expanded="${sideOpen}"><span class="lg">${sideOpen ? "右を閉じる" : "右を開く"}</span><span class="sm">メンバーと資料</span></button></div>
       <div class="msgs" id="msgs">${G.messages.map((m) => { const d = dayOf(m.at); const h = d !== last ? `<div class="day">${d}</div>` : ""; last = d; return h + gMsgHtml(m); }).join("") || '<p class="welcome">まだメッセージはありません。最初のメッセージを送ると、入っている人の画面とスマホに届きます。</p>'}</div>
       <div class="comp"><label class="sr" for="gcomp">グループに送る</label><textarea id="gcomp" maxlength="8000" placeholder="「${esc(G.group.name)}」の全員に送る"></textarea>
@@ -626,12 +636,12 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
       $("#tclose").onclick = () => { gThread = null; gTab = "mem"; drawGroupRight(); };
     } else if (gTab === "mem") {
       const last = G.messages.flatMap((x) => [x, ...x.replies]).reduce((s, m) => Math.max(s, m.id), 0);
-      pane.innerHTML = `<p class="who">名前を押すと、その人との 1 対 1 のチャットへ移ります</p>${G.members.map((x) => `<div class="mem">${av(x.id, x.name)}<button class="lk mn" data-dm="${x.id}">${esc(x.name)}</button><small>${x.read_upto >= last && last ? "最新まで読んだ" : x.read_upto ? "途中まで読んだ" : "まだ読んでいない"}</small><button class="lk" data-rm="${x.id}" aria-label="${esc(x.name)}に抜けてもらう">外す</button></div>`).join("") || '<p class="empty">まだ誰も入っていません。上の「＋ 人を入れる」から入れられます</p>'}`;
+      pane.innerHTML = `<p class="who">名前を押すと、その人との 1 対 1 のチャットへ移ります</p>${G.members.map((x) => `<div class="mem">${av(x.id, x.name)}<button class="lk mn" data-dm="${x.id}">${esc(x.name)}</button><small></small><button class="lk" data-rm="${x.id}" aria-label="${esc(x.name)}をメンバーから削除">削除</button></div>`).join("") || '<p class="empty">まだメンバーがいません。上の「＋ メンバーを招待」から招待できます</p>'}`;
       $$("[data-dm]", pane).forEach((b) => (b.onclick = () => openChat(b.dataset.dm)));
       $$("[data-rm]", pane).forEach((b) => (b.onclick = async () => {
-        if (b.dataset.sure !== "1") { b.dataset.sure = "1"; b.textContent = "本当に外す"; return; }
+        if (b.dataset.sure !== "1") { b.dataset.sure = "1"; b.textContent = "本当に削除"; return; }
         const r = await call(`/api/admin/chat/groups/${G.id}`, "POST", { remove_ids: [b.dataset.rm] }); if (!r.ok) { toast(gErr(r)); return; }
-        await openGroup(G.id); toast("グループから外しました（やり取りは残ります）"); }));
+        await openGroup(G.id); toast("メンバーから削除しました（やり取りは残ります）"); }));
     } else {
       pane.innerHTML = `<p class="who">グループで送られたリンクと画像が集まります</p>${vault.map((v) => v.kind === "image" ? `<div class="vi"><img data-key="${esc(v.key)}" alt="${esc(v.m.name)}が送った画像"><div><small>${esc(v.m.name)}・${esc(fmtTime(v.m.at))}</small><button class="lk" data-go="${v.m.id}">メッセージへ</button></div></div>`
         : `<div class="vi"><span class="vic" aria-hidden="true">↗</span><div><a href="${esc(v.url)}" target="_blank" rel="noopener">${esc(v.url.replace(/^https?:[/][/]/, "").slice(0, 70))}</a><small>${esc(v.m.name)}・${esc(fmtTime(v.m.at))}</small><button class="lk" data-go="${v.m.id}">メッセージへ</button></div></div>`).join("") || '<p class="empty">まだ資料はありません</p>'}`;
@@ -640,7 +650,7 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
     }
   }
 
-  // 人を選ぶ窓（フォルダからまとめて・名前で探す）。作るときと入れるときで使う
+  // 人を選ぶ窓（フォルダからまとめて・名前で探す）。新規作成と招待で使う
   function pickPeople(d, already) {
     const sel = new Set();
     const chats = (L ? L.chats : []).filter((c) => !already.has(c.person_id));
@@ -664,37 +674,37 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
   function newGroupDlg(opener) {
     lastFocus = opener || lastFocus;
     let sel = null;
-    dialog(`<h2>グループを作る</h2><label for="gn">グループの名前</label><input id="gn" maxlength="40" placeholder="例 NEXT 受講生（12月）">${pickHtml()}
-      <p style="font-size:12px;color:var(--muted);margin:6px 0 0">作っただけでは生徒には知らせません。最初のメッセージを送ると、入れた人の画面とスマホに届きます。</p><p class="err" id="gerr" role="alert"></p>
-      <div class="acts"><button class="btn" data-x>キャンセル</button><button class="btn pri" data-ok>作る</button></div>`, async (d) => {
+    dialog(`<h2>グループを新規作成</h2><label for="gn">グループの名前</label><input id="gn" maxlength="40" placeholder="例 NEXT 受講生（12月）">${pickHtml()}
+      <p style="font-size:12px;color:var(--muted);margin:6px 0 0">作成しただけでは生徒には知らせません。最初のメッセージを送ると、招待した人の画面とスマホに届きます。</p><p class="err" id="gerr" role="alert"></p>
+      <div class="acts"><button class="btn" data-x>キャンセル</button><button class="btn pri" data-ok>作成</button></div>`, async (d) => {
       const r = await call("/api/admin/chat/groups", "POST", { name: $("#gn", d).value, member_ids: [...sel] });
       if (!r.ok) { $("#gerr", d).textContent = gErr(r); return false; }
-      await loadList(); openGroup(r.group.id); toast(`「${r.group.name}」を作りました（${r.members} 人）`);
+      await loadList(); openGroup(r.group.id); toast(`「${r.group.name}」を作成しました（メンバー ${r.members} 人）`);
     }, (d) => { sel = pickPeople(d, new Set()); });
   }
   function memberDlg(opener) {
     lastFocus = opener || lastFocus;
     let sel = null;
-    dialog(`<h2>「${esc(G.group.name)}」に人を入れる</h2>${pickHtml()}<p style="font-size:12px;color:var(--muted);margin:6px 0 0">入った人には、入る前のやり取りも見えます。</p><p class="err" id="gerr" role="alert"></p>
-      <div class="acts"><button class="btn" data-x>キャンセル</button><button class="btn pri" data-ok>入れる</button></div>`, async (d) => {
-      if (!sel.size) { $("#gerr", d).textContent = "入れる人を選んでください"; return false; }
+    dialog(`<h2>「${esc(G.group.name)}」にメンバーを招待</h2>${pickHtml()}<p style="font-size:12px;color:var(--muted);margin:6px 0 0">招待した人には、それまでのやり取りも見えます。</p><p class="err" id="gerr" role="alert"></p>
+      <div class="acts"><button class="btn" data-x>キャンセル</button><button class="btn pri" data-ok>招待</button></div>`, async (d) => {
+      if (!sel.size) { $("#gerr", d).textContent = "招待する人を選んでください"; return false; }
       const r = await call(`/api/admin/chat/groups/${G.id}`, "POST", { add_ids: [...sel] });
       if (!r.ok) { $("#gerr", d).textContent = gErr(r); return false; }
-      await openGroup(G.id); toast(`${r.added} 人を入れました`);
+      await openGroup(G.id); toast(`${r.added} 人を招待しました`);
     }, (d) => { sel = pickPeople(d, new Set(G.members.map((x) => x.id))); });
   }
   function groupEditDlg(opener) {
     lastFocus = opener || lastFocus;
-    dialog(`<h2>グループの名前・閉じる</h2><label for="gn2">グループの名前</label><input id="gn2" maxlength="40" value="${esc(G.group.name)}">
-      <p style="font-size:12px;color:var(--muted);margin:10px 0 4px">閉じると、生徒の画面からグループが消えます（やり取りは残り、AI からは読めます）。</p><button class="btn" id="gclose">このグループを閉じる</button>
+    dialog(`<h2>グループ設定</h2><label for="gn2">グループの名前</label><input id="gn2" maxlength="40" value="${esc(G.group.name)}">
+      <p style="font-size:12px;color:var(--muted);margin:10px 0 4px">アーカイブすると、生徒の画面からグループが消えます（やり取りは残り、AI からは読めます）。</p><button class="btn" id="gclose">グループをアーカイブ</button>
       <p class="err" id="gerr" role="alert"></p><div class="acts"><button class="btn" data-x>キャンセル</button><button class="btn pri" data-ok>名前を保存</button></div>`, async (d) => {
       const r = await call(`/api/admin/chat/groups/${G.id}`, "POST", { name: $("#gn2", d).value });
       if (!r.ok) { $("#gerr", d).textContent = gErr(r); return false; }
       await loadList(); await openGroup(G.id); toast("名前を変えました");
     }, (d, close) => {
-      $("#gclose", d).onclick = async (e) => { const b = e.currentTarget; if (b.dataset.sure !== "1") { b.dataset.sure = "1"; b.textContent = "本当に閉じる"; b.classList.add("danger"); return; }
+      $("#gclose", d).onclick = async (e) => { const b = e.currentTarget; if (b.dataset.sure !== "1") { b.dataset.sure = "1"; b.textContent = "本当にアーカイブ"; b.classList.add("danger"); return; }
         const r = await call(`/api/admin/chat/groups/${G.id}`, "POST", { close: true }); if (!r.ok) { $("#gerr", d).textContent = gErr(r); return; }
-        close(); G = null; cur = null; await loadList(); $("#mid").innerHTML = '<div class="welcome">グループを閉じました。</div>'; $("#right").innerHTML = ""; toast("グループを閉じました"); };
+        close(); G = null; cur = null; await loadList(); $("#mid").innerHTML = '<div class="welcome">グループをアーカイブしました。</div>'; $("#right").innerHTML = ""; toast("グループをアーカイブしました"); };
     });
   }
 

@@ -2,7 +2,9 @@
 //  ・グループはシアニンが作り、生徒を入れる（フォルダからまとめて・1 人ずつ）。生徒どうしの 1 対 1 は無い
 //  ・送れるのは文と画像（1 通 4 枚まで）。返信はスレッド（thread_of）。スタンプは 6 つ（REACTIONS）
 //  ・既読：生徒は b_chat_group_members.read_upto、シアニンは b_chat_groups.admin_read_upto
-//  ・生徒に見えるのは、入っているグループだけ。ほかの人のメールは返さない（名前だけ）
+//  ・生徒に見えるのは、入っているグループだけ。ほかの人のメールは返さない
+//  ・名前（C2b-2・src/names.js）：生徒の画面ではニックネームだけ（無い人は「メンバー」・本名は出さない）。シアニンの画面では「ニックネーム（本名）」
+//    生徒はニックネームを決めるまで送れない（need_nickname）
 //  ・表は supabase/c2b_chat_groups.sql の 3 つ。表がまだ無い置き場では一覧は空で返し、作る・送るは need_sql で断る
 export const REACTIONS = ["👍", "❤️", "😂", "🙏", "🔥", "👀"];
 export const GROUP_NAME_MAX = 40;
@@ -47,9 +49,14 @@ export function buildView(rows, members, names, viewer) {
   return roots;
 }
 
-export function makeGroups({ db, push, logInbound, names }) {
-  // 番号 → 名前（呼び名があれば呼び名）
-  async function nameMap(env, ids) {
+export function makeGroups({ db, push, logInbound, names, nicks }) {
+  // 番号 → 呼び名。mode=admin は「ニックネーム（本名）」、mode=student はニックネームだけ（無ければ「メンバー」）
+  async function nameMap(env, ids, mode = "admin") {
+    const real = await realNames(env, ids);
+    const nk = nicks ? await nicks.nicknames(env, Object.keys(real)) : {};
+    return Object.fromEntries(Object.keys(real).map((id) => [id, mode === "student" ? nk[id] || "メンバー" : nk[id] ? `${nk[id]}（${real[id]}）` : real[id]]));
+  }
+  async function realNames(env, ids) {
     const u = [...new Set(ids.filter((x) => UUID_RE.test(String(x))))];
     if (!u.length) return {};
     const rows = await db(env, "GET", `customer_summary?select=id,name,email&id=in.(${u.join(",")})`);
@@ -98,7 +105,7 @@ export function makeGroups({ db, push, logInbound, names }) {
     if (mark_read && last && last.id > Number(g.admin_read_upto || 0)) await db(env, "PATCH", `b_chat_groups?id=eq.${g.id}`, { admin_read_upto: last.id }, "return=minimal");
     return {
       ok: true, found: true, group: { id: g.id, name: g.name, closed_at: g.closed_at, created_at: g.created_at },
-      members: mem.filter((m) => !m.left_at).map((m) => ({ id: m.customer_id, name: nm[m.customer_id] || "受講生", joined_at: m.joined_at, read_upto: Number(m.read_upto || 0) })),
+      members: mem.filter((m) => !m.left_at).map((m) => ({ id: m.customer_id, name: nm[m.customer_id] || "受講生", joined_at: m.joined_at })),
       messages: buildView(rows, mem, nm, CYANIN), reactions: REACTIONS,
     };
   }
@@ -156,6 +163,8 @@ export function makeGroups({ db, push, logInbound, names }) {
     const mem = await membersOf(env, g.id);
     const isCyanin = who === CYANIN;
     if (!isCyanin && !mem.some((m) => m.customer_id === who && !m.left_at)) return { ok: false, error: "not_member" };
+    const myNick = !isCyanin && nicks ? await nicks.nickname(env, who) : "";
+    if (!isCyanin && nicks && !myNick) return { ok: false, error: "need_nickname" };
     let root = null;
     if (thread_of != null && thread_of !== "") {
       [root] = await db(env, "GET", `b_chat_group_messages?select=id,thread_of,from_customer&id=eq.${Number(thread_of)}&group_id=eq.${g.id}&kind=eq.msg`);
@@ -178,7 +187,7 @@ export function makeGroups({ db, push, logInbound, names }) {
     const nm = isCyanin ? {} : await nameMap(env, [who]);
     const title = `${g.name}${root ? "（スレッド）" : ""}`;
     if (push) {
-      for (const c of to) await push.sendTo(env, c, { title, body: `${isCyanin ? "シアニン" : nm[who] || "受講生"}：${body}`, url: `/app#room/group/${g.id}`, tag: `group-${g.id}` });
+      for (const c of to) await push.sendTo(env, c, { title, body: `${isCyanin ? "シアニン" : myNick || "メンバー"}：${body}`, url: `/app#room/group/${g.id}`, tag: `group-${g.id}` });
       if (!isCyanin) await push.send(env, { title, body: `${nm[who] || "受講生"}：${body}`, url: `/admin#chat/group/${g.id}`, tag: `group-${g.id}` });
     }
     return { ok: true, id: m.id, notified: to.length };
@@ -237,13 +246,13 @@ export function makeGroups({ db, push, logInbound, names }) {
         db(env, "GET", `b_chat_group_messages?select=id,group_id,from_customer,text,images,created_at,thread_of&kind=eq.msg&deleted_at=is.null&group_id=in.(${gs.map((g) => g.id).join(",")})&order=id.asc&limit=20000`),
         db(env, "GET", `b_chat_group_members?select=group_id&left_at=is.null&group_id=in.(${gs.map((g) => g.id).join(",")})`),
       ]);
-      const nm = await nameMap(env, msgs.map((m) => m.from_customer).filter(Boolean));
+      const nm = await nameMap(env, msgs.map((m) => m.from_customer).filter(Boolean), "student");
       const out = gs.map((g) => {
         const read = Number((mem.find((m) => m.group_id === g.id) || {}).read_upto || 0);
         const ms = msgs.filter((m) => m.group_id === g.id);
         const last = ms.filter((m) => !m.thread_of).slice(-1)[0] || null;
         return { id: g.id, name: g.name, members: cnt.filter((c) => c.group_id === g.id).length, unread: ms.filter((m) => m.id > read && m.from_customer !== customer_id).length,
-          last_at: last ? last.created_at : g.created_at, last_name: last ? (last.from_customer ? (last.from_customer === customer_id ? "あなた" : nm[last.from_customer] || "受講生") : "シアニン") : "", last_text: last ? String(last.text || "（画像）").replace(/\s+/g, " ").slice(0, 60) : "" };
+          last_at: last ? last.created_at : g.created_at, last_name: last ? (last.from_customer ? (last.from_customer === customer_id ? "あなた" : nm[last.from_customer] || "メンバー") : "シアニン") : "", last_text: last ? String(last.text || "（画像）").replace(/\s+/g, " ").slice(0, 60) : "" };
       }).sort((a, b) => String(b.last_at).localeCompare(String(a.last_at)));
       return { ok: true, groups: out, unread: out.reduce((s, g) => s + g.unread, 0) };
     } catch (e) { return { ok: true, groups: [], unread: 0, note: missing(e) ? "need_sql" : "read_failed" }; }
@@ -255,8 +264,10 @@ export function makeGroups({ db, push, logInbound, names }) {
     const mem = await membersOf(env, g.id);
     if (!mem.some((m) => m.customer_id === customer_id && !m.left_at)) return { ok: false, error: "not_found" };
     const rows = await rowsOf(env, g.id);
-    const nm = await nameMap(env, [...mem.map((m) => m.customer_id), ...rows.map((r) => r.from_customer).filter(Boolean)]);
-    return { ok: true, group: { id: g.id, name: g.name }, members: mem.filter((m) => !m.left_at).map((m) => ({ id: m.customer_id === customer_id ? "me" : undefined, name: m.customer_id === customer_id ? "あなた" : nm[m.customer_id] || "受講生" })),
+    const nm = await nameMap(env, rows.map((r) => r.from_customer).filter(Boolean), "student");
+    const me = nicks ? await nicks.nickname(env, customer_id) : "";
+    if (me) nm[customer_id] = me;
+    return { ok: true, group: { id: g.id, name: g.name }, members: mem.filter((m) => !m.left_at).length, me: { nickname: me },
       messages: buildView(rows, mem, nm, customer_id), reactions: REACTIONS };
   }
 

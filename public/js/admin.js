@@ -375,6 +375,7 @@ async function detail(id) {
     <section class="card" data-pane="ent"><div id="ent-box" class="ent-box"></div></section>
     <section class="card" data-pane="overview">
       <dl class="kv">
+        ${r.names ? `<dt>名前</dt><dd>本名 ${esc(r.names.real || "—")}・ニックネーム ${esc(r.names.nickname || "まだ無い")}${r.names.line.length ? "・LINE 名 " + r.names.line.map((l) => esc(l.name || "（読めない）")).join("、") : ""} <span class="note">（ニックネームはチャットの右のカードで直せます）</span></dd>` : ""}
         <dt>登録した日</dt><dd>${esc(dayOf(p.created_at))}・流入元 ${esc(SOURCE_LABEL[p.source] || p.source)}</dd>
         <dt>最後に動いた</dt><dd>${esc(ago(p.last_event_at))}</dd>
         <dt>ログイン</dt><dd>${p.login_count || 0} 回・教材を開いた ${p.lesson_view_count || 0} 回</dd>

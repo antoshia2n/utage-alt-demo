@@ -279,6 +279,8 @@ export function makeLine(h) {
     const accs = ((await settings(env)).accounts || []).map((x) => x.account);
     const out = [];
     for (const account of accs) { const { byPerson } = await links(env, account); if (byPerson.has(person_id)) out.push({ account, user: byPerson.get(person_id) }); }
+    // C2b-2：LINE 名（表示名）も添える（鍵があるときだけ・読めなければ空）
+    for (const l of out) { try { l.name = env[tokenName(l.account)] ? (await profileNames(env, l.account, [l.user])).get(l.user) || "" : ""; } catch (_) { l.name = ""; } }
     return { accounts: accs, links: out };
   }
   // 画面から手で結ぶ（user）・外す（unlink）。ほかの人に結ばれた番号は断る（先にその人で外す）

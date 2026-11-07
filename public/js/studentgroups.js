@@ -1,7 +1,8 @@
 // チャットの便 C2b（2026-11-07 Naoki OK 12:48・見本 https://claude.ai/artifact/Rpu6FQZSs76gixu6VDeQ2w）：生徒の画面の「グループ」。
 //  ・部屋（添削の画面）の 3 つ目の枠。入っているグループの一覧 → 1 つのグループ → スレッド、の 3 段（← で戻る）
 //  ・送れるのは文と画像（4 枚まで）。メッセージを長押し（パソコンは右クリック）でスタンプ・スレッドで返信・コピー
-//  ・見えるのは入っているグループだけ。ほかの人のメールは出ない（名前だけ）
+//  ・見えるのは入っているグループだけ。ほかの人はニックネームだけ（本名もメールも出ない）
+//  ・C2b-2：初めて送るときにニックネームを決める（あとで「ニックネーム」から変えられる）
 import { api, esc, fmtTime, authImage, shrinkImage } from "/js/common.js";
 
 const EMO = ["👍", "❤️", "😂", "🙏", "🔥", "👀"];
@@ -9,7 +10,7 @@ const COL = ["#b45309", "#7c3aed", "#0f766e", "#be123c", "#1d4ed8", "#4d7c0f", "
 const hash = (s) => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) | 0; return Math.abs(h); };
 const pad = (n) => String(n).padStart(2, "0");
 const hm = (iso) => { const d = new Date(iso); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
-const ERR = { not_found: "グループが見つかりませんでした（閉じられたかもしれません）", not_member: "このグループには入っていません", empty: "文か画像を入れてください", too_long: "長すぎます（8000 字まで）", bad_image: "画像を送れませんでした", bad_thread: "元のメッセージが見つかりません" };
+const ERR = { need_nickname: "先にニックネームを決めてください", bad_nickname: "ニックネームは 20 字までです（メールや < > は使えません）", not_found: "グループが見つかりませんでした（アーカイブされたかもしれません）", not_member: "このグループのメンバーではありません", empty: "文か画像を入れてください", too_long: "長すぎます（8000 字まで）", bad_image: "画像を送れませんでした", bad_thread: "元のメッセージが見つかりません" };
 
 const CSS = `
 #group-box{--g:#0f766e}
@@ -65,9 +66,9 @@ export function setupGroups(token, { onUnread } = {}) {
     list = r.groups; if (onUnread) onUnread(r.unread || 0);
     if (view !== "list") return;
     box.innerHTML = list.length ? list.map((g) => `<button class="g-row" type="button" data-g="${g.id}"><span class="g-av" style="background:#0f766e" aria-hidden="true">${esc(g.name.slice(0, 1))}</span>
-      <span class="g-t"><b>${esc(g.name)} <span class="note" style="font-weight:400;font-size:12px">（${g.members + 1} 人）</span></b><small>${g.last_text ? esc(g.last_name) + "：" + esc(g.last_text) : "まだメッセージはありません"}</small></span>
+      <span class="g-t"><b>${esc(g.name)} <span class="note" style="font-weight:400;font-size:12px">（${g.members} 人）</span></b><small>${g.last_text ? esc(g.last_name) + "：" + esc(g.last_text) : "まだメッセージはありません"}</small></span>
       <span class="g-r"><time>${g.last_at ? esc(hm(g.last_at)) : ""}</time>${g.unread ? `<span class="g-n" aria-label="新着 ${g.unread}">${g.unread}</span>` : ""}</span></button>`).join("")
-      : '<div class="empty note">まだグループに入っていません。シアニンがグループに入れると、ここに出ます。</div>';
+      : '<div class="empty note">まだグループに参加していません。シアニンから招待されると、ここに出ます。</div>';
     box.querySelectorAll("[data-g]").forEach((b) => b.addEventListener("click", () => openGroup(b.dataset.g)));
   }
 
@@ -95,12 +96,13 @@ export function setupGroups(token, { onUnread } = {}) {
       ? mHtml(tm, false) + `<div class="g-sep">返信 ${tm.reply_count} 件</div>` + tm.replies.map((x) => mHtml(x, false)).join("")
       : data.messages.map((m) => { const d = new Date(m.at), k = `${d.getMonth() + 1}/${d.getDate()}`; const h = k !== last ? `<div class="g-day">${k}</div>` : ""; last = k; return h + mHtml(m, true); }).join("") || '<div class="empty note">まだメッセージはありません。</div>';
     box.innerHTML = `<div class="g-head"><button class="g-back" type="button" id="g-back" aria-label="${tm ? "グループへ戻る" : "グループの一覧へ戻る"}">‹</button>
-      <h3>${tm ? "スレッド" : esc(data.group.name)}<small>${tm ? esc(data.group.name) : `${data.members.length} 人とシアニン`}</small></h3></div>
+      <h3>${tm ? "スレッド" : esc(data.group.name)}<small>${tm ? esc(data.group.name) : `メンバー ${data.members} 人`}・<button class="link" type="button" id="g-nick">ニックネーム：${esc(data.me.nickname || "未設定")}</button></small></h3></div>
       <div class="g-room" id="g-room">${body}</div>
       <div class="g-thumbs" id="g-thumbs"></div>
       <form class="g-comp" id="g-comp">${tm ? "" : '<label class="g-ib" aria-label="画像を足す">📷<input id="g-pick" type="file" accept="image/*" multiple hidden></label>'}
         <label for="g-text" class="sr">${tm ? "スレッドに返信" : "メッセージ"}</label><textarea id="g-text" rows="1" maxlength="8000" placeholder="${tm ? "スレッドに返信" : "メッセージ"}"></textarea>
         <button class="g-ib send" type="submit" aria-label="送る">➤</button></form><p class="note" id="g-status" aria-live="polite"></p>`;
+    document.getElementById("g-nick").addEventListener("click", () => nickDlg());
     document.getElementById("g-back").addEventListener("click", () => { if (tm) { thread = null; draw(); } else { view = "list"; gid = null; data = null; pending = []; loadList(); } });
     const room = document.getElementById("g-room");
     room.querySelectorAll("[data-th]").forEach((b) => b.addEventListener("click", () => { thread = Number(b.dataset.th); draw(); document.getElementById("g-text").focus(); }));
@@ -129,6 +131,7 @@ export function setupGroups(token, { onUnread } = {}) {
     if (busy) return;
     const text = document.getElementById("g-text").value.trim();
     if (!text && !pending.length) { say("文か画像を入れてください"); return; }
+    if (!data.me.nickname) { const ok = await nickDlg(true); if (!ok) return; }
     busy = true;
     try {
       const keys = [];
@@ -145,6 +148,34 @@ export function setupGroups(token, { onUnread } = {}) {
       await openGroup(gid, true);
       document.getElementById("g-text").focus();
     } catch (err) { say(err.message); } finally { busy = false; }
+  }
+  // ニックネームを決める窓（初めて送るとき・ヘッダーから）。決めたら true
+  function nickDlg(first) {
+    return new Promise((done) => {
+      const opener = document.activeElement;
+      const bg = document.createElement("div"); bg.className = "g-sheet-bg";
+      bg.innerHTML = `<div class="g-sheet" role="dialog" aria-modal="true" aria-labelledby="g-nk-h" style="padding:18px 20px calc(18px + env(safe-area-inset-bottom))">
+        <h3 id="g-nk-h" style="margin:0 0 6px">${first ? "グループで使うニックネームを決めてください" : "ニックネームを変える"}</h3>
+        <p class="note" style="margin:0 0 10px">グループのほかのメンバーには、この名前だけが表示されます（本名は表示されません）。あとで変えられます。</p>
+        <label for="g-nk" class="sr">ニックネーム</label><input id="g-nk" maxlength="20" value="${esc(data.me.nickname || "")}" placeholder="例 みさき" style="width:100%;font-size:16px;padding:10px 12px;border:1px solid var(--line);border-radius:10px">
+        <p class="note" id="g-nk-err" role="alert" style="color:#b91c1c"></p>
+        <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn ghost" type="button" data-x>キャンセル</button><button class="btn" type="button" data-ok>決める</button></div></div>`;
+      document.body.appendChild(bg);
+      const close = (v) => { bg.remove(); if (opener && opener.isConnected) opener.focus(); done(v); };
+      bg.querySelector("[data-x]").addEventListener("click", () => close(false));
+      bg.addEventListener("click", (e) => { if (e.target === bg) close(false); });
+      bg.addEventListener("keydown", (e) => { if (e.key === "Escape") close(false); if (e.key === "Enter" && e.target.id === "g-nk") { e.preventDefault(); bg.querySelector("[data-ok]").click(); } });
+      bg.querySelector("[data-ok]").addEventListener("click", async () => {
+        const v = bg.querySelector("#g-nk").value.trim();
+        if (!v) { bg.querySelector("#g-nk-err").textContent = "ニックネームを入れてください"; return; }
+        const r = await api("/api/room/nickname", { method: "POST", token, body: { nickname: v } });
+        if (!r.ok) { bg.querySelector("#g-nk-err").textContent = errText(r); return; }
+        data.me.nickname = r.nickname;
+        const b = document.getElementById("g-nick"); if (b) b.textContent = "ニックネーム：" + r.nickname;
+        close(true);
+      });
+      bg.querySelector("#g-nk").focus();
+    });
   }
   async function react(id, emoji) {
     const r = await api(`/api/room/groups/${gid}/react`, { method: "POST", token, body: { message_id: id, emoji } });
