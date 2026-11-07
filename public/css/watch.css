@@ -70,7 +70,7 @@ body.student .wt-chips button[aria-pressed=true] { background: var(--ink); color
 body.student .wt-grp { border-bottom: 1px solid var(--line); }
 body.student .wt-gh { width: 100%; display: flex; align-items: center; gap: 6px; padding: 12px 14px; background: none; border: 0; cursor: pointer; text-align: left; font-weight: 600; font-size: 13px; }
 body.student .wt-gh:hover { background: var(--soft); }
-body.student .wt-car { width: 14px; color: var(--muted); font-size: 11px; }
+body.student .wt-car { width: 14px; color: var(--muted); font-size: 12px; }
 body.student .wt-gt { flex: 1; min-width: 0; }
 body.student .wt-gc { font-size: 12px; color: var(--muted); font-weight: 500; font-variant-numeric: tabular-nums; }
 body.student .wt-les { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 9px 14px 9px 11px; border-left: 3px solid transparent; color: inherit; text-decoration: none; }
@@ -83,7 +83,7 @@ body.student .wt-lt { display: flex; flex-direction: column; min-width: 0; }
 body.student .wt-lname { font-size: 13px; line-height: 1.5; }
 body.student .wt-les.on .wt-lname { font-weight: 600; }
 body.student .wt-lmeta { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
-body.student .wt-lmeta .wt-tag { margin: 2px 0 0 6px; line-height: 18px; font-size: 11px; }
+body.student .wt-lmeta .wt-tag { margin: 2px 0 0 6px; line-height: 18px; font-size: 12px; }
 body.student .wt-st { color: var(--accent); margin-top: 2px; }
 body.student .wt-st svg { width: 15px; height: 15px; fill: currentColor; }
 

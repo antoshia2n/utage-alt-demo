@@ -224,8 +224,8 @@ body { font-family: "Geist", "Noto Sans JP", "Hiragino Sans", "Hiragino Kaku Got
 .bt-wkwrap { border: 1px solid var(--line); border-radius: 12px; overflow: auto; max-height: 520px; user-select: none; -webkit-user-select: none; touch-action: none; }
 .bt-wkg { display: grid; grid-template-columns: 52px repeat(7, minmax(56px, 1fr)); min-width: 480px; }
 .bt-wkg .hd { position: sticky; top: 0; z-index: 1; background: var(--surface); border-bottom: 1px solid var(--line); text-align: center; padding: 8px 0; font-weight: 600; font-size: 13px; }
-.bt-wkg .hd small { display: block; font-weight: 400; color: var(--muted); font-size: 11px; }
-.bt-wkg .tm { font-size: 11px; color: var(--muted); text-align: right; padding: 0 6px; height: 22px; line-height: 22px; border-right: 1px solid var(--line); }
+.bt-wkg .hd small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; }
+.bt-wkg .tm { font-size: 12px; color: var(--muted); text-align: right; padding: 0 6px; height: 22px; line-height: 22px; border-right: 1px solid var(--line); }
 .bt-wkg .cell { height: 22px; border: 0; border-right: 1px solid color-mix(in srgb, var(--line) 55%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent); background: var(--surface); cursor: crosshair; padding: 0; }
 .bt-wkg .cell.hr { border-bottom-color: var(--line); }
 .bt-wkg .cell.on { background: var(--accent-soft); border-bottom-color: color-mix(in srgb, var(--accent) 35%, transparent); }
@@ -239,9 +239,9 @@ body { font-family: "Geist", "Noto Sans JP", "Hiragino Sans", "Hiragino Kaku Got
 .bt-ic:hover:not(:disabled) { color: var(--ink); border-color: var(--field, #a39a90); }
 .bt-ic:disabled { opacity: .35; cursor: default; }
 .bt-mini { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
-.bt-mini .wd { text-align: center; font-size: 11px; color: var(--muted); }
+.bt-mini .wd { text-align: center; font-size: 12px; color: var(--muted); }
 .bt-mini .md { min-height: 42px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); cursor: pointer; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 0; }
-.bt-mini .md small { font-size: 10px; color: var(--accent); }
+.bt-mini .md small { font-size: 12px; color: var(--accent); }
 .bt-mini .md.x { background: repeating-linear-gradient(45deg, var(--bg), var(--bg) 5px, var(--line) 5px, var(--line) 10px); color: var(--muted); }
 .bt-mini .md.past, .bt-mini .md.blank { background: transparent; border-color: transparent; color: var(--muted); opacity: .5; cursor: default; }
 .bt-ov { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
@@ -265,7 +265,7 @@ body { font-family: "Geist", "Noto Sans JP", "Hiragino Sans", "Hiragino Kaku Got
 .bt-qi.open .bt-qrow { background: var(--accent-soft); }
 .bt-qrow .bt-qh { background: transparent; flex: 1; }
 .bt-qrow .grip { width: 28px; display: grid; place-items: center; color: var(--muted); cursor: grab; font-size: 12px; letter-spacing: -2px; flex: none; }
-.bt-qi.fixed .grip { cursor: default; letter-spacing: 0; font-size: 11px; }
+.bt-qi.fixed .grip { cursor: default; letter-spacing: 0; font-size: 12px; }
 .bt-qi.fixed .bt-qh .lb { font-weight: 400; color: var(--muted); }
 .bt-qi.drag { opacity: .45; }
 .bt-qi.over { box-shadow: inset 0 2px 0 var(--accent); }
@@ -337,7 +337,7 @@ body { font-family: "Geist", "Noto Sans JP", "Hiragino Sans", "Hiragino Kaku Got
 .bt-phone { border: 1px solid var(--line); border-radius: 16px; overflow: hidden; background: var(--surface); }
 .bt-phone .ph-h { padding: 12px 14px; border-bottom: 1px solid var(--line); background: var(--bg); }
 .bt-phone .ph-h b { display: block; font-size: 14px; }
-.bt-phone .ph-h span { font-size: 11px; color: var(--muted); }
+.bt-phone .ph-h span { font-size: 12px; color: var(--muted); }
 .bt-phone .ph-b { padding: 14px; font-size: 13px; line-height: 1.8; white-space: pre-wrap; word-break: break-word; max-height: 460px; overflow: auto; }
 @media (max-width: 900px) { .bt-mcols { grid-template-columns: 1fr; } }
 /* 2026-11-06 予約の便⑤：Google カレンダー */
