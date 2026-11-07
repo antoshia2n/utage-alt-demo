@@ -23,6 +23,7 @@ const NL = String.fromCharCode(10);
 const QUOTE = String.fromCharCode(34);
 const WARM = [20, 40, 80, 150, 250, 400, 600, 1000];
 const WARM_AFTER = 2000;
+const WARM_DAY_MIN = 10; // この数以上送った日だけを、温める段取りの 1 日として数える
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const UUID_RE = /^[0-9a-f-]{36}$/i;
 // 便 11b：ボタンの書き方 [[文字|住所]] の閉じ括弧を住所に含めないため、] も止める
@@ -91,11 +92,15 @@ export function makeDeliver(h) {
   }
 
   // ---------- 送信元を温める（1 日の上限） ----------
+  // 何日目かは「暦の日数」ではなく「WARM_DAY_MIN 通以上送った日の数」で数える。
+  // 試しの 1 通だけの日や、送らなかった日は数えない（試しで上限が先に進んでしまうのを防ぐ）。
   async function warmState(env) {
-    const first = await db(env, "GET", "events?select=occurred_at&type=eq.email_sent&payload->>kind=in.(step,broadcast)&order=id.asc&limit=1");
     const since = jstMidnight().toISOString();
     const today = await db(env, "GET", `events?select=id&type=eq.email_sent&payload->>kind=in.(step,broadcast)&occurred_at=gte.${encodeURIComponent(since)}&limit=10000`);
-    const day = first.length ? Math.floor((jstMidnight().getTime() - jstMidnight(new Date(first[0].occurred_at).getTime()).getTime()) / 864e5) : 0;
+    const past = await db(env, "GET", `events?select=occurred_at&type=eq.email_sent&payload->>kind=in.(step,broadcast)&occurred_at=lt.${encodeURIComponent(since)}&order=id.desc&limit=20000`);
+    const perDay = new Map();
+    for (const e of past || []) { const k = jstMidnight(new Date(e.occurred_at).getTime()).getTime(); perDay.set(k, (perDay.get(k) || 0) + 1); }
+    const day = [...perDay.values()].filter((n) => n >= WARM_DAY_MIN).length;
     const cap = day < WARM.length ? WARM[day] : WARM_AFTER;
     return { day, cap, sent_today: today.length, left: Math.max(0, cap - today.length) };
   }
