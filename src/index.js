@@ -1056,7 +1056,10 @@ async function handleApi(request, env, url) {
     const stop = await guardPublic(request, env, "line_link", { ip: "public", email: body.email || "" });
     if (stop) return stop;
     const r = await line.link(env, body);
-    return json(r, r.ok ? 200 : 400);
+    // 便 T3：結ばれたら、登録直後の LINE（待ち 0 時間のステップ）をすぐ送る。失敗しても毎時の定時で送り直す
+    if (r.ok && !r.already && r.person_id) { try { await deliver.runNow(env, { trigger: "line_linked", customer_id: r.person_id }); } catch (e) { await logInbound(env, "line_link_now", { }, { ok: false, error: String(e && e.message || e).slice(0, 200) }, 500); } }
+    const { person_id, ...pub } = r;
+    return json(pub, r.ok ? 200 : 400);
   }
 
   // 便 11a：公開のフォーム（ログイン不要）。/form?f=slug の頁がここを読む・送る

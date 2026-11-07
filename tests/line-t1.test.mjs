@@ -166,3 +166,19 @@ test("表の決まり：きっかけ line_linked と動き send_line を足す S
   assert.match(sql, /'line_linked'/);
   assert.match(sql, /'send_line'/);
 });
+
+test("便 T3：結ばれた直後に、待ち 0 時間の LINE だけをその人の分だけ送る（1 日後のものとほかの人は動かさない）", async () => {
+  const st = setup();
+  await st.deliver.setStep(env, { name: "登録直後", trigger: "line_linked", action: "send_line", action_args: { account: "shianin" }, body: "特典", active: true }, "test");
+  await st.deliver.setStep(env, { name: "1日後", trigger: "line_linked", action: "send_line", action_args: { account: "shianin" }, body: "1日後", delay_hours: 24, active: true }, "test");
+  wake(st);
+  await link(st, A, UA);
+  await link(st, B, UB);
+  st.table("events").filter((e) => e.type === "line_linked").forEach((e) => { e.occurred_at = new Date(Date.now() - 25 * 3600e3).toISOString(); });
+  const r = await st.deliver.runNow(env, { trigger: "line_linked", customer_id: A });
+  assert.equal(r.ok, true);
+  assert.deepEqual(st.pushes.map((p) => [p.to, p.messages[0].text]), [[UA, "特典"]]);
+  await st.deliver.runNow(env, { trigger: "line_linked", customer_id: A });
+  assert.equal(st.pushes.length, 1, "同じ人へ 2 回送らない");
+  assert.equal((await st.deliver.runNow(env, { trigger: "nai", customer_id: A })).error, "bad_args");
+});

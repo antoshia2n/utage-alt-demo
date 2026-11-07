@@ -348,14 +348,16 @@ export function makeDeliver(h) {
       .split("{{product}}").join(p.product_name || p.product_id || "").split("{{label}}").join(p.label || "").split("{{url}}").join(p.url || "");
   }
 
-  async function runSteps(env, left) {
+  // only（便 T3）：{ trigger, customer_id } を渡すと、そのきっかけで待ち 0 時間のステップを、その人の分だけ動かす（毎時を待たない）
+  async function runSteps(env, left, only = null) {
     const out = { checked: 0, sent: 0, blocked: 0, failed: 0, waiting_cap: 0, notified: 0, labeled: 0, skipped: 0, moved: 0, fields_set: 0 };
     const steps = await db(env, "GET", "b_steps?select=*&active=eq.true&order=sort.asc,id.asc");
     for (const s of steps) {
       if (!TRIGGERS[s.trigger]) continue;
+      if (only && (s.trigger !== only.trigger || Number(s.delay_hours) > 0)) continue;
       const action = s.action || "send_email";
       const due = new Date(Date.now() - (Number(s.delay_hours) || 0) * 3600e3).toISOString();
-      const triggers = await db(env, "GET", triggerQuery(s, due));
+      const triggers = (await db(env, "GET", triggerQuery(s, due))).filter((t) => !only || t.customer_id === only.customer_id);
       if (!triggers.length) continue;
       const done = await db(env, "GET", `events?select=type,payload&type=in.(${DONE_TYPES.join(",")})&payload->>step_id=eq.${s.id}&limit=10000`);
       const fails = new Map(), finished = new Set();
@@ -569,6 +571,14 @@ export function makeDeliver(h) {
     return out;
   }
 
+  // 便 T3：LINE と結ばれた直後に、待ち 0 時間のステップ（登録直後の特典など）をその人の分だけ動かす。一斉配信は動かさない
+  async function runNow(env, { trigger, customer_id }) {
+    if (!TRIGGERS[trigger] || !UUID_RE.test(String(customer_id || ""))) return { ok: false, error: "bad_args" };
+    const warm = await warmState(env);
+    const steps = await runSteps(env, { n: warm.left }, { trigger, customer_id: String(customer_id) });
+    return { ok: true, steps };
+  }
+
   // 定時の処理（と、シアニン用の画面の「いま送る」）。ステップが先、一斉配信が後
   async function run(env) {
     const warm = await warmState(env);
@@ -681,5 +691,5 @@ export function makeDeliver(h) {
     return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
   }
 
-  return { previewAudience, listSteps, setStep, listBroadcasts, draftBroadcast, queueBroadcast, cancelBroadcast, run, warmState, handleClick, handleOpen, handleAuthEmail, normFilter, triggerQuery, audience };
+  return { previewAudience, listSteps, setStep, listBroadcasts, draftBroadcast, queueBroadcast, cancelBroadcast, run, runNow, warmState, handleClick, handleOpen, handleAuthEmail, normFilter, triggerQuery, audience };
 }
