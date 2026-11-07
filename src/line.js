@@ -23,6 +23,18 @@ export function inviteOnFollow(env, account) {
   return list.includes(account);
 }
 export const FORWARD_PREFIX = "line_forward_";
+// 結びの出来事（古い順）→ 番号 → 人・人 → 番号
+export function linkMaps(rows) {
+  const byUser = new Map(), byPerson = new Map();
+  for (const r of rows || []) {
+    const u = r.payload && r.payload.user; if (!u) continue;
+    if (r.type === "line_unlinked") { if (byUser.get(u) === r.customer_id) { byUser.delete(u); byPerson.delete(r.customer_id); } continue; }
+    const oldP = byUser.get(u); if (oldP && oldP !== r.customer_id) byPerson.delete(oldP);
+    const oldU = byPerson.get(r.customer_id); if (oldU && oldU !== u) byUser.delete(oldU);
+    byUser.set(u, r.customer_id); byPerson.set(r.customer_id, u);
+  }
+  return { byUser, byPerson };
+}
 const URL_RE = /^https:[/][/][^\s<>"']{4,490}$/;
 const FORWARD_TIMEOUT_MS = 10000;
 const TEXT_KEEP = 1000;
@@ -216,11 +228,10 @@ export function makeLine(h) {
   }
 
   // 結ばれている人：LINE の番号 → 台帳の人（最後に結んだもの）
+  // チャットの便 C2a-2：画面から手で結ぶ・外す（line_unlinked）。結び直したら、前の人と前の番号の結びは外れる（1 つの番号は 1 人だけ・1 人は 1 アカウントに 1 つ）
   async function links(env, account) {
-    const rows = await db(env, "GET", `events?select=customer_id,payload,occurred_at&type=eq.line_linked&payload->>account=eq.${account}&order=id.asc&limit=20000`);
-    const byUser = new Map(), byPerson = new Map();
-    for (const r of rows) { const u = r.payload && r.payload.user; if (!u) continue; byUser.set(u, r.customer_id); byPerson.set(r.customer_id, u); }
-    return { byUser, byPerson };
+    const rows = await db(env, "GET", `events?select=id,customer_id,type,payload,occurred_at&type=in.(line_linked,line_unlinked)&payload->>account=eq.${account}&order=id.asc&limit=20000`);
+    return linkMaps(rows);
   }
   // 友だちの状態（受け口の記録から）：最後が unfollow ならブロック
   async function friendState(env, account) {
@@ -261,6 +272,41 @@ export function makeLine(h) {
     const already = byUser.get(p.user) === reg.id;
     if (!already) await h.addEvent(env, reg.id, "line_linked", { account: p.account, user: p.user }, "site");
     return { ok: true, linked: true, already };
+  }
+
+  // チャットの便 C2a-2：1 人が結ばれている LINE（アカウントごと）
+  async function personLinks(env, person_id) {
+    const accs = ((await settings(env)).accounts || []).map((x) => x.account);
+    const out = [];
+    for (const account of accs) { const { byPerson } = await links(env, account); if (byPerson.has(person_id)) out.push({ account, user: byPerson.get(person_id) }); }
+    return { accounts: accs, links: out };
+  }
+  // 画面から手で結ぶ（user）・外す（unlink）。ほかの人に結ばれた番号は断る（先にその人で外す）
+  async function linkManual(env, { person_id, account, user, unlink }, actor) {
+    if (!/^[0-9a-f-]{36}$/i.test(String(person_id || ""))) return { ok: false, error: "bad_person_id" };
+    if (!ACCOUNT_RE.test(String(account || "")) || !((await settings(env)).accounts || []).some((x) => x.account === account)) return { ok: false, error: "bad_account" };
+    const { byUser, byPerson } = await links(env, account);
+    const who = String(actor || "admin").slice(0, 120), ea = actor === "mcp" ? "mcp" : "admin";
+    if (unlink === true || unlink === "true") {
+      const u = byPerson.get(person_id);
+      if (!u) return { ok: true, unlinked: false };
+      await h.addEvent(env, person_id, "line_unlinked", { account, user: u, by: who }, ea);
+      await logInbound(env, "line_link_manual", { action: "unlink", account, person_id, by: who }, { ok: true }, 200);
+      return { ok: true, unlinked: true };
+    }
+    const USER = /^U[0-9a-f]{32}$/;
+    if (!USER.test(String(user || ""))) return { ok: false, error: "bad_user" };
+    const other = byUser.get(user);
+    if (other && other !== person_id) {
+      const [p] = await db(env, "GET", `customer_summary?select=id,name,email&id=eq.${other}`);
+      return { ok: false, error: "linked_to_other", other: p ? { id: p.id, name: p.name || p.email || "" } : { id: other } };
+    }
+    if (other === person_id) return { ok: true, linked: true, already: true };
+    const [c] = await db(env, "GET", `customers?select=id&id=eq.${person_id}`);
+    if (!c) return { ok: true, found: false };
+    await h.addEvent(env, person_id, "line_linked", { account, user, by: who, manual: true }, ea);
+    await logInbound(env, "line_link_manual", { action: "link", account, person_id, by: who }, { ok: true }, 200);
+    return { ok: true, linked: true };
   }
 
   // AI：友だちの一覧（結ばれた人の名前とメール・ブロック）
@@ -616,7 +662,7 @@ export function makeLine(h) {
       note: "utage_links は押すと UTAGE の住所へ行く場所の数（解約で切れる）。postbacks は押した知らせを受けて動く場所の数（いまは UTAGE が受けている）" };
   }
 
-  return { handleWebhook, settings, setForward, inbound, forwardUrl, link, friends, send, quota, sendLinkInvite, board, thread, reply, broadcast,
+  return { handleWebhook, settings, setForward, inbound, forwardUrl, link, friends, send, quota, sendLinkInvite, board, thread, reply, broadcast, personLinks, linkManual,
     listReplies, saveReply, setReplyActive, listTemplates, saveTemplate, autoReply, richMenus };
 }
 

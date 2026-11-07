@@ -180,3 +180,24 @@ mark{background:var(--abg);color:inherit;border-radius:3px}
 .menu .mh2{font-size:11.5px;color:var(--faint);font-weight:700;padding:4px 10px 0}
 .menu button[aria-disabled=true]{color:var(--muted)}
 .dlg .opt[aria-pressed=true]{background:var(--abg);color:var(--ink);font-weight:700}
+/* C2a-2：サイト｜LINE の切り替え */
+.seg{display:inline-flex;border:1px solid var(--field);border-radius:9px;overflow:hidden;margin-left:6px;flex-shrink:0}
+.seg button{border:0;background:var(--panel);padding:5px 12px;font-size:13px;cursor:pointer;min-height:30px;color:var(--muted);font-weight:600;display:inline-flex;gap:4px;align-items:center}
+.seg button[aria-selected=true]{background:var(--abg);color:var(--ink)}
+.seg button[data-ch=line][aria-selected=true]{background:#e7f6ec;color:#15803d}
+.seg .un{font-size:11px;font-weight:400;color:var(--muted)}
+.mh small a{color:var(--ink);text-decoration:none;font-weight:600}.mh small a:hover{text-decoration:underline}
+.lbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 16px;font-size:12.5px;color:var(--muted);background:var(--panel);border-bottom:1px solid var(--line)}
+.lbar .lk{margin-left:auto}
+.lg2{background:#06c755;color:#fff;font-weight:800;font-size:10.5px;border-radius:5px;padding:1px 5px}
+.lmsg.me .bub{background:#e7f6ec;border-color:#bfe5cb}
+.comp.linemode{border-top:2px solid #06c755}
+.btn.pri.line{background:#15803d;border-color:#15803d}
+.pick{max-width:560px;margin:8px auto;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+.pick h2{font-size:16px;margin:0 0 6px}.pick p{font-size:13px;color:var(--muted);margin:0 0 10px}
+.pick label{display:block;font-size:12.5px;font-weight:700;margin:10px 0 4px}
+.pick input,.pick select{width:100%;box-sizing:border-box;border:1px solid var(--field);border-radius:8px;padding:7px 10px;background:var(--panel);color:var(--fg);font:inherit}
+.pick .opt{display:flex;align-items:center;gap:10px;width:100%;border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:8px 10px;margin-top:6px;cursor:pointer;text-align:left;min-height:48px;color:var(--fg)}
+.pick .opt:hover{background:var(--soft)}.pick .opt b{display:block;font-size:13.5px}.pick .opt small{display:block;color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (prefers-color-scheme:dark){.seg button[data-ch=line][aria-selected=true],.lmsg.me .bub{background:rgba(6,199,85,.14);color:inherit;border-color:rgba(6,199,85,.3)}}
+@media (max-width:900px){.seg{margin-left:0}.mh{flex-wrap:wrap}}

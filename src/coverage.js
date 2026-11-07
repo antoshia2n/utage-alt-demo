@@ -143,7 +143,7 @@ export const COVERAGE = {
   "GET /api/admin/chat/people": ["find_person"],
   "GET /api/admin/chat/search": ["search_chats"],
   "POST /api/admin/chat/folders": ["save_chat_folder"],
-  "MATCH /^[/]api[/]admin[/]chat[/]([0-9a-f-]{36})(?:[/](note|later|forward|task|folder|keep|pin))?$/i": ["get_chat", "add_chat_note", "set_chat_later", "forward_chat", "add_chat_task", "set_chat_folder", "keep_chat_item", "pin_chat_message"],
+  "MATCH /^[/]api[/]admin[/]chat[/]([0-9a-f-]{36})(?:[/](note|later|forward|task|folder|keep|line))?$/i": ["get_chat", "add_chat_note", "set_chat_later", "forward_chat", "add_chat_task", "set_chat_folder", "keep_chat_item", "link_chat_line"],
   "MATCH /^\\/api\\/admin\\/rooms\\/([0-9a-f-]{36})$/i": ["get_room"],
   "MATCH /^\\/api\\/admin\\/rooms\\/([0-9a-f-]{36})\\/reply$/i": ["return_correction"],
   "MATCH /^[/]api[/]admin[/]rooms[/]([0-9a-f-]{36})[/]message$/i": ["send_chat"],

@@ -89,17 +89,13 @@ test("資料：リンクと画像は自動で集まる（同じ住所は 1 つ�
   assert.ok(!v.some((x) => x.kind === "saved"));
 });
 
-test("資料に入れる・顧客管理に残す：ほかの人のメッセージは断る。残すのは 1 回だけ。get に出る", async () => {
-  const { s, chat, addEvent } = setup();
+test("資料に入れる：ほかの人のメッセージは断る。get の資料に出る。外すと消える", async () => {
+  const { chat, addEvent } = setup();
   const m = await addEvent({}, A, "room_chat", { from: "student", text: "質問があります" });
   const other = await addEvent({}, B, "room_chat", { from: "student", text: "森の" });
   assert.equal((await chat.keep({}, { person_id: A, event_id: other.id })).error, "message_not_found");
   assert.ok((await chat.keep({}, { person_id: A, event_id: m.id })).kept);
-  assert.ok((await chat.pin({}, { person_id: A, event_id: m.id })).ok);
-  assert.equal((await chat.pin({}, { person_id: A, event_id: m.id })).already, true);
-  assert.equal(s.table("events").filter((e) => e.type === "chat_pin").length, 1);
   const g = await chat.get({}, { person_id: A });
-  assert.deepEqual(g.pins, [m.id]);
   assert.equal(g.vault[0].kind, "saved");
   assert.equal(g.vault[0].from, "生徒");
   assert.equal((await chat.keep({}, { person_id: A, event_id: m.id, off: true })).kept, false);

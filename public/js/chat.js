@@ -5,7 +5,8 @@
 //  ・添削の 3 欄と教材の質問への答えは、今までどおり添削ルームで（ここからは「添削ルームで開く →」で移る）
 //  ・⌘／Ctrl＋K で人を探して開く（部屋の無い人も）・] で右を開閉・? でキーの一覧。右の幅は左端を引いて変えられる（このブラウザに覚える）
 //  ・C2a（2026-11-07）：左のフォルダ（作る・名前・並べ替え・消す・入れる）とフォルダの中で探す・右の「資料」タブ（リンクと画像を自動で集める・資料に入れたもの・探す）
-//    ・右クリックの「資料に入れる」（S）と「連携」（タスクへ・顧客管理に残す）。グループは C2b、「AI」タブは C3
+//    ・右クリックの「資料に入れる」（S）と「連携」（タスクへ）。グループは C2b、「AI」タブは C3
+//  ・C2a-2：見出しの「顧客管理で開く」（詳細へ飛ぶだけ）と「サイト｜LINE」の切り替え。LINE は結ばれた人だけ読めて返せる。結ばれていなければ友だちから選んで結ぶ
 import { api, esc, fmtTime, authImage, EVENT_LABEL } from "/js/common.js";
 
 const COL = ["#b45309", "#7c3aed", "#0f766e", "#be123c", "#1d4ed8", "#4d7c0f", "#0369a1", "#a21caf"];
@@ -20,6 +21,7 @@ const ERR = {
   empty: "空です。中身を書いてください", too_long: "長すぎます（8000 字まで）", bad_until: "後で見る日時が正しくありません（これから先・90 日まで）",
   same_chat: "同じチャットには転送できません", message_not_found: "元のメッセージが見つかりませんでした", no_taskmaster: "TaskMaster につながっていません（設定の確認が要ります）",
   bad_name: "フォルダの名前は 1〜20 字です", name_taken: "同じ名前のフォルダがあります", folders_full: "フォルダがいっぱいです（使っていないものを消すか、名前を短く）", folder_not_found: "そのフォルダは消されています",
+  linked_to_other: "その LINE の友だちは、ほかの人に結ばれています", bad_user: "LINE の友だちの番号が正しくありません", blocked: "ブロックされているので送れません", need_text: "文が空です", no_token: "LINE の鍵がありません（設定の確認が要ります）",
   need_title: "タスクの名前を入れてください", title_too_long: "タスクの名前が長すぎます（300 字まで）", bad_deadline: "期限の形が違います", bad_link_url: "元のメッセージの住所を作れませんでした",
 };
 const hash = (s) => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) | 0; return Math.abs(h); };
@@ -44,7 +46,7 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
   const narrow = () => matchMedia("(max-width:900px)").matches;
 
   let L = null, D = null, cur = null, filter = "all", sideOpen = true, noteMode = false, evOff = new Set(), hits = null, lastFocus = null, menuAt = 0;
-  let fsel = null, tab = "hist", vk = "all", vq = "";
+  let fsel = null, tab = "hist", vk = "all", vq = "", chan = "site", LN = null;
   const fname = (id) => { const f = L && L.folders.find((x) => x.id === id); return f ? f.name : ""; };
   try { const w = localStorage.getItem("chat-rw"); if (w) app.style.setProperty("--rw", w + "px"); } catch (_) {}
   const av = (id, name) => `<span class="av" style="background:${COL[hash(id) % COL.length]}" aria-hidden="true">${esc(String(name || "？").slice(0, 1))}</span>`;
@@ -82,13 +84,15 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
   // ---------- 1 人を開く ----------
   async function openChat(id, focusId) {
     app.classList.remove("leftopen");
+    if (id !== cur) { chan = "site"; LN = null; }
+    if (focusId === "line") { chan = "line"; focusId = null; }
     cur = id; hits = null; drawLeft();
     try { history.replaceState(null, "", `#chat/${id}${focusId ? "/" + focusId : ""}`); } catch (_) {}
     const r = await call("/api/admin/chat/" + id);
     if (!r.ok || !r.found) { $("#mid").innerHTML = `<div class="welcome">読めませんでした（${esc(r.error || "見つかりません")}）</div>`; return; }
     D = r; D.id = id;
     const row = L && L.chats.find((c) => c.person_id === id); if (row) row.unread_for_admin = 0;
-    drawLeft(); drawMid(focusId); drawRight(); setView("chat");
+    drawLeft(); if (chan === "line") await openLineChan(); else drawMid(focusId); drawRight(); setView("chat");
     if (!focusId && !narrow()) $("#comp")?.focus();
     live(`「${D.card.name || D.person.email}」のチャットを開きました`);
   }
@@ -96,7 +100,7 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
   // ---------- 真ん中 ----------
   function items() {
     const done = new Set(D.tasks.map((t) => String(t.event_id)));
-    const kept = new Set(D.vault.filter((v) => v.kind === "saved").map((v) => String(v.event_id))), pinned = new Set((D.pins || []).map(String));
+    const kept = new Set(D.vault.filter((v) => v.kind === "saved").map((v) => String(v.event_id)));
     const its = [];
     for (const m of D.messages) {
       if (m.kind === "chat") its.push({ id: m.id, at: m.at, me: m.from === "cyanin", who: m.from === "cyanin" ? "シアニン" + (m.actor === "mcp" ? "（AI から）" : "") : (D.card.name || "生徒"), text: m.text, images: m.images || [], lesson: m.lesson, reply_to: m.reply_to, task: done.has(String(m.id)) });
@@ -104,7 +108,7 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
       else its.push({ id: m.id, at: m.at, me: true, line: true, who: "シアニン", text: "添削を返した" + (m.comment ? "：" + m.comment.slice(0, 80) : ""), corr: true, task: done.has(String(m.id)) });
     }
     for (const n of D.notes) its.push({ id: n.id, at: n.at, me: true, note: true, who: "シアニン・メモ（自分だけ）", text: n.text, fwd: n.forwarded_from, task: done.has(String(n.id)) });
-    for (const m of its) { m.kept = kept.has(String(m.id)); m.pinned = pinned.has(String(m.id)); }
+    for (const m of its) m.kept = kept.has(String(m.id));
     return its.sort((a, b) => a.id - b.id);
   }
   function msgHtml(m) {
@@ -115,33 +119,129 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
       m.fwd ? `<span class="tag">転送：${esc(m.fwd.name || "")}から</span>` : "",
       m.task ? `<span class="tag">タスク済</span>` : "",
       m.kept ? `<span class="tag">資料</span>` : "",
-      m.pinned ? `<span class="tag">顧客管理に残した</span>` : "",
     ].join("");
     const corrBtn = m.corr || (m.lesson && !m.me) ? `<button class="btn" style="margin-top:4px" data-room="${m.corr ? "corr" : "chat"}">添削ルームで開く →</button>` : "";
     return `<div class="msg ${m.me ? "me" : ""} ${m.note ? "note" : ""} ${m.line ? "line" : ""}" tabindex="0" data-i="${m.id}" aria-label="${esc(m.who)} ${esc(fmtTime(m.at))}：${esc(String(m.text).slice(0, 60))}。選んで T でタスク、F で転送、C でコピー、S で資料、Enter で操作の一覧">
       <span class="hb" role="toolbar" aria-label="このメッセージの操作"><button data-h="task">タスクへ</button><button data-h="keep">${m.kept ? "資料から外す" : "資料へ"}</button><button data-h="fwd">転送</button><button data-h="copy">コピー</button><button data-h="more" aria-label="ほかの操作">…</button></span>
       <div><div class="meta">${esc(m.who)}・${hm(m.at)}</div><div class="bub">${link(m.text)}${m.images && m.images.length ? `<div class="imgs">${m.images.map((k) => `<img data-key="${esc(k)}" alt="送られた画像">`).join("")}</div>` : ""}</div>${tags ? `<div class="tags">${tags}</div>` : ""}${corrBtn}</div></div>`;
   }
-  function drawMid(focusId) {
-    const its = items(); let last = "";
-    const isLater = !!D.later_until;
-    $("#mid").innerHTML = `<div class="mh"><button class="btn back" id="toList" aria-label="一覧へ戻る">←</button><button class="btn md" id="leftBtn" aria-expanded="${app.classList.contains("leftopen")}">一覧</button>${av(D.id, D.card.name)}
-      <div style="min-width:0"><h1>${esc(D.card.name || D.person.email)}</h1><small>${esc(D.card.email)}${isLater ? `・後で（${esc(fmtTime(D.later_until))} まで）` : ""}</small></div><span class="g"></span>
+  // 見出し（サイトと LINE で共通）
+  function headHtml() {
+    const isLater = !!D.later_until, lk = D.line && D.line.links.length;
+    return `<div class="mh"><button class="btn back" id="toList" aria-label="一覧へ戻る">←</button><button class="btn md" id="leftBtn" aria-expanded="${app.classList.contains("leftopen")}">一覧</button>${av(D.id, D.card.name)}
+      <div style="min-width:0"><h1>${esc(D.card.name || D.person.email)}</h1><small>${esc(D.card.email)}${isLater ? `・後で（${esc(fmtTime(D.later_until))} まで）` : ""}・<a href="#person/${D.id}" id="toPerson">顧客管理で開く →</a></small></div>
+      <span class="seg" role="tablist" aria-label="やりとりの場所"><button role="tab" data-ch="site" aria-selected="${chan === "site"}">サイト</button><button role="tab" data-ch="line" aria-selected="${chan === "line"}">LINE${lk ? "" : '<span class="un">未接続</span>'}</button></span><span class="g"></span>
       <button class="btn" id="fbtn" aria-label="フォルダ：${esc(fname(D.folder_id) || "なし")}">${D.folder_id ? "▸ " + esc(fname(D.folder_id)) : "フォルダへ"}</button>
       <button class="btn" id="later">${isLater ? "後でを外す" : "後で"}</button>
-      <button class="btn" id="sideBtn" aria-expanded="${sideOpen}"><span class="lg">${sideOpen ? "右を閉じる" : "右を開く"}</span><span class="sm">顧客と履歴</span></button></div>
-    <div class="msgs" id="msgs">${its.map((m) => { const d = dayOf(m.at); const h = d !== last ? `<div class="day">${d}</div>` : ""; last = d; return h + msgHtml(m); }).join("") || '<p class="welcome">やり取りはまだありません。下から最初のメッセージを送れます。</p>'}</div>
-    <div class="comp ${noteMode ? "notemode" : ""}"><div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap"><span class="mode" role="group" aria-label="書くもの"><button aria-pressed="${!noteMode}" data-m="reply">返信</button><button aria-pressed="${noteMode}" data-m="note">メモ（自分だけ）</button></span><span style="font-size:12px;color:var(--muted)">${noteMode ? "メモは生徒には見えません" : "生徒の画面とスマホに届きます"}</span></div>
-      <label class="sr" for="comp">${noteMode ? "メモ" : "メッセージ"}</label><textarea id="comp" maxlength="8000" placeholder="${noteMode ? "自分だけのメモを書く（生徒には見えない）" : "メッセージを書く"}"></textarea>
-      <div class="row"><span class="g">⌘／Ctrl＋Enter で${noteMode ? "メモを残す" : "送信"}・Enter は改行・<span class="kbd">?</span> でキーの一覧</span><button class="btn pri" id="send">${noteMode ? "メモを残す" : "送信"}</button></div></div>`;
+      <button class="btn" id="sideBtn" aria-expanded="${sideOpen}"><span class="lg">${sideOpen ? "右を閉じる" : "右を開く"}</span><span class="sm">顧客と履歴</span></button></div>`;
+  }
+  function wireHead() {
+    const isLater = !!D.later_until;
     $("#toList").onclick = () => setView("list");
+    $("#toPerson").onclick = (e) => { e.preventDefault(); openPerson(D.id); };
+    $$("[data-ch]").forEach((b) => {
+      b.tabIndex = b.dataset.ch === chan ? 0 : -1;
+      b.onclick = () => switchChan(b.dataset.ch);
+      b.onkeydown = (e) => { if (e.key === "ArrowRight" || e.key === "ArrowLeft") { e.preventDefault(); switchChan(chan === "site" ? "line" : "site"); } };
+    });
     $("#leftBtn").onclick = () => { const o = app.classList.toggle("leftopen"); $("#leftBtn").setAttribute("aria-expanded", o); if (o) ($(".left .ci[aria-current=true]") || $(".left .sv")).focus(); };
     $("#fbtn").onclick = (e) => folderDlg(D.id, e.currentTarget);
     $("#later").onclick = (e) => isLater ? setLater(null, e.currentTarget) : laterDlg(e.currentTarget);
     $("#sideBtn").onclick = () => {
       if (narrow()) { if (app.dataset.v === "side") { setView("chat"); return; } setView("side"); $("#t-hist")?.focus(); return; }
-      sideOpen = !sideOpen; app.classList.toggle("noside", !sideOpen); drawMid(); $("#sideBtn").focus();
+      sideOpen = !sideOpen; app.classList.toggle("noside", !sideOpen); chan === "line" ? drawLine() : drawMid(); $("#sideBtn").focus();
     };
+  }
+  async function switchChan(c) {
+    if (c === chan) return;
+    chan = c;
+    try { history.replaceState(null, "", `#chat/${D.id}${c === "line" ? "/line" : ""}`); } catch (_) {}
+    if (c === "line") await openLineChan(); else drawMid();
+    $(`[data-ch="${c}"]`)?.focus();
+  }
+
+  // ---------- LINE（C2a-2）：結ばれた人のやりとりを読む・返す。結ばれていなければ友だちから選んで結ぶ ----------
+  async function openLineChan() {
+    $("#mid").innerHTML = headHtml() + '<div class="msgs"><p class="welcome">LINE を読んでいます…</p></div>'; wireHead();
+    LN = await call(`/api/admin/chat/${D.id}/line`);
+    if (chan === "line") drawLine();
+  }
+  function drawLine() {
+    if (!LN || !LN.ok) { $("#mid").innerHTML = headHtml() + `<div class="msgs"><p class="welcome">LINE を読めませんでした（${esc((LN && (LN.error || LN.status)) || "")}）</p></div>`; wireHead(); return; }
+    if (!LN.linked) { drawLinkPick(); return; }
+    let last = "";
+    const row = (m) => {
+      if (m.kind === "notice") return `<div class="day">${esc(m.text)}・${hm(m.at)}</div>`;
+      const me = m.from === "me";
+      return `<div class="msg ${me ? "me" : ""} lmsg" tabindex="0" data-lt="${esc(m.text)}"><div><div class="meta">${me ? "シアニン（LINE）" + (m.by === "AI" ? "・AI から" : "") : esc(LN.name || D.card.name || "相手") + "（LINE）"}・${hm(m.at)}</div><div class="bub">${esc(m.text)}</div>${m.ok === false ? '<div class="tags"><span class="tag warn">送れなかった</span></div>' : ""}</div></div>`;
+    };
+    $("#mid").innerHTML = headHtml() + `<div class="lbar"><span class="lg2" aria-hidden="true">LINE</span>アカウント「${esc(LN.account)}」の友だち「${esc(LN.name || "（名前を読めない）")}」と結ばれています<button class="lk" id="unlink">結びを外す</button></div>
+      <div class="msgs" id="msgs">${LN.messages.map((m) => { const d = dayOf(m.at); const h = d !== last ? `<div class="day">${d}</div>` : ""; last = d; return h + row(m); }).join("") || '<p class="welcome">マーケくんが受けた LINE のやりとりはまだありません。<br>（UTAGE にある前のやりとりは出ません）</p>'}</div>
+      ${LN.blocked ? '<div class="comp"><p class="empty">ブロックされているので送れません</p></div>' : `<div class="comp linemode"><label class="sr" for="lcomp">LINE で返す文</label><textarea id="lcomp" maxlength="2000" placeholder="LINE で返す（今月の送信数を 1 通使う）"></textarea>
+      <div class="row"><span class="g">⌘／Ctrl＋Enter で送信・相手の LINE に届きます</span><button class="btn pri line" id="lsend">LINE で送る</button></div></div>`}`;
+    wireHead();
+    $("#unlink").onclick = (e) => {
+      lastFocus = e.currentTarget;
+      dialog(`<h2>LINE の結びを外す</h2><p style="margin:0;font-size:13px">「${esc(D.card.name || D.card.email)}」と LINE の友だち「${esc(LN.name || "")}」の結びを外します。やりとりは消えません。あとで結び直せます。</p><p class="err" id="uerr" role="alert"></p><div class="acts"><button class="btn" data-x>キャンセル</button><button class="btn pri" data-ok>外す</button></div>`, async (d) => {
+        const r = await call(`/api/admin/chat/${D.id}/line`, "POST", { account: LN.account, unlink: true });
+        if (!r.ok) { $("#uerr", d).textContent = errText(r); return false; }
+        await reload(); await openLineChan(); toast("LINE の結びを外しました");
+      });
+    };
+    $$(".lmsg").forEach((el) => (el.oncontextmenu = (e) => { e.preventDefault(); navigator.clipboard.writeText(el.dataset.lt).then(() => toast("コピーしました"), () => toast("コピーできませんでした")); }));
+    if ($("#lsend")) {
+      const send = async () => {
+        const t = $("#lcomp").value.trim();
+        if (!t) { toast("文が空です"); $("#lcomp").focus(); return; }
+        $("#lsend").disabled = true;
+        const r = await call("/api/admin/line/reply", "POST", { account: LN.account, user: LN.user, text: t });
+        $("#lsend").disabled = false;
+        if (!r.ok) { toast(errText(r)); return; }
+        await openLineChan(); $("#lcomp")?.focus(); toast("LINE で送りました");
+      };
+      $("#lsend").onclick = send;
+      $("#lcomp").onkeydown = (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); send(); } };
+    }
+    const box = $("#msgs"); if (box) box.scrollTop = box.scrollHeight;
+  }
+  async function drawLinkPick(account) {
+    const accs = LN.accounts || [];
+    const acc = account || (accs.includes("shianin") ? "shianin" : accs[0]); // シアニンの LINE を先に
+    $("#mid").innerHTML = headHtml() + `<div class="msgs"><div class="pick"><h2>「${esc(D.card.name || D.card.email)}」はまだ LINE と結ばれていません</h2>
+      <p>結ぶと、ここで LINE のやりとりを読んで返せます。この人の LINE の友だちを選んでください。人違いで結ぶと別の人に LINE が届くので、名前とやりとりを見て選んでください。</p>
+      ${accs.length > 1 ? `<label for="lacc">LINE のアカウント</label><select id="lacc">${accs.map((a) => `<option ${a === acc ? "selected" : ""}>${esc(a)}</option>`).join("")}</select>` : ""}
+      <label for="lq">友だちを探す</label><input id="lq" type="search" placeholder="LINE の名前で絞る"><div id="lfr"><p class="empty">友だちを読んでいます…</p></div></div></div>`;
+    wireHead();
+    if ($("#lacc")) $("#lacc").onchange = () => drawLinkPick($("#lacc").value);
+    if (!acc) { $("#lfr").innerHTML = '<p class="empty">LINE のアカウントがつながっていません</p>'; return; }
+    const r = await call("/api/admin/line?account=" + encodeURIComponent(acc));
+    if (!$("#lfr")) return;
+    if (!r.ok) { $("#lfr").innerHTML = `<p class="empty">読めませんでした（${esc(r.error || r.status)}）</p>`; return; }
+    const free = (r.friends || []).filter((f) => !f.linked && !f.blocked);
+    const draw = () => {
+      const q = $("#lq").value.trim();
+      $("#lfr").innerHTML = free.filter((f) => !q || String(f.name || "").includes(q)).slice(0, 40).map((f) => `<button class="opt" data-u="${esc(f.user)}">${av(f.user, f.name)}<span style="min-width:0"><b>${esc(f.name || "（名前を読めない）")}</b><small>${f.last_from === "me" ? "送った：" : ""}${esc(f.last_text || "やりとりなし")}${f.last_at ? "・" + esc(fmtTime(f.last_at)) : ""}</small></span></button>`).join("")
+        || `<p class="empty">${free.length ? "合う友だちがいません" : "まだ結ばれていない友だちがいません"}</p>`;
+      $$("[data-u]", $("#lfr")).forEach((b) => (b.onclick = () => {
+        const f = free.find((x) => x.user === b.dataset.u); lastFocus = b;
+        dialog(`<h2>LINE と結ぶ</h2><p style="margin:0;font-size:13px">「${esc(D.card.name || D.card.email)}」（${esc(D.card.email)}）と、LINE の友だち「${esc(f.name || "（名前を読めない）")}」を結びます。このあと、ここから送る LINE はこの友だちに届きます。</p><p class="err" id="lerr2" role="alert"></p><div class="acts"><button class="btn" data-x>キャンセル</button><button class="btn pri" data-ok>結ぶ</button></div>`, async (d) => {
+          const x = await call(`/api/admin/chat/${D.id}/line`, "POST", { account: acc, user: f.user });
+          if (!x.ok) { $("#lerr2", d).textContent = errText(x) + (x.other && x.other.name ? `（${x.other.name}）` : ""); return false; }
+          await reload(); await openLineChan(); toast("LINE と結びました");
+        });
+      }));
+    };
+    $("#lq").oninput = draw; draw();
+  }
+
+  function drawMid(focusId) {
+    const its = items(); let last = "";
+    $("#mid").innerHTML = headHtml() + `
+    <div class="msgs" id="msgs">${its.map((m) => { const d = dayOf(m.at); const h = d !== last ? `<div class="day">${d}</div>` : ""; last = d; return h + msgHtml(m); }).join("") || '<p class="welcome">やり取りはまだありません。下から最初のメッセージを送れます。</p>'}</div>
+    <div class="comp ${noteMode ? "notemode" : ""}"><div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap"><span class="mode" role="group" aria-label="書くもの"><button aria-pressed="${!noteMode}" data-m="reply">返信</button><button aria-pressed="${noteMode}" data-m="note">メモ（自分だけ）</button></span><span style="font-size:12px;color:var(--muted)">${noteMode ? "メモは生徒には見えません" : "生徒の画面とスマホに届きます"}</span></div>
+      <label class="sr" for="comp">${noteMode ? "メモ" : "メッセージ"}</label><textarea id="comp" maxlength="8000" placeholder="${noteMode ? "自分だけのメモを書く（生徒には見えない）" : "メッセージを書く"}"></textarea>
+      <div class="row"><span class="g">⌘／Ctrl＋Enter で${noteMode ? "メモを残す" : "送信"}・Enter は改行・<span class="kbd">?</span> でキーの一覧</span><button class="btn pri" id="send">${noteMode ? "メモを残す" : "送信"}</button></div></div>`;
+    wireHead();
     $$("[data-m]").forEach((b) => (b.onclick = () => { const keep = $("#comp").value; noteMode = b.dataset.m === "note"; drawMid(); $("#comp").value = keep; $(`[data-m="${b.dataset.m}"]`).focus(); }));
     $("#send").onclick = send;
     $("#comp").onkeydown = (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); send(); } };
@@ -246,7 +346,7 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
     closeMenu(); lastFocus = from; menuAt = Date.now();
     const el = document.createElement("div"); el.className = "menu"; el.setAttribute("role", "menu"); el.setAttribute("aria-label", "メッセージの操作");
     el.innerHTML = `<button role="menuitem" data-a="copy">コピー<small>C</small></button><button role="menuitem" data-a="fwd">転送（メモとして）…<small>F</small></button><button role="menuitem" data-a="keep">${m.kept ? "資料から外す" : "資料に入れる"}<small>S</small></button><hr>
-      <div class="mh2" aria-hidden="true">連携</div><button role="menuitem" data-a="task">タスクへ追加（TaskMaster）…<small>T</small></button><button role="menuitem" data-a="pin"${m.pinned ? " aria-disabled=\"true\"" : ""}>${m.pinned ? "顧客管理に残した" : "顧客管理に残す"}</button><hr>
+      <div class="mh2" aria-hidden="true">連携</div><button role="menuitem" data-a="task">タスクへ追加（TaskMaster）…<small>T</small></button><button role="menuitem" data-a="person">顧客管理で開く →</button><hr>
       <button role="menuitem" data-a="claude">Claude に聞く（依頼文をコピー）</button><button role="menuitem" data-a="later">このチャットを後で見る…</button>${m.corr || (m.lesson && !m.me) ? '<button role="menuitem" data-a="room">添削ルームで開く →</button>' : ""}`;
     root.appendChild(el);
     const w = el.offsetWidth, h = el.offsetHeight; el.style.left = Math.max(8, Math.min(x, innerWidth - w - 8)) + "px"; el.style.top = Math.max(8, Math.min(y, innerHeight - h - 8)) + "px";
@@ -272,7 +372,7 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
     if (a === "fwd") return fwdDlg(m);
     if (a === "task") return taskDlg(m);
     if (a === "keep") return keep(m);
-    if (a === "pin") return pin(m);
+    if (a === "person") return openPerson(D.id);
   }
   async function keep(m) {
     const off = !!m.kept;
@@ -281,17 +381,10 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
     await reload(m.id);
     toast(off ? "資料から外しました" : "資料に入れました（右の「資料」）", off ? null : () => keep({ id: m.id, kept: true }));
   }
-  async function pin(m) {
-    if (m.pinned) { toast("もう顧客管理に残してあります"); return; }
-    const r = await call(`/api/admin/chat/${D.id}/pin`, "POST", { event_id: m.id });
-    if (!r.ok) { toast(errText(r)); return; }
-    await reload(m.id);
-    toast("顧客管理に残しました（概要の「チャットから残したこと」）");
-  }
   // 1 人分を読み直して、真ん中と右を描き直す（読んだ印は付く）
   async function reload(focusId) {
     const r = await call("/api/admin/chat/" + D.id); if (!r.ok || !r.found) return;
-    const id = D.id; D = r; D.id = id; drawMid(focusId); drawRight();
+    const id = D.id; D = r; D.id = id; if (chan === "site") drawMid(focusId); drawRight();
   }
 
   // ---------- フォルダ ----------
@@ -304,7 +397,7 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
       <label for="nf">新しいフォルダを作って入れる</label><div style="display:flex;gap:6px"><input id="nf" maxlength="20" placeholder="例 NEXT 受講生"><button class="btn" id="nfb">作る</button></div>
       <p class="err" id="perr" role="alert"></p><div class="acts"><button class="btn" data-x>閉じる</button></div>`, null, (d, close) => {
       const put = async (fid) => { const r = await call(`/api/admin/chat/${pid}/folder`, "POST", { folder_id: fid || null }); if (!r.ok) { $("#perr", d).textContent = errText(r); return; }
-        close(); await loadList(); if (D && D.id === pid) { D.folder_id = r.folder_id; drawMid(); } toast(fid ? `「${fname(fid)}」に入れました` : "フォルダから外しました"); };
+        close(); await loadList(); if (D && D.id === pid) { D.folder_id = r.folder_id; chan === "line" ? drawLine() : drawMid(); } toast(fid ? `「${fname(fid)}」に入れました` : "フォルダから外しました"); };
       $$("[data-pf]", d).forEach((b) => (b.onclick = () => put(b.dataset.pf)));
       $("#nfb", d).onclick = async () => { const r = await call("/api/admin/chat/folders", "POST", { name: $("#nf", d).value }); if (!r.ok) { $("#perr", d).textContent = errText(r); $("#nf", d).focus(); return; } await loadList(); put(r.folder.id); };
       $("#nf", d).onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); $("#nfb", d).click(); } };
@@ -372,7 +465,7 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
   async function setLater(until, focusEl) {
     const r = await call(`/api/admin/chat/${D.id}/later`, "POST", { until });
     if (!r.ok) { toast(errText(r)); return r; }
-    D.later_until = r.later_until; await loadList(); drawMid(); if (until === null) toast("「後で」から外しました");
+    D.later_until = r.later_until; await loadList(); chan === "line" ? drawLine() : drawMid(); if (until === null) toast("「後で」から外しました");
     (focusEl && focusEl.isConnected ? focusEl : $("#later"))?.focus();
     return r;
   }
@@ -381,14 +474,14 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
   $("#q").onkeydown = async (e) => {
     if (e.key !== "Enter") return;
     const q = $("#q").value.trim();
-    if (!q) { hits = null; drawLeft(); if (D) drawMid(); return; }
+    if (!q) { hits = null; drawLeft(); if (D) chan === "line" ? drawLine() : drawMid(); return; }
     const r = await call("/api/admin/chat/search?q=" + encodeURIComponent(q) + (fsel ? "&folder_id=" + fsel : ""));
     if (!r.ok) { toast(errText(r)); return; }
     hits = r.hits; drawLeft();
     $("#mid").innerHTML = `<div class="mh"><button class="btn back" id="toList">←</button><div><h1>「${esc(q)}」を探した結果</h1><small>${fsel ? "フォルダ「" + esc(fname(fsel)) + "」の中・" : ""}${r.count} 件（やり取り・添削・メモ）</small></div><span class="g"></span><button class="btn" id="clr">探すのをやめる</button></div>
       <div class="results">${hits.map((h, k) => `<button class="res" data-k="${k}"><small>${esc(h.name)}・${esc(h.kind)}・${esc(h.from)}・${esc(fmtTime(h.at))}</small>${esc(h.text).split(esc(q)).join(`<mark>${esc(q)}</mark>`)}</button>`).join("") || '<p class="empty">見つかりませんでした。言葉を変えてみてください</p>'}</div>`;
     $("#toList").onclick = () => setView("list");
-    $("#clr").onclick = () => { $("#q").value = ""; hits = null; drawLeft(); if (D) drawMid(); else $("#mid").innerHTML = ""; $("#q").focus(); };
+    $("#clr").onclick = () => { $("#q").value = ""; hits = null; drawLeft(); if (D) chan === "line" ? drawLine() : drawMid(); else $("#mid").innerHTML = ""; $("#q").focus(); };
     $$("[data-k]", $("#mid")).forEach((b) => (b.onclick = () => { const h = hits[+b.dataset.k]; openChat(h.person_id, h.event_id); }));
     setView("chat"); live(`${r.count} 件見つかりました`);
   };

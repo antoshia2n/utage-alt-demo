@@ -75,7 +75,7 @@ export const EVENT_LABEL = {
   chat_task: "チャットからタスクを足した",
   chat_folder: "チャットをフォルダに入れた",
   chat_saved: "チャットの資料に入れた",
-  chat_pin: "チャットから顧客管理に残した",
+  line_unlinked: "LINE の結びを外した",
   push_subscribed: "スマホの通知を受け取り始めた",
   push_unsubscribed: "スマホの通知をやめた",
   referred: "紹介のリンクから登録",
