@@ -1,5 +1,5 @@
 // チャットの便 C2b-2：名前の 3 種類（本名・ニックネーム・LINE 名）。グループではほかの生徒にニックネームだけ
-// 走らせ方：node --test tests/chat-names.test.mjs
+// 走らせ方：node --test tests/chat-names.test.mjs（Naoki OK 13:14）
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fakeStore } from "./fake-store.mjs";
