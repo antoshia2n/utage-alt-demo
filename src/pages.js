@@ -11,6 +11,8 @@
 //   data-lab-part="checkout:商品の id" … 決済の枠（商品の名前と価格と申し込むボタン。押すと lab の /register?product= へ）
 //   data-lab-button="名前"             … ボタン。押したら出来事に積み、コネクタのきっかけ「ページのボタンを押した」になる
 //   data-lab-part="booking:slug"     … 便 13b：個別相談の予約の枠（空き時間を選び、名前とメールで予約する）
+//   data-lab-part="part:名前"         … 便 S2（2026-11-07）：公開サイトの部品（src/web.js）。中身は読者の段階で変わる
+// 便 S1（2026-11-07）：embed.js は /_lab/look.css（公開サイトの見た目・src/web.js）も head の先頭に足す。ページは var(--lab-c) などで色を当てる
 // 経路：ページの住所の後ろの ?r=名前。初めて登録したときの経路をその人の経路にする（registered の payload.route）。
 
 import { SLUG_RE } from "./forms.js";
@@ -34,11 +36,12 @@ const now = () => new Date().toISOString();
 export function parseParts(html) {
   // 便 13：HTML の注意書き（<!-- -->）の中の印は読まない（便 12a の版 1 で、説明の文の印を印として拾った件）
   const s = String(html || "").replace(/<!--[\s\S]*?-->/g, "");
-  const forms = new Set(), checkouts = new Set(), buttons = new Set(), bookings = new Set(), bad = [];
+  const forms = new Set(), checkouts = new Set(), buttons = new Set(), bookings = new Set(), webParts = new Set(), bad = [];
   for (const m of s.matchAll(/data-lab-part\s*=\s*["']([^"']*)["']/g)) {
     const v = m[1].trim();
-    const f = v.match(/^form:(.+)$/), c = v.match(/^checkout:(.+)$/), bk = v.match(/^booking:(.+)$/);
+    const f = v.match(/^form:(.+)$/), c = v.match(/^checkout:(.+)$/), bk = v.match(/^booking:(.+)$/), wp = v.match(/^part:(.+)$/);
     if (f && SLUG_RE.test(f[1])) forms.add(f[1]);
+    else if (wp && /^[a-z0-9][a-z0-9-]{1,30}$/.test(wp[1])) webParts.add(wp[1]);
     else if (bk && SLUG_RE.test(bk[1])) bookings.add(bk[1]);
     else if (c && PRODUCT_ID_RE.test(c[1])) checkouts.add(c[1]);
     else bad.push(v.slice(0, 60));
@@ -47,7 +50,7 @@ export function parseParts(html) {
     const v = m[1].trim();
     if (BUTTON_RE.test(v)) buttons.add(v); else bad.push("button:" + v.slice(0, 40));
   }
-  return { forms: [...forms], checkouts: [...checkouts], buttons: [...buttons], bookings: [...bookings], bad };
+  return { forms: [...forms], checkouts: [...checkouts], buttons: [...buttons], bookings: [...bookings], web_parts: [...webParts], bad };
 }
 
 // 公開のときに B の差し込みの仕掛けを足す（Claude が書いた同じ行は外してから 1 回だけ）
@@ -195,6 +198,8 @@ export function makePages(h) {
       legal: `特商法 ${labOrigin(env)}/legal/tokushoho・プライバシーポリシー ${labOrigin(env)}/legal/privacy・利用規約 ${labOrigin(env)}/legal/terms。ページの下に置く`,
       dont: "鍵・会員の個人情報・実在しない実績や数字を書かない。公開はしない（publish_page は Naoki が承認する）",
       booking: "予約の枠：<div data-lab-part=\"booking:予約の種類の住所の名前\"></div>。空き時間の一覧と、名前・メール・相談したいこと・同意の欄が入る。予約した人は台帳に入り、受付のメールが届く",
+      look: "公開サイトの見た目（便 S1）：B が /_lab/look.css を自分で読ませる。色は var(--lab-c)（主の色）・var(--lab-c2)（差し色）・var(--lab-bg)・var(--lab-card)・var(--lab-line)・var(--lab-fg)・var(--lab-mut)、角は var(--lab-r)、字は var(--lab-font)・var(--lab-head) を使う（テーマを替えると全ページが変わる）。記事の装飾は class lab-toc（目次）・lab-box（ボックス）・lab-fuki（ふきだし）",
+      part: "公開サイトの部品（便 S2）：<div data-lab-part=\"part:部品の名前\"></div>。中身（題・文・ボタンか申込の枠）は読者の段階で変わり、マーケくんの「公開サイト › 部品」で 1 か所を直すと全部のページで変わる。使える部品は get_web の parts",
       thanks: "サンクスページ（目的 thanks）：申込の枠もボタンも要らない。申込を受け付けたこと・日時・参加の URL はメールで届くこと・迷惑メールの確かめ方を書く。セミナーの回に結ぶのは set_seminar の thanks_page_slug",
       forms: fl.filter((f) => f.active).map((f) => ({ slug: f.slug, title: f.title })),
       forms_not_open: fl.filter((f) => !f.active).map((f) => ({ slug: f.slug, title: f.title })),
@@ -537,11 +542,14 @@ export const EMBED_JS = `(() => {
     if (it.type === "select") return '<select class="lab-input" id="' + id + '"' + req + '><option value="">選んでください</option>' + (it.options || []).map((o) => "<option>" + esc(o) + "</option>").join("") + "</select>";
     return '<input class="lab-input" id="' + id + '" type="text"' + (it.type === "number" ? ' inputmode="numeric"' : ' maxlength="200"') + req + '>';
   }
+  // 便 S1：公開サイトの見た目（色・字・記事の装飾・部品）。ページの CSS で上書きできるよう head の先頭に置く
+  const look = document.createElement("link"); look.rel = "stylesheet"; look.href = "/_lab/look.css";
+  document.head.insertBefore(look, document.head.firstChild);
   const css = document.createElement("style");
   css.textContent = ".lab-form,.lab-checkout{max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:12px;text-align:left;box-sizing:border-box}.lab-form label{display:block;font-size:14px;margin:0 0 4px}.lab-input{width:100%;box-sizing:border-box;min-height:44px;padding:10px 12px;font-size:16px;border:1px solid #c9c9c9;border-radius:8px;background:#fff;color:#111}.lab-btn{display:inline-block;box-sizing:border-box;width:100%;min-height:52px;border:0;border-radius:10px;background:#1f6f5c;color:#fff;font-size:17px;font-weight:700;cursor:pointer;text-align:center;text-decoration:none;line-height:52px;padding:0 16px}.lab-btn[disabled]{opacity:.6}.lab-note{font-size:13px;opacity:.8}.lab-err{color:#b3261e;font-size:13px}.lab-check{display:flex;gap:8px;align-items:flex-start;font-size:14px}.lab-days{display:flex;flex-direction:column;gap:10px}.lab-day-h{font-size:13px;font-weight:700;margin-bottom:4px}.lab-slots{display:flex;flex-wrap:wrap;gap:6px}.lab-slot{min-height:40px;padding:0 12px;border:1px solid #c9c9c9;border-radius:8px;background:#fff;color:#111;font-size:15px;cursor:pointer}.lab-slot.on{background:#1f6f5c;border-color:#1f6f5c;color:#fff}";
   // ページの CSS で上書きできるよう、差し込む見た目は head のいちばん前に置く
   document.head.insertBefore(css, document.head.firstChild);
-  async function mountForm(el, slug) {
+  async function mountForm(el, slug, onOk) {
     el.classList.add("lab-form");
     const r = await fetch("/api/p/form/" + encodeURIComponent(slug)).then((x) => x.json()).catch(() => ({}));
     if (!r.ok) { el.innerHTML = '<p class="lab-note">このフォームはいま開いていません</p>'; return; }
@@ -569,6 +577,7 @@ export const EMBED_JS = `(() => {
       go.disabled = false;
       if (!res.ok && bot) bot.reset();
       if (BOT_MSG[res.error]) { msg.textContent = BOT_MSG[res.error]; return; }
+      if (res.ok && onOk) { try { onOk(); } catch (_) {} }
       if (res.ok && res.thanks_url && /^https:[/][/]/.test(res.thanks_url)) { if (res.u) store.set("lab_u", res.u); location.href = res.thanks_url; return; }
       if (res.ok) { if (res.u) store.set("lab_u", res.u); el.innerHTML = '<p class="lab-note" style="white-space:pre-wrap">' + esc(res.thanks || "受け取りました。ありがとうございます。") + "</p>"; return; }
       if (res.error === "bad_answers") { for (const b of res.fields || []) { const e = q('[data-e="' + b.key + '"]'); if (e) e.textContent = WHY[b.error] || "確かめてください"; } msg.textContent = "赤い字の欄を直してください"; return; }
@@ -639,8 +648,23 @@ export const EMBED_JS = `(() => {
       msg.textContent = res.error === "slot_taken" ? "その時間はちょうど埋まりました。ほかの時間を選んでください" : res.error === "already_booked" ? "すでに " + (res.label || "") + " で予約があります" : res.error === "bad_email" ? "メールアドレスを確かめてください" : "予約できませんでした。時間をおいてもう一度お試しください";
     });
   }
+  // 便 S2：公開サイトの部品。中身は読者の段階（この端末の印 lab_u）で B が選ぶ。見たは B が数え、押した・登録はここから送る
+  async function mountPart(el, id) {
+    const q = new URLSearchParams({ vid, page: PAGE }); if (store.get("lab_u")) q.set("u", store.get("lab_u"));
+    const r = await fetch("/api/p/part/" + encodeURIComponent(id) + "?" + q.toString()).then((x) => x.json()).catch(() => ({}));
+    if (!r.ok || r.hidden || !r.part) { el.innerHTML = ""; el.style.display = "none"; return; }
+    const p = r.part;
+    const ping = (kind) => { if (PREVIEW) return; const body = JSON.stringify({ part: p.id, kind, variant: p.variant, page: PAGE, vid, u: store.get("lab_u") });
+      if (navigator.sendBeacon) navigator.sendBeacon("/api/p/part-hit", new Blob([body], { type: "application/json" })); else fetch("/api/p/part-hit", { method: "POST", headers: { "content-type": "application/json" }, body, keepalive: true }).catch(() => {}); };
+    el.classList.add("lab-part"); el.setAttribute("data-variant", p.variant);
+    el.innerHTML = '<b class="lab-part-t">' + esc(p.title) + "</b>" + (p.text ? '<p class="lab-part-p">' + esc(p.text) + "</p>" : "")
+      + (p.form ? '<div data-in></div>' : '<a class="lab-part-go" href="' + (PREVIEW ? "#" : esc(p.href)) + '">' + esc(p.btn || "詳しく見る") + " →</a>");
+    if (p.form) mountForm(el.querySelector("[data-in]"), p.form, () => ping("signup"));
+    else el.querySelector(".lab-part-go").addEventListener("click", () => ping("click"));
+  }
   document.querySelectorAll("[data-lab-part]").forEach((el) => {
     const v = el.getAttribute("data-lab-part") || "";
+    if (v.startsWith("part:")) { mountPart(el, v.slice(5)); return; }
     if (v.startsWith("booking:")) mountBooking(el, v.slice(8));
     else if (v.startsWith("form:")) mountForm(el, v.slice(5));
     else if (v.startsWith("checkout:")) mountCheckout(el, v.slice(9));
