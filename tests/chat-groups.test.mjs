@@ -1,5 +1,5 @@
 // チャットの便 C2b：グループ（作る・送る・スレッド・スタンプ・既読・見える範囲・画像・通知）
-// 走らせ方：node --test tests/chat-groups.test.mjs
+// 走らせ方：node --test tests/chat-groups.test.mjs（見本 https://claude.ai/artifact/Rpu6FQZSs76gixu6VDeQ2w・Naoki OK 12:48）
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fakeStore } from "./fake-store.mjs";
