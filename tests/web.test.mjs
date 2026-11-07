@@ -34,7 +34,7 @@ test("段階の 4 つ：台帳にいない人は new、レーンから list・co
 });
 
 test("見た目：知らない値は既定に戻し、テーマを替えると色もそのテーマに戻る。CSS に変数と装飾が入る", async () => {
-  assert.deepEqual(normLook("{bad"), { theme: "simple", c: "#1c1917", c2: "#f59e0b", width: 720 });
+  assert.deepEqual(normLook("{bad"), { theme: "simple", c: "#1c1917", c2: "#f59e0b", width: 720, name: "" });
   const { web, env, s } = setup();
   assert.equal((await web.setLook(env, { c: "#123456" }, "a")).look.c, "#123456");
   const r = await web.setLook(env, { theme: "note" }, "a");

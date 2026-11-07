@@ -15,6 +15,18 @@ const ERR = {
   too_long: "長すぎる欄があります",
   bad_color: "色を選び直してください",
   not_found: "見つかりませんでした（消されたかもしれません）",
+  bad_slug: "住所の名前は英小文字・数字・ハイフンの 2〜61 字にしてください",
+  slug_taken: "その住所の名前はもう使われています",
+  slug_locked: "公開中は住所の名前を変えられません（公開を止めてから）",
+  already_copied: "この記事はもう写してあります",
+  source_not_found: "コンテンツくんの記事が見つかりません",
+  source_not_published: "公開済みの記事だけ写せます",
+  source_empty: "本文が空の記事は写せません",
+  bad_title: "題を 120 字までで入れてください",
+  bad_thumb: "サムネの住所は https:// から入れてください",
+  part_not_found: "その部品は使えません（止めたか消されました）",
+  unpublish_first: "公開中の記事は消せません。先に公開を止めてください",
+  nothing_to_change: "変えたところがありません",
 };
 const V_ORDER = ["new", "list", "consult", "member", "_default"];
 
@@ -53,16 +65,23 @@ export function mountWeb(host, { getToken }) {
   const vLabel = (id) => (S && (S.variants || []).find((v) => v.id === id) || {}).label || id;
 
   let S = null, tab = "parts", look = null, edit = null, armDel = false, back = null;
+  let B = null, pick = null, bed = null; // 便 S3：ブログ（B＝一覧、pick＝写す記事を選ぶ、bed＝記事の編集）
 
   async function load() {
     const r = await api("/api/admin/web", { token: getToken() });
     if (!r.ok) { $("#main").innerHTML = `<p class="lead">${esc(errText(r))}</p>`; return; }
-    S = r; if (!look) look = { ...r.look }; draw();
+    S = r; if (!look) look = { ...r.look };
+    if (tab === "blog") await loadBlog(); else draw();
+  }
+  async function loadBlog() {
+    const r = await api("/api/admin/blog", { token: getToken() });
+    if (!r.ok) { say(errText(r)); return; }
+    B = r; draw();
   }
 
   function head() {
     return `<h1>公開サイト</h1><p class="lead">ブログとファネルページの見た目と部品です。1 か所を編集すると、差し込んだ全ページが変わります。</p>
-      <div class="tabs" role="tablist">${[["look", "見た目"], ["parts", "部品"]].map(([k, l]) => `<button role="tab" type="button" data-tab="${k}" aria-selected="${tab === k}">${l}</button>`).join("")}</div>`;
+      <div class="tabs" role="tablist">${[["look", "見た目"], ["parts", "部品"], ["blog", "ブログ"]].map(([k, l]) => `<button role="tab" type="button" data-tab="${k}" aria-selected="${tab === k}">${l}</button>`).join("")}</div>`;
   }
 
   // ---------- 見た目 ----------
@@ -72,6 +91,7 @@ export function mountWeb(host, { getToken }) {
     return `<div class="tbl" style="padding:16px">
       <div class="fld"><span>テーマ</span><div class="themes">${S.themes.map((x) => `<button type="button" data-theme="${x.id}" aria-pressed="${look.theme === x.id}"><i style="background:linear-gradient(90deg,${x.c} 60%,${x.c2} 60%)"></i>${esc(x.label)}</button>`).join("")}</div></div>
       <div class="fld"><label for="c1">主の色</label><input type="color" id="c1" value="${esc(look.c)}"><label for="c2" style="min-width:auto;font-weight:700;font-size:13px">差し色</label><input type="color" id="c2" value="${esc(look.c2)}"><span class="hint">差し色は見出しの線・目次・ボックスの枠に使う</span></div>
+      <div class="fld"><label for="sname">ブログの名前</label><input class="in" id="sname" maxlength="40" value="${esc(look.name || "")}" placeholder="ブログ" style="min-width:240px"><span class="hint">ブログの上の帯と、記事の題の後ろに出る</span></div>
       <div class="fld"><label for="wd">本文の幅</label><select id="wd" class="in">${S.widths.map((w) => `<option value="${w}" ${look.width === w ? "selected" : ""}>${w === 660 ? "狭め（読みやすさ重視）" : w === 720 ? "ふつう" : "広め"}</option>`).join("")}</select></div>
       <div class="fld"><span></span><button class="btn sm pri" type="button" id="look-save" ${changed ? "" : 'aria-disabled="true"'}>保存</button>${changed ? '<button class="btn sm" type="button" id="look-reset">キャンセル</button><span class="hint">保存すると全部の公開ページに効きます</span>' : '<span class="hint">いまの見た目です</span>'}</div>
       <div class="pv" style="--c:${esc(look.c)};--c2:${esc(look.c2)};max-width:${look.width}px">
@@ -89,6 +109,7 @@ export function mountWeb(host, { getToken }) {
     $("#c1").addEventListener("change", (e) => { look.c = e.target.value; draw(); });
     $("#c2").addEventListener("change", (e) => { look.c2 = e.target.value; draw(); });
     $("#wd").addEventListener("change", (e) => { look.width = Number(e.target.value); draw(); $("#wd").focus(); });
+    $("#sname").addEventListener("change", (e) => { look.name = e.target.value.trim(); draw(); $("#sname").focus(); });
     const rs = $("#look-reset"); if (rs) rs.addEventListener("click", () => { look = { ...S.look }; draw(); });
     $("#look-save").addEventListener("click", async () => {
       if (JSON.stringify(look) === JSON.stringify(S.look)) { say("変えたところがありません"); return; }
@@ -180,10 +201,123 @@ export function mountWeb(host, { getToken }) {
     });
   }
 
+  // ---------- ブログ（便 S3） ----------
+  const jd = (iso) => { if (!iso) return ""; const d = new Date(iso); return isNaN(d) ? "" : `${d.getMonth() + 1}/${d.getDate()}`; };
+  const partName = (id) => { const p = (B.parts || []).find((x) => x.id === id); return p ? p.name : ""; };
+  const defMid = () => (B.parts || []).find((x) => x.place === "mid");
+  function drawBlog() {
+    if (!B) return '<p class="lead">読み込んでいます…</p>';
+    const rows = B.posts.map((p) => `<tr class="${bed && bed.id === p.id ? "sel" : ""}"><td class="nm">${esc(p.title)}<small><span class="snip">/blog/${esc(p.slug)}</span></small></td>
+      <td><span class="pill ${p.status === "published" ? "" : "off"}">${p.status === "published" ? "公開中" : "下書き"}</span></td>
+      <td>${p.gift_part ? esc(partName(p.gift_part) || p.gift_part) : `<span class="hint">${defMid() ? "既定（" + esc(defMid().name) + "）" : "なし"}</span>`}</td>
+      <td class="num">${p.week_viewers}</td><td class="num">${esc(jd(p.copied_at))}</td>
+      <td style="white-space:nowrap;text-align:right"><a class="btn sm" href="${esc(p.status === "published" ? p.url : p.preview_url)}" target="_blank" rel="noopener" aria-label="「${esc(p.title)}」の見え方を開く">見え方</a> <button class="btn sm" type="button" data-bedit="${esc(p.id)}" aria-label="「${esc(p.title)}」を編集">編集</button></td></tr>`).join("");
+    return `<div class="bar"><span class="hint">コンテンツくんの記事を写して <a href="${esc(B.index_url)}" target="_blank" rel="noopener">${esc(B.index_url.replace(/^https:[/][/]/, ""))}</a> に出します。公開するまで外には出ません。見た人は先週 7 日分</span><span class="grow" style="flex:1"></span><button class="btn sm pri" type="button" id="b-pick">＋ コンテンツくんから写す</button></div>
+      ${pick ? drawPick() : ""}
+      ${B.posts.length ? `<div class="tbl"><table><thead><tr><th>記事</th><th>状態</th><th>特典（本文の途中）</th><th class="num">見た人</th><th class="num">写した日</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="lead">まだ記事がありません。「＋ コンテンツくんから写す」から始めます。</p>'}
+      ${bed ? drawBed() : ""}`;
+  }
+  function drawPick() {
+    const list = pick.rows ? pick.rows.map((r) => `<tr><td class="nm">${esc(r.title)}<small>${esc(r.type === "note" ? "note" : "X記事")}・${esc(String(r.date || "").slice(0, 10))}</small></td>
+      <td style="white-space:nowrap;text-align:right">${r.blog_id ? `<span class="hint">写し済み（${r.blog_status === "published" ? "公開中" : "下書き"}・/blog/${esc(r.blog_slug)}）</span>` : `<label class="sr" for="sl-${esc(r.id)}">「${esc(r.title)}」の住所の名前</label><input class="in" id="sl-${esc(r.id)}" maxlength="61" placeholder="住所の名前（例：gengoka-skills）" style="width:230px"> <button class="btn sm pri" type="button" data-copy-src="${esc(r.id)}">写す</button>`}</td></tr>`).join("") : "";
+    return `<div class="tbl" style="padding:16px;margin:0 0 14px" id="picker"><h2 style="font-size:16px;margin:0 0 10px">写す記事を選ぶ</h2>
+      <div class="fld"><label for="pk-acc">アカウント</label><select class="in" id="pk-acc">${(B.accounts || []).map((a) => `<option value="${esc(a.id)}" ${pick.account === a.id ? "selected" : ""}>${esc(a.name)}</option>`).join("")}</select>
+      <label for="pk-q" style="min-width:auto">題で探す</label><input class="in" id="pk-q" value="${esc(pick.q)}" placeholder="例：言語化" style="min-width:200px"><button class="btn sm" type="button" id="pk-go">探す</button><button class="btn sm" type="button" id="pk-close">閉じる</button></div>
+      <p class="hint" style="margin:0 0 8px">公開済みの X記事と note の新しい順 40 本。住所の名前は lp.shia2n.jp/blog/○○ の ○○（英小文字・数字・ハイフン）</p>
+      ${pick.rows ? (pick.rows.length ? `<table><tbody>${list}</tbody></table>` : '<p class="lead">当てはまる記事がありません。</p>') : '<p class="lead">読み込んでいます…</p>'}</div>`;
+  }
+  function drawBed() {
+    const p = B.posts.find((x) => x.id === bed.id); if (!p) return "";
+    const pub = p.status === "published";
+    return `<div class="tbl" style="padding:16px;margin-top:14px" id="beditor"><h2 style="font-size:16px;margin:0 0 12px">「${esc(p.title)}」を編集</h2>
+      <div class="fld"><label for="be-title">題</label><input class="in" id="be-title" maxlength="120" value="${esc(bed.title)}" style="flex:1;min-width:260px"></div>
+      <div class="fld"><label for="be-slug">住所の名前</label><input class="in" id="be-slug" maxlength="61" value="${esc(bed.slug)}" ${pub ? "disabled" : ""}><span class="hint">${pub ? "公開中は変えられません" : "lp.shia2n.jp/blog/" + esc(bed.slug)}</span></div>
+      <div class="fld"><label for="be-desc">説明（200 字）</label><textarea class="in" id="be-desc" rows="2" maxlength="200" style="flex:1;min-width:260px">${esc(bed.description)}</textarea></div>
+      <div class="fld"><label for="be-thumb">サムネの住所</label><input class="in" id="be-thumb" maxlength="500" value="${esc(bed.thumb_url)}" placeholder="https://（空なら本文の最初の画像）" style="flex:1;min-width:260px"></div>
+      <div class="fld"><label for="be-gift">特典（本文の途中）</label><select class="in" id="be-gift"><option value="">${defMid() ? "既定（" + esc(defMid().name) + "）" : "既定（本文の途中の部品なし）"}</option>${(B.parts || []).map((x) => `<option value="${esc(x.id)}" ${bed.gift_part === x.id ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select><span class="hint">2 つ目の見出しの前に出る。中身は読者の段階で変わる（部品のタブで作る）</span></div>
+      <div class="fld" style="margin-top:12px"><button class="btn sm pri" type="button" id="be-save">保存</button>
+        <button class="btn sm" type="button" id="be-pub">${pub ? "公開を止める" : "公開する"}</button>
+        <button class="btn sm" type="button" id="be-refresh">コンテンツくんから写し直す</button>
+        <a class="btn sm" href="${esc(pub ? p.url : p.preview_url)}" target="_blank" rel="noopener">見え方を開く</a>
+        <button class="btn sm" type="button" id="be-cancel">閉じる</button>
+        ${pub ? "" : `<button class="btn sm" type="button" id="be-del" style="color:#b91c1c">${armDel ? "もう一度押すと削除" : "削除"}</button>`}</div>
+      <p class="hint" style="margin:0">本文はここでは直しません。コンテンツくんで直して「写し直す」を押すと入れ替わります（写した日 ${esc(jd(p.copied_at))}）</p></div>`;
+  }
+  async function loadPick() {
+    const q = new URLSearchParams({ account: pick.account, q: pick.q });
+    const r = await api(`/api/admin/blog/sources?${q}`, { token: getToken() });
+    pick.rows = r.ok ? r.posts : []; if (!r.ok) say(errText(r)); draw();
+  }
+  function readBed() {
+    bed.title = $("#be-title").value.trim(); bed.slug = $("#be-slug").value.trim();
+    bed.description = $("#be-desc").value.trim(); bed.thumb_url = $("#be-thumb").value.trim(); bed.gift_part = $("#be-gift").value;
+  }
+  async function saveBlog(body, done) {
+    const r = await api("/api/admin/blog/post", { method: "POST", token: getToken(), body });
+    if (!r.ok) { say(errText(r)); return null; }
+    await loadBlog(); say(done); return r;
+  }
+  function wireBlog() {
+    if (!B) return;
+    $("#b-pick").addEventListener("click", async () => { pick = { account: (B.accounts.find((a) => a.id === "acc_1") || B.accounts[0] || {}).id || "acc_1", q: "", rows: null }; draw(); $("#pk-q").focus(); await loadPick(); const f = $("#pk-q"); if (f) f.focus(); });
+    $("#main").querySelectorAll("[data-bedit]").forEach((b) => b.addEventListener("click", () => {
+      const p = B.posts.find((x) => x.id === b.dataset.bedit); armDel = false; back = `[data-bedit="${p.id}"]`;
+      bed = { id: p.id, title: p.title, slug: p.slug, description: p.description || "", thumb_url: p.thumb_url || "", gift_part: p.gift_part || "" };
+      draw(); $("#be-title").focus();
+    }));
+    if (pick) {
+      const go = () => { pick.account = $("#pk-acc").value; pick.q = $("#pk-q").value.trim(); pick.rows = null; draw(); loadPick(); };
+      $("#pk-go").addEventListener("click", go);
+      $("#pk-q").addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+      $("#pk-acc").addEventListener("change", go);
+      $("#pk-close").addEventListener("click", () => { pick = null; draw(); $("#b-pick").focus(); });
+      $("#picker").addEventListener("keydown", (e) => { if (e.key === "Escape") { pick = null; draw(); $("#b-pick").focus(); } });
+      root.querySelectorAll("[data-copy-src]").forEach((b) => b.addEventListener("click", async () => {
+        const id = b.dataset.copySrc, inp = $(`#sl-${id}`), slug = inp.value.trim().toLowerCase();
+        if (!/^[a-z0-9][a-z0-9-]{1,60}$/.test(slug)) { say(ERR.bad_slug); inp.focus(); return; }
+        const r = await api("/api/admin/blog/copy", { method: "POST", token: getToken(), body: { post_id: id, slug } });
+        if (!r.ok) { say(errText(r)); inp.focus(); return; }
+        pick = null; await loadBlog();
+        const p = r.post; bed = { id: p.id, title: p.title, slug: p.slug, description: p.description || "", thumb_url: p.thumb_url || "", gift_part: "" }; back = `[data-bedit="${p.id}"]`;
+        draw(); say(`「${p.title}」を下書きに写しました。説明と特典を決めて公開してください`); $("#be-title").focus();
+      }));
+    }
+    if (!bed) return;
+    const close = () => { bed = null; armDel = false; draw(); const b = back && $("#main").querySelector(back); if (b) b.focus(); };
+    $("#be-cancel").addEventListener("click", close);
+    $("#beditor").addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+    const p = () => B.posts.find((x) => x.id === bed.id);
+    $("#be-save").addEventListener("click", async () => {
+      readBed(); const cur = p(); const body = { id: bed.id };
+      for (const k of ["title", "description", "thumb_url", "gift_part"]) if ((cur[k] || "") !== bed[k]) body[k] = bed[k];
+      if (cur.status !== "published" && bed.slug !== cur.slug) body.slug = bed.slug;
+      if (Object.keys(body).length === 1) { say(ERR.nothing_to_change); return; }
+      if (await saveBlog(body, "保存しました")) { const f = $("#be-save"); if (f) f.focus(); }
+    });
+    $("#be-pub").addEventListener("click", async () => {
+      const pub = p().status === "published";
+      if (await saveBlog({ id: bed.id, action: pub ? "unpublish" : "publish" }, pub ? "公開を止めました（住所を開くと「見つかりません」になります）" : "公開しました")) { const f = $("#be-pub"); if (f) f.focus(); }
+    });
+    $("#be-refresh").addEventListener("click", async () => {
+      if (await saveBlog({ id: bed.id, action: "refresh" }, "コンテンツくんの今の本文に入れ替えました")) { const f = $("#be-refresh"); if (f) f.focus(); }
+    });
+    const del = $("#be-del");
+    if (del) del.addEventListener("click", async () => {
+      if (!armDel) { armDel = true; draw(); $("#be-del").focus(); return; }
+      const id = bed.id, title = bed.title;
+      const r = await api("/api/admin/blog/post", { method: "POST", token: getToken(), body: { id, action: "remove" } });
+      if (!r.ok) { say(errText(r)); return; }
+      bed = null; armDel = false; await loadBlog(); say(`「${title}」を削除しました`); $("#b-pick").focus();
+    });
+  }
+
   function draw() {
-    $("#main").innerHTML = head() + (tab === "look" ? drawLook() : drawParts());
-    $("#main").querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => { tab = b.dataset.tab; draw(); $(`[data-tab="${tab}"]`).focus(); }));
-    if (tab === "look") wireLook(); else wireParts();
+    $("#main").innerHTML = head() + (tab === "look" ? drawLook() : tab === "blog" ? drawBlog() : drawParts());
+    $("#main").querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", async () => {
+      tab = b.dataset.tab; draw(); $(`[data-tab="${tab}"]`).focus();
+      if (tab === "blog" && !B) { await loadBlog(); $(`[data-tab="blog"]`).focus(); }
+    }));
+    if (tab === "look") wireLook(); else if (tab === "blog") wireBlog(); else wireParts();
   }
 
   return { open: () => load() };

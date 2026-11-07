@@ -61,8 +61,9 @@ import { LANES } from "./plan.js";
 import { makeSeminars } from "./seminars.js";
 import { makeGcal } from "./gcal.js";
 import { makeBooking } from "./booking.js";
-import { makePages, EMBED_JS, personToken, readPersonToken, PURPOSES, ROUTE_RE as ROUTE_OK } from "./pages.js";
+import { makePages, EMBED_JS, personToken, readPersonToken, previewToken, readPreviewToken, PURPOSES, ROUTE_RE as ROUTE_OK } from "./pages.js";
 import { makeWeb } from "./web.js";
+import { makeBlog } from "./blog.js";
 import { makeLessonQA, openLessonQuestions, QUESTION_MAX } from "./lessonqa.js";
 import { roomNotices } from "./roomview.js";
 import { makeLine } from "./line.js";
@@ -87,7 +88,7 @@ import { makeNames } from "./names.js";
 import { makeChatAi } from "./chatai.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.77.0-bweb1";
+const VERSION = "0.78.0-bblog1";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -270,6 +271,8 @@ const web = makeWeb({
     return stageOf({ labels: labels.map((x) => x.label), deal: deal ? deal.stage : "none", logins: person.login_count || 0 });
   },
 });
+// 便 S3（2026-11-07）：公開サイトのブログ（コンテンツくんの記事を写して lp の /blog に出す）
+const blog = makeBlog({ db, logInbound, web, pagesOrigin: (env) => pages.pagesOrigin(env), previewToken, readPreviewToken });
 const mediaOrigin = (env) => String(env.PUBLIC_ORIGIN || "https://lab.shia2n.jp").replace(/[/]+$/, "");
 const MEDIA_GONE = `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>開けません</title></head><body style="font-family:system-ui,sans-serif;max-width:560px;margin:15vh auto;padding:0 16px;color:#333"><h1 style="font-size:20px">このリンクは開けません</h1><p>配布が終わったか、住所が違います。送ってくれた人に確かめてください。</p></body></html>`;
 async function serveMediaLink(request, env, token) {
@@ -459,7 +462,9 @@ async function handlePagesHost(request, env, url) {
     const stop = await guardPublic(request, env, "lp_hit", { ip: "hit" });
     if (stop) return stop;
     const body = await request.json().catch(() => ({}));
-    const r = await pages.hit(env, body);
+    let r = await pages.hit(env, body);
+    // 便 S3：ページで無ければブログの記事（embed.js は記事でも同じ口へ「見た」を送る）
+    if (!r.ok && r.error === "not_found") r = await blog.hit(env, body, await readPersonToken(env, body.u).catch(() => null));
     return json(r, r.ok ? 200 : 400);
   }
   // 便 S2：公開サイトの部品（中身を読む＝見たを数える・押した／登録を数える）
@@ -498,6 +503,17 @@ async function handlePagesHost(request, env, url) {
   const pp = path.match(/^[/]api[/]p[/]product[/]([a-z0-9-]{2,40})$/);
   if (pp && method === "GET") { const r = await pages.publicProduct(env, pp[1]); return json(r, r.ok ? 200 : 404); }
   if (path.startsWith("/api/")) return json({ ok: false, error: "not_found" }, 404);
+  // 便 S3：ブログ（一覧・記事）と検索向けの地図
+  if (method === "GET" || method === "HEAD") {
+    if (path === "/blog" || path === "/blog/") return html(await blog.publicIndex(env), 200, { "cache-control": "public, max-age=60" });
+    const bm = path.match(/^[/]blog[/]([a-z0-9][a-z0-9-]{1,60})[/]?$/);
+    if (bm) {
+      const r = await blog.publicArticle(env, bm[1], url.searchParams.get("preview"));
+      if (r) return html(r.html, 200, r.preview ? { "cache-control": "no-store", "x-robots-tag": "noindex" } : { "cache-control": "public, max-age=60" });
+      return html(PAGE_404, 404, { "cache-control": "no-store" });
+    }
+    if (path === "/sitemap.xml") return new Response(await blog.sitemap(env), { headers: { "content-type": "application/xml; charset=utf-8", "cache-control": "public, max-age=300" } });
+  }
   const sm = path.match(/^[/]([a-z0-9][a-z0-9-]{1,40})[/]?$/);
   if (sm && (method === "GET" || method === "HEAD")) {
     const r = await pages.serve(env, sm[1], url.searchParams.get("preview"));
@@ -1404,6 +1420,10 @@ async function handleApi(request, env, url) {
     // 便 S1・S2：公開サイトの見た目と部品
     if (path === "/api/admin/web" && method === "GET") return json(await web.get(env));
     if (path === "/api/admin/web/look" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await web.setLook(env, b, a.email); return json(r, r.ok ? 200 : 400); }
+    if (path === "/api/admin/blog" && method === "GET") return json(await blog.get(env));
+    if (path === "/api/admin/blog/sources" && method === "GET") { const r = await blog.sources(env, { account: url.searchParams.get("account") || "acc_1", q: url.searchParams.get("q") || "" }); return json(r, r.ok ? 200 : 400); }
+    if (path === "/api/admin/blog/copy" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await blog.copy(env, b, a.email); return json(r, r.ok ? 200 : 400); }
+    if (path === "/api/admin/blog/post" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await blog.save(env, b, a.email); return json(r, r.ok ? 200 : 400); }
     if (path === "/api/admin/web/part" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await web.savePart(env, b, a.email); return json(r, r.ok ? 200 : 400); }
     if (path === "/api/admin/media" && method === "GET") return json(await media.list(env, { kind: url.searchParams.get("kind") || "", folder: url.searchParams.get("folder") || "", q: url.searchParams.get("q") || "", limit: url.searchParams.get("limit") || "" }));
     if (path === "/api/admin/media/upload" && method === "POST") {
@@ -2293,7 +2313,7 @@ const TOOLS = [
     screen: "web",
     say: "公開サイトの見た目（テーマ・色・本文の幅）を変える",
     description: "公開サイトの見た目を変える（全ページに効く）。theme（simple／magazine／note。替えると色はそのテーマのものに戻る）・c（主の色 #rrggbb）・c2（差し色）・width（660／720／820）。渡した欄だけ変える。承認が要る道具（読者の画面が変わる）。",
-    inputSchema: { type: "object", properties: { theme: { type: "string" }, c: { type: "string" }, c2: { type: "string" }, width: { type: "integer" } } },
+    inputSchema: { type: "object", properties: { theme: { type: "string" }, c: { type: "string" }, c2: { type: "string" }, width: { type: "integer" }, name: { type: "string" } } },
   },
   {
     name: "save_web_part",
@@ -2301,6 +2321,34 @@ const TOOLS = [
     say: "公開サイトの部品を作る・編集する・削除する",
     description: "公開サイトの部品を作る（id なし→slug に新しい名前）・編集する（id）・削除する（id・remove: true）。name（中の名前・60 字）・place（mid／end／side／bar／free）・rules（{ new, list, consult, member, _default } のうち使う段だけ。各段 { title（80 字）, text（400 字）, btn（30 字）, href（https の住所）か form（申込の枠に使うフォームの slug） }。href か form のどちらかは要る。空の段は出さず既定へ回る）・active。渡した rules は丸ごと置き換える。承認が要る道具（差し込んだ全ページの読者の画面が変わる）。",
     inputSchema: { type: "object", properties: { id: { type: "string" }, slug: { type: "string" }, name: { type: "string" }, place: { type: "string" }, rules: { type: "object" }, active: { type: "boolean" }, remove: { type: "boolean" } } },
+  },
+  {
+    name: "get_blog",
+    screen: "web",
+    say: "ブログの記事を見る",
+    description: "公開サイトのブログ（lp の住所の /blog・便 S3）を読む。posts：記事ごとに id・slug（住所 /blog/slug）・title・description・thumb_url・gift_part（本文の途中に出す特典の部品 id。空なら place=mid の部品）・status（draft 下書き／published 公開中）・published_at・source_post_id（写したコンテンツくんの記事）・copied_at・url・preview_url（下書きの見え方）・week_viewers（先週 7 日の見た人）。parts は特典に使える部品、accounts はコンテンツくんのアカウント。",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "list_blog_sources",
+    screen: "web",
+    say: "ブログに写せるコンテンツくんの記事を探す",
+    description: "コンテンツくんの公開済みの X記事・note を新しい順に読む（ブログに写す前に選ぶため）。account（既定 acc_1 シアニン）・q（題の一部）。写したものには blog_id・blog_slug・blog_status が付く。読むだけ。",
+    inputSchema: { type: "object", properties: { account: { type: "string" }, q: { type: "string" }, limit: { type: "integer" } } },
+  },
+  {
+    name: "copy_to_blog",
+    screen: "web",
+    say: "コンテンツくんの記事をブログの下書きに写す",
+    description: "コンテンツくんの記事（post_id）をブログの下書きに写す。slug（英小文字・数字・ハイフン 2〜61 字。住所 /blog/slug）が要る。本文は入れてよい形だけ残して写す。公開はしない（save_blog_post の action publish）。1 つの記事は 1 回だけ写せる（直しは refresh）。",
+    inputSchema: { type: "object", properties: { post_id: { type: "string" }, slug: { type: "string" } }, required: ["post_id", "slug"] },
+  },
+  {
+    name: "save_blog_post",
+    screen: "web",
+    say: "ブログの記事を直す・公開する・止める・写し直す・消す",
+    description: "ブログの記事（id）を直す。title（120 字）・description（検索に出る説明 200 字）・thumb_url（https）・gift_part（特典の部品 id。空で既定へ）・slug（下書きのときだけ）。action：publish 公開／unpublish 止める／refresh コンテンツくんから本文を写し直す／remove 消す（下書きのときだけ）。承認が要る道具（読者の画面が変わる）。",
+    inputSchema: { type: "object", properties: { id: { type: "string" }, title: { type: "string" }, description: { type: "string" }, thumb_url: { type: "string" }, gift_part: { type: "string" }, slug: { type: "string" }, action: { type: "string" } }, required: ["id"] },
   },
   {
     name: "list_media",
@@ -3024,6 +3072,10 @@ async function runTool(env, name, args) {
   if (name === "get_web") return await web.get(env);
   if (name === "set_web_look") return await web.setLook(env, args, "mcp");
   if (name === "save_web_part") return await web.savePart(env, args, "mcp");
+  if (name === "get_blog") return await blog.get(env);
+  if (name === "list_blog_sources") return await blog.sources(env, args);
+  if (name === "copy_to_blog") return await blog.copy(env, args, "mcp");
+  if (name === "save_blog_post") return await blog.save(env, args, "mcp");
   if (name === "list_media") return await media.list(env, args);
   if (name === "import_utage_media") return await media.importUtage(env, { items: args.items }, "mcp");
   if (name === "media_import_status") return await media.importStatus(env);

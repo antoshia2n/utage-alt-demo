@@ -49,6 +49,7 @@ export function normLook(v) {
     c: COLOR_RE.test(String(o.c || "")) ? String(o.c).toLowerCase() : t.c,
     c2: COLOR_RE.test(String(o.c2 || "")) ? String(o.c2).toLowerCase() : t.c2,
     width: WIDTHS.includes(Number(o.width)) ? Number(o.width) : 720,
+    name: String(o.name || "").replace(/[<>]/g, "").trim().slice(0, 40), // 便 S3：ブログの名前（上の帯・題の後ろ）。空ならブログ
   };
 }
 
@@ -130,6 +131,7 @@ export function makeWeb({ db, logInbound, readPersonToken, laneOf }) {
       want.theme = args.theme;
     }
     for (const k of ["c", "c2"]) if (args[k] !== undefined) { if (!COLOR_RE.test(String(args[k]))) return { ok: false, error: "bad_color", field: k }; want[k] = String(args[k]).toLowerCase(); }
+    if (args.name !== undefined) { const n = String(args.name || "").trim(); if (n.length > 40 || /[<>]/.test(n)) return { ok: false, error: "bad_name" }; want.name = n; }
     if (args.width !== undefined) { if (!WIDTHS.includes(Number(args.width))) return { ok: false, error: "bad_width", widths: WIDTHS }; want.width = Number(args.width); }
     const look = normLook(want);
     await db(env, "POST", "settings?on_conflict=key", [{ key: LOOK_KEY, value: JSON.stringify(look), updated_at: now(), updated_by: String(actor).slice(0, 200) }], "resolution=merge-duplicates,return=minimal");

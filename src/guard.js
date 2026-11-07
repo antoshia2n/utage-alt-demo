@@ -38,7 +38,7 @@ export const DEFAULT_MODES = {
   // 便 L3：リッチメニューを読むだけ
   list_line_richmenus: "auto",
   // メディアの便 M1：棚を読む・写す・スライドのリンク・名前を直すは自動（人へは届かない）。消すのは承認（ファイルが戻らない）
-  get_web: "auto", set_web_look: "approve", save_web_part: "approve", // 便 S1・S2：公開サイトの見た目と部品（読者の画面が変わるものは承認）
+  get_web: "auto", set_web_look: "approve", save_web_part: "approve", get_blog: "auto", list_blog_sources: "auto", copy_to_blog: "auto", save_blog_post: "approve", // 便 S1・S2：公開サイトの見た目と部品（読者の画面が変わるものは承認）
   list_media: "auto", import_utage_media: "auto", media_import_status: "auto", add_media_slide: "auto", save_media: "auto", remove_media: "approve",
   list_media_links: "auto", create_media_link: "approve", stop_media_link: "auto",
   // 便 16a：UTAGE の取り込みの様子
