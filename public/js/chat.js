@@ -11,7 +11,8 @@ const COL = ["#b45309", "#7c3aed", "#0f766e", "#be123c", "#1d4ed8", "#4d7c0f", "
 const CATCOL = { 購入: "#2563eb", 予約: "#7c3aed", セミナー: "#0369a1", 学習: "#0f766e", メール: "#a21caf", LINE: "#15803d", 添削: "#be123c", フォーム: "#b45309", ページ: "#4d7c0f", 権利: "#334155", 登録とログイン: "#57534e", マーケ: "#9f1239", そのほか: "#6b6259" };
 // 共通の呼び名（common.js の EVENT_LABEL）に無い出来事の呼び名。履歴に中の名前を出さないため
 const LABEL_MORE = { email_opened: "メールを開いた", line_sent: "LINE を送った", line_keyword: "LINE でキーワードを送った", line_linked: "LINE とつないだ", lesson_mark: "教材に印を付けた", lesson_memo: "教材にメモを書いた",
-  consult_reminded: "予約の前の知らせ", field_set: "項目を書き換えた", goal_review_submitted: "週の振り返りを出した", invite_accepted: "招待を受けた", sales_marked: "売上に記録した", step_entered: "コネクタに入った", workspace_left: "ワークスペースを抜けた", workspace_restored: "ワークスペースに戻った" };
+  consult_reminded: "予約の前の知らせ", field_set: "項目を書き換えた", goal_review_submitted: "週の振り返りを出した", invite_accepted: "招待を受けた", sales_marked: "売上に記録した", step_entered: "コネクタに入った", workspace_left: "ワークスペースを抜けた", workspace_restored: "ワークスペースに戻った",
+  utage_imported: "UTAGE から取り込んだ", report_saved: "日報・週報を出した", goal_draft_started: "目標の下書きを始めた", admin_notified: "シアニンへ知らせた", admin_notify_failed: "シアニンへの知らせに失敗", connector_skipped: "コネクタを飛ばした", label_removed: "ラベルを外した" };
 const labelOf = (t) => EVENT_LABEL[t] || LABEL_MORE[t] || "そのほかの出来事";
 const KEY_LABEL = { shiarabo_basic: "しあらぼ", shiarabo_next_premium: "NEXT プレミアム", shiarabo_next_standard: "NEXT スタンダード", shiarabo_trial: "しあらぼ体験", shiarabo_monitor: "モニター", note_membership: "note メンシプ", shiarabo_paused: "休止", shiarabo_pilot: "先行で試す", guest: "ゲスト" };
 const ERR = {

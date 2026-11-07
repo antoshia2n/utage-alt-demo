@@ -25,7 +25,7 @@ const CAT = [
   [/^(registered|register_again|login|invite_accepted|referred|referral_)/, "登録とログイン"],
   [/^(label_added|label_removed|step_entered|sales_marked|field_set)/, "マーケ"],
 ];
-export const CATS = [...new Set(CAT.map((x) => x[1]))];
+export const CATS = [...new Set(CAT.map((x) => x[1])), "そのほか"];
 export function categoryOf(type) {
   const t = String(type || "");
   if (t === "room_read" || t === "room_chat" || t.startsWith("push_") || CHAT_TYPES.includes(t)) return null;
