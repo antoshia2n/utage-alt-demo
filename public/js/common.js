@@ -69,6 +69,13 @@ export const EVENT_LABEL = {
   admin_notify_failed: "シアニンに知らせられなかった",
   connector_skipped: "コネクタの条件に当たらなかった",
   room_chat: "メッセージ",
+  // チャットの便 C1・C2a（シアニン用の画面のチャット。生徒には出ない）
+  chat_note: "チャットのメモ（自分だけ）",
+  chat_later: "チャットを後で見るにした",
+  chat_task: "チャットからタスクを足した",
+  chat_folder: "チャットをフォルダに入れた",
+  chat_saved: "チャットの資料に入れた",
+  chat_pin: "チャットから顧客管理に残した",
   push_subscribed: "スマホの通知を受け取り始めた",
   push_unsubscribed: "スマホの通知をやめた",
   referred: "紹介のリンクから登録",
