@@ -9,6 +9,8 @@ export const COVERAGE = {
   "ANY /api/admin/whoami": H("画面のログイン確認"),
   "GET /api/admin/guide": H("「使い方」の画面の表示（道具の一覧そのもの）"),
   "GET /api/admin/image": H("画面に画像を出すための受け口"),
+  "POST /api/admin/chat/ai": H("チャットの AI タブ（Workers AI）。AI（Claude）は get_chat・get_chat_group を読んで自分で考えられる"),
+  "POST /api/admin/chat/ai-search": H("チャットの「AI で言い換えて探す」。AI（Claude）は search_chats を言葉を変えて何回か呼べる"),
   "GET /api/admin/moves": H("シアニンパネルの細い画面の表示（get_today と stats で読める）"),
   "GET /api/admin/ai-log": H("AI の動いた記録の画面（shia2n-mcp の ai_log__list で読める）"),
   "GET /api/admin/campaigns/owners": H("シナリオの選択肢の表示（list_campaigns で読める）"),

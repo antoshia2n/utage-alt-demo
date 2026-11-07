@@ -83,9 +83,10 @@ import { makeMedia } from "./media.js";
 import { makeChat } from "./chat.js";
 import { makeGroups } from "./groups.js";
 import { makeNames } from "./names.js";
+import { makeChatAi } from "./chatai.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.75.0-bchat2b2";
+const VERSION = "0.76.0-bchat3";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -753,6 +754,8 @@ const core = {
 const nicks = makeNames({ db });
 const groups = makeGroups({ db, push, logInbound, names: (env) => students.load(env), nicks });
 const chat = makeChat({ db, addEvent, core, logInbound, line, groups, nicks });
+// チャットの便 C3：右の「AI」タブ（Workers AI・結び AI）。中身は src/chatai.js
+const chatAi = makeChatAi({ chat, groups, logInbound });
 
 // 便 8g-3：一言の下書き。AI が組んだコネクタ（1〜10 本）を、動かさない下書きのまま 1 回で作り、企画に入れる。
 // 企画は campaign_id（いまある企画）か campaign_title（新しく作る）。動かすのは set_step で active true（承認）。
@@ -1628,6 +1631,9 @@ async function handleApi(request, env, url) {
     if (path === "/api/admin/chat" && method === "GET") return json(await chat.list(env));
     if (path === "/api/admin/chat/search" && method === "GET") { const r = await chat.search(env, { q: url.searchParams.get("q"), person_id: url.searchParams.get("person_id") || undefined, folder_id: url.searchParams.get("folder_id") || undefined }); return json(r, r.ok === false ? 400 : 200); }
     if (path === "/api/admin/chat/people" && method === "GET") return json(await chat.people(env, { q: url.searchParams.get("q") }));
+    // チャットの便 C3：AI タブ（要約・返信の下書き・見落とし・自由な質問・メッセージの分析）と、言い換えて探す
+    if (path === "/api/admin/chat/ai" && method === "POST") { const body = await request.json().catch(() => ({})); const r = await chatAi.ask(env, body); return json(r, r.ok === false ? 400 : 200); }
+    if (path === "/api/admin/chat/ai-search" && method === "POST") { const body = await request.json().catch(() => ({})); const r = await chatAi.search(env, body); return json(r, r.ok === false ? 400 : 200); }
     // チャットの便 C2b：グループ（作る・読む・送る・スタンプ・名前・人を入れる／抜けてもらう・閉じる）
     if (path === "/api/admin/chat/groups" && method === "GET") return json(await groups.list(env));
     if (path === "/api/admin/chat/groups" && method === "POST") { const body = await request.json().catch(() => ({})); const r = await groups.create(env, body, a.email); return json(r, r.ok === false ? 400 : 200); }

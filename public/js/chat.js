@@ -6,6 +6,7 @@
 //  ・⌘／Ctrl＋K で人を探して開く（部屋の無い人も）・] で右を開閉・? でキーの一覧。右の幅は左端を引いて変えられる（このブラウザに覚える）
 //  ・C2a（2026-11-07）：左のフォルダ（作る・名前・並べ替え・消す・入れる）とフォルダの中で探す・右の「資料」タブ（リンクと画像を自動で集める・資料に入れたもの・探す）
 //    ・右クリックの「資料に入れる」（S）と「連携」（タスクへ）。グループは C2b、「AI」タブは C3
+//  ・C3（2026-11-07）：右の「AI」タブ（要約・返信の下書き・見落とし・自由な質問）・右クリックの「AI で分析」・「AI で言い換えて探す」。中身は src/chatai.js（Workers AI）
 //  ・C2b（2026-11-07）：左に「グループ」（新規作成・メンバーを招待／削除・グループ設定・アーカイブ）。グループは本流＋スレッド・スタンプ 6 つ・既読の人数・吹き出しの右クリック
 //    文言は一般の呼び名にそろえる（2026-11-07 13:12 Naoki「人を入れる→招待など一般的な名称に統一」「既読は人数だけ」）
 //    （スタンプ・スレッドで返信・コピー・タスクへ・その人の 1 対 1・顧客管理・Claude に聞く）。右は スレッド／メンバー／資料。中身は src/groups.js
@@ -37,7 +38,7 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
   const root = host.shadowRoot || host.attachShadow({ mode: "open" });
   root.innerHTML = `<link rel="stylesheet" href="/css/chat.css">
   <div class="app" id="app" data-v="list">
-    <aside class="left" aria-label="チャットの一覧"><div class="lsearch"><label class="sr" for="q">やり取りとメモを探す</label><input id="q" type="search" placeholder="やり取りとメモを探す（Enter）"><div class="hint"><span class="kbd">⌘K</span> で人を探して開く</div></div><div class="list" id="list"></div></aside>
+    <aside class="left" aria-label="チャットの一覧"><div class="lsearch"><label class="sr" for="q">やり取りとメモを探す</label><input id="q" type="search" placeholder="やり取りとメモを探す（Enter）"><div class="hint"><span class="kbd">⌘K</span> で人を探して開く・<button class="lk" id="aiSearch" type="button">AI で言い換えて探す</button></div></div><div class="list" id="list"></div></aside>
     <main class="mid" id="mid"><div class="welcome">左の一覧からチャットを選んでください。<br><span class="kbd">⌘K</span> で名前から開けます。</div></main>
     <aside class="right" id="right" aria-label="顧客と履歴"></aside>
   </div><div id="live" class="sr" aria-live="polite"></div>`;
@@ -310,7 +311,7 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
     const full = app.classList.contains("full");
     $("#right").innerHTML = `<button class="split" id="split" role="separator" aria-orientation="vertical" aria-label="右の幅" aria-valuemin="300" aria-valuemax="640" aria-valuenow="${parseInt(getComputedStyle(app).getPropertyValue("--rw")) || 360}"></button>
       <button class="grab" id="grab" aria-label="${full ? "縮める" : "広げる"}"><i></i>${full ? "縮める" : "広げる"}</button>${cardHtml()}
-      <div class="tabs" role="tablist"><button class="btn back" id="toChat" aria-label="チャットへ戻る">←</button><button role="tab" id="t-hist" aria-selected="${tab === "hist"}" aria-controls="pane" data-tab="hist">履歴</button><button role="tab" id="t-vault" aria-selected="${tab === "vault"}" aria-controls="pane" data-tab="vault">資料 <span class="n">${D.vault.length}</span></button><span class="g"></span></div>
+      <div class="tabs" role="tablist"><button class="btn back" id="toChat" aria-label="チャットへ戻る">←</button><button role="tab" id="t-hist" aria-selected="${tab === "hist"}" aria-controls="pane" data-tab="hist">履歴</button><button role="tab" id="t-vault" aria-selected="${tab === "vault"}" aria-controls="pane" data-tab="vault">資料 <span class="n">${D.vault.length}</span></button><button role="tab" id="t-ai" aria-selected="${tab === "ai"}" aria-controls="pane" data-tab="ai">AI</button><span class="g"></span></div>
       <div class="pane" id="pane" role="tabpanel" tabindex="-1"></div>`;
     $("#cust").onclick = (e) => { e.preventDefault(); openPerson(D.id); };
     $$("[data-og]").forEach((b) => (b.onclick = () => openGroup(b.dataset.og)));
@@ -327,8 +328,8 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
     sp.onkeydown = (e) => { const w = parseInt(sp.getAttribute("aria-valuenow")); if (e.key === "ArrowLeft") { e.preventDefault(); setW(w + 24); } if (e.key === "ArrowRight") { e.preventDefault(); setW(w - 24); } };
     const tabs = $$("[data-tab]");
     tabs.forEach((b) => { b.tabIndex = b.dataset.tab === tab ? 0 : -1; b.onclick = () => { tab = b.dataset.tab; drawRight(); $(`[data-tab="${tab}"]`).focus(); };
-      b.onkeydown = (e) => { if (e.key === "ArrowRight" || e.key === "ArrowLeft") { e.preventDefault(); tab = tab === "hist" ? "vault" : "hist"; drawRight(); $(`[data-tab="${tab}"]`).focus(); } }; });
-    tab === "vault" ? drawVault() : drawHist();
+      b.onkeydown = (e) => { if (e.key === "ArrowRight" || e.key === "ArrowLeft") { e.preventDefault(); const T = ["hist", "vault", "ai"]; tab = T[(T.indexOf(tab) + (e.key === "ArrowRight" ? 1 : 2)) % 3]; drawRight(); $(`[data-tab="${tab}"]`).focus(); } }; });
+    tab === "vault" ? drawVault() : tab === "ai" ? drawAi($("#pane")) : drawHist();
   }
   // 右の「資料」：入れたもの・リンク・画像。言葉で絞る（この人の中）
   function drawVault() {
@@ -367,7 +368,7 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
     const el = document.createElement("div"); el.className = "menu"; el.setAttribute("role", "menu"); el.setAttribute("aria-label", "メッセージの操作");
     el.innerHTML = `<button role="menuitem" data-a="copy">コピー<small>C</small></button><button role="menuitem" data-a="fwd">転送（メモとして）…<small>F</small></button><button role="menuitem" data-a="keep">${m.kept ? "資料から外す" : "資料に入れる"}<small>S</small></button><hr>
       <div class="mh2" aria-hidden="true">連携</div><button role="menuitem" data-a="task">タスクへ追加（TaskMaster）…<small>T</small></button><button role="menuitem" data-a="person">顧客管理で開く →</button><hr>
-      <button role="menuitem" data-a="claude">Claude に聞く（依頼文をコピー）</button><button role="menuitem" data-a="later">このチャットを後で見る…</button>${m.corr || (m.lesson && !m.me) ? '<button role="menuitem" data-a="room">添削ルームで開く →</button>' : ""}`;
+      <button role="menuitem" data-a="ai">AI で分析</button><button role="menuitem" data-a="claude">Claude に聞く（依頼文をコピー）</button><button role="menuitem" data-a="later">このチャットを後で見る…</button>${m.corr || (m.lesson && !m.me) ? '<button role="menuitem" data-a="room">添削ルームで開く →</button>' : ""}`;
     root.appendChild(el);
     const w = el.offsetWidth, h = el.offsetHeight; el.style.left = Math.max(8, Math.min(x, innerWidth - w - 8)) + "px"; el.style.top = Math.max(8, Math.min(y, innerHeight - h - 8)) + "px";
     const its = $$("[role=menuitem]", el); its[0].focus();
@@ -384,6 +385,7 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
     if (a === "copy") { navigator.clipboard.writeText(m.text).then(() => toast("コピーしました"), () => toast("コピーできませんでした。文を選んでコピーしてください")); if (lastFocus) lastFocus.focus(); return; }
     if (a === "room") return openRoom(D.id, m.corr ? "corr" : "chat");
     if (a === "later") return laterDlg(lastFocus);
+    if (a === "ai") return askAi("message", { message_id: m.id });
     if (a === "claude") {
       const t = `マーケくんのチャット（person_id: ${D.id}・${D.card.name || D.card.email}）を get_chat で読み、次のメッセージ（event_id: ${m.id}）について、やり取りと履歴を踏まえて分析し、返し方の案を出してください。\n\n「${m.text.slice(0, 300)}」`;
       navigator.clipboard.writeText(t).then(() => toast("Claude に貼る依頼文をコピーしました"), () => dialog(`<h2>Claude に貼る依頼文</h2><textarea rows="7" readonly>${esc(t)}</textarea><div class="acts"><button class="btn pri" data-x>閉じる</button></div>`));
@@ -564,7 +566,7 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
       ${inThread ? "" : '<button role="menuitem" data-a="thread">スレッドで返信</button>'}<button role="menuitem" data-a="copy">コピー<small>C</small></button><hr>
       <div class="mh2" aria-hidden="true">連携</div><button role="menuitem" data-a="task">タスクへ追加（TaskMaster）…</button>
       ${student ? `<button role="menuitem" data-a="dm">${esc(m.name)}との 1 対 1 を開く</button><button role="menuitem" data-a="person">${esc(m.name)}を顧客管理で開く →</button>` : ""}<hr>
-      <button role="menuitem" data-a="claude">Claude に聞く（依頼文をコピー）</button>`;
+      <button role="menuitem" data-a="ai">AI で分析</button><button role="menuitem" data-a="claude">Claude に聞く（依頼文をコピー）</button>`;
     root.appendChild(el);
     const w = el.offsetWidth, h = el.offsetHeight; el.style.left = Math.max(8, Math.min(x, innerWidth - w - 8)) + "px"; el.style.top = Math.max(8, Math.min(y, innerHeight - h - 8)) + "px";
     const its = $$("[role=menuitem]", el); its[0].focus();
@@ -578,6 +580,7 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
     if (a === "thread") return openThread(m.id);
     if (a === "dm") return openChat(m.who);
     if (a === "person") return openPerson(m.who);
+    if (a === "ai") return askAi("message", { message_id: m.id });
     if (a === "claude") {
       const t = `マーケくんのグループ「${G.group.name}」（group_id: ${G.id}）を get_chat_group で読み、次のメッセージ（id: ${m.id}・${m.name}）について、流れとスレッドを踏まえて分析し、返し方の案を出してください。\n\n「${m.text.slice(0, 300)}」`;
       navigator.clipboard.writeText(t).then(() => toast("Claude に貼る依頼文をコピーしました"), () => dialog(`<h2>Claude に貼る依頼文</h2><textarea rows="7" readonly>${esc(t)}</textarea><div class="acts"><button class="btn pri" data-x>閉じる</button></div>`));
@@ -619,7 +622,7 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
       for (const u of m.text.match(/https?:[/][/][^\s　<>"'）」]+/g) || []) if (!vault.some((v) => v.url === u)) vault.push({ kind: "link", url: u, m });
       for (const k of m.images) vault.push({ kind: "image", key: k, m });
     }
-    const tabs = [tm ? ["thread", "スレッド"] : null, ["mem", `メンバー <span class="n">${G.members.length}</span>`], ["vault", `資料 <span class="n">${vault.length}</span>`]].filter(Boolean);
+    const tabs = [tm ? ["thread", "スレッド"] : null, ["mem", `メンバー <span class="n">${G.members.length}</span>`], ["vault", `資料 <span class="n">${vault.length}</span>`], ["ai", "AI"]].filter(Boolean);
     $("#right").innerHTML = `<div class="tabs" role="tablist" style="margin-top:0"><button class="btn back" id="toChat" aria-label="グループへ戻る">←</button>${tabs.map(([k, t]) => `<button role="tab" data-gt="${k}" aria-selected="${gTab === k}" tabindex="${gTab === k ? 0 : -1}">${t}</button>`).join("")}<span class="g"></span></div><div class="pane" id="pane" role="tabpanel"></div>`;
     $("#toChat").onclick = () => setView("chat");
     $$("[data-gt]").forEach((b) => (b.onclick = () => { gTab = b.dataset.gt; drawGroupRight(); $(`[data-gt="${gTab}"]`).focus(); }));
@@ -634,6 +637,8 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
         if (!r.ok) { toast(gErr(r)); return; } await openGroup(G.id); $("#tcomp")?.focus(); toast(`スレッドに返信しました（${r.notified} 人に通知）`); };
       $("#tsend").onclick = send; $("#tcomp").onkeydown = (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); send(); } };
       $("#tclose").onclick = () => { gThread = null; gTab = "mem"; drawGroupRight(); };
+    } else if (gTab === "ai") {
+      drawAi(pane);
     } else if (gTab === "mem") {
       const last = G.messages.flatMap((x) => [x, ...x.replies]).reduce((s, m) => Math.max(s, m.id), 0);
       pane.innerHTML = `<p class="who">名前を押すと、その人との 1 対 1 のチャットへ移ります</p>${G.members.map((x) => `<div class="mem">${av(x.id, x.name)}<button class="lk mn" data-dm="${x.id}">${esc(x.name)}</button><small></small><button class="lk" data-rm="${x.id}" aria-label="${esc(x.name)}をメンバーから削除">削除</button></div>`).join("") || '<p class="empty">まだメンバーがいません。上の「＋ メンバーを招待」から招待できます</p>'}`;
@@ -708,21 +713,77 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
     });
   }
 
+  // ---------- AI（C3） ----------
+  // 右の「AI」タブ。要約・返信の下書き・見落とし・自由な質問・メッセージの分析。答えは「入力欄に入れる」「コピー」「メモに残す」まで（送らない）
+  const AIERR = { no_ai: "AI がつながっていません（設定の確認が要ります）", ai_failed: "AI が答えられませんでした。少し待ってもう一度", ai_empty: "AI の答えが空でした。もう一度押してください", need_question: "聞きたいことを入れてください", message_not_found: "元のメッセージが見つかりません" };
+  const aiErr = (r) => AIERR[r.error] || errText(r);
+  const AIMODE = { summary: "要約", draft: "返信の下書き", gaps: "見落とし", free: "質問", message: "メッセージの分析" };
+  const aiLogs = {};
+  const aiKey = () => (G ? "g:" + G.id : D ? "p:" + D.id : "");
+  function drawAi(pane) {
+    const key = aiKey(), logs = aiLogs[key] || [];
+    pane.innerHTML = `<p class="who">${G ? `グループ「${esc(G.group.name)}」` : `${esc(D.card.name || "この人")}とのやり取り`}を AI（Workers AI）が読みます。送るのは Naoki が押したときだけです</p>
+      <div class="aibtns" role="group" aria-label="AI に頼む"><button class="btn" data-ai="summary">要約</button><button class="btn" data-ai="draft">返信の下書き</button><button class="btn" data-ai="gaps">見落とし</button></div>
+      <label class="sr" for="aiq">AI に聞く</label><textarea id="aiq" class="tcomp" maxlength="1000" placeholder="自由に聞く（例 この人が最近止まっている理由は？）"></textarea>
+      <div class="trow"><span class="g">⌘／Ctrl＋Enter で聞く</span><button class="btn pri" id="aiask">聞く</button></div>
+      <div id="ailog" aria-live="polite">${logs.map((x, i) => `<div class="aiout${x.err ? " err" : ""}"><div class="aih"><b>${esc(AIMODE[x.mode] || "")}</b>${x.q ? `<span>：${esc(x.q.slice(0, 40))}</span>` : ""}<small>${esc(hm(x.at))}</small></div>
+        ${x.wait ? '<p class="aiw">AI が読んでいます…</p>' : `<div class="ait">${esc(x.text)}</div>${x.err ? "" : `<div class="aia"><button class="lk" data-ins="${i}">入力欄に入れる</button><button class="lk" data-cp="${i}">コピー</button>${G ? "" : `<button class="lk" data-memo="${i}">メモに残す</button>`}</div>`}`}</div>`).join("") || '<p class="empty">まだ何も聞いていません。上のボタンか、自由に聞く欄から始められます</p>'}</div>`;
+    $$("[data-ai]", pane).forEach((b) => (b.onclick = () => askAi(b.dataset.ai)));
+    const go = () => { const q = $("#aiq", pane).value.trim(); if (!q) { toast(AIERR.need_question); $("#aiq", pane).focus(); return; } askAi("free", { question: q }); };
+    $("#aiask", pane).onclick = go;
+    $("#aiq", pane).onkeydown = (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); go(); } };
+    $$("[data-ins]", pane).forEach((b) => (b.onclick = () => { const t = logs[+b.dataset.ins].text; const box = $(G ? "#gcomp" : "#comp"); if (!box) { toast("入力欄がありません（サイトのやり取りに切り替えてください）"); return; } if (!G && noteMode) { noteMode = false; drawMid(); } const bx = $(G ? "#gcomp" : "#comp"); bx.value = t; bx.focus(); if (narrow()) setView("chat"); toast("入力欄に入れました。直してから送ってください"); }));
+    $$("[data-cp]", pane).forEach((b) => (b.onclick = () => navigator.clipboard.writeText(logs[+b.dataset.cp].text).then(() => toast("コピーしました"), () => toast("コピーできませんでした"))));
+    $$("[data-memo]", pane).forEach((b) => (b.onclick = async () => { const x = logs[+b.dataset.memo]; const r = await call(`/api/admin/chat/${D.id}/note`, "POST", { text: `【AI の${AIMODE[x.mode]}】\n${x.text}` }); if (!r.ok) { toast(errText(r)); return; } await reload(); toast("メモに残しました（生徒には見えません）"); }));
+  }
+  async function askAi(mode, extra = {}) {
+    const key = aiKey(); if (!key) return;
+    const logs = (aiLogs[key] = aiLogs[key] || []);
+    const item = { mode, q: extra.question || (extra.message_id ? "#" + extra.message_id : ""), at: new Date().toISOString(), wait: true };
+    logs.unshift(item); if (logs.length > 10) logs.pop();
+    openAiTab();
+    const body = G ? { group_id: G.id, mode, ...extra } : { person_id: D.id, mode, ...extra };
+    const r = await call("/api/admin/chat/ai", "POST", body);
+    item.wait = false;
+    if (r.ok) item.text = r.text; else { item.text = aiErr(r); item.err = true; }
+    if (aiKey() === key) { openAiTab(); live(r.ok ? "AI の答えが出ました" : item.text); }
+  }
+  function openAiTab() {
+    if (!sideOpen) { sideOpen = true; app.classList.remove("noside"); G ? drawGroupMid() : chan === "line" ? drawLine() : drawMid(); }
+    if (G) { gTab = "ai"; drawGroupRight(); } else { tab = "ai"; drawRight(); }
+    if (narrow()) setView("side");
+  }
+  // 探す：AI で言い換えて探す
+  async function aiSearch() {
+    const q = $("#q").value.trim();
+    if (!q) { toast("探す言葉を入れてください"); $("#q").focus(); return; }
+    $("#mid").innerHTML = '<div class="welcome">AI が言葉を広げて探しています…</div>'; setView("chat");
+    const r = await call("/api/admin/chat/ai-search", "POST", { q });
+    if (!r.ok) { $("#mid").innerHTML = `<div class="welcome">${esc(aiErr(r))}</div>`; return; }
+    showHits(r, `「${q}」を AI で言い換えて探した結果`, `探した言葉：${r.words.join("・")}${r.note ? "（AI が使えず、元の言葉だけで探しました）" : ""}`);
+  }
+
   // ---------- 探す ----------
+  function showHits(r, title, sub) {
+    hits = r.hits; drawLeft();
+    const words = r.words || [String($("#q").value || "").trim()];
+    const mark = (t) => { let x = esc(t); for (const w of words.filter(Boolean)) x = x.split(esc(w)).join(`<mark>${esc(w)}</mark>`); return x; };
+    $("#mid").innerHTML = `<div class="mh"><button class="btn back" id="toList">←</button><div><h1>${esc(title)}</h1><small>${esc(sub)}</small></div><span class="g"></span><button class="btn" id="clr">探すのをやめる</button></div>
+      <div class="results">${hits.map((h, k) => `<button class="res" data-k="${k}"><small>${esc(h.name)}・${esc(h.kind)}・${esc(h.from)}・${esc(fmtTime(h.at))}${h.word ? "・言葉「" + esc(h.word) + "」" : ""}</small>${mark(h.text)}</button>`).join("") || '<p class="empty">見つかりませんでした。言葉を変えるか、「AI で言い換えて探す」を試してください</p>'}</div>`;
+    $("#toList").onclick = () => setView("list");
+    $("#clr").onclick = () => { $("#q").value = ""; hits = null; drawLeft(); if (G) drawGroupMid(); else if (D) chan === "line" ? drawLine() : drawMid(); else $("#mid").innerHTML = ""; $("#q").focus(); };
+    $$("[data-k]", $("#mid")).forEach((b) => (b.onclick = () => { const h = hits[+b.dataset.k]; h.group_id ? openGroup(h.group_id, h.event_id) : openChat(h.person_id, h.event_id); }));
+    setView("chat"); live(`${r.count} 件見つかりました`);
+  }
   $("#q").onkeydown = async (e) => {
     if (e.key !== "Enter") return;
     const q = $("#q").value.trim();
-    if (!q) { hits = null; drawLeft(); if (D) chan === "line" ? drawLine() : drawMid(); return; }
+    if (!q) { hits = null; drawLeft(); if (G) drawGroupMid(); else if (D) chan === "line" ? drawLine() : drawMid(); return; }
     const r = await call("/api/admin/chat/search?q=" + encodeURIComponent(q) + (fsel ? "&folder_id=" + fsel : ""));
     if (!r.ok) { toast(errText(r)); return; }
-    hits = r.hits; drawLeft();
-    $("#mid").innerHTML = `<div class="mh"><button class="btn back" id="toList">←</button><div><h1>「${esc(q)}」を探した結果</h1><small>${fsel ? "フォルダ「" + esc(fname(fsel)) + "」の中・" : ""}${r.count} 件（やり取り・添削・メモ）</small></div><span class="g"></span><button class="btn" id="clr">探すのをやめる</button></div>
-      <div class="results">${hits.map((h, k) => `<button class="res" data-k="${k}"><small>${esc(h.name)}・${esc(h.kind)}・${esc(h.from)}・${esc(fmtTime(h.at))}</small>${esc(h.text).split(esc(q)).join(`<mark>${esc(q)}</mark>`)}</button>`).join("") || '<p class="empty">見つかりませんでした。言葉を変えてみてください</p>'}</div>`;
-    $("#toList").onclick = () => setView("list");
-    $("#clr").onclick = () => { $("#q").value = ""; hits = null; drawLeft(); if (D) chan === "line" ? drawLine() : drawMid(); else $("#mid").innerHTML = ""; $("#q").focus(); };
-    $$("[data-k]", $("#mid")).forEach((b) => (b.onclick = () => { const h = hits[+b.dataset.k]; h.group_id ? openGroup(h.group_id, h.event_id) : openChat(h.person_id, h.event_id); }));
-    setView("chat"); live(`${r.count} 件見つかりました`);
+    showHits(r, `「${q}」を探した結果`, `${fsel ? "フォルダ「" + fname(fsel) + "」の中・" : ""}${r.count} 件（やり取り・添削・メモ・グループ）`);
   };
+  $("#aiSearch").onclick = aiSearch;
 
   // ---------- ⌘K ----------
   function quick() {
