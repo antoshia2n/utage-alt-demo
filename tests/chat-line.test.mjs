@@ -1,5 +1,5 @@
 // チャットの便 C2a-2：チャットの人と LINE の友だちを手で結ぶ・外す（src/line.js の linkMaps・linkManual・personLinks）
-// 走らせ方：node --test tests/chat-line.test.mjs
+// 走らせ方：node --test tests/chat-line.test.mjs（見本 https://claude.ai/artifact/K13LWaLKTHvgWFkF8vJesV・Naoki OK 12:29）
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fakeStore } from "./fake-store.mjs";
