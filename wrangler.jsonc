@@ -30,6 +30,8 @@
     "MAIL_FROM": "noreply@demo.shia2n.jp",
     // B の便 7c-1 の続き：メールの中のリンクの住所。送り元 mail.shia2n.jp とそろえるため shia2n.jp の下に置く（Cloudflare の画面で Worker に足した住所）
     "PUBLIC_ORIGIN": "https://lab.shia2n.jp",
+    // 便 T1（2026-11-07 Naoki OK 23:05）：友だち追加のときに「メールを登録」の案内を送るアカウント。シアニンを足した（X収益化ロードマップ動画企画で、反応した人から台帳と結ぶため）
+    "LINE_INVITE_ACCOUNTS": "college_ops,shianin",
     // B の便 12a：公開のページの住所。会員の画面（PUBLIC_ORIGIN）と別の住所にして、ページの中の仕掛けがログイン中の人の鍵に届かないようにする（Cloudflare の画面で Worker に足した住所）
     "PAGES_ORIGIN": "https://lp.shia2n.jp",
     // 便 R1：ロボット判定（Cloudflare Turnstile）の表示用の鍵（公開してよい値）。秘密の鍵 TURNSTILE_SECRET_KEY は Cloudflare の画面に Secret として置く。

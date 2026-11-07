@@ -2208,12 +2208,12 @@ function showConnectorFields() {
 }
 function connectorText(s) {
   const ta = s.trigger_args || {};
-  const when = (triggerNames[s.trigger] || s.trigger) + (s.product_id ? "（" + s.product_id + "）" : "") + (ta.label ? "「" + ta.label + "」" : "") + (ta.url ? "（" + String(ta.url).slice(0, 30) + "）" : "") + (ta.form ? "「" + (formNames[ta.form] || ta.form) + "」" : "") + (ta.page ? "「" + (pageNames[ta.page] || ta.page) + "」" : "") + (ta.button ? "のボタン " + ta.button : "") + (s.delay_hours ? `・${s.delay_hours} 時間後` : "");
+  const when = (triggerNames[s.trigger] || s.trigger) + (s.product_id ? "（" + s.product_id + "）" : "") + (ta.label ? "「" + ta.label + "」" : "") + (ta.url ? "（" + String(ta.url).slice(0, 30) + "）" : "") + (ta.form ? "「" + (formNames[ta.form] || ta.form) + "」" : "") + (ta.page ? "「" + (pageNames[ta.page] || ta.page) + "」" : "") + (ta.button ? "のボタン " + ta.button : "") + (ta.account ? "（LINE " + ta.account + "）" : "") + (s.delay_hours ? `・${s.delay_hours} 時間後` : "");
   const who = filterText(s.selector || {});
   const aa = s.action_args || {};
   const target = s.action === "move_to" && aa.step_id ? (stepsCache.find((x) => x.id === aa.step_id) || {}).name || "番号 " + aa.step_id : "";
   const what = (actionNames[s.action] || s.action) + (s.action === "add_label" && aa.label ? "「" + aa.label + "」" : "")
-    + (target ? "「" + target + "」" : "") + (s.action === "set_field" && aa.field ? "「" + (fieldNames[aa.field] || aa.field) + " ＝ " + (aa.value || "（空）") + "」" : "");
+    + (target ? "「" + target + "」" : "") + (s.action === "set_field" && aa.field ? "「" + (fieldNames[aa.field] || aa.field) + " ＝ " + (aa.value || "（空）") + "」" : "") + (s.action === "send_line" && aa.account ? "（" + aa.account + "）" : "");
   return { when, who, what };
 }
 function filterText(f) {
@@ -2273,11 +2273,13 @@ async function loadDeliver() {
       const body = {
         name: $("sf-name").value, trigger: tr, product_id: tr === "purchase" ? ($("sf-product").value.trim() || null) : null,
         trigger_args: tr === "label_added" ? { label: $("sf-tlabel").value.trim() } : tr === "clicked" && $("sf-turl").value.trim() ? { url: $("sf-turl").value.trim() } : tr === "form_submitted" && $("sf-tform").value ? { form: $("sf-tform").value }
+          : tr === "line_linked" && $("sf-taccount").value ? { account: $("sf-taccount").value }
           : tr === "page_viewed" || tr === "page_clicked" ? { ...($("sf-tpage").value ? { page: $("sf-tpage").value } : {}), ...(tr === "page_clicked" && $("sf-tbutton").value.trim() ? { button: $("sf-tbutton").value.trim() } : {}) } : {},
         delay_hours: Number($("sf-delay").value.replace(/[^0-9]/g, "") || 0), selector,
         action: ac, action_args: ac === "add_label" ? { label: $("sf-alabel").value.trim() }
           : ac === "move_to" ? { step_id: Number($("sf-astep").value) || null }
-          : ac === "set_field" ? { field: $("sf-afield").value, value: $("sf-avalue").value.trim() } : {},
+          : ac === "set_field" ? { field: $("sf-afield").value, value: $("sf-avalue").value.trim() }
+          : ac === "send_line" ? { account: $("sf-aaccount").value } : {},
         subject: $("sf-subject").value, body: $("sf-body").value,
         active: $("sf-active").checked,
       };
@@ -2345,6 +2347,7 @@ async function openStepById(id) {
 }
 const stepResult = (s) => (s.action === "notify_admin" ? `知らせた ${s.notified || 0}` : s.action === "add_label" ? `付けた ${s.labeled || 0}`
   : s.action === "move_to" ? `移した ${s.moved || 0}` : s.action === "set_field" ? `書いた ${s.fields_set || 0}`
+  : s.action === "send_line" ? `LINE 送った ${s.line_sent || 0}` + (s.line_failed ? `・失敗 ${s.line_failed}` : "")
   : `送った ${s.sent}・開いた ${s.opened_people || 0} 人・押した ${s.clicks} 回`) + (s.skipped ? `・条件外 ${s.skipped}` : "");
 
 function openBroadcast(b, msg) {
@@ -2405,10 +2408,10 @@ function openConnector(s, keepStatus, kind) {
   } else {
     const ta = s.trigger_args || {}, sel = s.selector || {}, c = connectorText(s);
     $("sf-id").value = s.id; $("sf-name").value = s.name; $("sf-trigger").value = s.trigger; $("sf-product").value = s.product_id || "";
-    $("sf-tlabel").value = ta.label || ""; $("sf-turl").value = ta.url || ""; $("sf-tform").value = ta.form || ""; $("sf-tpage").value = ta.page || ""; $("sf-tbutton").value = ta.button || "";
+    $("sf-tlabel").value = ta.label || ""; $("sf-turl").value = ta.url || ""; $("sf-tform").value = ta.form || ""; $("sf-tpage").value = ta.page || ""; $("sf-tbutton").value = ta.button || ""; $("sf-taccount").value = ta.account || "";
     $("sf-labels").value = (sel.labels || []).join(","); $("sf-nolabels").value = (sel.not_labels || []).join(",");
     $("sf-action").value = s.action || "send_email"; $("sf-alabel").value = (s.action_args || {}).label || "";
-    $("sf-astep").value = (s.action_args || {}).step_id || ""; $("sf-afield").value = (s.action_args || {}).field || ""; $("sf-avalue").value = (s.action_args || {}).value || "";
+    $("sf-astep").value = (s.action_args || {}).step_id || ""; $("sf-afield").value = (s.action_args || {}).field || ""; $("sf-avalue").value = (s.action_args || {}).value || ""; $("sf-aaccount").value = (s.action_args || {}).account || "shianin";
     $("sf-open").value = openValue(sel);
     $("sf-delay").value = s.delay_hours; $("sf-subject").value = s.subject; $("sf-body").value = s.body; $("sf-active").checked = s.active;
     $("sf-head").innerHTML = headHtml({ title: s.name, sub: `${esc(c.when)} → ${esc(c.who)} → ${esc(c.what)}`, pills: [s.active ? pill("動いている") : pill("止めている", "gray"), pill(stepResult(s), "gray")], foot: campPicker("step", s.id) });

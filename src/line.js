@@ -23,6 +23,9 @@ export function inviteOnFollow(env, account) {
   return list.includes(account);
 }
 export const FORWARD_PREFIX = "line_forward_";
+// 便 T1：友だち追加の案内の文（アカウントごと）
+export const INVITE_PREFIX = "line_invite_text_";
+const INVITE_MAX = 1000;
 // 結びの出来事（古い順）→ 番号 → 人・人 → 番号
 export function linkMaps(rows) {
   const byUser = new Map(), byPerson = new Map();
@@ -254,7 +257,9 @@ export function makeLine(h) {
     const { byUser } = await links(env, account);
     if (byUser.has(user)) return { ok: true, skipped: "linked" };
     const url = `${origin(env)}/line-link?t=${await linkToken(secret, account, user)}`;
-    const text = `友だち追加ありがとうございます。\nお知らせをメールでも受け取れるよう、こちらからメールアドレスを登録してください。\n${url}`;
+    // 便 T1：文はアカウントごとに変えられる（表 b_settings の line_invite_text_<account>・{{url}} がリンクに置き換わる）。無ければ今までの文
+    const custom = (await inviteText(env, account)).text;
+    const text = custom ? (custom.includes("{{url}}") ? custom.split("{{url}}").join(url) : `${custom}\n${url}`) : `友だち追加ありがとうございます。\nお知らせをメールでも受け取れるよう、こちらからメールアドレスを登録してください。\n${url}`;
     const r = await api(env, account, "POST", "/message/push", { to: user, messages: [{ type: "text", text }] });
     await logInbound(env, "line_link_invite", { account, user }, { ok: r.ok, status: r.status, error: r.error || null }, r.ok ? 200 : (r.status || 500));
     return r;
@@ -664,7 +669,39 @@ export function makeLine(h) {
       note: "utage_links は押すと UTAGE の住所へ行く場所の数（解約で切れる）。postbacks は押した知らせを受けて動く場所の数（いまは UTAGE が受けている）" };
   }
 
-  return { handleWebhook, settings, setForward, inbound, forwardUrl, link, friends, send, quota, sendLinkInvite, board, thread, reply, broadcast, personLinks, linkManual,
+  // ---------- 便 T1：友だち追加の案内の文・ステップ配信から 1 人へ送る ----------
+  const inviteKey = (account) => INVITE_PREFIX + account;
+  async function inviteText(env, account) {
+    const rows = await db(env, "GET", `settings?select=value,updated_at,updated_by&key=eq.${inviteKey(account)}`);
+    return rows.length ? { text: String(rows[0].value || ""), updated_at: rows[0].updated_at, updated_by: rows[0].updated_by } : { text: "", updated_at: null, updated_by: null };
+  }
+  // 文を入れる・外す（空で今までの文に戻る）。{{url}} の所に「メールを登録」のリンクが入る（無ければ文の最後に付く）
+  async function setInviteText(env, { account, text }, actor) {
+    if (!ACCOUNT_RE.test(String(account || ""))) return { ok: false, error: "bad_account", note: "英小文字で始まる英小文字と下線の 2〜20 字" };
+    const v = String(text == null ? "" : text).trim();
+    if (v.length > INVITE_MAX) return { ok: false, error: "too_long", max: INVITE_MAX };
+    const before = await inviteText(env, account);
+    const now = new Date().toISOString();
+    await db(env, "POST", "settings?on_conflict=key", [{ key: inviteKey(account), value: v, updated_at: now, updated_by: String(actor).slice(0, 200) }], "resolution=merge-duplicates,return=minimal");
+    if (changes) await changes.record(env, { kind: "setting", target: inviteKey(account), before: before.text, after: v, summary: v ? `LINE（${account}）の友だち追加の案内の文を変えた` : `LINE（${account}）の友だち追加の案内の文を元に戻した`, actor });
+    return { ok: true, account, text: v, uses_default: !v, sends_on_follow: inviteOnFollow(env, account) };
+  }
+  // ステップ配信（deliver.js）から 1 人へ送る。出来事は呼んだ側が積む。結ばれていない・ブロックは送らずに理由を返す
+  async function sendStep(env, { account, person_id, text }) {
+    if (!ACCOUNT_RE.test(String(account || ""))) return { result: "failed", error: "bad_account" };
+    const body = String(text || "").trim().slice(0, TEXT_MAX);
+    if (!body) return { result: "failed", error: "need_text" };
+    if (!env[tokenName(account)]) return { result: "failed", error: "no_token" };
+    const [{ byPerson }, st] = await Promise.all([links(env, account), friendState(env, account)]);
+    const u = byPerson.get(String(person_id));
+    if (!u) return { result: "not_linked" };
+    if (st.get(u) && st.get(u).blocked) return { result: "blocked" };
+    const r = await api(env, account, "POST", "/message/push", { to: u, messages: [{ type: "text", text: body }] });
+    await logInbound(env, "line_send", { account, targets: 1, actor: "step" }, { sent: r.ok ? 1 : 0, failed: r.ok ? 0 : 1, error: r.ok ? null : r.error }, r.ok ? 200 : 502);
+    return r.ok ? { result: "sent" } : { result: "failed", error: String(r.error || "send_failed").slice(0, 120) };
+  }
+
+  return { handleWebhook, settings, setForward, inviteText, setInviteText, sendStep, inbound, forwardUrl, link, friends, send, quota, sendLinkInvite, board, thread, reply, broadcast, personLinks, linkManual,
     listReplies, saveReply, setReplyActive, listTemplates, saveTemplate, autoReply, richMenus };
 }
 

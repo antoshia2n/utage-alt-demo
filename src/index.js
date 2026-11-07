@@ -66,7 +66,7 @@ import { makeWeb } from "./web.js";
 import { makeBlog } from "./blog.js";
 import { makeLessonQA, openLessonQuestions, QUESTION_MAX } from "./lessonqa.js";
 import { roomNotices } from "./roomview.js";
-import { makeLine } from "./line.js";
+import { makeLine, inviteOnFollow } from "./line.js";
 import { makeUtageImport } from "./utageimport.js";
 import { makeSalesMark } from "./salesmark.js";
 import { makeFolders } from "./folders.js";
@@ -214,7 +214,7 @@ const push = makePush({ db, addEvent, logInbound });
 const connect = makeConnect({ db, addEvent, logInbound, sell, mailcfg, push });
 // 便 11a：人の項目とフォーム。答えた人は無料登録と同じ道（registerPerson）で台帳に入る
 const forms = makeForms({ db, addEvent, logInbound, registerPerson: (env, a) => registerPerson(env, a) });
-const deliver = makeDeliver({ db, addEvent, logInbound, bin3, sell, mailcfg, connect, forms, decorateClick: (env, u, cid) => pagesLinkFor(env, u, cid) });
+const deliver = makeDeliver({ db, addEvent, logInbound, bin3, sell, mailcfg, connect, forms, decorateClick: (env, u, cid) => pagesLinkFor(env, u, cid), line: () => line });
 const learn = makeLearn({ db });
 // B の便 15：教材の質問とメモ（中身は src/lessonqa.js）
 const lessonqa = makeLessonQA({ db, addEvent, learn });
@@ -2253,6 +2253,20 @@ const TOOLS = [
     inputSchema: { type: "object", properties: { account: { type: "string" }, url: { type: "string" } }, required: ["account", "url"] },
   },
   {
+    name: "get_line_invite",
+    screen: "settings",
+    say: "LINE の友だち追加の案内の文を見る",
+    description: "LINE の友だち追加のときに送る「メールを登録」の案内の文（便 T1）をアカウントごとに返す：text（空なら今までの決まった文）・送るアカウントか sends_on_follow（Cloudflare の LINE_INVITE_ACCOUNTS）・最後に変えた日時と人。",
+    inputSchema: { type: "object", properties: { account: { type: "string" } }, required: ["account"] },
+  },
+  {
+    name: "set_line_invite",
+    screen: "settings",
+    say: "LINE の友だち追加の案内の文を変える",
+    description: "LINE の友だち追加のときに送る「メールを登録」の案内の文を変える（便 T1）。text は 1000 字まで。{{url}} の所にその人専用の登録のリンクが入る（無ければ文の最後に付く）。空にすると今までの決まった文に戻る。承認が要る道具：呼ぶと承認待ちになり approval_url が返る。",
+    inputSchema: { type: "object", properties: { account: { type: "string" }, text: { type: "string" } }, required: ["account", "text"] },
+  },
+  {
     name: "list_line_inbound",
     screen: "line",
     say: "LINE の受け口が受けた数と転送の失敗を数える",
@@ -2694,14 +2708,14 @@ const TOOLS = [
     name: "set_step",
     screen: "blueprint",
     say: "コネクタを足す・直す・動かす・止める",
-    description: "コネクタを足す・直す・動かす・止める。承認が要る道具。欄：id（直すとき）・name・trigger（registered 登録した／purchase 買った／clicked メールのリンクを押した／lesson_viewed 教材を見た／correction_submitted 添削を出した／login ログインした／label_added ラベルが付いた／form_submitted フォームに答えた／page_viewed ページを見た／page_clicked ページのボタンを押した／moved ほかの自動の動きから移された）・trigger_args（label：label_added のときのラベル・url：clicked のときのリンク・form：form_submitted のときのフォームの slug）・product_id（purchase のとき。省くとどの購入でも）・delay_hours（何時間後）・selector（誰に。preview_audience の filter と同じ形）・action（send_email メールを送る／notify_admin Naoki に知らせる／add_label ラベルを付ける／move_to 別の自動の動きへ移す／set_field 人の項目に値を書く）・action_args（label：add_label のとき・step_id：move_to のとき。移す先はきっかけが moved の自動の動きだけ・field と value：set_field のとき。field は list_fields の key）・subject・body（{{name}}・{{email}}・{{product}}・{{label}}・{{url}} が置き換わる。[[ボタンの文字|https://…]] でボタン）・active。移す・移されるの連なりは 5 段まで。動かした時刻より後のきっかけだけが対象。セレクタに当たらない人は connector_skipped として残る。",
+    description: "コネクタを足す・直す・動かす・止める。承認が要る道具。欄：id（直すとき）・name・trigger（registered 登録した／purchase 買った／clicked メールのリンクを押した／lesson_viewed 教材を見た／correction_submitted 添削を出した／login ログインした／label_added ラベルが付いた／form_submitted フォームに答えた／page_viewed ページを見た／page_clicked ページのボタンを押した／moved ほかの自動の動きから移された／line_linked LINE と結ばれた）・trigger_args（label：label_added のときのラベル・url：clicked のときのリンク・form：form_submitted のときのフォームの slug・account：line_linked のときの LINE のアカウント）・product_id（purchase のとき。省くとどの購入でも）・delay_hours（何時間後）・selector（誰に。preview_audience の filter と同じ形）・action（send_email メールを送る／notify_admin Naoki に知らせる／add_label ラベルを付ける／move_to 別の自動の動きへ移す／set_field 人の項目に値を書く／send_line LINE を送る）・action_args（label：add_label のとき・step_id：move_to のとき。移す先はきっかけが moved の自動の動きだけ・field と value：set_field のとき。field は list_fields の key・account：send_line のときの LINE のアカウント）・subject・body（send_line は本文だけ・2000 字まで。台帳と LINE が結ばれていない人とブロックした人には送らず connector_skipped。LINE の今月の残りが 20 通以下になると送らずに待たせ、Naoki に 1 日 1 回知らせる）（{{name}}・{{email}}・{{product}}・{{label}}・{{url}} が置き換わる。[[ボタンの文字|https://…]] でボタン）・active。移す・移されるの連なりは 5 段まで。動かした時刻より後のきっかけだけが対象。セレクタに当たらない人は connector_skipped として残る。",
     inputSchema: {
       type: "object",
       properties: {
         id: { type: "integer" }, name: { type: "string" },
-        trigger: { type: "string", enum: ["registered", "purchase", "clicked", "lesson_viewed", "correction_submitted", "login", "label_added", "form_submitted", "page_viewed", "page_clicked", "moved"] },
+        trigger: { type: "string", enum: ["registered", "purchase", "clicked", "lesson_viewed", "correction_submitted", "login", "label_added", "form_submitted", "page_viewed", "page_clicked", "moved", "line_linked"] },
         trigger_args: { type: "object" }, product_id: { type: ["string", "null"] }, delay_hours: { type: "integer" },
-        selector: { type: "object" }, action: { type: "string", enum: ["send_email", "notify_admin", "add_label", "move_to", "set_field"] }, action_args: { type: "object" },
+        selector: { type: "object" }, action: { type: "string", enum: ["send_email", "notify_admin", "add_label", "move_to", "set_field", "send_line"] }, action_args: { type: "object" },
         subject: { type: "string" }, body: { type: "string" }, active: { type: "boolean" }, sort: { type: "integer" },
       },
     },
@@ -3063,6 +3077,8 @@ async function runTool(env, name, args) {
   if (name === "send_line") return await line.send(env, { account: args.account, person_id: args.person_id, filter: args.filter, text: args.text }, "mcp");
   if (name === "get_line_quota") return await line.quota(env, { account: args.account });
   if (name === "set_line_forward") return await line.setForward(env, { account: args.account, url: args.url }, "mcp");
+  if (name === "get_line_invite") { if (!/^[a-z][a-z_]{1,19}$/.test(String(args.account || ""))) return { ok: false, error: "bad_account" }; const r = await line.inviteText(env, args.account); return { ok: true, account: args.account, ...r, uses_default: !r.text, sends_on_follow: inviteOnFollow(env, args.account) }; }
+  if (name === "set_line_invite") return await line.setInviteText(env, { account: args.account, text: args.text }, "mcp");
   if (name === "list_line_inbound") return await line.inbound(env, { account: args.account, days: args.days });
   if (name === "list_line_replies") return await line.listReplies(env, { account: args.account });
   if (name === "save_line_reply") return await line.saveReply(env, args, "mcp");

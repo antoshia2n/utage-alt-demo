@@ -14,7 +14,7 @@
 //   宛先の条件に opened・not_opened（"broadcast:番号" か "step:番号" の配列）を足した
 //   アクションに move_to（別の自動の動きへ移す・出来事 step_entered）と set_field（人の項目に値を書く・出来事 field_set）を足した
 
-import { TRIGGERS, ACTIONS, DONE_TYPES, FAIL_TYPES, LABEL_RE, MOVE_DEPTH_MAX } from "./connect.js";
+import { TRIGGERS, ACTIONS, DONE_TYPES, FAIL_TYPES, LABEL_RE, MOVE_DEPTH_MAX, LINE_QUOTA_HOLD } from "./connect.js";
 import { normFieldConds, SLUG_RE, KEY_RE } from "./forms.js";
 import { PIXEL_GIF } from "./mailhtml.js";
 import { isTestPurchase } from "./purchase.js";
@@ -30,6 +30,9 @@ const UUID_RE = /^[0-9a-f-]{36}$/i;
 const URL_RE = new RegExp("https?://[^ <>" + QUOTE + "'" + NL + String.fromCharCode(13, 9) + "　\\]]+", "g");
 const OPEN_RE = /^(broadcast:[0-9a-f-]{36}|step:\d{1,9})$/i;
 const MAX_PER_RUN = 100;
+// 便 T1：LINE のアカウントの名前（src/line.js の ACCOUNT_RE と同じ）と、1 通の字数
+const ACCOUNT_RE = /^[a-z][a-z_]{1,19}$/;
+const LINE_TEXT_MAX = 2000;
 
 export function makeDeliver(h) {
   const { db, addEvent, logInbound, bin3, sell, connect } = h;
@@ -220,7 +223,7 @@ export function makeDeliver(h) {
   async function listSteps(env) {
     const steps = await db(env, "GET", "b_steps?select=*&order=sort.asc,id.asc");
     const ev = await db(env, "GET", "events?select=type,payload&type=in.(email_sent,email_clicked)&payload->>kind=eq.step&limit=10000");
-    const ran = await db(env, "GET", "events?select=type,payload&type=in.(admin_notified,admin_notify_failed,label_added,connector_skipped,step_entered,field_set)&payload->>step_id=not.is.null&limit=10000");
+    const ran = await db(env, "GET", "events?select=type,payload&type=in.(admin_notified,admin_notify_failed,label_added,connector_skipped,step_entered,field_set,line_sent,line_step_failed)&payload->>step_id=not.is.null&limit=10000");
     const om = await openedMap(env);
     for (const s of steps) {
       const mine = (t) => ran.filter((e) => e.type === t && String(e.payload.step_id) === String(s.id)).length;
@@ -231,6 +234,8 @@ export function makeDeliver(h) {
       s.skipped = mine("connector_skipped");
       s.moved = mine("step_entered");
       s.fields_set = mine("field_set");
+      s.line_sent = mine("line_sent");
+      s.line_failed = mine("line_step_failed");
       s.opened_people = (om.get(`step:${s.id}`) || new Set()).size;
       s.action = s.action || "send_email";
       s.trigger_label = TRIGGERS[s.trigger] ? TRIGGERS[s.trigger].label : s.trigger;
@@ -253,6 +258,8 @@ export function makeDeliver(h) {
       // 便 12a：ページ（住所の名前）とボタンの名前で絞る
       if (t.page) { if (!SLUG_RE.test(String(t.page))) return { ok: false, error: "bad_trigger_page" }; out.page = String(t.page); }
       if (t.button) { if (!/^[a-z0-9][a-z0-9-]{0,39}$|^checkout:[a-z0-9-]{2,40}$/.test(String(t.button))) return { ok: false, error: "bad_trigger_button" }; out.button = String(t.button); }
+      // 便 T1：LINE と結ばれた、のアカウント
+      if (t.account) { if (!ACCOUNT_RE.test(String(t.account))) return { ok: false, error: "bad_trigger_account" }; out.account = String(t.account); }
       patch.trigger_args = out;
     }
     if ("selector" in args) patch.selector = normFilter(args.selector || {});
@@ -264,6 +271,7 @@ export function makeDeliver(h) {
       if (t.step_id != null && t.step_id !== "") { const n = Number(t.step_id); if (!Number.isInteger(n) || n < 1) return { ok: false, error: "bad_action_step" }; out.step_id = n; }
       if (t.field) { if (!KEY_RE.test(String(t.field))) return { ok: false, error: "bad_action_field" }; out.field = String(t.field); }
       if ("value" in t) out.value = String(t.value ?? "").slice(0, 200);
+      if (t.account) { if (!ACCOUNT_RE.test(String(t.account))) return { ok: false, error: "bad_action_account" }; out.account = String(t.account); }
       patch.action_args = out;
     }
     if ("delay_hours" in args) { const d = Number(args.delay_hours); if (!Number.isInteger(d) || d < 0 || d > 24 * 365) return { ok: false, error: "bad_delay_hours" }; patch.delay_hours = d; }
@@ -282,6 +290,12 @@ export function makeDeliver(h) {
     const next = { action: "send_email", trigger_args: {}, action_args: {}, ...(before || {}), ...patch };
     if (!next.name || !next.trigger) return { ok: false, error: "need_name_trigger" };
     if (next.action === "send_email" && (!next.subject || !next.body)) return { ok: false, error: "need_subject_and_body" };
+    // 便 T1：LINE は件名なし・本文は 2000 字まで・どのアカウントから送るか
+    if (next.action === "send_line") {
+      if (!next.body || !String(next.body).trim()) return { ok: false, error: "need_body" };
+      if (String(next.body).length > LINE_TEXT_MAX) return { ok: false, error: "too_long", max: LINE_TEXT_MAX };
+      if (!(next.action_args && next.action_args.account)) return { ok: false, error: "need_action_account" };
+    }
     if (next.action === "add_label" && !(next.action_args && next.action_args.label)) return { ok: false, error: "need_action_label" };
     if (next.trigger === "label_added" && !(next.trigger_args && next.trigger_args.label)) return { ok: false, error: "need_trigger_label" };
     if (next.trigger === "label_added" && next.action === "add_label" && next.trigger_args.label === next.action_args.label) return { ok: false, error: "same_label_loop" };
@@ -324,6 +338,7 @@ export function makeDeliver(h) {
     if (s.trigger === "page_clicked" && ta.button) q += `&payload->>button=eq.${encodeURIComponent(ta.button)}`;
     // 便 11b：この自動の動きへ移された人だけ
     if (s.trigger === "moved") q += `&payload->>to=eq.${s.id}`;
+    if (s.trigger === "line_linked" && ta.account) q += `&payload->>account=eq.${encodeURIComponent(ta.account)}`;
     return q;
   }
 
@@ -354,7 +369,10 @@ export function makeDeliver(h) {
       const sel = normFilter(s.selector || {});
       const allowed = Object.keys(sel).length ? new Set((await audience(env, sel, { keepExcluded: true })).people.map((p) => p.id)) : null;
       // 便 17：メールを送る動きだけ「除外」の人を外す（ラベル・知らせ・移す・項目はそのまま動く）
-      const ex = action === "send_email" ? await connect.excludedIds(env) : null;
+      const ex = action === "send_email" || action === "send_line" ? await connect.excludedIds(env) : null;
+      // 便 T1：LINE の今月の残り（この回に 1 度だけ聞く）。少なければ送らずに待たせ、Naoki に 1 日 1 回知らせる
+      let lineLeft = null;
+      if (action === "send_line") lineLeft = await lineRoom(env, s.action_args && s.action_args.account);
       for (const t of todo) {
         out.checked++;
         const extra = { step_id: s.id, trigger_id: t.id };
@@ -411,6 +429,23 @@ export function makeDeliver(h) {
           else { await addEvent(env, c.id, "connector_skipped", { ...extra, reason: r.error || "field_failed" }, "site"); out.skipped++; }
           continue;
         }
+        if (action === "send_line") {
+          const account = s.action_args && s.action_args.account;
+          if (lineLeft && lineLeft.hold) { out.line_waiting = (out.line_waiting || 0) + 1; continue; }
+          const r = h.line ? await h.line().sendStep(env, { account, person_id: c.id, text: fillText(s.body, c, t) }) : { result: "failed", error: "no_line" };
+          if (r.result === "sent") {
+            await addEvent(env, c.id, "line_sent", { ...extra, account, kind: "step", text: fillText(s.body, c, t).slice(0, 200), ok: true }, "site");
+            out.line_sent = (out.line_sent || 0) + 1;
+            if (lineLeft && lineLeft.left != null && --lineLeft.left <= LINE_QUOTA_HOLD) { lineLeft.hold = true; await lineHoldNotice(env, account, lineLeft); }
+          } else if (r.result === "not_linked" || r.result === "blocked") {
+            await addEvent(env, c.id, "connector_skipped", { ...extra, reason: "line_" + r.result }, "site");
+            out.skipped++;
+          } else {
+            await addEvent(env, c.id, "line_step_failed", { ...extra, account, error: r.error || "send_failed" }, "site");
+            out.failed++;
+          }
+          continue;
+        }
         if (left.n <= 0) { out.waiting_cap++; continue; }
         const r = await sendOne(env, c, { kind: "step", ref: s.id, subject: s.subject, body: s.body, extra });
         if (r.result === "sent") left.n--;
@@ -418,6 +453,27 @@ export function makeDeliver(h) {
       }
     }
     return out;
+  }
+
+  // 便 T1：LINE の今月の残り。上限の無いプランは left が null（待たせない）。数が読めないときは送る（止めない）
+  async function lineRoom(env, account) {
+    if (!h.line) return null;
+    const q = await h.line().quota(env, { account }).catch(() => null);
+    if (!q || !q.ok || q.limit == null || q.used == null) return { left: null, hold: false };
+    const left = q.limit - q.used;
+    const room = { account, limit: q.limit, used: q.used, left, hold: left <= LINE_QUOTA_HOLD };
+    if (room.hold) await lineHoldNotice(env, account, room);
+    return room;
+  }
+  // 1 日 1 回だけ Naoki に知らせる（表 b_settings の line_quota_notice_<account> に知らせた日を残す）
+  async function lineHoldNotice(env, account, room) {
+    const key = "line_quota_notice_" + account;
+    const today = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+    const rows = await db(env, "GET", `settings?select=value&key=eq.${key}`);
+    if (rows.length && rows[0].value === today) return;
+    await db(env, "POST", "settings?on_conflict=key", [{ key, value: today, updated_at: new Date().toISOString(), updated_by: "site" }], "resolution=merge-duplicates,return=minimal");
+    await connect.notifyAdmins(env, { subject: `【マーケくん】LINE（${account}）の今月の残りが ${Math.max(0, room.left)} 通です`,
+      text: `今月の上限 ${room.limit} 通のうち ${room.limit - Math.max(0, room.left)} 通を使いました。ステップ配信の LINE は送らずに待たせています。\nプランを上げると、次の定時（毎時）から続きを送ります。` });
   }
 
   async function sendOne(env, customer, { kind, ref, subject, body, extra }) {
