@@ -71,7 +71,7 @@ a.btn,a{color:inherit}
 .mode{display:inline-flex;border:1px solid var(--field);border-radius:8px;overflow:hidden}
 .mode button{border:0;background:var(--panel);padding:4px 12px;font-size:12.5px;cursor:pointer;min-height:30px}
 .mode button[aria-pressed=true]{background:#b45309;color:#fff;font-weight:700}
-.kbd{font-size:11.5px;border:1px solid var(--line);border-radius:5px;padding:0 5px;color:var(--muted)}
+.kbd{font-size:12px;border:1px solid var(--line);border-radius:5px;padding:0 5px;color:var(--muted)}
 .results{flex:1;overflow:auto;padding:16px 20px}
 .res{display:block;width:100%;text-align:left;border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:10px 12px;margin-bottom:8px;cursor:pointer}
 .res small{color:var(--muted);font-size:12px;display:block}
@@ -97,7 +97,7 @@ mark{background:var(--abg);color:inherit;border-radius:3px}
 .chip{border:1px solid var(--field);background:var(--panel);border-radius:999px;padding:3px 10px;font-size:12.5px;cursor:pointer;min-height:28px}
 .chip[aria-pressed=true]{background:#b45309;border-color:#b45309;color:#fff}
 .ev{display:grid;grid-template-columns:24px 1fr;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}
-.ev .ic{width:24px;height:24px;border-radius:6px;display:grid;place-items:center;font-size:11px;font-weight:700;color:#fff}
+.ev .ic{width:24px;height:24px;border-radius:6px;display:grid;place-items:center;font-size:12px;font-weight:700;color:#fff}
 .ev b{font-weight:600;font-size:13px}
 .ev small{display:block;color:var(--muted);font-size:12px;word-break:break-word}
 .who{font-size:12px;color:var(--muted);margin:0 0 8px}
@@ -161,9 +161,9 @@ mark{background:var(--abg);color:inherit;border-radius:3px}
 .lk:hover{background:var(--soft)}
 .fd{display:flex;align-items:center;gap:6px;width:100%;border:0;background:none;padding:5px 8px;border-radius:8px;cursor:pointer;text-align:left;font-size:13px;min-height:32px;color:var(--fg)}
 .fd:hover{background:var(--soft)}.fd[aria-pressed=true]{background:var(--abg);color:var(--ink);font-weight:700}
-.fd .fi{color:var(--muted);width:12px;font-size:11px}.fd .n{margin-left:auto;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}.fd .n b{color:var(--warn)}
+.fd .fi{color:var(--muted);width:12px;font-size:12px}.fd .n{margin-left:auto;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}.fd .n b{color:var(--warn)}
 .fnone{font-size:12px;color:var(--muted);padding:2px 8px 6px;margin:0}
-.tabs .n{font-size:11.5px;color:var(--muted);font-weight:400}
+.tabs .n{font-size:12px;color:var(--muted);font-weight:400}
 .vi{display:grid;grid-template-columns:auto 1fr;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px;align-items:start}
 .vi img{width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
 .vi .vic{width:24px;height:24px;border-radius:6px;display:grid;place-items:center;background:var(--soft);color:var(--ink);font-size:12px}
@@ -177,7 +177,7 @@ mark{background:var(--abg);color:inherit;border-radius:3px}
 .frow input{flex:1;min-width:0}.frow small{color:var(--muted);font-size:12px;min-width:20px;text-align:right}
 .btn.danger{border-color:var(--warn);color:var(--warn)}
 .btn[disabled]{opacity:.4;cursor:default}
-.menu .mh2{font-size:11.5px;color:var(--faint);font-weight:700;padding:4px 10px 0}
+.menu .mh2{font-size:12px;color:var(--faint);font-weight:700;padding:4px 10px 0}
 .menu button[aria-disabled=true]{color:var(--muted)}
 .dlg .opt[aria-pressed=true]{background:var(--abg);color:var(--ink);font-weight:700}
 /* C2a-2：サイト｜LINE の切り替え */
@@ -185,11 +185,11 @@ mark{background:var(--abg);color:inherit;border-radius:3px}
 .seg button{border:0;background:var(--panel);padding:5px 12px;font-size:13px;cursor:pointer;min-height:30px;color:var(--muted);font-weight:600;display:inline-flex;gap:4px;align-items:center}
 .seg button[aria-selected=true]{background:var(--abg);color:var(--ink)}
 .seg button[data-ch=line][aria-selected=true]{background:#e7f6ec;color:#15803d}
-.seg .un{font-size:11px;font-weight:400;color:var(--muted)}
+.seg .un{font-size:12px;font-weight:400;color:var(--muted)}
 .mh small a{color:var(--ink);text-decoration:none;font-weight:600}.mh small a:hover{text-decoration:underline}
 .lbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 16px;font-size:12.5px;color:var(--muted);background:var(--panel);border-bottom:1px solid var(--line)}
 .lbar .lk{margin-left:auto}
-.lg2{background:#06c755;color:#fff;font-weight:800;font-size:10.5px;border-radius:5px;padding:1px 5px}
+.lg2{background:#06c755;color:#fff;font-weight:800;font-size:12px;border-radius:5px;padding:1px 5px}
 .lmsg.me .bub{background:#e7f6ec;border-color:#bfe5cb}
 .comp.linemode{border-top:2px solid #06c755}
 .btn.pri.line{background:#15803d;border-color:#15803d}
@@ -203,14 +203,14 @@ mark{background:var(--abg);color:inherit;border-radius:3px}
 @media (max-width:900px){.seg{margin-left:0}.mh{flex-wrap:wrap}}
 /* C2b：グループ */
 .av.sq{border-radius:9px}
-.ci .gtag{font-size:11px;color:#0f766e;background:#e6f4f1;border-radius:5px;padding:0 5px;margin-left:4px;font-weight:600}
+.ci .gtag{font-size:12px;color:#0f766e;background:#e6f4f1;border-radius:5px;padding:0 5px;margin-left:4px;font-weight:600}
 .rcs{display:flex;gap:4px;flex-wrap:wrap;margin-top:3px}.msg.me .rcs{justify-content:flex-end}
 .rc{border:1px solid var(--line);background:var(--panel);border-radius:99px;padding:0 8px;font-size:12.5px;cursor:pointer;min-height:26px}
 .rc[aria-pressed=true]{border-color:#b45309;background:var(--abg);color:var(--ink);font-weight:700}
 .th{display:flex;align-items:center;gap:6px;border:1px solid transparent;background:none;border-radius:8px;padding:3px 6px;margin-top:3px;cursor:pointer;font-size:12.5px;color:var(--muted)}
 .th:hover{border-color:var(--line);background:var(--panel)}.th b{color:#1d4ed8}
-.av.mini{width:20px;height:20px;font-size:9px;border-radius:5px}
-.read{font-size:11.5px;color:var(--muted);margin-top:2px;text-align:right}
+.av.mini{width:20px;height:20px;font-size:12px;border-radius:5px}
+.read{font-size:12px;color:var(--muted);margin-top:2px;text-align:right}
 .menu .erow{display:flex;gap:2px;padding:2px 2px 6px;border-bottom:1px solid var(--line);margin-bottom:4px}
 .menu .erow button{width:auto;font-size:19px;padding:4px 6px;min-height:34px;justify-content:center}
 .menu.pk{display:flex;gap:2px;min-width:0;padding:4px}.menu.pk button{width:auto;font-size:20px;padding:4px 7px}
