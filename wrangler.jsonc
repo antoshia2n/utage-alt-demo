@@ -4,6 +4,8 @@
   "main": "src/index.js",
   "compatibility_date": "2026-09-01",
   "workers_dev": true,
+  // チャットの便 C3（2026-11-07）：チャットの AI タブ（Workers AI）。アプリから Claude の API は呼ばない
+  "ai": { "binding": "AI" },
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
