@@ -2977,6 +2977,13 @@ const TOOLS = [
     inputSchema: { type: "object", properties: { page_id: { type: "string" }, version: { type: "integer" }, stop: { type: "boolean" } }, required: ["page_id"] },
   },
   {
+    name: "set_page_close",
+    screen: "pages",
+    say: "ページの公開の期限を決める・外す",
+    description: "ページの公開の期限を決める・外す（便 T2・期間限定の公開）。closes_at は日本時間の「2026-11-12 23:59」か時差つきの ISO。空で期限を外す。期限を過ぎると、closed_to（ほかのページの住所の名前・公開中のもの）か、決まった「公開は終了しました」の画面を出す。ページの中の data-lab-countdown の所に残りの時間が入る。承認が要る道具：呼ぶと承認待ちになり approval_url が返る。",
+    inputSchema: { type: "object", properties: { page_id: { type: "string" }, closes_at: { type: "string" }, closed_to: { type: "string" } }, required: ["page_id"] },
+  },
+  {
     name: "list_routes",
     screen: "pages",
     say: "経路ごとの人数を見る",
@@ -3231,6 +3238,7 @@ async function runTool(env, name, args) {
   if (name === "list_pages") return await pages.listPages(env);
   if (name === "get_page") return await pages.getPage(env, args);
   if (name === "publish_page") return await pages.publish(env, { page_id: args.page_id, version: args.version, stop: args.stop === true }, "mcp");
+  if (name === "set_page_close") return await pages.setClose(env, { page_id: args.page_id, closes_at: args.closes_at, closed_to: args.closed_to }, "mcp");
   if (name === "list_routes") return await pages.routeStats(env, args);
   return { ok: false, error: "unknown_tool" };
 }
