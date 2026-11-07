@@ -154,6 +154,9 @@ function routeHash() {
   // 2026-11-02 シアニンパネルの「今日の動き」から（/admin#person/人の番号）：顧客管理のその人の画面を開く
   // チャットの便 C1：#chat/<人の番号>/<メッセージの番号>（TaskMaster のタスクのリンクから戻る）
   // C2a-2：#chat/<人の番号>/line で LINE のやりとりを開く（LINE の画面の「チャットで開く」）
+  // C2b：#chat/group/<グループの番号>/<メッセージの番号>（タスクと通知から戻る）
+  const gm = h.match(/^#chat[/]group[/]([0-9a-f-]{36})(?:[/](\d+))?$/i);
+  if (gm) { openView("chat"); openChatView("group:" + gm[1], gm[2] ? Number(gm[2]) : null); return true; }
   const cm = h.match(/^#chat(?:[/]([0-9a-f-]{36})(?:[/](\d+|line))?)?$/i);
   if (cm) { openView("chat"); openChatView(cm[1], cm[2] === "line" ? "line" : cm[2] ? Number(cm[2]) : null); return true; }
   const ps = h.match(/^#person[/]([0-9a-f-]{36})$/i);

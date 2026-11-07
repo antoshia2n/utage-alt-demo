@@ -81,9 +81,10 @@ import { makeRecToken, handleRecPlay } from "./recplay.js";
 import { makeMarks } from "./marks.js";
 import { makeMedia } from "./media.js";
 import { makeChat } from "./chat.js";
+import { makeGroups } from "./groups.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.73.0-bchat2a2";
+const VERSION = "0.74.0-bchat2b";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -744,7 +745,9 @@ const core = {
 };
 
 // チャットの便 C1（2026-11-07）：人ごとのチャット（部屋＋メモ・後で・タスク・履歴）。中身は src/chat.js
-const chat = makeChat({ db, addEvent, core, logInbound, line });
+// チャットの便 C2b（2026-11-07）：グループチャット。中身は src/groups.js・表は supabase/c2b_chat_groups.sql
+const groups = makeGroups({ db, push, logInbound, names: (env) => students.load(env) });
+const chat = makeChat({ db, addEvent, core, logInbound, line, groups });
 
 // 便 8g-3：一言の下書き。AI が組んだコネクタ（1〜10 本）を、動かさない下書きのまま 1 回で作り、企画に入れる。
 // 企画は campaign_id（いまある企画）か campaign_title（新しく作る）。動かすのは set_step で active true（承認）。
@@ -1257,7 +1260,8 @@ async function handleApi(request, env, url) {
       const evs = await roomEvents(env, customer.id);
       const s = roomState(evs);
       const messages = evs.filter((e) => e.type !== "room_read").map((e) => toMessage(e, s));
-      return json({ ok: true, count: messages.length, unread: s.unreadForStudent, messages, notices: await roomNotices(db, env, customer.id), images_enabled: !!env.IMAGES });
+      const gs = await groups.mine(env, customer.id);
+      return json({ ok: true, count: messages.length, unread: s.unreadForStudent, messages, notices: await roomNotices(db, env, customer.id), images_enabled: !!env.IMAGES, groups: gs.groups, groups_unread: gs.unread });
     }
 
     if (path === "/api/room" && method === "POST") {
@@ -1304,6 +1308,25 @@ async function handleApi(request, env, url) {
       const key = `room/${customer.id}/${crypto.randomUUID()}.${ext}`;
       await env.IMAGES.put(key, buf, { httpMetadata: { contentType: type } });
       return json({ ok: true, key, bytes: buf.byteLength });
+    }
+
+    // チャットの便 C2b：入っているグループ（一覧・読む・読んだ印・送る・スタンプ・画像）
+    if (path === "/api/room/groups" && method === "GET") return json(await groups.mine(env, customer.id));
+    const sg = path.match(/^[/]api[/]room[/]groups[/]([0-9a-f-]{36})(?:[/](read|react|image))?$/i);
+    if (sg && method === "GET" && !sg[2]) { const r = await groups.view(env, { group_id: sg[1] }, customer.id); return json(r, r.ok === false ? 404 : 200); }
+    if (sg && method === "GET" && sg[2] === "image") {
+      const key = url.searchParams.get("key") || "";
+      if (!imageOwner(key) || !(await groups.imageAllowed(env, { group_id: sg[1], key }, customer.id))) return json({ ok: false, error: "not_found" }, 404);
+      return await serveImage(env, key);
+    }
+    if (sg && method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      if (sg[2] === "read") return json(await groups.markRead(env, { group_id: sg[1] }, customer.id));
+      if (sg[2] === "react") { const r = await groups.react(env, { group_id: sg[1], message_id: body.message_id, emoji: body.emoji }, customer.id); return json(r, r.ok === false ? 400 : 200); }
+      const images = Array.isArray(body.images) ? body.images.map(String) : [];
+      if (images.some((k) => imageOwner(k) !== customer.id)) return json({ ok: false, error: "bad_image" }, 400);
+      const r = await groups.post(env, { group_id: sg[1], text: body.text, images, thread_of: body.thread_of }, customer.id, "site");
+      return json(r, r.ok === false ? 400 : 200);
     }
 
     if (path === "/api/room/image" && method === "GET") {
@@ -1598,6 +1621,25 @@ async function handleApi(request, env, url) {
     if (path === "/api/admin/chat" && method === "GET") return json(await chat.list(env));
     if (path === "/api/admin/chat/search" && method === "GET") { const r = await chat.search(env, { q: url.searchParams.get("q"), person_id: url.searchParams.get("person_id") || undefined, folder_id: url.searchParams.get("folder_id") || undefined }); return json(r, r.ok === false ? 400 : 200); }
     if (path === "/api/admin/chat/people" && method === "GET") return json(await chat.people(env, { q: url.searchParams.get("q") }));
+    // チャットの便 C2b：グループ（作る・読む・送る・スタンプ・名前・人を入れる／抜けてもらう・閉じる）
+    if (path === "/api/admin/chat/groups" && method === "GET") return json(await groups.list(env));
+    if (path === "/api/admin/chat/groups" && method === "POST") { const body = await request.json().catch(() => ({})); const r = await groups.create(env, body, a.email); return json(r, r.ok === false ? 400 : 200); }
+    const gm = path.match(/^[/]api[/]admin[/]chat[/]groups[/]([0-9a-f-]{36})(?:[/](message|react|task))?$/i);
+    if (gm && method === "GET" && !gm[2]) { const r = await groups.get(env, { group_id: gm[1], mark_read: true }); return json(r, r.ok === false ? 400 : r.found === false ? 404 : 200); }
+    if (gm && method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      // グループのメッセージから TaskMaster へ（リンクはグループのそのメッセージへ戻る）
+      if (gm[2] === "task") {
+        if (!env.TASKS || typeof env.TASKS.add !== "function") return json({ ok: false, error: "no_taskmaster" }, 400);
+        const mid = Number(body.message_id) || null;
+        const r = await env.TASKS.add({ title: body.title, deadline: body.deadline || null, link_url: `${url.origin}/admin#chat/group/${gm[1]}${mid ? "/" + mid : ""}`, link_title: "マーケくんのグループ" });
+        return json(r && r.ok ? { ok: true, task_id: r.id, url: r.url } : { ok: false, error: (r && r.error) || "task_failed" }, r && r.ok ? 200 : 400);
+      }
+      const r = gm[2] === "message" ? await groups.post(env, { ...body, group_id: gm[1] }, groups.CYANIN, "admin")
+        : gm[2] === "react" ? await groups.react(env, { ...body, group_id: gm[1] }, groups.CYANIN)
+        : await groups.update(env, { ...body, group_id: gm[1] }, a.email);
+      return json(r, r.ok === false ? 400 : 200);
+    }
     // チャットの便 C2a：フォルダを作る・名前を変える・並べ替える・消す
     if (path === "/api/admin/chat/folders" && method === "POST") { const body = await request.json().catch(() => ({})); const r = await chat.saveFolder(env, body, a.email); return json(r, r.ok === false ? 400 : 200); }
     const cm = path.match(/^[/]api[/]admin[/]chat[/]([0-9a-f-]{36})(?:[/](note|later|forward|task|folder|keep|line))?$/i);
@@ -1916,7 +1958,7 @@ const TOOLS = [
     name: "list_chats",
     screen: "chat",
     say: "チャットの一覧（要返信・後で）",
-    description: "チャットの一覧。部屋のある人ごとに、最後の発言・未返信・後で（later_until）・要返信（need：最後の発言が生徒か、添削の未返信か教材の質問があり、後でにしていない）を返す。need_count・later_count も返す。folders（フォルダの id・名前・数・要返信の数）と、チャットごとの folder_id も返す。",
+    description: "チャットの一覧。部屋のある人ごとに、最後の発言・未返信・後で（later_until）・要返信（need：最後の発言が生徒か、添削の未返信か教材の質問があり、後でにしていない）を返す。need_count・later_count も返す。folders（フォルダの id・名前・数・要返信の数）と、チャットごとの folder_id も返す。groups（グループの id・名前・人数・シアニンが読んでいない数・最後の発言）も返す。",
     inputSchema: { type: "object", properties: {} },
   },
   {
@@ -1968,6 +2010,28 @@ const TOOLS = [
     say: "チャットのメッセージを資料に入れる・外す",
     description: "person_id のチャットのメッセージかメモ 1 つ（event_id）を右の「資料」に入れる。off: true で外す。送られたリンクと画像は入れなくても資料に自動で集まる（get_chat の vault）。",
     inputSchema: { type: "object", properties: { person_id: { type: "string" }, event_id: { type: "integer" }, off: { type: "boolean" } }, required: ["person_id", "event_id"] },
+  },
+  // チャットの便 C2b：グループ
+  {
+    name: "get_chat_group",
+    screen: "chat",
+    say: "グループのチャットを読む",
+    description: "グループ 1 つ（group_id・list_chats の groups）のやり取りを読む。返すもの：group・members（名前と、どこまで読んだか）・messages（本流のメッセージ。各メッセージに replies（スレッドの返信）・reactions（スタンプと押した人）・read（読んだ人数）／of（読める人数））。読んだ印は付く。",
+    inputSchema: { type: "object", properties: { group_id: { type: "string" } }, required: ["group_id"] },
+  },
+  {
+    name: "save_chat_group",
+    screen: "chat",
+    say: "グループを作る・名前を変える・人を入れる・抜けてもらう・閉じる",
+    description: "group_id が無ければ作る（name・member_ids：人の番号の並び）。group_id があれば、name で名前を変える・add_ids で人を入れる・remove_ids で抜けてもらう・close: true で閉じる（やり取りは残る）。作っただけでは生徒に知らせない。",
+    inputSchema: { type: "object", properties: { group_id: { type: "string" }, name: { type: "string" }, member_ids: { type: "array", items: { type: "string" } }, add_ids: { type: "array", items: { type: "string" } }, remove_ids: { type: "array", items: { type: "string" } }, close: { type: "boolean" } } },
+  },
+  {
+    name: "send_chat_group",
+    screen: "chat",
+    say: "グループにシアニンとして送る",
+    description: "グループに文を送る（入っている生徒の画面とスマホに届く）。group_id・text（8000 字まで）・thread_of（スレッドで返すときの元のメッセージの id）・also_main（スレッドの返信を本流にも流す）。生徒に届くので承認が要る。",
+    inputSchema: { type: "object", properties: { group_id: { type: "string" }, text: { type: "string" }, thread_of: { type: "integer" }, also_main: { type: "boolean" } }, required: ["group_id", "text"] },
   },
   {
     name: "link_chat_line",
@@ -2845,6 +2909,9 @@ async function runTool(env, name, args) {
   if (name === "set_chat_folder") return await chat.setFolder(env, args, "mcp");
   if (name === "keep_chat_item") return await chat.keep(env, args, "mcp");
   if (name === "link_chat_line") return await line.linkManual(env, args, "mcp");
+  if (name === "get_chat_group") return await groups.get(env, { group_id: args.group_id, mark_read: true });
+  if (name === "save_chat_group") return args.group_id ? await groups.update(env, args, "mcp") : await groups.create(env, args, "mcp");
+  if (name === "send_chat_group") return await groups.post(env, args, groups.CYANIN, "mcp");
   if (name === "set_goal_draft") return await goals.setDraft(env, args);
   if (name === "notify_naoki") {
     const u = String(args.url || "/admin");

@@ -6,6 +6,8 @@
 //  ・⌘／Ctrl＋K で人を探して開く（部屋の無い人も）・] で右を開閉・? でキーの一覧。右の幅は左端を引いて変えられる（このブラウザに覚える）
 //  ・C2a（2026-11-07）：左のフォルダ（作る・名前・並べ替え・消す・入れる）とフォルダの中で探す・右の「資料」タブ（リンクと画像を自動で集める・資料に入れたもの・探す）
 //    ・右クリックの「資料に入れる」（S）と「連携」（タスクへ）。グループは C2b、「AI」タブは C3
+//  ・C2b（2026-11-07）：左に「グループ」（作る・人を入れる／外す・名前・閉じる）。グループは本流＋スレッド・スタンプ 6 つ・既読の数・吹き出しの右クリック
+//    （スタンプ・スレッドで返信・コピー・タスクへ・その人の 1 対 1・顧客管理・Claude に聞く）。右は スレッド／メンバー／資料。中身は src/groups.js
 //  ・C2a-2：見出しの「顧客管理で開く」（詳細へ飛ぶだけ）と「サイト｜LINE」の切り替え。LINE は結ばれた人だけ読めて返せる。結ばれていなければ友だちから選んで結ぶ
 import { api, esc, fmtTime, authImage, EVENT_LABEL } from "/js/common.js";
 
@@ -47,6 +49,7 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
 
   let L = null, D = null, cur = null, filter = "all", sideOpen = true, noteMode = false, evOff = new Set(), hits = null, lastFocus = null, menuAt = 0;
   let fsel = null, tab = "hist", vk = "all", vq = "", chan = "site", LN = null;
+  let G = null, gTab = "mem", gThread = null;
   const fname = (id) => { const f = L && L.folders.find((x) => x.id === id); return f ? f.name : ""; };
   try { const w = localStorage.getItem("chat-rw"); if (w) app.style.setProperty("--rw", w + "px"); } catch (_) {}
   const av = (id, name) => `<span class="av" style="background:${COL[hash(id) % COL.length]}" aria-hidden="true">${esc(String(name || "？").slice(0, 1))}</span>`;
@@ -68,6 +71,7 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
     const fbtn = (id, label, n, need) => `<button class="fd" data-fd="${id}" aria-pressed="${fsel === (id || null)}"><span class="fi" aria-hidden="true">${id ? "▸" : "•"}</span>${esc(label)}<span class="n">${n}${need ? `・<b>${need}</b>` : ""}</span></button>`;
     $("#q").placeholder = fsel ? `「${fname(fsel)}」の中を探す（Enter）` : "やり取りとメモを探す（Enter）";
     $("#list").innerHTML = `<div role="group" aria-label="絞り込み">${btn("need", "要返信", inF.filter((c) => c.need).length)}${btn("later", "後で", inF.filter((c) => c.later_until).length)}${btn("all", "すべて", inF.length)}</div>
+      ${fsel ? "" : `<div class="fh"><span>グループ</span><button class="lk" id="gnew">＋ 作る</button></div>${(L.groups || []).filter((g) => filter !== "later" && (filter !== "need" || g.need)).map((g) => `<button class="ci" data-gr="${g.id}" aria-current="${cur === "group:" + g.id && !hits}">${av(g.id, g.name).replace('class="av"', 'class="av sq"')}<span class="t"><b>${esc(g.name)}<span class="gtag">${g.members} 人</span></b><small>${g.last_text ? esc(g.last_name) + "：" + esc(g.last_text) : "まだメッセージはありません"}</small></span>${g.unread_for_admin ? `<span class="badge" aria-label="未読 ${g.unread_for_admin}">${g.unread_for_admin}</span>` : ""}</button>`).join("") || (L.groups_note === "need_sql" ? '<p class="fnone">グループの表を作る前です</p>' : (L.groups || []).length ? "" : '<p class="fnone">「＋ 作る」でグループを作れます</p>')}`}
       <div class="fh"><span>フォルダ</span><button class="lk" id="fedit">編集</button></div>
       <div role="group" aria-label="フォルダ" class="fds">${fbtn("", "すべてのチャット", L.count, 0)}${L.folders.map((f) => fbtn(f.id, f.name, f.count, f.need)).join("")}${L.folders.length ? "" : '<p class="fnone">「編集」からフォルダを作れます</p>'}</div>
       <div class="lh">${fsel ? esc(fname(fsel)) + "・" : ""}${filter === "need" ? "要返信" : filter === "later" ? "後で" : "すべて"}</div>
@@ -78,11 +82,15 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
     $$("[data-fd]").forEach((b) => (b.onclick = () => { fsel = b.dataset.fd || null; drawLeft(); $(`[data-fd="${fsel || ""}"]`).focus(); }));
     $$(".ci", $("#list")).forEach((b) => (b.oncontextmenu = (e) => { e.preventDefault(); folderDlg(b.dataset.c, b); }));
     $("#fedit").onclick = (e) => foldersDlg(e.currentTarget);
+    $$("[data-gr]").forEach((b) => (b.onclick = () => openGroup(b.dataset.gr)));
+    if ($("#gnew")) $("#gnew").onclick = (e) => newGroupDlg(e.currentTarget);
     $$("[data-c]", $("#list")).forEach((b) => (b.onclick = () => openChat(b.dataset.c)));
   }
 
   // ---------- 1 人を開く ----------
   async function openChat(id, focusId) {
+    if (String(id).startsWith("group:")) return openGroup(String(id).slice(6), focusId);
+    G = null;
     app.classList.remove("leftopen");
     if (id !== cur) { chan = "site"; LN = null; }
     if (focusId === "line") { chan = "line"; focusId = null; }
@@ -284,6 +292,7 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
       <dt>権利</dt><dd>${c.entitlements.length ? c.entitlements.map((x) => `<span class="ent">${esc(KEY_LABEL[x.key] || x.key)}${x.expires_at ? "（" + esc(fmtTime(x.expires_at).slice(0, 10)) + " まで）" : ""}</span>`).join("") : "なし"}</dd>
       <dt>次の予約</dt><dd>${c.next_booking ? `${esc(c.next_booking.title)} ${esc(fmtTime(c.next_booking.slot))}` : "—"}</dd>
       <dt>最後の面談</dt><dd>${c.last_meeting ? esc(fmtTime(c.last_meeting).slice(0, 10)) : "—"}</dd>
+      ${(D.groups || []).length ? `<dt>グループ</dt><dd>${D.groups.map((g) => `<button class="lk" data-og="${g.id}">${esc(g.name)}</button>`).join("")}</dd>` : ""}
       <dt>最後の購入</dt><dd>${c.last_purchase ? `${esc(c.last_purchase.name)}（${esc(fmtTime(c.last_purchase.at).slice(0, 10))}）` : "—"}</dd></dl></div>`;
   }
   function evDetail(h) {
@@ -299,6 +308,7 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
       <div class="tabs" role="tablist"><button class="btn back" id="toChat" aria-label="チャットへ戻る">←</button><button role="tab" id="t-hist" aria-selected="${tab === "hist"}" aria-controls="pane" data-tab="hist">履歴</button><button role="tab" id="t-vault" aria-selected="${tab === "vault"}" aria-controls="pane" data-tab="vault">資料 <span class="n">${D.vault.length}</span></button><span class="g"></span></div>
       <div class="pane" id="pane" role="tabpanel" tabindex="-1"></div>`;
     $("#cust").onclick = (e) => { e.preventDefault(); openPerson(D.id); };
+    $$("[data-og]").forEach((b) => (b.onclick = () => openGroup(b.dataset.og)));
     $("#toChat").onclick = () => { app.classList.remove("full"); setView("chat"); };
     $("#grab").onclick = () => { const f = app.classList.toggle("full"); app.style.setProperty("--sh", f ? "86vh" : "52vh"); drawRight(); $("#grab").focus(); };
     const sp = $("#split");
@@ -470,6 +480,224 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
     return r;
   }
 
+  // ---------- グループ（C2b） ----------
+  const EMO = ["👍", "❤️", "😂", "🙏", "🔥", "👀"];
+  const GERR = { not_found: "グループが見つかりません（閉じられたかもしれません）", need_sql: "グループの表がまだありません（SQL を流す前です）", bad_name: "グループの名前は 1〜40 字です", bad_thread: "スレッドの元のメッセージが見つかりません", bad_emoji: "そのスタンプは使えません" };
+  const gErr = (r) => GERR[r.error] || errText(r);
+  const mini = (who, name) => who === "cyanin" ? '<span class="av mini" style="background:#b45309" aria-hidden="true">シ</span>' : av(who, name).replace('class="av"', 'class="av mini"');
+  async function openGroup(gid, focusId) {
+    app.classList.remove("leftopen");
+    cur = "group:" + gid; hits = null; D = null; chan = "site";
+    try { history.replaceState(null, "", `#chat/group/${gid}${focusId ? "/" + focusId : ""}`); } catch (_) {}
+    drawLeft();
+    const r = await call("/api/admin/chat/groups/" + gid);
+    if (!r.ok || !r.found) { $("#mid").innerHTML = `<div class="welcome">読めませんでした（${esc(gErr(r))}）</div>`; $("#right").innerHTML = ""; return; }
+    G = r; G.id = gid;
+    if (gTab === "thread" && !G.messages.some((m) => m.id === gThread)) gTab = "mem";
+    const row = L && (L.groups || []).find((x) => x.id === gid); if (row) { row.unread_for_admin = 0; row.need = false; }
+    drawLeft(); drawGroupMid(focusId); drawGroupRight(); setView("chat");
+    live(`グループ「${G.group.name}」を開きました`);
+  }
+  function reactsHtml(m) { return (m.reactions || []).map((x) => `<button class="rc" data-re="${x.emoji}" aria-pressed="${x.mine}" title="${esc(x.names.join("、"))}" aria-label="${x.emoji} ${x.count}（${esc(x.names.join("、"))}）">${x.emoji} ${x.count}</button>`).join(""); }
+  function gMsgHtml(m, inThread) {
+    const imgs = m.images.length ? `<div class="imgs">${m.images.map((k) => `<img data-key="${esc(k)}" alt="${esc(m.name)}が送った画像">`).join("")}</div>` : "";
+    const th = !inThread && m.reply_count ? `<button class="th" data-th="${m.id}">${m.repliers.map((x) => mini(x.who, x.name)).join("")}<b>返信 ${m.reply_count} 件</b><span>最後 ${esc(fmtTime(m.last_reply_at))}</span></button>` : "";
+    return `<div class="msg ${m.mine ? "me" : ""}" tabindex="0" data-g="${m.id}" aria-label="${esc(m.name)} ${esc(fmtTime(m.at))}：${esc(m.text.slice(0, 60))}。Enter で操作の一覧">
+      ${inThread ? "" : `<span class="hb" role="toolbar" aria-label="このメッセージの操作"><button data-gh="react" aria-label="スタンプ">😊</button><button data-gh="thread">スレッドで返信</button><button data-gh="copy">コピー</button><button data-gh="more" aria-label="ほかの操作">…</button></span>`}
+      ${m.mine ? "" : av(m.who, m.name)}<div style="min-width:0"><div class="meta">${esc(m.name)}・${hm(m.at)}</div><div class="bub">${esc(m.text)}${imgs}</div>
+      <div class="rcs">${reactsHtml(m)}</div>${th}${m.mine && !inThread ? `<div class="read">既読 ${m.read}／${m.of}</div>` : ""}</div></div>`;
+  }
+  function drawGroupMid(focusId) {
+    let last = "";
+    $("#mid").innerHTML = `<div class="mh"><button class="btn back" id="toList" aria-label="一覧へ戻る">←</button><button class="btn md" id="leftBtn" aria-expanded="${app.classList.contains("leftopen")}">一覧</button>${av(G.id, G.group.name).replace('class="av"', 'class="av sq"')}
+      <div style="min-width:0"><h1>${esc(G.group.name)}</h1><small>グループ・${G.members.length} 人とシアニン・生徒の画面とスマホに届きます</small></div><span class="g"></span>
+      <button class="btn" id="gAdd">＋ 人を入れる</button><button class="btn" id="gEdit">名前・閉じる</button>
+      <button class="btn" id="sideBtn" aria-expanded="${sideOpen}"><span class="lg">${sideOpen ? "右を閉じる" : "右を開く"}</span><span class="sm">メンバーと資料</span></button></div>
+      <div class="msgs" id="msgs">${G.messages.map((m) => { const d = dayOf(m.at); const h = d !== last ? `<div class="day">${d}</div>` : ""; last = d; return h + gMsgHtml(m); }).join("") || '<p class="welcome">まだメッセージはありません。最初のメッセージを送ると、入っている人の画面とスマホに届きます。</p>'}</div>
+      <div class="comp"><label class="sr" for="gcomp">グループに送る</label><textarea id="gcomp" maxlength="8000" placeholder="「${esc(G.group.name)}」の全員に送る"></textarea>
+      <div class="row"><span class="g">⌘／Ctrl＋Enter で送信・${G.members.length} 人の画面とスマホに届きます</span><button class="btn pri" id="gsend">送信</button></div></div>`;
+    $("#toList").onclick = () => setView("list");
+    $("#leftBtn").onclick = () => { const o = app.classList.toggle("leftopen"); $("#leftBtn").setAttribute("aria-expanded", o); };
+    $("#sideBtn").onclick = () => { if (narrow()) { setView(app.dataset.v === "side" ? "chat" : "side"); return; } sideOpen = !sideOpen; app.classList.toggle("noside", !sideOpen); drawGroupMid(); $("#sideBtn").focus(); };
+    $("#gAdd").onclick = (e) => memberDlg(e.currentTarget);
+    $("#gEdit").onclick = (e) => groupEditDlg(e.currentTarget);
+    const send = async () => { const t = $("#gcomp").value.trim(); if (!t) { toast("文が空です"); $("#gcomp").focus(); return; }
+      $("#gsend").disabled = true; const r = await call(`/api/admin/chat/groups/${G.id}/message`, "POST", { text: t }); $("#gsend").disabled = false;
+      if (!r.ok) { toast(gErr(r)); return; } await openGroup(G.id); $("#gcomp")?.focus(); toast(`送りました（${r.notified} 人に通知）`); };
+    $("#gsend").onclick = send; $("#gcomp").onkeydown = (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); send(); } };
+    wireGroupMsgs($("#msgs"), false);
+    $$(".imgs img[data-key]", $("#mid")).forEach(async (img) => { try { img.src = await authImage("/api/admin/image?key=" + encodeURIComponent(img.dataset.key), getToken()); } catch (_) { img.alt = "画像を読めませんでした"; } });
+    const box = $("#msgs"); box.scrollTop = box.scrollHeight;
+    if (focusId) { const el = $(`.msg[data-g="${focusId}"]`) || null; if (el) { el.classList.add("hit"); el.scrollIntoView({ block: "center" }); el.focus(); } else { const p = G.messages.find((m) => m.replies.some((x) => x.id === focusId)); if (p) { gThread = p.id; gTab = "thread"; } } }
+  }
+  const findG = (id) => { for (const m of G.messages) { if (m.id === id) return m; const r = m.replies.find((x) => x.id === id); if (r) return r; } return null; };
+  function wireGroupMsgs(box, inThread) {
+    $$("[data-re]", box).forEach((b) => (b.onclick = () => react(Number(b.closest(".msg").dataset.g), b.dataset.re)));
+    $$("[data-th]", box).forEach((b) => (b.onclick = () => openThread(Number(b.dataset.th))));
+    $$("[data-gh]", box).forEach((b) => (b.onclick = (e) => { e.stopPropagation(); const el = b.closest(".msg"); lastFocus = el; const m = findG(Number(el.dataset.g));
+      if (b.dataset.gh === "react") return picker(b, (k) => react(m.id, k));
+      if (b.dataset.gh === "more") { const r = b.getBoundingClientRect(); return gMenu(m, r.left, r.bottom + 4, el, inThread); }
+      gAct(b.dataset.gh, m); }));
+    $$(".msg", box).forEach((el) => {
+      const m = findG(Number(el.dataset.g));
+      el.oncontextmenu = (e) => { e.preventDefault(); gMenu(m, e.clientX, e.clientY, el, inThread); };
+      el.onkeydown = (e) => { if (e.target !== el) return; if (e.key === "Enter" || e.key === "ContextMenu") { e.preventDefault(); const r = el.getBoundingClientRect(); gMenu(m, r.left + 40, r.bottom - 4, el, inThread); } };
+      let t; el.ontouchstart = (e) => { t = setTimeout(() => { const p = e.touches[0]; gMenu(m, p.clientX, p.clientY, el, inThread); }, 550); }; el.ontouchend = el.ontouchmove = () => clearTimeout(t);
+    });
+  }
+  // 吹き出しの右クリック：スタンプ・スレッドで返信・コピー・タスクへ・その人の 1 対 1・顧客管理・Claude に聞く
+  function gMenu(m, x, y, from, inThread) {
+    closeMenu(); lastFocus = from; menuAt = Date.now();
+    const el = document.createElement("div"); el.className = "menu"; el.setAttribute("role", "menu"); el.setAttribute("aria-label", "メッセージの操作");
+    const student = m.from === "student";
+    el.innerHTML = `<div class="erow" role="group" aria-label="スタンプ">${EMO.map((k) => `<button role="menuitem" data-e="${k}" aria-label="スタンプ ${k}">${k}</button>`).join("")}</div>
+      ${inThread ? "" : '<button role="menuitem" data-a="thread">スレッドで返信</button>'}<button role="menuitem" data-a="copy">コピー<small>C</small></button><hr>
+      <div class="mh2" aria-hidden="true">連携</div><button role="menuitem" data-a="task">タスクへ追加（TaskMaster）…</button>
+      ${student ? `<button role="menuitem" data-a="dm">${esc(m.name)}との 1 対 1 を開く</button><button role="menuitem" data-a="person">${esc(m.name)}を顧客管理で開く →</button>` : ""}<hr>
+      <button role="menuitem" data-a="claude">Claude に聞く（依頼文をコピー）</button>`;
+    root.appendChild(el);
+    const w = el.offsetWidth, h = el.offsetHeight; el.style.left = Math.max(8, Math.min(x, innerWidth - w - 8)) + "px"; el.style.top = Math.max(8, Math.min(y, innerHeight - h - 8)) + "px";
+    const its = $$("[role=menuitem]", el); its[0].focus();
+    el.onkeydown = (e) => { const k = its.indexOf(root.activeElement);
+      if (e.key === "ArrowDown" || e.key === "ArrowRight") { e.preventDefault(); its[(k + 1) % its.length].focus(); } if (e.key === "ArrowUp" || e.key === "ArrowLeft") { e.preventDefault(); its[(k - 1 + its.length) % its.length].focus(); }
+      if (e.key === "Escape") { e.preventDefault(); closeMenu(true); } if (e.key === "Tab") e.preventDefault(); };
+    its.forEach((b) => (b.onclick = () => { closeMenu(); if (b.dataset.e) react(m.id, b.dataset.e); else gAct(b.dataset.a, m); }));
+  }
+  function gAct(a, m) {
+    if (a === "copy") { navigator.clipboard.writeText(m.text).then(() => toast("コピーしました"), () => toast("コピーできませんでした")); if (lastFocus) lastFocus.focus(); return; }
+    if (a === "thread") return openThread(m.id);
+    if (a === "dm") return openChat(m.who);
+    if (a === "person") return openPerson(m.who);
+    if (a === "claude") {
+      const t = `マーケくんのグループ「${G.group.name}」（group_id: ${G.id}）を get_chat_group で読み、次のメッセージ（id: ${m.id}・${m.name}）について、流れとスレッドを踏まえて分析し、返し方の案を出してください。\n\n「${m.text.slice(0, 300)}」`;
+      navigator.clipboard.writeText(t).then(() => toast("Claude に貼る依頼文をコピーしました"), () => dialog(`<h2>Claude に貼る依頼文</h2><textarea rows="7" readonly>${esc(t)}</textarea><div class="acts"><button class="btn pri" data-x>閉じる</button></div>`));
+      return;
+    }
+    if (a === "task") {
+      const tm = new Date(Date.now() + 864e5);
+      dialog(`<h2>タスクへ追加（TaskMaster）</h2><label for="tt">タスクの名前</label><input id="tt" maxlength="300" value="${esc(G.group.name + "・" + m.name + "：" + m.text.replace(/\s+/g, " ").slice(0, 30))}">
+        <label for="td">期限</label><input id="td" type="date" value="${ymd(tm)}"><p style="font-size:12px;color:var(--muted);margin:6px 0 0">タスクのリンクに、このメッセージへ戻る住所が付きます。</p>
+        <p class="err" id="terr" role="alert"></p><div class="acts"><button class="btn" data-x>キャンセル</button><button class="btn pri" data-ok>追加</button></div>`, async (d) => {
+        const title = $("#tt", d).value.trim(); if (!title) { $("#terr", d).textContent = ERR.need_title; return false; }
+        const r = await call(`/api/admin/chat/groups/${G.id}/task`, "POST", { message_id: m.id, title, deadline: $("#td", d).value || null });
+        if (!r.ok) { $("#terr", d).textContent = errText(r); return false; }
+        toast("TaskMaster にタスクを追加しました", null, r.url);
+      });
+    }
+  }
+  async function react(mid, emoji) {
+    const r = await call(`/api/admin/chat/groups/${G.id}/react`, "POST", { message_id: mid, emoji });
+    if (!r.ok) { toast(gErr(r)); return; }
+    await openGroup(G.id); const el = $(`.msg[data-g="${mid}"]`); if (el) el.focus();
+  }
+  function picker(anchor, on) {
+    closeMenu(); menuAt = Date.now();
+    const el = document.createElement("div"); el.className = "menu pk"; el.setAttribute("role", "menu"); el.setAttribute("aria-label", "スタンプ");
+    el.innerHTML = EMO.map((k) => `<button role="menuitem" data-k="${k}" aria-label="スタンプ ${k}">${k}</button>`).join("");
+    root.appendChild(el); const r = anchor.getBoundingClientRect(); el.style.left = Math.max(8, Math.min(r.left, innerWidth - 260)) + "px"; el.style.top = (r.bottom + 4) + "px";
+    const its = $$("button", el); its[0].focus();
+    el.onkeydown = (e) => { const k = its.indexOf(root.activeElement); if (e.key === "ArrowRight") { e.preventDefault(); its[(k + 1) % its.length].focus(); } if (e.key === "ArrowLeft") { e.preventDefault(); its[(k - 1 + its.length) % its.length].focus(); } if (e.key === "Escape") { e.preventDefault(); closeMenu(true); } };
+    its.forEach((b) => (b.onclick = () => { closeMenu(); on(b.dataset.k); }));
+  }
+  function openThread(id) { gThread = id; gTab = "thread"; if (!sideOpen) { sideOpen = true; app.classList.remove("noside"); drawGroupMid(); } drawGroupRight(); if (narrow()) setView("side"); $("#tcomp")?.focus(); }
+
+  function drawGroupRight() {
+    const tm = gThread && G.messages.find((m) => m.id === gThread);
+    if (!tm && gTab === "thread") gTab = "mem";
+    const vault = [];
+    for (const m of G.messages.flatMap((x) => [x, ...x.replies]).sort((a, b) => b.id - a.id)) {
+      for (const u of m.text.match(/https?:[/][/][^\s　<>"'）」]+/g) || []) if (!vault.some((v) => v.url === u)) vault.push({ kind: "link", url: u, m });
+      for (const k of m.images) vault.push({ kind: "image", key: k, m });
+    }
+    const tabs = [tm ? ["thread", "スレッド"] : null, ["mem", `メンバー <span class="n">${G.members.length}</span>`], ["vault", `資料 <span class="n">${vault.length}</span>`]].filter(Boolean);
+    $("#right").innerHTML = `<div class="tabs" role="tablist" style="margin-top:0"><button class="btn back" id="toChat" aria-label="グループへ戻る">←</button>${tabs.map(([k, t]) => `<button role="tab" data-gt="${k}" aria-selected="${gTab === k}" tabindex="${gTab === k ? 0 : -1}">${t}</button>`).join("")}<span class="g"></span></div><div class="pane" id="pane" role="tabpanel"></div>`;
+    $("#toChat").onclick = () => setView("chat");
+    $$("[data-gt]").forEach((b) => (b.onclick = () => { gTab = b.dataset.gt; drawGroupRight(); $(`[data-gt="${gTab}"]`).focus(); }));
+    const pane = $("#pane");
+    if (gTab === "thread") {
+      pane.innerHTML = `${gMsgHtml(tm, true)}<div class="tsep">返信 ${tm.reply_count} 件</div>${tm.replies.map((x) => gMsgHtml(x, true)).join("")}
+        <label class="sr" for="tcomp">スレッドに返信</label><textarea id="tcomp" class="tcomp" maxlength="8000" placeholder="スレッドに返信"></textarea>
+        <div class="trow"><label class="chk2"><input type="checkbox" id="tall">グループにも流す</label><span class="g"></span><button class="btn pri" id="tsend">返信</button></div><button class="lk" id="tclose">スレッドを閉じる</button>`;
+      wireGroupMsgs(pane, true);
+      const send = async () => { const t = $("#tcomp").value.trim(); if (!t) { toast("文が空です"); return; }
+        const r = await call(`/api/admin/chat/groups/${G.id}/message`, "POST", { text: t, thread_of: tm.id, also_main: $("#tall").checked });
+        if (!r.ok) { toast(gErr(r)); return; } await openGroup(G.id); $("#tcomp")?.focus(); toast(`スレッドに返信しました（${r.notified} 人に通知）`); };
+      $("#tsend").onclick = send; $("#tcomp").onkeydown = (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); send(); } };
+      $("#tclose").onclick = () => { gThread = null; gTab = "mem"; drawGroupRight(); };
+    } else if (gTab === "mem") {
+      const last = G.messages.flatMap((x) => [x, ...x.replies]).reduce((s, m) => Math.max(s, m.id), 0);
+      pane.innerHTML = `<p class="who">名前を押すと、その人との 1 対 1 のチャットへ移ります</p>${G.members.map((x) => `<div class="mem">${av(x.id, x.name)}<button class="lk mn" data-dm="${x.id}">${esc(x.name)}</button><small>${x.read_upto >= last && last ? "最新まで読んだ" : x.read_upto ? "途中まで読んだ" : "まだ読んでいない"}</small><button class="lk" data-rm="${x.id}" aria-label="${esc(x.name)}に抜けてもらう">外す</button></div>`).join("") || '<p class="empty">まだ誰も入っていません。上の「＋ 人を入れる」から入れられます</p>'}`;
+      $$("[data-dm]", pane).forEach((b) => (b.onclick = () => openChat(b.dataset.dm)));
+      $$("[data-rm]", pane).forEach((b) => (b.onclick = async () => {
+        if (b.dataset.sure !== "1") { b.dataset.sure = "1"; b.textContent = "本当に外す"; return; }
+        const r = await call(`/api/admin/chat/groups/${G.id}`, "POST", { remove_ids: [b.dataset.rm] }); if (!r.ok) { toast(gErr(r)); return; }
+        await openGroup(G.id); toast("グループから外しました（やり取りは残ります）"); }));
+    } else {
+      pane.innerHTML = `<p class="who">グループで送られたリンクと画像が集まります</p>${vault.map((v) => v.kind === "image" ? `<div class="vi"><img data-key="${esc(v.key)}" alt="${esc(v.m.name)}が送った画像"><div><small>${esc(v.m.name)}・${esc(fmtTime(v.m.at))}</small><button class="lk" data-go="${v.m.id}">メッセージへ</button></div></div>`
+        : `<div class="vi"><span class="vic" aria-hidden="true">↗</span><div><a href="${esc(v.url)}" target="_blank" rel="noopener">${esc(v.url.replace(/^https?:[/][/]/, "").slice(0, 70))}</a><small>${esc(v.m.name)}・${esc(fmtTime(v.m.at))}</small><button class="lk" data-go="${v.m.id}">メッセージへ</button></div></div>`).join("") || '<p class="empty">まだ資料はありません</p>'}`;
+      $$("[data-go]", pane).forEach((b) => (b.onclick = () => { const id = Number(b.dataset.go); const el = $(`.msg[data-g="${id}"]`, $("#mid")); if (narrow()) setView("chat"); if (el) { el.classList.add("hit"); el.scrollIntoView({ block: "center" }); el.focus(); } else { const p = G.messages.find((m) => m.replies.some((x) => x.id === id)); if (p) openThread(p.id); } }));
+      $$("img[data-key]", pane).forEach(async (img) => { try { img.src = await authImage("/api/admin/image?key=" + encodeURIComponent(img.dataset.key), getToken()); } catch (_) { img.alt = "画像を読めませんでした"; } });
+    }
+  }
+
+  // 人を選ぶ窓（フォルダからまとめて・名前で探す）。作るときと入れるときで使う
+  function pickPeople(d, already) {
+    const sel = new Set();
+    const chats = (L ? L.chats : []).filter((c) => !already.has(c.person_id));
+    let found = [];
+    const draw = () => {
+      const q = $("#pq", d).value.trim();
+      const f = $("#pf", d).value;
+      const base = f ? chats.filter((c) => c.folder_id === f) : chats;
+      const list = [...base.filter((c) => !q || (nameOf(c) + c.email).includes(q)).map((c) => ({ id: c.person_id, name: nameOf(c) })), ...found.filter((p) => !already.has(p.id) && !base.some((c) => c.person_id === p.id)).map((p) => ({ id: p.id, name: p.name || p.email }))];
+      $("#pl", d).innerHTML = list.slice(0, 60).map((p) => `<label class="chk"><input type="checkbox" value="${p.id}" ${sel.has(p.id) ? "checked" : ""}>${av(p.id, p.name)}${esc(p.name)}</label>`).join("") || '<p class="empty">合う人がいません</p>';
+      $$("#pl input", d).forEach((i) => (i.onchange = () => { i.checked ? sel.add(i.value) : sel.delete(i.value); $("#pn", d).textContent = `${sel.size} 人を選んでいます`; }));
+    };
+    let timer = 0;
+    $("#pf", d).onchange = () => { const f = $("#pf", d).value; if (f) chats.filter((c) => c.folder_id === f).forEach((c) => sel.add(c.person_id)); $("#pn", d).textContent = `${sel.size} 人を選んでいます`; draw(); };
+    $("#pq", d).oninput = () => { draw(); clearTimeout(timer); const q = $("#pq", d).value.trim(); if (q) timer = setTimeout(async () => { const r = await call("/api/admin/chat/people?q=" + encodeURIComponent(q)); if (r.ok && d.isConnected) { found = r.people; draw(); } }, 300); };
+    draw();
+    return sel;
+  }
+  const pickHtml = () => `<label for="pf">フォルダからまとめて選ぶ</label><select id="pf"><option value="">フォルダを選ばない</option>${(L ? L.folders : []).map((f) => `<option value="${f.id}">${esc(f.name)}（${f.count} 人）</option>`).join("")}</select>
+    <label for="pq">名前で探す（チャットの無い人も）</label><input id="pq" type="search" placeholder="名前かメール"><div id="pl" class="plist"></div><p class="who" id="pn" aria-live="polite">0 人を選んでいます</p>`;
+  function newGroupDlg(opener) {
+    lastFocus = opener || lastFocus;
+    let sel = null;
+    dialog(`<h2>グループを作る</h2><label for="gn">グループの名前</label><input id="gn" maxlength="40" placeholder="例 NEXT 受講生（12月）">${pickHtml()}
+      <p style="font-size:12px;color:var(--muted);margin:6px 0 0">作っただけでは生徒には知らせません。最初のメッセージを送ると、入れた人の画面とスマホに届きます。</p><p class="err" id="gerr" role="alert"></p>
+      <div class="acts"><button class="btn" data-x>キャンセル</button><button class="btn pri" data-ok>作る</button></div>`, async (d) => {
+      const r = await call("/api/admin/chat/groups", "POST", { name: $("#gn", d).value, member_ids: [...sel] });
+      if (!r.ok) { $("#gerr", d).textContent = gErr(r); return false; }
+      await loadList(); openGroup(r.group.id); toast(`「${r.group.name}」を作りました（${r.members} 人）`);
+    }, (d) => { sel = pickPeople(d, new Set()); });
+  }
+  function memberDlg(opener) {
+    lastFocus = opener || lastFocus;
+    let sel = null;
+    dialog(`<h2>「${esc(G.group.name)}」に人を入れる</h2>${pickHtml()}<p style="font-size:12px;color:var(--muted);margin:6px 0 0">入った人には、入る前のやり取りも見えます。</p><p class="err" id="gerr" role="alert"></p>
+      <div class="acts"><button class="btn" data-x>キャンセル</button><button class="btn pri" data-ok>入れる</button></div>`, async (d) => {
+      if (!sel.size) { $("#gerr", d).textContent = "入れる人を選んでください"; return false; }
+      const r = await call(`/api/admin/chat/groups/${G.id}`, "POST", { add_ids: [...sel] });
+      if (!r.ok) { $("#gerr", d).textContent = gErr(r); return false; }
+      await openGroup(G.id); toast(`${r.added} 人を入れました`);
+    }, (d) => { sel = pickPeople(d, new Set(G.members.map((x) => x.id))); });
+  }
+  function groupEditDlg(opener) {
+    lastFocus = opener || lastFocus;
+    dialog(`<h2>グループの名前・閉じる</h2><label for="gn2">グループの名前</label><input id="gn2" maxlength="40" value="${esc(G.group.name)}">
+      <p style="font-size:12px;color:var(--muted);margin:10px 0 4px">閉じると、生徒の画面からグループが消えます（やり取りは残り、AI からは読めます）。</p><button class="btn" id="gclose">このグループを閉じる</button>
+      <p class="err" id="gerr" role="alert"></p><div class="acts"><button class="btn" data-x>キャンセル</button><button class="btn pri" data-ok>名前を保存</button></div>`, async (d) => {
+      const r = await call(`/api/admin/chat/groups/${G.id}`, "POST", { name: $("#gn2", d).value });
+      if (!r.ok) { $("#gerr", d).textContent = gErr(r); return false; }
+      await loadList(); await openGroup(G.id); toast("名前を変えました");
+    }, (d, close) => {
+      $("#gclose", d).onclick = async (e) => { const b = e.currentTarget; if (b.dataset.sure !== "1") { b.dataset.sure = "1"; b.textContent = "本当に閉じる"; b.classList.add("danger"); return; }
+        const r = await call(`/api/admin/chat/groups/${G.id}`, "POST", { close: true }); if (!r.ok) { $("#gerr", d).textContent = gErr(r); return; }
+        close(); G = null; cur = null; await loadList(); $("#mid").innerHTML = '<div class="welcome">グループを閉じました。</div>'; $("#right").innerHTML = ""; toast("グループを閉じました"); };
+    });
+  }
+
   // ---------- 探す ----------
   $("#q").onkeydown = async (e) => {
     if (e.key !== "Enter") return;
@@ -482,7 +710,7 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
       <div class="results">${hits.map((h, k) => `<button class="res" data-k="${k}"><small>${esc(h.name)}・${esc(h.kind)}・${esc(h.from)}・${esc(fmtTime(h.at))}</small>${esc(h.text).split(esc(q)).join(`<mark>${esc(q)}</mark>`)}</button>`).join("") || '<p class="empty">見つかりませんでした。言葉を変えてみてください</p>'}</div>`;
     $("#toList").onclick = () => setView("list");
     $("#clr").onclick = () => { $("#q").value = ""; hits = null; drawLeft(); if (D) chan === "line" ? drawLine() : drawMid(); else $("#mid").innerHTML = ""; $("#q").focus(); };
-    $$("[data-k]", $("#mid")).forEach((b) => (b.onclick = () => { const h = hits[+b.dataset.k]; openChat(h.person_id, h.event_id); }));
+    $$("[data-k]", $("#mid")).forEach((b) => (b.onclick = () => { const h = hits[+b.dataset.k]; h.group_id ? openGroup(h.group_id, h.event_id) : openChat(h.person_id, h.event_id); }));
     setView("chat"); live(`${r.count} 件見つかりました`);
   };
 
@@ -522,7 +750,7 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
     const a = root.activeElement, typing = a && /INPUT|TEXTAREA/.test(a.tagName) || /INPUT|TEXTAREA/.test(document.activeElement.tagName) && document.activeElement !== host;
     if (typing || $(".dlgbg") || $(".ks")) return;
     if (e.key === "?") { e.preventDefault(); keysDlg(); }
-    if (e.key === "]" && D) { e.preventDefault(); $("#sideBtn")?.click(); }
+    if (e.key === "]" && (D || G)) { e.preventDefault(); $("#sideBtn")?.click(); }
   });
   function keysDlg() {
     const K = [["⌘／Ctrl＋K", "名前で探してチャットを開く"], ["⌘／Ctrl＋Enter", "送信・メモを残す"], ["↑ ↓", "メッセージを移る（メッセージを選んでいるとき）"], ["T", "タスクへ追加"], ["F", "転送（メモとして）"], ["C", "コピー"], ["S", "資料に入れる・外す"], ["Enter・右クリック", "操作の一覧"], ["]", "右を開く・閉じる"], ["Esc", "閉じる"]];

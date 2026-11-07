@@ -119,7 +119,10 @@
       <div class="rtabs" role="tablist" aria-label="部屋の枠">
         <button type="button" role="tab" data-pane="corr" aria-selected="true">添削<span class="badge hidden" data-pane-n="corr"></span></button>
         <button type="button" role="tab" data-pane="chat" aria-selected="false">やり取り<span class="badge hidden" data-pane-n="chat"></span></button>
+        <!-- チャットの便 C2b：入っているグループ -->
+        <button type="button" role="tab" data-pane="group" aria-selected="false" class="hidden" id="pane-group">グループ<span class="badge hidden" data-pane-n="group"></span></button>
       </div>
+      <div id="group-box" class="hidden" aria-live="polite"></div>
       <div id="room-list" class="room" aria-live="polite"></div>
       <form id="composer" class="composer card">
         <label for="c-text" class="sr">出す文章</label>

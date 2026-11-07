@@ -123,7 +123,7 @@ export function historyOf(events) {
     .filter((x) => x.cat);
 }
 
-export function makeChat({ db, addEvent, core, logInbound, line }) {
+export function makeChat({ db, addEvent, core, logInbound, line, groups }) {
   const chatEvents = async (env, personId) => db(env, "GET", `events?select=id,customer_id,type,payload,actor,occurred_at&customer_id=eq.${personId}&type=in.(${CHAT_TYPES.join(",")})&order=id.asc&limit=2000`);
   const exists = async (env, id) => !!(await db(env, "GET", `customers?select=id&id=eq.${id}`))[0];
 
@@ -193,7 +193,9 @@ export function makeChat({ db, addEvent, core, logInbound, line }) {
     }
     const chats = r.rooms.map((x) => ({ ...x, later_until: later[x.person_id] || null, need: needsReply(x, later[x.person_id]), folder_id: folder[x.person_id] || null }));
     const folders = fs.map((f) => ({ ...f, count: chats.filter((c) => c.folder_id === f.id).length, need: chats.filter((c) => c.folder_id === f.id && c.need).length }));
-    return { ok: true, count: chats.length, need_count: chats.filter((x) => x.need).length, later_count: chats.filter((x) => x.later_until).length, folders, chats };
+    // C2b：グループも返す（左の一覧の上）
+    const gl = groups ? await groups.list(env) : { groups: [] };
+    return { ok: true, count: chats.length, need_count: chats.filter((x) => x.need).length + gl.groups.filter((g) => g.need).length, later_count: chats.filter((x) => x.later_until).length, folders, chats, groups: gl.groups, ...(gl.note ? { groups_note: gl.note } : {}) };
   }
 
   // ⌘K：部屋の無い人も、名前かメールで探して開ける
@@ -220,6 +222,7 @@ export function makeChat({ db, addEvent, core, logInbound, line }) {
       messages: room.messages, notices: room.notices || [], unreplied: room.unreplied,
       notes, tasks, later_until: laterOf(ce), line: ln,
       folder_id: folderOf(ce, new Set(fs.map((f) => f.id))), folders: fs,
+      groups: groups ? await groups.groupsOf(env, person_id) : [],
       vault: vaultOf(room.messages, notes, ce),
       card: cardOf(t), history: historyOf(t.events), cats: CATS,
     };
@@ -316,9 +319,11 @@ export function makeChat({ db, addEvent, core, logInbound, line }) {
     const evs = await db(env, "GET", path);
     const textOf = (e) => { const p = e.payload || {}; return String(p.text || p.corrected || p.comment || ""); };
     const hits = evs.filter((e) => textOf(e).includes(s)).slice(0, lim);
+    // C2b：1 人やフォルダに絞っていないときは、グループのメッセージも探す
+    const gh = groups && !person_id && !folder_id ? await groups.search(env, { q: s }) : [];
     const ids = [...new Set(hits.map((e) => e.customer_id))];
     const names = ids.length ? Object.fromEntries((await db(env, "GET", `customer_summary?select=id,name,email&id=in.(${ids.join(",")})`)).map((p) => [p.id, p.name || p.email])) : {};
-    return { ok: true, count: hits.length, hits: hits.map((e) => ({ person_id: e.customer_id, name: names[e.customer_id] || "", event_id: e.id, kind: e.type === "chat_note" ? "メモ" : e.type === "room_chat" ? "メッセージ" : "添削", from: e.type === "chat_note" ? "シアニン（メモ）" : ((e.payload || {}).from === "student" || e.type === "correction_submitted" ? "生徒" : "シアニン"), at: e.occurred_at, text: textOf(e).slice(0, 300) })) };
+    return { ok: true, count: Math.min(hits.length + gh.length, lim), hits: hits.map((e) => ({ person_id: e.customer_id, name: names[e.customer_id] || "", event_id: e.id, kind: e.type === "chat_note" ? "メモ" : e.type === "room_chat" ? "メッセージ" : "添削", from: e.type === "chat_note" ? "シアニン（メモ）" : ((e.payload || {}).from === "student" || e.type === "correction_submitted" ? "生徒" : "シアニン"), at: e.occurred_at, text: textOf(e).slice(0, 300) })).concat(gh).slice(0, lim), count_groups: gh.length };
   }
 
   return { list, people, get, addNote, setLater, forward, addTask, search, saveFolder, setFolder, keep, readFolders };
