@@ -571,7 +571,8 @@
             <div><label for="ar-name">名前（自分用）</label><input id="ar-name" type="text" maxlength="120"></div>
             <div><label for="ar-keywords">キーワード（1 行に 1 つ）</label><textarea id="ar-keywords" rows="2"></textarea></div>
             <div><label for="ar-match">合い方</label><select id="ar-match" class="inline"><option value="all">送られた文がキーワードと同じ</option><option value="part">送られた文にキーワードが入っている</option></select></div>
-            <div id="ar-msg-wrap"><label for="ar-messages">返す文（吹き出しを分けるときは「---」だけの行をはさむ・5 つまで）</label><textarea id="ar-messages" rows="6"></textarea></div>
+            <div id="ar-msg-wrap"><label for="ar-messages">返す文（吹き出しを分けるときは「---」だけの行をはさむ・5 つまで。画像は「画像 住所」の 1 行）</label><textarea id="ar-messages" rows="6"></textarea>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px"><button class="btn ghost small" type="button" id="ar-pick">メディアから画像を選ぶ</button><span class="note" style="margin:0">選ぶと、最後の吹き出しのあとに画像の吹き出しが入ります</span></div></div>
             <p class="note hidden" id="ar-tpl-note" style="margin:0"></p>
             <div><label for="ar-sort">並び順（小さいほど先に見る）</label><input id="ar-sort" type="number" min="0" max="9999" class="inline" style="width:7em"></div>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn small" type="submit" id="ar-save">保存（下書きのまま）</button><button class="btn ghost small" type="button" id="ar-cancel">キャンセル</button><span class="spacer" style="flex:1"></span><button class="btn ghost small" type="button" id="ar-remove">削除</button><span class="note" id="ar-status" role="status"></span></div>

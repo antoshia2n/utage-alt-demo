@@ -82,7 +82,7 @@ import { makeMarks } from "./marks.js";
 import { makeMedia } from "./media.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.69.0-bmedialink";
+const VERSION = "0.70.0-bmediapick";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -260,10 +260,10 @@ async function serveMediaLink(request, env, token) {
   if (request.method !== "GET" && request.method !== "HEAD") return new Response("", { status: 405 });
   const stop = await guardPublic(request, env, "media_link", { ip: "hit" });
   if (stop) return stop;
-  const r = await media.serveLink(env, token, request);
+  const r = await media.serveLink(env, token, request, { preview: new URL(request.url).searchParams.get("p") === "1" });
   return r || new Response(MEDIA_GONE, { status: 404, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex" } });
 }
-const line = makeLine({ db, logInbound, changes, addEvent, registerPerson: (env, a) => registerPerson(env, a), audience: (env, f) => deliver.audience(env, f), excluded: (env) => connect.excludedIds(env) });
+const line = makeLine({ db, logInbound, changes, addEvent, checkImage: (env, url) => media.lineImageProblem(env, url), registerPerson: (env, a) => registerPerson(env, a), audience: (env, f) => deliver.audience(env, f), excluded: (env) => connect.excludedIds(env) });
 // B の便 16a：UTAGE の読者と予約者の取り込み（中身は src/utageimport.js）。新しい人は関数 b_register で入れる
 const utageImport = makeUtageImport({ db, addEvent, logInbound, register: async (env, email, name) => {
   const r = await rawDb(env, "POST", "rpc/b_register", { p_email: email, p_name: name || "", p_source: "other" });
@@ -1335,7 +1335,7 @@ async function handleApi(request, env, url) {
     if (a.error) return json({ ok: false, error: a.error }, a.status);
     if (path === "/api/admin/whoami") return json({ ok: true, email: a.email });
     // メディアの便 M1（2026-11-07）：メディアの棚
-    if (path === "/api/admin/media" && method === "GET") return json(await media.list(env, { kind: url.searchParams.get("kind") || "", folder: url.searchParams.get("folder") || "", q: url.searchParams.get("q") || "" }));
+    if (path === "/api/admin/media" && method === "GET") return json(await media.list(env, { kind: url.searchParams.get("kind") || "", folder: url.searchParams.get("folder") || "", q: url.searchParams.get("q") || "", limit: url.searchParams.get("limit") || "" }));
     if (path === "/api/admin/media/upload" && method === "POST") {
       const r = await media.upload(env, { name: url.searchParams.get("name"), folder: url.searchParams.get("folder"), size: request.headers.get("content-length"), type: request.headers.get("content-type"), body: request.body }, a.email);
       return json(r, r.ok ? 200 : 400);
@@ -1345,6 +1345,11 @@ async function handleApi(request, env, url) {
     if (path === "/api/admin/media/links" && method === "GET") return json(await media.links(env, { media_id: url.searchParams.get("media_id") || "" }, mediaOrigin(env)));
     if (path === "/api/admin/media/links" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await media.makeLink(env, b, a.email, mediaOrigin(env)); return json(r, r.ok ? 200 : 400); }
     if (path === "/api/admin/media/links/stop" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await media.stopLink(env, b, a.email); return json(r, r.ok ? 200 : 400); }
+    // メディアの便 M2b：LINE のプレビュー（画面が作った 1MB までの jpg）を置く
+    if (path === "/api/admin/media/preview" && method === "POST") {
+      const r = await media.savePreview(env, { id: url.searchParams.get("id"), size: request.headers.get("content-length"), type: request.headers.get("content-type"), body: request.body }, a.email);
+      return json(r, r.ok ? 200 : r.error === "not_found" ? 404 : 400);
+    }
     if (path === "/api/admin/media/file" && method === "GET") { const r = await media.file(env, url.searchParams.get("id")); return r || json({ ok: false, error: "not_found" }, 404); }
     // 招待リンク（2026-10-30）：作る・一覧（使った人つき）・止める・メールで送る
     if (path === "/api/admin/invites" && method === "GET") return json(await invite.list(env));
@@ -2102,7 +2107,7 @@ const TOOLS = [
     name: "create_media_link",
     screen: "media",
     say: "メディアの共有リンクを作る（ログインなしで開ける住所）",
-    description: "メディアの棚の 1 つ（media_id）に共有リンクを作る。ログインなしで誰でも開ける住所 url が返る（LINE・メール・ページに貼る）。label（何に配ったか・60 字まで）・期限は days（1〜3650）か expires_at（日時）、どちらも無ければ期限なし。1 つのファイルに何本でも作れ、本ごとに止める・開かれた数を持つ。写し終わっていないファイルは no_file。承認が要る道具：呼ぶと承認待ちになり approval_url が返る。",
+    description: "メディアの棚の 1 つ（media_id）に共有リンクを作る。ログインなしで誰でも開ける住所 url が返る（LINE・メール・ページに貼る）。label（何に配ったか・60 字まで）・期限は days（1〜3650）か expires_at（日時）、どちらも無ければ期限なし。1 つのファイルに何本でも作れ、本ごとに止める・開かれた数を持つ。写し終わっていないファイルは no_file。承認が要る道具：呼ぶと承認待ちになり approval_url が返る。LINE の画像に使うときは png か jpg・10MB まで。1MB を超える画像は、送る前にシアニン用の画面の「メディアから選ぶ」で選ぶとプレビューができる（無いと save_line_reply・save_line_template が need_preview で止める）。",
     inputSchema: { type: "object", properties: { media_id: { type: "string" }, label: { type: "string" }, days: { type: "integer" }, expires_at: { type: "string" } }, required: ["media_id"] },
   },
   {

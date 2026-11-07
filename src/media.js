@@ -5,6 +5,8 @@
 //    写すのは住所が UTAGE の置き場のものだけ（ほかの住所は取りに行かない）。同じ元（source）は 2 回写さない
 //  ・M2（2026-11-07）：共有リンク。表 b_media_links（正本は supabase/b_media_links.sql）。住所は /m/<24 桁>（lab と lp の両方で開く）。
 //    本ごとに止める・期限・開かれた数。ログインは要らない。止めた・期限切れ・ファイルが無いは同じ「開けません」の頁
+//  ・M2b（2026-11-07 Naoki OK 09:07）：メディアから選ぶ。LINE のプレビュー（1MB まで）は R2 の media/<番号>.preview.jpg に置き（表は変えない）、
+//    /m/<24 桁>?p=1 で出す（無ければ元の画像。プレビューは開かれた数に数えない）。LINE の画像は元が 10MB まで・png か jpg
 export const KINDS = ["image", "pdf", "slide", "video", "audio", "other"];
 const UTAGE_FILE_RE = /^https:[/][/]utagesystem[.]s3[.]ap-northeast-1[.](amazonaws|wasabisys)[.]com[/][^\s?#]{4,400}$/;
 const SLIDE_RE = /^https:[/][/]docs[.]google[.]com[/]presentation[/]d[/]([A-Za-z0-9_-]{20,80})/;
@@ -16,6 +18,10 @@ const T = "b_media";
 const L = "b_media_links";
 export const TOKEN_RE = /^[0-9a-f]{24}$/;
 const MAX_DAYS = 3650;
+export const LINE_PREVIEW_MAX = 1024 * 1024;       // LINE のプレビューの上限
+export const LINE_IMAGE_MAX = 10 * 1024 * 1024;    // LINE の元の画像の上限
+const LINE_TYPES = ["image/png", "image/jpeg"];
+export const previewKey = (id) => `media/${id}.preview.jpg`;
 
 export const extOf = (name) => { const m = String(name || "").toLowerCase().match(/[.]([a-z0-9]{2,5})$/); return m ? m[1] : ""; };
 export const kindOf = (name) => EXT_KIND[extOf(name)] || "other";
@@ -78,7 +84,7 @@ export function makeMedia(h) {
     const [r] = await db(env, "GET", `${T}?select=*&id=eq.${encodeURIComponent(String(id || ""))}`);
     if (!r) return { ok: false, error: "not_found" };
     if (remove) {
-      if (r.r2_key && env.IMAGES) await env.IMAGES.delete(r.r2_key);
+      if (r.r2_key && env.IMAGES) { await env.IMAGES.delete(r.r2_key); if (r.kind === "image") await env.IMAGES.delete(previewKey(r.id)); }
       await db(env, "DELETE", `${T}?id=eq.${r.id}`);
       await logInbound(env, "media_remove", { id: r.id, name: r.name, source: r.source, actor }, { ok: true }, 200);
       return { ok: true, removed: true, id: r.id };
@@ -208,7 +214,7 @@ export function makeMedia(h) {
 
   // 公開の住所 /m/<token>。開けないときは null（呼ぶ側が同じ頁を出す）。
   // 開かれた数は、最初から読むとき（Range なし・bytes=0- から）だけ 1 足す（動画の続き読みで数が増えないように）
-  async function serveLink(env, token, request) {
+  async function serveLink(env, token, request, { preview = false } = {}) {
     if (!TOKEN_RE.test(String(token || ""))) return null;
     const [k] = await db(env, "GET", `${L}?select=*&token=eq.${token}`);
     if (!k || linkState(k) !== "live") return null;
@@ -216,8 +222,13 @@ export function makeMedia(h) {
     if (!r) return null;
     const rangeH = request.headers.get("range");
     const first = request.method === "GET" && (!rangeH || /^bytes=0-/.test(rangeH));
-    const count = async () => { if (first) await db(env, "PATCH", `${L}?id=eq.${k.id}`, { opens: (k.opens || 0) + 1, last_open_at: new Date().toISOString() }, "return=minimal"); };
+    const count = async () => { if (first && !preview) await db(env, "PATCH", `${L}?id=eq.${k.id}`, { opens: (k.opens || 0) + 1, last_open_at: new Date().toISOString() }, "return=minimal"); };
     const base = { "x-content-type-options": "nosniff", "x-robots-tag": "noindex", "referrer-policy": "no-referrer", "cache-control": "private, no-store" };
+    // LINE のプレビュー（?p=1）：小さな版があればそれ、無ければ元の画像。開かれた数には数えない
+    if (preview && r.kind === "image" && env.IMAGES) {
+      const pv = await env.IMAGES.get(previewKey(r.id));
+      if (pv) return new Response(request.method === "HEAD" ? null : pv.body, { headers: { ...base, "content-type": "image/jpeg", ...(pv.size != null ? { "content-length": String(pv.size) } : {}) } });
+    }
     if (r.kind === "slide") { if (!r.url) return null; await count(); return new Response(null, { status: 302, headers: { ...base, location: r.url } }); }
     if (!r.r2_key || !env.IMAGES) return null;
     const obj = await env.IMAGES.get(r.r2_key, rangeH ? { range: request.headers } : undefined);
@@ -236,5 +247,37 @@ export function makeMedia(h) {
     return new Response(request.method === "HEAD" ? null : obj.body, { headers });
   }
 
-  return { list, upload, addSlide, save, importUtage, drain, importStatus, file, links, makeLink, stopLink, serveLink };
+  // ---------- M2b：LINE のプレビュー ----------
+  // 画面が作った小さな jpg（1MB まで）を置く。元の画像が棚にあるもの（画像・写し済み）だけ
+  async function savePreview(env, { id, size, type, body }, actor) {
+    if (!env.IMAGES) return { ok: false, error: "no_store" };
+    const [r] = await db(env, "GET", `${T}?select=id,kind,r2_key&id=eq.${encodeURIComponent(String(id || ""))}`);
+    if (!r) return { ok: false, error: "not_found" };
+    if (r.kind !== "image" || !r.r2_key) return { ok: false, error: "not_image", note: "棚にある画像（写し済み）だけ" };
+    const n = Number(size) || 0;
+    if (!n) return { ok: false, error: "empty" };
+    if (n > LINE_PREVIEW_MAX) return { ok: false, error: "preview_too_big", max: LINE_PREVIEW_MAX };
+    if (String(type || "").split(";")[0].trim() !== "image/jpeg") return { ok: false, error: "preview_not_jpeg" };
+    await env.IMAGES.put(previewKey(r.id), body, { httpMetadata: { contentType: "image/jpeg" } });
+    await logInbound(env, "media_preview", { id: r.id, size: n, actor }, { ok: true }, 200);
+    return { ok: true, id: r.id, size: n };
+  }
+
+  // LINE で送る画像の住所を確かめる。棚の共有リンク（/m/<24 桁>）のときだけ中身を見る（ほかの住所は見られないので null）
+  //  ・png か jpg・元が 10MB まで・1MB を超えるならプレビューが置いてあること
+  async function lineImageProblem(env, url) {
+    const m = String(url || "").match(/^https:[/][/][^/\s]+[/]m[/]([0-9a-f]{24})$/);
+    if (!m) return null;
+    const [k] = await db(env, "GET", `${L}?select=media_id,stopped_at,expires_at&token=eq.${m[1]}`);
+    if (!k) return { error: "line_image_unknown", note: "棚の共有リンクとして見つからない住所" };
+    if (linkState(k) !== "live") return { error: "line_image_link_closed", note: "止めたか期限切れの共有リンク" };
+    const [r] = await db(env, "GET", `${T}?select=id,name,kind,size,content_type,r2_key&id=eq.${k.media_id}`);
+    if (!r || !r.r2_key) return { error: "line_image_no_file", note: "まだ写し終わっていないか、消されたファイル" };
+    if (r.kind !== "image" || !LINE_TYPES.includes(String(r.content_type).split(";")[0].trim())) return { error: "line_image_type", name: r.name, note: "LINE で送れる画像は png か jpg だけ" };
+    if ((r.size || 0) > LINE_IMAGE_MAX) return { error: "line_image_too_big", name: r.name, max: LINE_IMAGE_MAX };
+    if ((r.size || 0) > LINE_PREVIEW_MAX && env.IMAGES && !(await env.IMAGES.head(previewKey(r.id)))) return { error: "need_preview", name: r.name, note: "1MB を超える画像は、画面の「メディアから選ぶ」で選び直すとプレビューができる" };
+    return null;
+  }
+
+  return { list, upload, addSlide, save, importUtage, drain, importStatus, file, links, makeLink, stopLink, serveLink, savePreview, lineImageProblem };
 }

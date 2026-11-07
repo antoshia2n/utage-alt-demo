@@ -104,6 +104,7 @@ export const COVERAGE = {
   "POST /api/admin/media/links": ["create_media_link"],
   "POST /api/admin/media/links/stop": ["stop_media_link"],
   "GET /api/admin/media/file": H("画面にファイルを出すための受け口"),
+  "POST /api/admin/media/preview": H("LINE のプレビューは画面（ブラウザ）の中で画像を縮めて作る（サーバーに縮める道具が無い）。AI が 1MB を超える画像を LINE に使うと save_line_reply が need_preview で止めるので、画面の「メディアから選ぶ」で選び直す"),
   "GET /api/admin/line/replies": ["list_line_replies"],
   "POST /api/admin/line/replies": ["save_line_reply"],
   "POST /api/admin/line/replies/active": ["set_line_reply_active"],
