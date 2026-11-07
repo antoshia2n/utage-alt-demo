@@ -10,9 +10,10 @@
 //   フォルダの名前と並び … 表 b_settings の 1 行（key=chat_folders・1 行に「番号 名前」）。消すと中のチャットは「フォルダなし」に戻る（チャットは消えない）
 //   chat_folder … その人のチャットをどのフォルダに入れたか（payload.folder・null で外す）。いちばん新しいものが効く
 //   chat_saved  … 「資料に入れる」（payload.event_id・text・off）。右の「資料」に出る。同じメッセージは off で外せる
-//   chat_pin    … 「顧客管理に残す」（payload.event_id・text・from）。顧客管理の 1 枚の「概要」と履歴に出る
+// チャットの便 C2a-2（2026-11-07 Naoki OK 12:06）：「顧客管理に残す」はやめ、見出しの「顧客管理で開く」で詳細へ飛ぶだけにした（Naoki 12:03）。
+//   見出しの「サイト｜LINE」で、その人に結ばれた LINE のやりとりへ切り替える（読む・返す）。結ばれていなければ友だちから選んで手で結ぶ（src/line.js の linkManual）
 export const NOTE_MAX = 8000;
-export const CHAT_TYPES = ["chat_note", "chat_later", "chat_task", "chat_folder", "chat_saved", "chat_pin"];
+export const CHAT_TYPES = ["chat_note", "chat_later", "chat_task", "chat_folder", "chat_saved"];
 export const FOLDER_KEY = "chat_folders";
 export const FOLDER_NAME_MAX = 20;
 export const FOLDER_MAX = 30;
@@ -122,7 +123,7 @@ export function historyOf(events) {
     .filter((x) => x.cat);
 }
 
-export function makeChat({ db, addEvent, core, logInbound }) {
+export function makeChat({ db, addEvent, core, logInbound, line }) {
   const chatEvents = async (env, personId) => db(env, "GET", `events?select=id,customer_id,type,payload,actor,occurred_at&customer_id=eq.${personId}&type=in.(${CHAT_TYPES.join(",")})&order=id.asc&limit=2000`);
   const exists = async (env, id) => !!(await db(env, "GET", `customers?select=id&id=eq.${id}`))[0];
 
@@ -213,11 +214,11 @@ export function makeChat({ db, addEvent, core, logInbound }) {
     const notes = ce.filter((e) => e.type === "chat_note").map((e) => ({ id: e.id, kind: "note", at: e.occurred_at, text: (e.payload || {}).text || "", forwarded_from: (e.payload || {}).forwarded_from || null }));
     const tasks = ce.filter((e) => e.type === "chat_task").map((e) => ({ event_id: (e.payload || {}).event_id, task_id: (e.payload || {}).task_id, title: (e.payload || {}).title || "", url: (e.payload || {}).url || "" }));
     const fs = await readFolders(env);
-    const pins = ce.filter((e) => e.type === "chat_pin").map((e) => Number((e.payload || {}).event_id));
+    const ln = line ? await line.personLinks(env, person_id) : { accounts: [], links: [] };
     return {
       ok: true, found: true, person: { ...room.person, name: t.person ? t.person.name : room.person.name },
       messages: room.messages, notices: room.notices || [], unreplied: room.unreplied,
-      notes, tasks, later_until: laterOf(ce), pins,
+      notes, tasks, later_until: laterOf(ce), line: ln,
       folder_id: folderOf(ce, new Set(fs.map((f) => f.id))), folders: fs,
       vault: vaultOf(room.messages, notes, ce),
       card: cardOf(t), history: historyOf(t.events), cats: CATS,
@@ -282,17 +283,6 @@ export function makeChat({ db, addEvent, core, logInbound }) {
     await addEvent(env, person_id, "chat_saved", payload, actor === "mcp" ? "mcp" : "admin");
     return { ok: true, found: true, event_id: m.id, kept: !payload.off };
   }
-  // 「顧客管理に残す」：顧客管理の 1 枚の概要と履歴に、このメッセージを写す（同じものは 1 回だけ）
-  async function pin(env, { person_id, event_id }, actor) {
-    if (!UUID_RE.test(String(person_id || ""))) return { ok: false, error: "bad_person_id" };
-    const m = await messageOf(env, person_id, event_id);
-    if (!m) return { ok: false, error: "message_not_found" };
-    const had = await db(env, "GET", `events?select=id&customer_id=eq.${person_id}&type=eq.chat_pin&payload->>event_id=eq.${m.id}&limit=1`);
-    if (had.length) return { ok: true, found: true, event_id: m.id, already: true };
-    await addEvent(env, person_id, "chat_pin", { event_id: m.id, text: m.text.slice(0, 2000), from: m.from }, actor === "mcp" ? "mcp" : "admin");
-    return { ok: true, found: true, event_id: m.id };
-  }
-
   // メッセージから TaskMaster にタスクを 1 件（shia2n-mcp の TaskmasterWriter をサービスの結び env.TASKS で呼ぶ）
   async function addTask(env, { person_id, event_id, title, deadline }, actor, origin) {
     if (!UUID_RE.test(String(person_id || ""))) return { ok: false, error: "bad_person_id" };
@@ -331,5 +321,5 @@ export function makeChat({ db, addEvent, core, logInbound }) {
     return { ok: true, count: hits.length, hits: hits.map((e) => ({ person_id: e.customer_id, name: names[e.customer_id] || "", event_id: e.id, kind: e.type === "chat_note" ? "メモ" : e.type === "room_chat" ? "メッセージ" : "添削", from: e.type === "chat_note" ? "シアニン（メモ）" : ((e.payload || {}).from === "student" || e.type === "correction_submitted" ? "生徒" : "シアニン"), at: e.occurred_at, text: textOf(e).slice(0, 300) })) };
   }
 
-  return { list, people, get, addNote, setLater, forward, addTask, search, saveFolder, setFolder, keep, pin, readFolders };
+  return { list, people, get, addNote, setLater, forward, addTask, search, saveFolder, setFolder, keep, readFolders };
 }

@@ -153,8 +153,9 @@ function routeHash() {
   if (pm) { openView("pages"); openPage(pm[1]); return true; }
   // 2026-11-02 シアニンパネルの「今日の動き」から（/admin#person/人の番号）：顧客管理のその人の画面を開く
   // チャットの便 C1：#chat/<人の番号>/<メッセージの番号>（TaskMaster のタスクのリンクから戻る）
-  const cm = h.match(/^#chat(?:[/]([0-9a-f-]{36})(?:[/](\d+))?)?$/i);
-  if (cm) { openView("chat"); openChatView(cm[1], cm[2] ? Number(cm[2]) : null); return true; }
+  // C2a-2：#chat/<人の番号>/line で LINE のやりとりを開く（LINE の画面の「チャットで開く」）
+  const cm = h.match(/^#chat(?:[/]([0-9a-f-]{36})(?:[/](\d+|line))?)?$/i);
+  if (cm) { openView("chat"); openChatView(cm[1], cm[2] === "line" ? "line" : cm[2] ? Number(cm[2]) : null); return true; }
   const ps = h.match(/^#person[/]([0-9a-f-]{36})$/i);
   if (ps) { openView("people"); detail(ps[1]); return true; }
   return false;
@@ -375,7 +376,6 @@ async function detail(id) {
         <dt>最後に動いた</dt><dd>${esc(ago(p.last_event_at))}</dd>
         <dt>ログイン</dt><dd>${p.login_count || 0} 回・教材を開いた ${p.lesson_view_count || 0} 回</dd>
         <dt>チャット</dt><dd>${r.room && r.room.messages ? `シアニンが読んでいない ${r.room.unread_for_admin}・添削の未返信 ${r.room.unreplied}・相手が読んでいない ${r.room.unread_for_student}` : "まだやりとりはありません"}</dd>
-        ${pinsOf(r.pins).length ? `<dt>チャットから残したこと</dt><dd><ul class="plain" style="margin:0;padding-left:18px">${pinsOf(r.pins).map((e) => `<li><span class="pre">${esc(String(e.payload.text || "").slice(0, 300))}</span> <span class="note">${esc(e.payload.from || "")}・${fmtTime(e.occurred_at)}・<a href="#chat/${id}/${Number(e.payload.event_id) || ""}">チャットで開く</a></span></li>`).join("")}</ul></dd>` : ""}
         ${(r.entitlements || []).some(entLive) ? `<dt>権利</dt><dd><div class="ents">${r.entitlements.filter(entLive).map(entChip).join("")}</div></dd>` : ""}
         <dt>買ったもの</dt><dd>${r.purchases && r.purchases.length ? `<ul class="plain" style="margin:0;padding-left:18px">${r.purchases.map((x) => `<li>${esc(x.name)}${x.amount != null ? "・" + Number(x.amount).toLocaleString() + " 円" : ""}${x.mode === "test" ? "（テスト）" : ""} <span class="note">${fmtTime(x.at)}</span></li>`).join("")}</ul>` : "まだ無し"}</dd>
       </dl>
@@ -868,7 +868,7 @@ async function openLine(user) {
       : `<div class="msg-me"><div class="bubble chat mine"><div class="pre">${esc(m.text)}</div></div><div class="meta"><time>${fmtTime(m.at)}</time>${m.ok === false ? '<span class="pill warn">送れなかった</span>' : ""}${m.by === "AI" ? '<span class="pill gray">AI から</span>' : ""}</div></div>`;
   $("line-detail").innerHTML = `
     <h2 style="margin-bottom:2px">${esc(r.name || "（名前を読めない）")}</h2>
-    <div class="note" style="margin-bottom:12px">${r.person ? `${esc(r.person.email)}・<button class="link" type="button" id="line-person">顧客管理で開く</button>` : "メールの登録はまだ（LINE だけの人）"}${r.blocked ? "・ブロックされている" : ""}</div>
+    <div class="note" style="margin-bottom:12px">${r.person ? `${esc(r.person.email)}・<button class="link" type="button" id="line-person">顧客管理で開く</button>・<a href="#chat/${esc(r.person.id)}/line">チャットで開く</a>` : "メールの登録はまだ（LINE だけの人）。チャットの「LINE」から手で結べます"}${r.blocked ? "・ブロックされている" : ""}</div>
     <div class="room">${r.messages.map(item).join("") || '<p class="note">B が受けたやりとりはまだありません。</p>'}</div>
     ${r.blocked ? '<p class="note">ブロックされているので送れません。</p>' : `<form id="line-reply" class="stack reply-form">
       <label for="lr-text" class="sr">返す文</label><textarea id="lr-text" rows="3" maxlength="2000" placeholder="LINE で返す文（文字だけ・今月の送信数を 1 通使う）"></textarea>
@@ -3217,14 +3217,9 @@ async function loadSetup() {
   $("setup-reveal").addEventListener("click", () => { setupReveal = !setupReveal; loadSetup().then(() => $("setup-reveal")?.focus()); });
 }
 
-// チャットの便 C2a：チャットの右クリック「顧客管理に残す」で写したもの（新しい順・10 件）
-function pinsOf(events) {
-  return (events || []).filter((e) => e.type === "chat_pin" && e.payload).sort((a, b) => String(b.occurred_at).localeCompare(String(a.occurred_at))).slice(0, 10);
-}
-
 function detailText(e) {
   const p = e.payload || {};
-  if (e.type === "chat_note" || e.type === "chat_pin" || e.type === "chat_saved") return p.text ? `<span class="note">（${esc(String(p.text).slice(0, 30))}）</span>` : "";
+  if (e.type === "chat_note" || e.type === "chat_saved") return p.text ? `<span class="note">（${esc(String(p.text).slice(0, 30))}）</span>` : "";
   if (e.type === "consult_booked" || e.type === "consult_canceled") return `<span class="note">（${p.slot ? esc(fmtTime(p.slot)) : ""}${p.topic ? "・" + esc(String(p.topic).slice(0, 30)) : ""}）</span>`;
   if (e.type === "consult_done" || e.type === "deal_won" || e.type === "deal_lost") return `<span class="note">（${p.amount != null ? Number(p.amount).toLocaleString() + " 円・" : ""}${esc(String(p.memo || "").slice(0, 30))}）</span>`;
   if (e.type.startsWith("seminar_")) return `<span class="note">（${esc(p.title || p.seminar_id || "")}${p.key ? "・" + esc(p.key) : ""}${p.mail ? "・メール " + esc(p.mail) : ""}）</span>`;

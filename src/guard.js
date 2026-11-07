@@ -63,7 +63,9 @@ export const DEFAULT_MODES = {
   // チャットの便 C1：読む・探す・メモ・後で・メモとして転送・タスクへは自動（生徒へは何も届かない）。生徒へ送るのは今までどおり send_chat の承認
   get_chat: "auto", list_chats: "auto", search_chats: "auto", add_chat_note: "auto", set_chat_later: "auto", forward_chat: "auto", add_chat_task: "auto",
   // チャットの便 C2a：フォルダ・資料・顧客管理に残すも自動（生徒へは何も届かない）
-  save_chat_folder: "auto", set_chat_folder: "auto", keep_chat_item: "auto", pin_chat_message: "auto",
+  save_chat_folder: "auto", set_chat_folder: "auto", keep_chat_item: "auto",
+  // C2a-2：LINE の友だちと結ぶのは承認（人違いだと別の人に LINE が届く）。画面からは Naoki 本人なので承認なし
+  link_chat_line: "approve",
   // 目標達成くん 6 便目：生徒の画面に出るので承認
   set_goal_draft: "approve", get_push_status: "auto",
   // 版と入口の守りを読むだけ（統括 2026-10-11 の決め 2）
