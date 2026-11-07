@@ -1,5 +1,5 @@
 // チャットの便 C3：AI タブ（材料の作り方・頼み方・言い換え・AI が無いとき）
-// 走らせ方：node --test tests/chat-ai.test.mjs
+// 走らせ方：node --test tests/chat-ai.test.mjs（見本 https://claude.ai/artifact/MeEx1VNn6NAPWtTSo69wb4・Naoki OK 13:35）
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { makeChatAi, contextOfChat, contextOfGroup, promptFor, parseWords, jst, AI_MODEL } from "../src/chatai.js";
