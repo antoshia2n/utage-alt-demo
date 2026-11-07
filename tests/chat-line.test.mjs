@@ -40,7 +40,7 @@ test("手で結ぶ：ほかの人に結ばれた番号は断る。知らない�
   assert.equal(r.error, "linked_to_other");
   assert.equal(r.other.name, "佐藤");
   let pl = await line.personLinks({}, A);
-  assert.deepEqual(pl.links, [{ account: "shianin", user: U1 }]);
+  assert.deepEqual(pl.links, [{ account: "shianin", user: U1, name: "" }]); // 鍵が無いので LINE 名は空
   assert.deepEqual(pl.accounts, ["college_ops", "shianin"]);
   assert.ok((await line.linkManual({}, { person_id: A, account: "shianin", unlink: true }, "n@x")).unlinked);
   pl = await line.personLinks({}, A);

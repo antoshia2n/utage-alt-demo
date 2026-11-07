@@ -123,7 +123,7 @@ export function historyOf(events) {
     .filter((x) => x.cat);
 }
 
-export function makeChat({ db, addEvent, core, logInbound, line, groups }) {
+export function makeChat({ db, addEvent, core, logInbound, line, groups, nicks }) {
   const chatEvents = async (env, personId) => db(env, "GET", `events?select=id,customer_id,type,payload,actor,occurred_at&customer_id=eq.${personId}&type=in.(${CHAT_TYPES.join(",")})&order=id.asc&limit=2000`);
   const exists = async (env, id) => !!(await db(env, "GET", `customers?select=id&id=eq.${id}`))[0];
 
@@ -223,6 +223,7 @@ export function makeChat({ db, addEvent, core, logInbound, line, groups }) {
       notes, tasks, later_until: laterOf(ce), line: ln,
       folder_id: folderOf(ce, new Set(fs.map((f) => f.id))), folders: fs,
       groups: groups ? await groups.groupsOf(env, person_id) : [],
+      names: { real: t.person ? t.person.name || "" : "", nickname: nicks ? await nicks.nickname(env, person_id) : "", line: ln.links.map((l) => ({ account: l.account, name: l.name || "" })) },
       vault: vaultOf(room.messages, notes, ce),
       card: cardOf(t), history: historyOf(t.events), cats: CATS,
     };

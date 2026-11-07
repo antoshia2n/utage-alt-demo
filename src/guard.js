@@ -67,7 +67,7 @@ export const DEFAULT_MODES = {
   // C2a-2：LINE の友だちと結ぶのは承認（人違いだと別の人に LINE が届く）。画面からは Naoki 本人なので承認なし
   link_chat_line: "approve",
   // C2b：グループを読む・作る・直すは自動（作っただけでは知らせない）。送るのは生徒に届くので承認
-  get_chat_group: "auto", save_chat_group: "auto", send_chat_group: "approve",
+  get_chat_group: "auto", set_nickname: "auto", save_chat_group: "auto", send_chat_group: "approve",
   // 目標達成くん 6 便目：生徒の画面に出るので承認
   set_goal_draft: "approve", get_push_status: "auto",
   // 版と入口の守りを読むだけ（統括 2026-10-11 の決め 2）

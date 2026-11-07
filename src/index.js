@@ -82,9 +82,10 @@ import { makeMarks } from "./marks.js";
 import { makeMedia } from "./media.js";
 import { makeChat } from "./chat.js";
 import { makeGroups } from "./groups.js";
+import { makeNames } from "./names.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.74.0-bchat2b";
+const VERSION = "0.75.0-bchat2b2";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -593,6 +594,8 @@ const core = {
       entitlements: await bridge.gateFull(env, person_id), // マーケくん便 2：「権利」のタブ
       purchases,
       room: { messages: rs.lastMessageId ? true : false, unread_for_admin: rs.unreadForAdmin, unreplied: rs.unreplied.length, unread_for_student: rs.unreadForStudent },
+      // C2b-2：名前の 3 種類（本名は person.name・ニックネーム・LINE 名）
+      names: { real: person.name || "", nickname: await nicks.nickname(env, person_id), line: (await line.personLinks(env, person_id)).links.map((l) => ({ account: l.account, name: l.name || "" })) },
       events,
     };
   },
@@ -746,8 +749,10 @@ const core = {
 
 // チャットの便 C1（2026-11-07）：人ごとのチャット（部屋＋メモ・後で・タスク・履歴）。中身は src/chat.js
 // チャットの便 C2b（2026-11-07）：グループチャット。中身は src/groups.js・表は supabase/c2b_chat_groups.sql
-const groups = makeGroups({ db, push, logInbound, names: (env) => students.load(env) });
-const chat = makeChat({ db, addEvent, core, logInbound, line, groups });
+// C2b-2：名前の 3 種類（本名・ニックネーム・LINE 名）。中身は src/names.js
+const nicks = makeNames({ db });
+const groups = makeGroups({ db, push, logInbound, names: (env) => students.load(env), nicks });
+const chat = makeChat({ db, addEvent, core, logInbound, line, groups, nicks });
 
 // 便 8g-3：一言の下書き。AI が組んだコネクタ（1〜10 本）を、動かさない下書きのまま 1 回で作り、企画に入れる。
 // 企画は campaign_id（いまある企画）か campaign_title（新しく作る）。動かすのは set_step で active true（承認）。
@@ -1312,6 +1317,8 @@ async function handleApi(request, env, url) {
 
     // チャットの便 C2b：入っているグループ（一覧・読む・読んだ印・送る・スタンプ・画像）
     if (path === "/api/room/groups" && method === "GET") return json(await groups.mine(env, customer.id));
+    // C2b-2：グループで使うニックネーム（自分のだけ）
+    if (path === "/api/room/nickname" && method === "POST") { const body = await request.json().catch(() => ({})); const r = await nicks.setNickname(env, customer.id, body.nickname); return json(r, r.ok === false ? 400 : 200); }
     const sg = path.match(/^[/]api[/]room[/]groups[/]([0-9a-f-]{36})(?:[/](read|react|image))?$/i);
     if (sg && method === "GET" && !sg[2]) { const r = await groups.view(env, { group_id: sg[1] }, customer.id); return json(r, r.ok === false ? 404 : 200); }
     if (sg && method === "GET" && sg[2] === "image") {
@@ -1642,7 +1649,7 @@ async function handleApi(request, env, url) {
     }
     // チャットの便 C2a：フォルダを作る・名前を変える・並べ替える・消す
     if (path === "/api/admin/chat/folders" && method === "POST") { const body = await request.json().catch(() => ({})); const r = await chat.saveFolder(env, body, a.email); return json(r, r.ok === false ? 400 : 200); }
-    const cm = path.match(/^[/]api[/]admin[/]chat[/]([0-9a-f-]{36})(?:[/](note|later|forward|task|folder|keep|line))?$/i);
+    const cm = path.match(/^[/]api[/]admin[/]chat[/]([0-9a-f-]{36})(?:[/](note|later|forward|task|folder|keep|line|nickname))?$/i);
     // チャットの便 C2a-2：その人に結ばれた LINE のやりとり（account を省くと結ばれた最初のもの）
     if (cm && method === "GET" && cm[2] === "line") {
       const ln = await line.personLinks(env, cm[1]); const acc = url.searchParams.get("account");
@@ -1658,6 +1665,7 @@ async function handleApi(request, env, url) {
         : cm[2] === "forward" ? await chat.forward(env, { person_id: cm[1], event_id: body.event_id, to_person_id: body.to_person_id }, "admin")
         : cm[2] === "folder" ? await chat.setFolder(env, { person_id: cm[1], folder_id: body.folder_id }, "admin")
         : cm[2] === "keep" ? await chat.keep(env, { person_id: cm[1], event_id: body.event_id, off: body.off }, "admin")
+        : cm[2] === "nickname" ? await nicks.setNickname(env, cm[1], body.nickname)
         : cm[2] === "line" ? await line.linkManual(env, { person_id: cm[1], account: body.account, user: body.user, unlink: body.unlink }, a.email)
         : await chat.addTask(env, { person_id: cm[1], event_id: body.event_id, title: body.title, deadline: body.deadline }, "admin", url.origin);
       return json(r, r.ok === false ? 400 : 200);
@@ -1951,7 +1959,7 @@ const TOOLS = [
     name: "get_chat",
     screen: "chat",
     say: "1 人のチャットを読む（やり取り・メモ・履歴・カード）",
-    description: "シアニン用の画面の「チャット」の 1 人分を読む。person_id（find_person の id）。返すもの：messages（添削ルームのやり取りと同じ）・notes（シアニンだけのメモ）・tasks（メッセージから TaskMaster に足したタスク）・later_until（後で見る日時）・card（段階・権利・最後の購入・次の予約・最後の面談）・history（その人の出来事を種類 cat ごとに。購入・予約・セミナー・学習・メール・LINE・添削・フォーム・ページ・権利・登録とログイン・マーケ）・vault（資料：やり取りとメモのリンク link・画像 image と、資料に入れたもの saved）・folder_id と folders・line（accounts：つながった LINE のアカウント・links：この人に結ばれた LINE の account と user）。読んだ印は付けない。",
+    description: "シアニン用の画面の「チャット」の 1 人分を読む。person_id（find_person の id）。返すもの：messages（添削ルームのやり取りと同じ）・notes（シアニンだけのメモ）・tasks（メッセージから TaskMaster に足したタスク）・later_until（後で見る日時）・card（段階・権利・最後の購入・次の予約・最後の面談）・history（その人の出来事を種類 cat ごとに。購入・予約・セミナー・学習・メール・LINE・添削・フォーム・ページ・権利・登録とログイン・マーケ）・vault（資料：やり取りとメモのリンク link・画像 image と、資料に入れたもの saved）・folder_id と folders・line（accounts：つながった LINE のアカウント・links：この人に結ばれた LINE の account と user と name（LINE 名））・names（real：本名・nickname：ニックネーム・line：LINE 名）。読んだ印は付けない。",
     inputSchema: { type: "object", properties: { person_id: { type: "string" } }, required: ["person_id"] },
   },
   {
@@ -2013,17 +2021,24 @@ const TOOLS = [
   },
   // チャットの便 C2b：グループ
   {
+    name: "set_nickname",
+    screen: "chat",
+    say: "人のニックネームを決める・直す",
+    description: "person_id の人のニックネーム（20 字まで・空で消す）を決める。グループではほかの生徒にニックネームだけが出る（本名は出ない）。本名はしあらぼ管理、LINE 名は LINE が元なので、ここでは変えない。",
+    inputSchema: { type: "object", properties: { person_id: { type: "string" }, nickname: { type: "string" } }, required: ["person_id", "nickname"] },
+  },
+  {
     name: "get_chat_group",
     screen: "chat",
     say: "グループのチャットを読む",
-    description: "グループ 1 つ（group_id・list_chats の groups）のやり取りを読む。返すもの：group・members（名前と、どこまで読んだか）・messages（本流のメッセージ。各メッセージに replies（スレッドの返信）・reactions（スタンプと押した人）・read（読んだ人数）／of（読める人数））。読んだ印は付く。",
+    description: "グループ 1 つ（group_id・list_chats の groups）のやり取りを読む。返すもの：group・members（名前と、どこまで読んだか）・messages（本流のメッセージ。各メッセージに replies（スレッドの返信）・reactions（スタンプと押した人）・read（既読の人数））。読んだ印は付く。",
     inputSchema: { type: "object", properties: { group_id: { type: "string" } }, required: ["group_id"] },
   },
   {
     name: "save_chat_group",
     screen: "chat",
-    say: "グループを作る・名前を変える・人を入れる・抜けてもらう・閉じる",
-    description: "group_id が無ければ作る（name・member_ids：人の番号の並び）。group_id があれば、name で名前を変える・add_ids で人を入れる・remove_ids で抜けてもらう・close: true で閉じる（やり取りは残る）。作っただけでは生徒に知らせない。",
+    say: "グループを新規作成・名前を変える・メンバーを招待・削除・アーカイブ",
+    description: "group_id が無ければ新規作成（name・member_ids：人の番号の並び）。group_id があれば、name で名前を変える・add_ids でメンバーを招待・remove_ids でメンバーから削除・close: true でアーカイブ（やり取りは残る）。作成しただけでは生徒に知らせない。",
     inputSchema: { type: "object", properties: { group_id: { type: "string" }, name: { type: "string" }, member_ids: { type: "array", items: { type: "string" } }, add_ids: { type: "array", items: { type: "string" } }, remove_ids: { type: "array", items: { type: "string" } }, close: { type: "boolean" } } },
   },
   {
@@ -2909,6 +2924,7 @@ async function runTool(env, name, args) {
   if (name === "set_chat_folder") return await chat.setFolder(env, args, "mcp");
   if (name === "keep_chat_item") return await chat.keep(env, args, "mcp");
   if (name === "link_chat_line") return await line.linkManual(env, args, "mcp");
+  if (name === "set_nickname") return await nicks.setNickname(env, args.person_id, args.nickname);
   if (name === "get_chat_group") return await groups.get(env, { group_id: args.group_id, mark_read: true });
   if (name === "save_chat_group") return args.group_id ? await groups.update(env, args, "mcp") : await groups.create(env, args, "mcp");
   if (name === "send_chat_group") return await groups.post(env, args, groups.CYANIN, "mcp");
