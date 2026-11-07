@@ -1,5 +1,5 @@
 // チャットの便 C2a：フォルダ（作る・名前・並べ替え・消す・入れる）・フォルダの中で探す・資料（自動で集める・入れる・外す）・顧客管理に残す
-// 走らせ方：node --test tests/chat-c2a.test.mjs
+// 走らせ方：node --test tests/chat-c2a.test.mjs（画面は手元の試し台で PC・スマホを確かめた）
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fakeStore } from "./fake-store.mjs";
