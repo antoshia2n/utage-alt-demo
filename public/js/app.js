@@ -1,6 +1,7 @@
 import { getClient, api, esc, fmtTime, authImage, shrinkImage, noticeHtml } from "/js/common.js";
 import { correctionHtml, wireNotes } from "/js/correction.js";
 import { setupStudentPush } from "/js/pushclient.js";
+import { setupGroups } from "/js/studentgroups.js";
 import { flatten, homeHtml, libraryHtml, searchHtml } from "/js/home.js";
 import { makeWatch } from "/js/watch.js";
 import { planHtml, chainHtml, popHtml, homeCardHtml, tacHtml, recHtml, reviewHtml, growHtml, reportFor, applyAction, applyField, applyWeek, applyNext, carryTry, setPath, weekNo, weekInfo, WEEKS, draftHtml } from "/js/goalplan.js";
@@ -234,7 +235,7 @@ async function main() {
   const room = setupRoom(token, r.community_url, r.community);
   room.setBadge(r.room_unread);
   // 便 15b：#room/chat・#room/corr は、部屋のその枠を開く
-  if (location.hash.startsWith("#room")) { room.setPane(location.hash.split("/")[1]); showTab("room"); }
+  if (location.hash.startsWith("#room")) { room.setPane(location.hash.split("/")[1], location.hash.split("/")[2]); showTab("room"); }
   // マイページ：公開中の版があれば左の一番上に出し、住所に # が無ければ最初に開く。枠の高さは枠の中から知らせてもらう
   const mp = await mpWait;
   if (mp.ok && mp.html) {
@@ -279,8 +280,8 @@ async function main() {
   if (location.hash === "#contract") showTab("contract");
   // 便 8g-1：通知を押して開いた画面がもう出ているとき、住所の # だけが変わるので、ここで部屋へ移る
   window.addEventListener("hashchange", () => {
-    const [h, pane] = location.hash.slice(1).split("/");
-    if (h === "room") room.setPane(pane);
+    const [h, pane, gid] = location.hash.slice(1).split("/");
+    if (h === "room") room.setPane(pane, gid);
     if (["home", "lessons", "room", "review", "contract", "news", "mypage", "apps"].includes(h) || (h === "booking" && bookingReady) || (h === "goals" && goalsReady)) showTab(h);
     routeLesson();
   });
@@ -591,8 +592,11 @@ function setupRoom(token, communityUrl, communityState) {
   let opened = false, pending = [], timer = null, lastCount = -1, lastSig = "";
   // 便 15b：今の枠（corr 添削／chat やり取り）と、まだ開いていない枠の新着の数（部屋を開くと全部既読になるので、枠を見るまでここで覚える）
   let pane = null, last = { messages: [], notices: [] };
-  const seen = { corr: 0, chat: 0 };
-  try { const p = localStorage.getItem("room_pane"); if (p === "corr" || p === "chat") pane = p; } catch (_) {}
+  const seen = { corr: 0, chat: 0, group: 0 };
+  try { const p = localStorage.getItem("room_pane"); if (p === "corr" || p === "chat" || p === "group") pane = p; } catch (_) {}
+  // チャットの便 C2b：グループの枠（入っているグループがある人だけに出す）
+  let groupOpen = null, roomUnread = 0, groupUnread = 0;
+  const groupsUi = setupGroups(token, { onUnread: (n) => { groupUnread = n; seen.group = pane === "group" ? 0 : n; drawPaneBadges(); setBadge(roomUnread + groupUnread, true); } });
 
   // 便 7a：招待リンクは会員にだけ届く（会員でない人には URL そのものが返らない）
   $("community").innerHTML = communityUrl
@@ -601,7 +605,8 @@ function setupRoom(token, communityUrl, communityState) {
       ? `<h3>生徒同士の場</h3><p class="note">会員になると、ほかの受講生と話せるオープンチャットの招待リンクがここに出ます。</p>`
       : `<h3>生徒同士の場</h3><p class="note">オープンチャットの招待リンクを準備中です。</p>`;
 
-  const setBadge = (n) => {
+  const setBadge = (n, total) => {
+    if (!total) { roomUnread = n; n = n + groupUnread; }
     const b = $("room-badge");
     b.textContent = n > 0 ? String(n) : "";
     b.classList.toggle("hidden", !(n > 0));
@@ -662,9 +667,13 @@ function setupRoom(token, communityUrl, communityState) {
 
   // 枠を替える。出す欄の案内とボタンも、その枠の出し方に替える
   const showPane = (p) => {
-    pane = p === "chat" ? "chat" : "corr";
+    pane = p === "chat" ? "chat" : p === "group" && !$("pane-group").classList.contains("hidden") ? "group" : "corr";
     seen[pane] = 0;
     try { localStorage.setItem("room_pane", pane); } catch (_) {}
+    const grp = pane === "group";
+    ["room-list", "composer"].forEach((id) => $(id).classList.toggle("hidden", grp));
+    $("group-box").classList.toggle("hidden", !grp);
+    if (grp) { document.querySelectorAll("#tab-room [data-pane]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.pane === "group"))); drawPaneBadges(); groupsUi.open(groupOpen); groupOpen = null; return; }
     const chat = pane === "chat";
     $("c-text").placeholder = chat ? "シアニンへのメッセージ（質問・連絡など）" : "添削してほしい文章を貼ってください";
     $("c-send").textContent = chat ? "送る" : "出す";
@@ -677,6 +686,11 @@ function setupRoom(token, communityUrl, communityState) {
     const r = await api("/api/room", { token });
     if (r.ok) roomCache = { r, at: Date.now() };
     if (!r.ok) { $("room-list").innerHTML = `<div class="msg err">読めませんでした。${esc(errText(r))}</div>`; return; }
+    // C2b：グループに入っていればグループの枠を出す
+    const hasGroups = (r.groups || []).length > 0;
+    $("pane-group").classList.toggle("hidden", !hasGroups);
+    groupUnread = r.groups_unread || 0; if (pane !== "group") seen.group = groupUnread;
+    if (pane === "group" && !hasGroups) pane = null;
     const notices = r.notices || [];
     const un = unreadOf(r.messages);
     seen.corr = Math.max(seen.corr, un.corr); seen.chat = Math.max(seen.chat, un.chat);
@@ -749,7 +763,7 @@ function setupRoom(token, communityUrl, communityState) {
   return {
     setBadge,
     open: () => { opened = true; load(true); },
-    setPane: (p) => { if (p === "chat" || p === "corr") { pane = p; seen[p] = 0; } },
+    setPane: (p, id) => { if (p === "chat" || p === "corr" || p === "group") { pane = p; seen[p] = 0; } if (p === "group" && id) groupOpen = id; if (opened && p === "group") showPane("group"); },
   };
 }
 

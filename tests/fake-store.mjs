@@ -59,11 +59,12 @@ export function fakeStore() {
           if (ex) { if (!String(prefer).includes("ignore")) Object.assign(ex, b); out.push(ex); continue; }
         }
         const row = { ...b };
-        if (row.id == null && name !== "b_page_versions") row.id = name === "b_pages" || name === "b_seminars" || name === "b_booking_types" || name === "b_folders" ? crypto.randomUUID() : seq++;
+        if (row.id == null && name !== "b_page_versions") row.id = name === "b_pages" || name === "b_seminars" || name === "b_booking_types" || name === "b_folders" || name === "b_chat_groups" ? crypto.randomUUID() : seq++;
         if (name === "b_page_hits") row.at = row.at || new Date().toISOString();
         if (name === "b_page_requests") row.created_at = new Date().toISOString();
         if (name === "b_page_versions") row.created_at = new Date().toISOString();
         if (name === "b_pages") Object.assign(row, { created_at: new Date().toISOString(), updated_at: row.updated_at || new Date().toISOString(), published_version: row.published_version ?? null, status: row.status || "draft" }, b);
+        if (name === "b_chat_group_messages") row.created_at = row.created_at || new Date(Date.now() + seq).toISOString();
         if (name === "events" || name === "b_events") row.occurred_at = row.occurred_at || new Date(Date.now() + seq).toISOString();
         rows.push(row); out.push(row);
       }
