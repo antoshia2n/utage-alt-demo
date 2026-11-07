@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fakeStore } from "./fake-store.mjs";
-import { makeChat, categoryOf, laterOf, needsReply, nextBooking, cardOf, historyOf } from "../src/chat.js";
+import { makeChat, CATS, categoryOf, laterOf, needsReply, nextBooking, cardOf, historyOf } from "../src/chat.js";
 
 const A = "11111111-1111-4111-8111-111111111111", B = "22222222-2222-4222-8222-222222222222";
 function setup() {
@@ -36,6 +36,7 @@ test("履歴の種類：部屋の出来事・読んだ印・通知の購読・�
   assert.equal(categoryOf("push_subscribed"), null);
   assert.equal(categoryOf("chat_note"), null);
   assert.equal(categoryOf("something_new"), "そのほか");
+  assert.ok(CATS.includes("そのほか")); // チップで「そのほか」も絞れる
   assert.deepEqual(historyOf([{ id: 1, type: "room_chat" }, { id: 2, type: "login", occurred_at: "x" }]).map((x) => x.cat), ["登録とログイン"]);
 });
 
