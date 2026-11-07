@@ -375,6 +375,7 @@ async function detail(id) {
         <dt>最後に動いた</dt><dd>${esc(ago(p.last_event_at))}</dd>
         <dt>ログイン</dt><dd>${p.login_count || 0} 回・教材を開いた ${p.lesson_view_count || 0} 回</dd>
         <dt>チャット</dt><dd>${r.room && r.room.messages ? `シアニンが読んでいない ${r.room.unread_for_admin}・添削の未返信 ${r.room.unreplied}・相手が読んでいない ${r.room.unread_for_student}` : "まだやりとりはありません"}</dd>
+        ${pinsOf(r.pins).length ? `<dt>チャットから残したこと</dt><dd><ul class="plain" style="margin:0;padding-left:18px">${pinsOf(r.pins).map((e) => `<li><span class="pre">${esc(String(e.payload.text || "").slice(0, 300))}</span> <span class="note">${esc(e.payload.from || "")}・${fmtTime(e.occurred_at)}・<a href="#chat/${id}/${Number(e.payload.event_id) || ""}">チャットで開く</a></span></li>`).join("")}</ul></dd>` : ""}
         ${(r.entitlements || []).some(entLive) ? `<dt>権利</dt><dd><div class="ents">${r.entitlements.filter(entLive).map(entChip).join("")}</div></dd>` : ""}
         <dt>買ったもの</dt><dd>${r.purchases && r.purchases.length ? `<ul class="plain" style="margin:0;padding-left:18px">${r.purchases.map((x) => `<li>${esc(x.name)}${x.amount != null ? "・" + Number(x.amount).toLocaleString() + " 円" : ""}${x.mode === "test" ? "（テスト）" : ""} <span class="note">${fmtTime(x.at)}</span></li>`).join("")}</ul>` : "まだ無し"}</dd>
       </dl>
@@ -3216,8 +3217,14 @@ async function loadSetup() {
   $("setup-reveal").addEventListener("click", () => { setupReveal = !setupReveal; loadSetup().then(() => $("setup-reveal")?.focus()); });
 }
 
+// チャットの便 C2a：チャットの右クリック「顧客管理に残す」で写したもの（新しい順・10 件）
+function pinsOf(events) {
+  return (events || []).filter((e) => e.type === "chat_pin" && e.payload).sort((a, b) => String(b.occurred_at).localeCompare(String(a.occurred_at))).slice(0, 10);
+}
+
 function detailText(e) {
   const p = e.payload || {};
+  if (e.type === "chat_note" || e.type === "chat_pin" || e.type === "chat_saved") return p.text ? `<span class="note">（${esc(String(p.text).slice(0, 30))}）</span>` : "";
   if (e.type === "consult_booked" || e.type === "consult_canceled") return `<span class="note">（${p.slot ? esc(fmtTime(p.slot)) : ""}${p.topic ? "・" + esc(String(p.topic).slice(0, 30)) : ""}）</span>`;
   if (e.type === "consult_done" || e.type === "deal_won" || e.type === "deal_lost") return `<span class="note">（${p.amount != null ? Number(p.amount).toLocaleString() + " 円・" : ""}${esc(String(p.memo || "").slice(0, 30))}）</span>`;
   if (e.type.startsWith("seminar_")) return `<span class="note">（${esc(p.title || p.seminar_id || "")}${p.key ? "・" + esc(p.key) : ""}${p.mail ? "・メール " + esc(p.mail) : ""}）</span>`;

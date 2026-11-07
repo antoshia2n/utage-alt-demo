@@ -4,7 +4,8 @@
 //  ・メモ（自分だけ）は生徒には見えない。転送は「メモとして」だけ（別の生徒に中身が届かないように）
 //  ・添削の 3 欄と教材の質問への答えは、今までどおり添削ルームで（ここからは「添削ルームで開く →」で移る）
 //  ・⌘／Ctrl＋K で人を探して開く（部屋の無い人も）・] で右を開閉・? でキーの一覧。右の幅は左端を引いて変えられる（このブラウザに覚える）
-//  ・グループとフォルダと「資料」は C2、「AI」タブは C3
+//  ・C2a（2026-11-07）：左のフォルダ（作る・名前・並べ替え・消す・入れる）とフォルダの中で探す・右の「資料」タブ（リンクと画像を自動で集める・資料に入れたもの・探す）
+//    ・右クリックの「資料に入れる」（S）と「連携」（タスクへ・顧客管理に残す）。グループは C2b、「AI」タブは C3
 import { api, esc, fmtTime, authImage, EVENT_LABEL } from "/js/common.js";
 
 const COL = ["#b45309", "#7c3aed", "#0f766e", "#be123c", "#1d4ed8", "#4d7c0f", "#0369a1", "#a21caf"];
@@ -18,6 +19,7 @@ const KEY_LABEL = { shiarabo_basic: "しあらぼ", shiarabo_next_premium: "NEXT
 const ERR = {
   empty: "空です。中身を書いてください", too_long: "長すぎます（8000 字まで）", bad_until: "後で見る日時が正しくありません（これから先・90 日まで）",
   same_chat: "同じチャットには転送できません", message_not_found: "元のメッセージが見つかりませんでした", no_taskmaster: "TaskMaster につながっていません（設定の確認が要ります）",
+  bad_name: "フォルダの名前は 1〜20 字です", name_taken: "同じ名前のフォルダがあります", folders_full: "フォルダがいっぱいです（使っていないものを消すか、名前を短く）", folder_not_found: "そのフォルダは消されています",
   need_title: "タスクの名前を入れてください", title_too_long: "タスクの名前が長すぎます（300 字まで）", bad_deadline: "期限の形が違います", bad_link_url: "元のメッセージの住所を作れませんでした",
 };
 const hash = (s) => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) | 0; return Math.abs(h); };
@@ -42,6 +44,8 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
   const narrow = () => matchMedia("(max-width:900px)").matches;
 
   let L = null, D = null, cur = null, filter = "all", sideOpen = true, noteMode = false, evOff = new Set(), hits = null, lastFocus = null, menuAt = 0;
+  let fsel = null, tab = "hist", vk = "all", vq = "";
+  const fname = (id) => { const f = L && L.folders.find((x) => x.id === id); return f ? f.name : ""; };
   try { const w = localStorage.getItem("chat-rw"); if (w) app.style.setProperty("--rw", w + "px"); } catch (_) {}
   const av = (id, name) => `<span class="av" style="background:${COL[hash(id) % COL.length]}" aria-hidden="true">${esc(String(name || "？").slice(0, 1))}</span>`;
   const nameOf = (c) => c.name || c.email || "（名前なし）";
@@ -55,14 +59,23 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
   }
   function drawLeft() {
     if (!L) return;
-    const pick = filter === "need" ? L.chats.filter((c) => c.need) : filter === "later" ? L.chats.filter((c) => c.later_until) : L.chats;
+    if (fsel && !L.folders.some((f) => f.id === fsel)) fsel = null;
+    const inF = fsel ? L.chats.filter((c) => c.folder_id === fsel) : L.chats;
+    const pick = filter === "need" ? inF.filter((c) => c.need) : filter === "later" ? inF.filter((c) => c.later_until) : inF;
     const btn = (k, label, n) => `<button class="sv" data-f="${k}" aria-pressed="${filter === k}">${label}<span class="n">${n}</span></button>`;
-    $("#list").innerHTML = `<div role="group" aria-label="絞り込み">${btn("need", "要返信", L.need_count)}${btn("later", "後で", L.later_count)}${btn("all", "すべて", L.count)}</div>
-      <div class="lh">${filter === "need" ? "要返信" : filter === "later" ? "後で" : "すべて"}</div>
+    const fbtn = (id, label, n, need) => `<button class="fd" data-fd="${id}" aria-pressed="${fsel === (id || null)}"><span class="fi" aria-hidden="true">${id ? "▸" : "•"}</span>${esc(label)}<span class="n">${n}${need ? `・<b>${need}</b>` : ""}</span></button>`;
+    $("#q").placeholder = fsel ? `「${fname(fsel)}」の中を探す（Enter）` : "やり取りとメモを探す（Enter）";
+    $("#list").innerHTML = `<div role="group" aria-label="絞り込み">${btn("need", "要返信", inF.filter((c) => c.need).length)}${btn("later", "後で", inF.filter((c) => c.later_until).length)}${btn("all", "すべて", inF.length)}</div>
+      <div class="fh"><span>フォルダ</span><button class="lk" id="fedit">編集</button></div>
+      <div role="group" aria-label="フォルダ" class="fds">${fbtn("", "すべてのチャット", L.count, 0)}${L.folders.map((f) => fbtn(f.id, f.name, f.count, f.need)).join("")}${L.folders.length ? "" : '<p class="fnone">「編集」からフォルダを作れます</p>'}</div>
+      <div class="lh">${fsel ? esc(fname(fsel)) + "・" : ""}${filter === "need" ? "要返信" : filter === "later" ? "後で" : "すべて"}</div>
       ${pick.map((c) => `<button class="ci" data-c="${c.person_id}" aria-current="${cur === c.person_id && !hits}">${av(c.person_id, nameOf(c))}<span class="t"><b>${esc(nameOf(c))}</b><small>${c.last_from === "cyanin" ? "返した：" : ""}${esc(c.last_text || "")}</small></span>
         ${c.later_until ? `<span class="lt">後で ${esc(dayOf(c.later_until))}</span>` : c.need ? `<span class="flag">要返信</span>` : ""}${c.unread_for_admin ? `<span class="badge" aria-label="未読 ${c.unread_for_admin}">${c.unread_for_admin}</span>` : ""}</button>`).join("")
-        || `<p class="empty">${filter === "need" ? "要返信はありません" : filter === "later" ? "後でにしたチャットはありません" : "チャットはまだありません。⌘K で人を探して始められます"}</p>`}`;
+        || `<p class="empty">${filter === "need" ? "要返信はありません" : filter === "later" ? "後でにしたチャットはありません" : fsel ? "このフォルダにはまだチャットがありません。チャットを開いて「フォルダ」から入れられます" : "チャットはまだありません。⌘K で人を探して始められます"}</p>`}`;
     $$("[data-f]").forEach((b) => (b.onclick = () => { filter = b.dataset.f; drawLeft(); $(`[data-f="${filter}"]`).focus(); }));
+    $$("[data-fd]").forEach((b) => (b.onclick = () => { fsel = b.dataset.fd || null; drawLeft(); $(`[data-fd="${fsel || ""}"]`).focus(); }));
+    $$(".ci", $("#list")).forEach((b) => (b.oncontextmenu = (e) => { e.preventDefault(); folderDlg(b.dataset.c, b); }));
+    $("#fedit").onclick = (e) => foldersDlg(e.currentTarget);
     $$("[data-c]", $("#list")).forEach((b) => (b.onclick = () => openChat(b.dataset.c)));
   }
 
@@ -83,6 +96,7 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
   // ---------- 真ん中 ----------
   function items() {
     const done = new Set(D.tasks.map((t) => String(t.event_id)));
+    const kept = new Set(D.vault.filter((v) => v.kind === "saved").map((v) => String(v.event_id))), pinned = new Set((D.pins || []).map(String));
     const its = [];
     for (const m of D.messages) {
       if (m.kind === "chat") its.push({ id: m.id, at: m.at, me: m.from === "cyanin", who: m.from === "cyanin" ? "シアニン" + (m.actor === "mcp" ? "（AI から）" : "") : (D.card.name || "生徒"), text: m.text, images: m.images || [], lesson: m.lesson, reply_to: m.reply_to, task: done.has(String(m.id)) });
@@ -90,6 +104,7 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
       else its.push({ id: m.id, at: m.at, me: true, line: true, who: "シアニン", text: "添削を返した" + (m.comment ? "：" + m.comment.slice(0, 80) : ""), corr: true, task: done.has(String(m.id)) });
     }
     for (const n of D.notes) its.push({ id: n.id, at: n.at, me: true, note: true, who: "シアニン・メモ（自分だけ）", text: n.text, fwd: n.forwarded_from, task: done.has(String(n.id)) });
+    for (const m of its) { m.kept = kept.has(String(m.id)); m.pinned = pinned.has(String(m.id)); }
     return its.sort((a, b) => a.id - b.id);
   }
   function msgHtml(m) {
@@ -99,10 +114,12 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
       m.corr && !m.me ? `<span class="tag ${m.replied ? "" : "warn"}">${m.replied ? "返信済み" : "未返信"}</span>` : "",
       m.fwd ? `<span class="tag">転送：${esc(m.fwd.name || "")}から</span>` : "",
       m.task ? `<span class="tag">タスク済</span>` : "",
+      m.kept ? `<span class="tag">資料</span>` : "",
+      m.pinned ? `<span class="tag">顧客管理に残した</span>` : "",
     ].join("");
     const corrBtn = m.corr || (m.lesson && !m.me) ? `<button class="btn" style="margin-top:4px" data-room="${m.corr ? "corr" : "chat"}">添削ルームで開く →</button>` : "";
-    return `<div class="msg ${m.me ? "me" : ""} ${m.note ? "note" : ""} ${m.line ? "line" : ""}" tabindex="0" data-i="${m.id}" aria-label="${esc(m.who)} ${esc(fmtTime(m.at))}：${esc(String(m.text).slice(0, 60))}。選んで T でタスク、F で転送、C でコピー、Enter で操作の一覧">
-      <span class="hb" role="toolbar" aria-label="このメッセージの操作"><button data-h="task">タスクへ</button><button data-h="fwd">転送</button><button data-h="copy">コピー</button><button data-h="more" aria-label="ほかの操作">…</button></span>
+    return `<div class="msg ${m.me ? "me" : ""} ${m.note ? "note" : ""} ${m.line ? "line" : ""}" tabindex="0" data-i="${m.id}" aria-label="${esc(m.who)} ${esc(fmtTime(m.at))}：${esc(String(m.text).slice(0, 60))}。選んで T でタスク、F で転送、C でコピー、S で資料、Enter で操作の一覧">
+      <span class="hb" role="toolbar" aria-label="このメッセージの操作"><button data-h="task">タスクへ</button><button data-h="keep">${m.kept ? "資料から外す" : "資料へ"}</button><button data-h="fwd">転送</button><button data-h="copy">コピー</button><button data-h="more" aria-label="ほかの操作">…</button></span>
       <div><div class="meta">${esc(m.who)}・${hm(m.at)}</div><div class="bub">${link(m.text)}${m.images && m.images.length ? `<div class="imgs">${m.images.map((k) => `<img data-key="${esc(k)}" alt="送られた画像">`).join("")}</div>` : ""}</div>${tags ? `<div class="tags">${tags}</div>` : ""}${corrBtn}</div></div>`;
   }
   function drawMid(focusId) {
@@ -110,6 +127,7 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
     const isLater = !!D.later_until;
     $("#mid").innerHTML = `<div class="mh"><button class="btn back" id="toList" aria-label="一覧へ戻る">←</button><button class="btn md" id="leftBtn" aria-expanded="${app.classList.contains("leftopen")}">一覧</button>${av(D.id, D.card.name)}
       <div style="min-width:0"><h1>${esc(D.card.name || D.person.email)}</h1><small>${esc(D.card.email)}${isLater ? `・後で（${esc(fmtTime(D.later_until))} まで）` : ""}</small></div><span class="g"></span>
+      <button class="btn" id="fbtn" aria-label="フォルダ：${esc(fname(D.folder_id) || "なし")}">${D.folder_id ? "▸ " + esc(fname(D.folder_id)) : "フォルダへ"}</button>
       <button class="btn" id="later">${isLater ? "後でを外す" : "後で"}</button>
       <button class="btn" id="sideBtn" aria-expanded="${sideOpen}"><span class="lg">${sideOpen ? "右を閉じる" : "右を開く"}</span><span class="sm">顧客と履歴</span></button></div>
     <div class="msgs" id="msgs">${its.map((m) => { const d = dayOf(m.at); const h = d !== last ? `<div class="day">${d}</div>` : ""; last = d; return h + msgHtml(m); }).join("") || '<p class="welcome">やり取りはまだありません。下から最初のメッセージを送れます。</p>'}</div>
@@ -118,6 +136,7 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
       <div class="row"><span class="g">⌘／Ctrl＋Enter で${noteMode ? "メモを残す" : "送信"}・Enter は改行・<span class="kbd">?</span> でキーの一覧</span><button class="btn pri" id="send">${noteMode ? "メモを残す" : "送信"}</button></div></div>`;
     $("#toList").onclick = () => setView("list");
     $("#leftBtn").onclick = () => { const o = app.classList.toggle("leftopen"); $("#leftBtn").setAttribute("aria-expanded", o); if (o) ($(".left .ci[aria-current=true]") || $(".left .sv")).focus(); };
+    $("#fbtn").onclick = (e) => folderDlg(D.id, e.currentTarget);
     $("#later").onclick = (e) => isLater ? setLater(null, e.currentTarget) : laterDlg(e.currentTarget);
     $("#sideBtn").onclick = () => {
       if (narrow()) { if (app.dataset.v === "side") { setView("chat"); return; } setView("side"); $("#t-hist")?.focus(); return; }
@@ -136,7 +155,7 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
       el.onkeydown = (e) => {
         if (e.target !== el) return;
         if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); const all = $$(".msg"); const k = all.indexOf(el) + (e.key === "ArrowDown" ? 1 : -1); if (all[k]) all[k].focus(); return; }
-        const one = { t: "task", f: "fwd", c: "copy" }[e.key.toLowerCase()];
+        const one = { t: "task", f: "fwd", c: "copy", s: "keep" }[e.key.toLowerCase()];
         if (one && !e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); lastFocus = el; act(one, m); return; }
         if (e.key === "Enter" || e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) { e.preventDefault(); const r = el.getBoundingClientRect(); menu(m, r.left + 40, r.bottom - 4, el); }
       };
@@ -177,7 +196,7 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
     const full = app.classList.contains("full");
     $("#right").innerHTML = `<button class="split" id="split" role="separator" aria-orientation="vertical" aria-label="右の幅" aria-valuemin="300" aria-valuemax="640" aria-valuenow="${parseInt(getComputedStyle(app).getPropertyValue("--rw")) || 360}"></button>
       <button class="grab" id="grab" aria-label="${full ? "縮める" : "広げる"}"><i></i>${full ? "縮める" : "広げる"}</button>${cardHtml()}
-      <div class="tabs" role="tablist"><button class="btn back" id="toChat" aria-label="チャットへ戻る">←</button><button role="tab" id="t-hist" aria-selected="true" aria-controls="pane">履歴</button><span class="g"></span></div>
+      <div class="tabs" role="tablist"><button class="btn back" id="toChat" aria-label="チャットへ戻る">←</button><button role="tab" id="t-hist" aria-selected="${tab === "hist"}" aria-controls="pane" data-tab="hist">履歴</button><button role="tab" id="t-vault" aria-selected="${tab === "vault"}" aria-controls="pane" data-tab="vault">資料 <span class="n">${D.vault.length}</span></button><span class="g"></span></div>
       <div class="pane" id="pane" role="tabpanel" tabindex="-1"></div>`;
     $("#cust").onclick = (e) => { e.preventDefault(); openPerson(D.id); };
     $("#toChat").onclick = () => { app.classList.remove("full"); setView("chat"); };
@@ -186,7 +205,32 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
     const setW = (w) => { w = Math.max(300, Math.min(640, Math.round(w))); app.style.setProperty("--rw", w + "px"); sp.setAttribute("aria-valuenow", w); try { localStorage.setItem("chat-rw", w); } catch (_) {} };
     sp.onpointerdown = (e) => { e.preventDefault(); sp.setPointerCapture(e.pointerId); const right = app.getBoundingClientRect().right; sp.onpointermove = (ev) => setW(right - ev.clientX); sp.onpointerup = () => { sp.onpointermove = null; }; };
     sp.onkeydown = (e) => { const w = parseInt(sp.getAttribute("aria-valuenow")); if (e.key === "ArrowLeft") { e.preventDefault(); setW(w + 24); } if (e.key === "ArrowRight") { e.preventDefault(); setW(w - 24); } };
-    drawHist();
+    const tabs = $$("[data-tab]");
+    tabs.forEach((b) => { b.tabIndex = b.dataset.tab === tab ? 0 : -1; b.onclick = () => { tab = b.dataset.tab; drawRight(); $(`[data-tab="${tab}"]`).focus(); };
+      b.onkeydown = (e) => { if (e.key === "ArrowRight" || e.key === "ArrowLeft") { e.preventDefault(); tab = tab === "hist" ? "vault" : "hist"; drawRight(); $(`[data-tab="${tab}"]`).focus(); } }; });
+    tab === "vault" ? drawVault() : drawHist();
+  }
+  // 右の「資料」：入れたもの・リンク・画像。言葉で絞る（この人の中）
+  function drawVault() {
+    const all = D.vault, K = [["all", "すべて"], ["saved", "入れたもの"], ["link", "リンク"], ["image", "画像"]];
+    const q = vq.trim();
+    const hay = (v) => [v.text, v.url, v.from].filter(Boolean).join(" ");
+    const shown = all.filter((v) => (vk === "all" || v.kind === vk) && (!q || hay(v).includes(q)));
+    const row = (v) => {
+      const go = `<button class="lk" data-go="${v.event_id}">メッセージへ</button>`;
+      if (v.kind === "image") return `<div class="vi"><img data-key="${esc(v.key)}" alt="${esc(v.from)}が送った画像"><div><small>${esc(v.from)}・${esc(fmtTime(v.at))}</small>${go}</div></div>`;
+      if (v.kind === "link") return `<div class="vi"><span class="vic" aria-hidden="true">↗</span><div><a href="${esc(v.url)}" target="_blank" rel="noopener">${esc(v.url.replace(/^https?:[/][/]/, "").slice(0, 70))}</a><small>${esc(v.from)}・${esc(fmtTime(v.at))}</small>${go}</div></div>`;
+      return `<div class="vi saved"><span class="vic" aria-hidden="true">★</span><div><p>${esc(v.text.slice(0, 200))}</p><small>${esc(v.from)}・${esc(fmtTime(v.at))}</small>${go}<button class="lk" data-off="${v.event_id}">資料から外す</button></div></div>`;
+    };
+    $("#pane").innerHTML = `<p class="who">送られたリンクと画像は自動で集まります。メッセージは右クリックの「資料に入れる」（S）で残せます</p>
+      <label class="sr" for="vq">資料を探す</label><input id="vq" type="search" placeholder="資料の中を探す" value="${esc(vq)}">
+      <div class="chips" role="group" aria-label="出す種類">${K.map(([k, t]) => `<button class="chip" aria-pressed="${vk === k}" data-vk="${k}">${t} ${k === "all" ? all.length : all.filter((v) => v.kind === k).length}</button>`).join("")}</div>
+      ${shown.map(row).join("") || `<p class="empty">${all.length ? "合う資料がありません" : "まだ資料はありません"}</p>`}`;
+    $("#vq").oninput = () => { vq = $("#vq").value; const p = $("#vq").selectionStart; drawVault(); const i = $("#vq"); i.focus(); i.setSelectionRange(p, p); };
+    $$("[data-vk]").forEach((b) => (b.onclick = () => { vk = b.dataset.vk; drawVault(); $(`[data-vk="${vk}"]`).focus(); }));
+    $$("[data-go]", $("#pane")).forEach((b) => (b.onclick = () => { const el = $(`.msg[data-i="${b.dataset.go}"]`); if (narrow()) setView("chat"); if (el) { $$(".msg.hit").forEach((x) => x.classList.remove("hit")); el.classList.add("hit"); el.scrollIntoView({ block: "center" }); el.focus(); } }));
+    $$("[data-off]", $("#pane")).forEach((b) => (b.onclick = () => keep({ id: Number(b.dataset.off), kept: true })));
+    $$("#pane img[data-key]").forEach(async (img) => { try { img.src = await authImage("/api/admin/image?key=" + encodeURIComponent(img.dataset.key), getToken()); } catch (_) { img.alt = "画像を読めませんでした"; } });
   }
   function drawHist() {
     const rows = D.history, cats = D.cats.filter((k) => rows.some((r) => r.cat === k));
@@ -201,7 +245,8 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
   function menu(m, x, y, from) {
     closeMenu(); lastFocus = from; menuAt = Date.now();
     const el = document.createElement("div"); el.className = "menu"; el.setAttribute("role", "menu"); el.setAttribute("aria-label", "メッセージの操作");
-    el.innerHTML = `<button role="menuitem" data-a="copy">コピー<small>C</small></button><button role="menuitem" data-a="fwd">転送（メモとして）…<small>F</small></button><button role="menuitem" data-a="task">タスクへ追加…<small>T</small></button><hr>
+    el.innerHTML = `<button role="menuitem" data-a="copy">コピー<small>C</small></button><button role="menuitem" data-a="fwd">転送（メモとして）…<small>F</small></button><button role="menuitem" data-a="keep">${m.kept ? "資料から外す" : "資料に入れる"}<small>S</small></button><hr>
+      <div class="mh2" aria-hidden="true">連携</div><button role="menuitem" data-a="task">タスクへ追加（TaskMaster）…<small>T</small></button><button role="menuitem" data-a="pin"${m.pinned ? " aria-disabled=\"true\"" : ""}>${m.pinned ? "顧客管理に残した" : "顧客管理に残す"}</button><hr>
       <button role="menuitem" data-a="claude">Claude に聞く（依頼文をコピー）</button><button role="menuitem" data-a="later">このチャットを後で見る…</button>${m.corr || (m.lesson && !m.me) ? '<button role="menuitem" data-a="room">添削ルームで開く →</button>' : ""}`;
     root.appendChild(el);
     const w = el.offsetWidth, h = el.offsetHeight; el.style.left = Math.max(8, Math.min(x, innerWidth - w - 8)) + "px"; el.style.top = Math.max(8, Math.min(y, innerHeight - h - 8)) + "px";
@@ -226,6 +271,67 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
     }
     if (a === "fwd") return fwdDlg(m);
     if (a === "task") return taskDlg(m);
+    if (a === "keep") return keep(m);
+    if (a === "pin") return pin(m);
+  }
+  async function keep(m) {
+    const off = !!m.kept;
+    const r = await call(`/api/admin/chat/${D.id}/keep`, "POST", { event_id: m.id, off });
+    if (!r.ok) { toast(errText(r)); return; }
+    await reload(m.id);
+    toast(off ? "資料から外しました" : "資料に入れました（右の「資料」）", off ? null : () => keep({ id: m.id, kept: true }));
+  }
+  async function pin(m) {
+    if (m.pinned) { toast("もう顧客管理に残してあります"); return; }
+    const r = await call(`/api/admin/chat/${D.id}/pin`, "POST", { event_id: m.id });
+    if (!r.ok) { toast(errText(r)); return; }
+    await reload(m.id);
+    toast("顧客管理に残しました（概要の「チャットから残したこと」）");
+  }
+  // 1 人分を読み直して、真ん中と右を描き直す（読んだ印は付く）
+  async function reload(focusId) {
+    const r = await call("/api/admin/chat/" + D.id); if (!r.ok || !r.found) return;
+    const id = D.id; D = r; D.id = id; drawMid(focusId); drawRight();
+  }
+
+  // ---------- フォルダ ----------
+  function folderDlg(pid, opener) {
+    const c = L && L.chats.find((x) => x.person_id === pid); const curF = D && D.id === pid ? D.folder_id : c ? c.folder_id : null;
+    lastFocus = opener || lastFocus;
+    const name = c ? nameOf(c) : D ? D.card.name || D.card.email : "";
+    dialog(`<h2>「${esc(name)}」をフォルダに入れる</h2>${(L ? L.folders : []).map((f) => `<button class="opt" data-pf="${f.id}" aria-pressed="${curF === f.id}">▸ ${esc(f.name)}${curF === f.id ? "（いま）" : ""}</button>`).join("")}
+      <button class="opt" data-pf="" aria-pressed="${!curF}">フォルダなし${!curF ? "（いま）" : ""}</button>
+      <label for="nf">新しいフォルダを作って入れる</label><div style="display:flex;gap:6px"><input id="nf" maxlength="20" placeholder="例 NEXT 受講生"><button class="btn" id="nfb">作る</button></div>
+      <p class="err" id="perr" role="alert"></p><div class="acts"><button class="btn" data-x>閉じる</button></div>`, null, (d, close) => {
+      const put = async (fid) => { const r = await call(`/api/admin/chat/${pid}/folder`, "POST", { folder_id: fid || null }); if (!r.ok) { $("#perr", d).textContent = errText(r); return; }
+        close(); await loadList(); if (D && D.id === pid) { D.folder_id = r.folder_id; drawMid(); } toast(fid ? `「${fname(fid)}」に入れました` : "フォルダから外しました"); };
+      $$("[data-pf]", d).forEach((b) => (b.onclick = () => put(b.dataset.pf)));
+      $("#nfb", d).onclick = async () => { const r = await call("/api/admin/chat/folders", "POST", { name: $("#nf", d).value }); if (!r.ok) { $("#perr", d).textContent = errText(r); $("#nf", d).focus(); return; } await loadList(); put(r.folder.id); };
+      $("#nf", d).onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); $("#nfb", d).click(); } };
+    });
+  }
+  function foldersDlg(opener) {
+    lastFocus = opener || lastFocus;
+    dialog(`<h2>フォルダを編集</h2><p style="margin:0;color:var(--muted);font-size:13px">消しても中のチャットは消えません（「フォルダなし」に戻ります）。</p><div id="fl2"></div>
+      <label for="nf2">新しいフォルダ</label><div style="display:flex;gap:6px"><input id="nf2" maxlength="20" placeholder="例 NEXT 受講生"><button class="btn" id="nfb2">作る</button></div>
+      <p class="err" id="ferr2" role="alert"></p><div class="acts"><button class="btn pri" data-x>閉じる</button></div>`, null, (d) => {
+      const err = (r) => { $("#ferr2", d).textContent = errText(r); };
+      const done = async (focusSel) => { await loadList(); draw(); const el = focusSel && $(focusSel, d); if (el) el.focus(); };
+      const draw = () => {
+        const fs = L.folders;
+        $("#fl2", d).innerHTML = fs.map((f, k) => `<div class="frow" data-row="${f.id}"><label class="sr" for="fn-${f.id}">${esc(f.name)} の名前</label><input id="fn-${f.id}" maxlength="20" value="${esc(f.name)}"><small>${f.count}</small>
+          <button class="btn" data-up="${f.id}" aria-label="${esc(f.name)} を上へ" ${k === 0 ? "disabled" : ""}>↑</button><button class="btn" data-dn="${f.id}" aria-label="${esc(f.name)} を下へ" ${k === fs.length - 1 ? "disabled" : ""}>↓</button><button class="btn" data-rm="${f.id}" aria-label="${esc(f.name)} を消す">削除</button></div>`).join("") || '<p class="empty">フォルダはまだありません</p>';
+        $$("[id^=fn-]", d).forEach((i) => { const id = i.id.slice(3); const save = async () => { const f = L.folders.find((x) => x.id === id); if (!f || i.value.trim() === f.name) return; const r = await call("/api/admin/chat/folders", "POST", { id, name: i.value }); if (!r.ok) { err(r); i.value = f.name; return; } $("#ferr2", d).textContent = ""; await loadList(); toast("名前を変えました"); };
+          i.onchange = save; i.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); i.blur(); } }; });
+        $$("[data-up],[data-dn]", d).forEach((b) => (b.onclick = async () => { const id = b.dataset.up || b.dataset.dn, mv = b.dataset.up ? "up" : "down"; const r = await call("/api/admin/chat/folders", "POST", { id, move: mv }); if (!r.ok) return err(r); await done(`[data-${b.dataset.up ? "up" : "dn"}="${id}"]:not([disabled])`); }));
+        $$("[data-rm]", d).forEach((b) => (b.onclick = async () => { const f = L.folders.find((x) => x.id === b.dataset.rm); if (!f) return;
+          if (b.dataset.sure !== "1") { b.dataset.sure = "1"; b.textContent = "本当に消す"; b.classList.add("danger"); return; }
+          const r = await call("/api/admin/chat/folders", "POST", { id: f.id, remove: true }); if (!r.ok) return err(r); if (fsel === f.id) fsel = null; await done("#nf2"); toast(`「${f.name}」を消しました（中のチャットは「フォルダなし」に）`); }));
+      };
+      $("#nfb2", d).onclick = async () => { const r = await call("/api/admin/chat/folders", "POST", { name: $("#nf2", d).value }); if (!r.ok) { err(r); $("#nf2", d).focus(); return; } $("#nf2", d).value = ""; $("#ferr2", d).textContent = ""; await done("#nf2"); toast(`「${r.folder.name}」を作りました`); };
+      $("#nf2", d).onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); $("#nfb2", d).click(); } };
+      draw();
+    });
   }
   function fwdDlg(m) {
     const others = (L ? L.chats : []).filter((c) => c.person_id !== D.id);
@@ -276,10 +382,10 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
     if (e.key !== "Enter") return;
     const q = $("#q").value.trim();
     if (!q) { hits = null; drawLeft(); if (D) drawMid(); return; }
-    const r = await call("/api/admin/chat/search?q=" + encodeURIComponent(q));
+    const r = await call("/api/admin/chat/search?q=" + encodeURIComponent(q) + (fsel ? "&folder_id=" + fsel : ""));
     if (!r.ok) { toast(errText(r)); return; }
     hits = r.hits; drawLeft();
-    $("#mid").innerHTML = `<div class="mh"><button class="btn back" id="toList">←</button><div><h1>「${esc(q)}」を探した結果</h1><small>${r.count} 件（やり取り・添削・メモ）</small></div><span class="g"></span><button class="btn" id="clr">探すのをやめる</button></div>
+    $("#mid").innerHTML = `<div class="mh"><button class="btn back" id="toList">←</button><div><h1>「${esc(q)}」を探した結果</h1><small>${fsel ? "フォルダ「" + esc(fname(fsel)) + "」の中・" : ""}${r.count} 件（やり取り・添削・メモ）</small></div><span class="g"></span><button class="btn" id="clr">探すのをやめる</button></div>
       <div class="results">${hits.map((h, k) => `<button class="res" data-k="${k}"><small>${esc(h.name)}・${esc(h.kind)}・${esc(h.from)}・${esc(fmtTime(h.at))}</small>${esc(h.text).split(esc(q)).join(`<mark>${esc(q)}</mark>`)}</button>`).join("") || '<p class="empty">見つかりませんでした。言葉を変えてみてください</p>'}</div>`;
     $("#toList").onclick = () => setView("list");
     $("#clr").onclick = () => { $("#q").value = ""; hits = null; drawLeft(); if (D) drawMid(); else $("#mid").innerHTML = ""; $("#q").focus(); };
@@ -326,7 +432,7 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
     if (e.key === "]" && D) { e.preventDefault(); $("#sideBtn")?.click(); }
   });
   function keysDlg() {
-    const K = [["⌘／Ctrl＋K", "名前で探してチャットを開く"], ["⌘／Ctrl＋Enter", "送信・メモを残す"], ["↑ ↓", "メッセージを移る（メッセージを選んでいるとき）"], ["T", "タスクへ追加"], ["F", "転送（メモとして）"], ["C", "コピー"], ["Enter・右クリック", "操作の一覧"], ["]", "右を開く・閉じる"], ["Esc", "閉じる"]];
+    const K = [["⌘／Ctrl＋K", "名前で探してチャットを開く"], ["⌘／Ctrl＋Enter", "送信・メモを残す"], ["↑ ↓", "メッセージを移る（メッセージを選んでいるとき）"], ["T", "タスクへ追加"], ["F", "転送（メモとして）"], ["C", "コピー"], ["S", "資料に入れる・外す"], ["Enter・右クリック", "操作の一覧"], ["]", "右を開く・閉じる"], ["Esc", "閉じる"]];
     dialog(`<h2>キーの一覧</h2><table style="width:100%;font-size:13px;border-collapse:collapse">${K.map(([k, v]) => `<tr><td style="padding:4px 8px 4px 0;white-space:nowrap"><span class="kbd">${k}</span></td><td>${v}</td></tr>`).join("")}</table><div class="acts"><button class="btn pri" data-x>閉じる</button></div>`);
   }
 

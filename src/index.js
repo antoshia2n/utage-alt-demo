@@ -83,7 +83,7 @@ import { makeMedia } from "./media.js";
 import { makeChat } from "./chat.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.71.1-bchat1";
+const VERSION = "0.72.0-bchat2a";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -592,6 +592,8 @@ const core = {
       entitlements: await bridge.gateFull(env, person_id), // マーケくん便 2：「権利」のタブ
       purchases,
       room: { messages: rs.lastMessageId ? true : false, unread_for_admin: rs.unreadForAdmin, unreplied: rs.unreplied.length, unread_for_student: rs.unreadForStudent },
+      // チャットの便 C2a：チャットの右クリック「顧客管理に残す」で写したもの（新しい 10 件。履歴の 200 件より古くても出す）
+      pins: await db(env, "GET", `events?select=id,payload,occurred_at&customer_id=eq.${person_id}&type=eq.chat_pin&order=id.desc&limit=10`),
       events,
     };
   },
@@ -1596,15 +1598,20 @@ async function handleApi(request, env, url) {
     }
     // チャットの便 C1：チャットの画面（一覧・1 人・メモ・後で・メモとして転送・タスクへ）。送るのは今までどおり /api/admin/rooms/<人>/message
     if (path === "/api/admin/chat" && method === "GET") return json(await chat.list(env));
-    if (path === "/api/admin/chat/search" && method === "GET") { const r = await chat.search(env, { q: url.searchParams.get("q"), person_id: url.searchParams.get("person_id") || undefined }); return json(r, r.ok === false ? 400 : 200); }
+    if (path === "/api/admin/chat/search" && method === "GET") { const r = await chat.search(env, { q: url.searchParams.get("q"), person_id: url.searchParams.get("person_id") || undefined, folder_id: url.searchParams.get("folder_id") || undefined }); return json(r, r.ok === false ? 400 : 200); }
     if (path === "/api/admin/chat/people" && method === "GET") return json(await chat.people(env, { q: url.searchParams.get("q") }));
-    const cm = path.match(/^[/]api[/]admin[/]chat[/]([0-9a-f-]{36})(?:[/](note|later|forward|task))?$/i);
+    // チャットの便 C2a：フォルダを作る・名前を変える・並べ替える・消す
+    if (path === "/api/admin/chat/folders" && method === "POST") { const body = await request.json().catch(() => ({})); const r = await chat.saveFolder(env, body, a.email); return json(r, r.ok === false ? 400 : 200); }
+    const cm = path.match(/^[/]api[/]admin[/]chat[/]([0-9a-f-]{36})(?:[/](note|later|forward|task|folder|keep|pin))?$/i);
     if (cm && method === "GET" && !cm[2]) { const r = await chat.get(env, { person_id: cm[1] }); return json(r, r.ok === false ? 400 : r.found === false ? 404 : 200); }
     if (cm && method === "POST" && cm[2]) {
       const body = await request.json().catch(() => ({}));
       const r = cm[2] === "note" ? await chat.addNote(env, { person_id: cm[1], text: body.text }, "admin")
         : cm[2] === "later" ? await chat.setLater(env, { person_id: cm[1], until: body.until }, "admin")
         : cm[2] === "forward" ? await chat.forward(env, { person_id: cm[1], event_id: body.event_id, to_person_id: body.to_person_id }, "admin")
+        : cm[2] === "folder" ? await chat.setFolder(env, { person_id: cm[1], folder_id: body.folder_id }, "admin")
+        : cm[2] === "keep" ? await chat.keep(env, { person_id: cm[1], event_id: body.event_id, off: body.off }, "admin")
+        : cm[2] === "pin" ? await chat.pin(env, { person_id: cm[1], event_id: body.event_id }, "admin")
         : await chat.addTask(env, { person_id: cm[1], event_id: body.event_id, title: body.title, deadline: body.deadline }, "admin", url.origin);
       return json(r, r.ok === false ? 400 : 200);
     }
@@ -1897,22 +1904,22 @@ const TOOLS = [
     name: "get_chat",
     screen: "chat",
     say: "1 人のチャットを読む（やり取り・メモ・履歴・カード）",
-    description: "シアニン用の画面の「チャット」の 1 人分を読む。person_id（find_person の id）。返すもの：messages（添削ルームのやり取りと同じ）・notes（シアニンだけのメモ）・tasks（メッセージから TaskMaster に足したタスク）・later_until（後で見る日時）・card（段階・権利・最後の購入・次の予約・最後の面談）・history（その人の出来事を種類 cat ごとに。購入・予約・セミナー・学習・メール・LINE・添削・フォーム・ページ・権利・登録とログイン・マーケ）。読んだ印は付けない。",
+    description: "シアニン用の画面の「チャット」の 1 人分を読む。person_id（find_person の id）。返すもの：messages（添削ルームのやり取りと同じ）・notes（シアニンだけのメモ）・tasks（メッセージから TaskMaster に足したタスク）・later_until（後で見る日時）・card（段階・権利・最後の購入・次の予約・最後の面談）・history（その人の出来事を種類 cat ごとに。購入・予約・セミナー・学習・メール・LINE・添削・フォーム・ページ・権利・登録とログイン・マーケ）・vault（資料：やり取りとメモのリンク link・画像 image と、資料に入れたもの saved）・folder_id と folders・pins（顧客管理に残したメッセージの event_id）。読んだ印は付けない。",
     inputSchema: { type: "object", properties: { person_id: { type: "string" } }, required: ["person_id"] },
   },
   {
     name: "list_chats",
     screen: "chat",
     say: "チャットの一覧（要返信・後で）",
-    description: "チャットの一覧。部屋のある人ごとに、最後の発言・未返信・後で（later_until）・要返信（need：最後の発言が生徒か、添削の未返信か教材の質問があり、後でにしていない）を返す。need_count・later_count も返す。",
+    description: "チャットの一覧。部屋のある人ごとに、最後の発言・未返信・後で（later_until）・要返信（need：最後の発言が生徒か、添削の未返信か教材の質問があり、後でにしていない）を返す。need_count・later_count も返す。folders（フォルダの id・名前・数・要返信の数）と、チャットごとの folder_id も返す。",
     inputSchema: { type: "object", properties: {} },
   },
   {
     name: "search_chats",
     screen: "chat",
     say: "チャットを言葉で探す",
-    description: "全員のチャット（やり取り・添削・シアニンのメモ）を言葉で探す。q（含む言葉）・person_id（1 人に絞る・省略可）・limit（既定 30・100 まで）。返すもの：人・event_id・種類（メッセージ／添削／メモ）・誰の発言か・日時・本文の先頭 300 字。言い回しの違いを拾いたいときは、言葉を変えて何回か呼ぶか、get_chat で全文を読む。",
-    inputSchema: { type: "object", properties: { q: { type: "string" }, person_id: { type: "string" }, limit: { type: "integer" } }, required: ["q"] },
+    description: "全員のチャット（やり取り・添削・シアニンのメモ）を言葉で探す。q（含む言葉）・person_id（1 人に絞る・省略可）・folder_id（フォルダに絞る・省略可）・limit（既定 30・100 まで）。返すもの：人・event_id・種類（メッセージ／添削／メモ）・誰の発言か・日時・本文の先頭 300 字。言い回しの違いを拾いたいときは、言葉を変えて何回か呼ぶか、get_chat で全文を読む。",
+    inputSchema: { type: "object", properties: { q: { type: "string" }, person_id: { type: "string" }, folder_id: { type: "string" }, limit: { type: "integer" } }, required: ["q"] },
   },
   {
     name: "add_chat_note",
@@ -1934,6 +1941,35 @@ const TOOLS = [
     say: "メッセージを別のチャットへメモとして転送する",
     description: "person_id のチャットのメッセージ 1 つ（event_id）を、to_person_id のチャットへシアニンだけのメモとして写す（転送先の生徒には見えない）。",
     inputSchema: { type: "object", properties: { person_id: { type: "string" }, event_id: { type: "integer" }, to_person_id: { type: "string" } }, required: ["person_id", "event_id", "to_person_id"] },
+  },
+  // チャットの便 C2a
+  {
+    name: "save_chat_folder",
+    screen: "chat",
+    say: "チャットのフォルダを作る・名前を変える・並べ替える・消す",
+    description: "シアニン用の画面の「チャット」のフォルダ（1 段・30 個まで・名前は 20 字まで）。name だけで作る。id と name で名前を変える。id と move（up／down）で並べ替える。id と remove: true で消す（中のチャットは「フォルダなし」に戻り、チャットは消えない）。フォルダの一覧は list_chats の folders。",
+    inputSchema: { type: "object", properties: { id: { type: "string" }, name: { type: "string" }, move: { type: "string", enum: ["up", "down"] }, remove: { type: "boolean" } } },
+  },
+  {
+    name: "set_chat_folder",
+    screen: "chat",
+    say: "チャットをフォルダに入れる・外す",
+    description: "1 人のチャット（person_id）を folder_id のフォルダに入れる（1 つのチャットは 1 つのフォルダ）。folder_id を空にすると外す。",
+    inputSchema: { type: "object", properties: { person_id: { type: "string" }, folder_id: { type: "string" } }, required: ["person_id"] },
+  },
+  {
+    name: "keep_chat_item",
+    screen: "chat",
+    say: "チャットのメッセージを資料に入れる・外す",
+    description: "person_id のチャットのメッセージかメモ 1 つ（event_id）を右の「資料」に入れる。off: true で外す。送られたリンクと画像は入れなくても資料に自動で集まる（get_chat の vault）。",
+    inputSchema: { type: "object", properties: { person_id: { type: "string" }, event_id: { type: "integer" }, off: { type: "boolean" } }, required: ["person_id", "event_id"] },
+  },
+  {
+    name: "pin_chat_message",
+    screen: "chat",
+    say: "チャットのメッセージを顧客管理に残す",
+    description: "person_id のチャットのメッセージかメモ 1 つ（event_id）を、顧客管理のその人の 1 枚（概要の「チャットから残したこと」と履歴）に写す。同じメッセージは 1 回だけ。",
+    inputSchema: { type: "object", properties: { person_id: { type: "string" }, event_id: { type: "integer" } }, required: ["person_id", "event_id"] },
   },
   {
     name: "add_chat_task",
@@ -2800,6 +2836,10 @@ async function runTool(env, name, args) {
   if (name === "set_chat_later") return await chat.setLater(env, args, "mcp");
   if (name === "forward_chat") return await chat.forward(env, args, "mcp");
   if (name === "add_chat_task") return await chat.addTask(env, args, "mcp", mediaOrigin(env));
+  if (name === "save_chat_folder") return await chat.saveFolder(env, args, "mcp");
+  if (name === "set_chat_folder") return await chat.setFolder(env, args, "mcp");
+  if (name === "keep_chat_item") return await chat.keep(env, args, "mcp");
+  if (name === "pin_chat_message") return await chat.pin(env, args, "mcp");
   if (name === "set_goal_draft") return await goals.setDraft(env, args);
   if (name === "notify_naoki") {
     const u = String(args.url || "/admin");
