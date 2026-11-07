@@ -276,7 +276,8 @@ export function makeLine(h) {
     const { byUser } = await links(env, p.account);
     const already = byUser.get(p.user) === reg.id;
     if (!already) await h.addEvent(env, reg.id, "line_linked", { account: p.account, user: p.user }, "site");
-    return { ok: true, linked: true, already };
+    // 便 T3：呼んだ側（index.js）が「LINE と結ばれた」のすぐ送るステップを動かすために person_id を返す（画面へは返さない）
+    return { ok: true, linked: true, already, person_id: reg.id };
   }
 
   // チャットの便 C2a-2：1 人が結ばれている LINE（アカウントごと）
