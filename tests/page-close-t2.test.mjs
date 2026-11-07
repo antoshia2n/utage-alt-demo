@@ -98,6 +98,7 @@ test("終了の画面はページの題名の記号を外して出す", () => {
 
 test("道具は承認が要る。表の列を足す SQL がある", () => {
   assert.equal(DEFAULT_MODES.set_page_close, "approve");
+  assert.equal(DEFAULT_MODES.create_page_request, "auto");
   const sql = readFileSync(new URL("../supabase/bt2_page_close.sql", import.meta.url), "utf8");
   assert.match(sql, /closes_at timestamptz/);
   assert.match(sql, /closed_to text/);

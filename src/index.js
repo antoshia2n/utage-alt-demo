@@ -2977,6 +2977,13 @@ const TOOLS = [
     inputSchema: { type: "object", properties: { page_id: { type: "string" }, version: { type: "integer" }, stop: { type: "boolean" } }, required: ["page_id"] },
   },
   {
+    name: "create_page_request",
+    screen: "pages",
+    say: "ページの依頼を書く（新しく作る・直す）",
+    description: "マーケくんの「ページ」の依頼を AI から書く（便 T2・画面の「新しく作る」「直す」と同じ）。新しく作るときは purpose（signup／seminar／sale／news／thanks）と title（80 字まで）、直すときは page_id と comment。reference・materials・comment は 2000 字まで。campaign_id でシナリオに入れる。返事の request.id を save_page_draft の request_id に渡す。何も公開しない。",
+    inputSchema: { type: "object", properties: { purpose: { type: "string", enum: ["signup", "seminar", "sale", "news", "thanks"] }, title: { type: "string" }, page_id: { type: "string" }, comment: { type: "string" }, reference: { type: "string" }, materials: { type: "string" }, campaign_id: { type: "string" } } },
+  },
+  {
     name: "set_page_close",
     screen: "pages",
     say: "ページの公開の期限を決める・外す",
@@ -3238,6 +3245,7 @@ async function runTool(env, name, args) {
   if (name === "list_pages") return await pages.listPages(env);
   if (name === "get_page") return await pages.getPage(env, args);
   if (name === "publish_page") return await pages.publish(env, { page_id: args.page_id, version: args.version, stop: args.stop === true }, "mcp");
+  if (name === "create_page_request") { const r = await pages.createRequest(env, args, "mcp"); return r.ok ? { ok: true, request: { id: r.request.id, kind: r.request.kind, title: r.request.title, purpose: r.request.purpose, page_id: r.request.page_id || null } } : r; }
   if (name === "set_page_close") return await pages.setClose(env, { page_id: args.page_id, closes_at: args.closes_at, closed_to: args.closed_to }, "mcp");
   if (name === "list_routes") return await pages.routeStats(env, args);
   return { ok: false, error: "unknown_tool" };

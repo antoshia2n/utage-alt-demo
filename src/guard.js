@@ -77,7 +77,7 @@ export const DEFAULT_MODES = {
   list_referrals: "auto", mark_referral_paid: "approve",
   // 便 12a：ページ。読む・依頼を読む・下書きを置く・経路を数えるのは自動（外の人には何も見えない）。公開と止めるのは承認
   list_pages: "auto", get_page: "auto", list_page_requests: "auto", get_page_request: "auto", save_page_draft: "auto", list_routes: "auto",
-  publish_page: "approve", set_page_close: "approve",
+  publish_page: "approve", set_page_close: "approve", create_page_request: "auto",
   // 便 13：セミナーの回を読むのは自動。回を作る・知らせを足す・いま送るは承認（申込者へ届くもの・外から申し込める回が増えるため）
   get_seminar: "auto", set_seminar: "approve", set_seminar_notice: "approve", send_seminar_notice: "approve",
   // 便 13b：予約の種類を読む・空き時間を見るのは自動。種類を作る・直すのは承認（外から予約できる枠が増えるため）
