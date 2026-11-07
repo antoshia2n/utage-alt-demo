@@ -76,6 +76,12 @@ export function summarizeEvent(e) {
 
 export function makeLine(h) {
   const { db, logInbound, changes } = h;
+  // M2b：LINE で送る画像（棚の共有リンク）を確かめる。h.checkImage が無いとき（試験など）は見ない
+  const imageProblem = async (env, msgs) => {
+    if (!h.checkImage) return null;
+    for (const x of msgs) if (x.type === "image") { const p = await h.checkImage(env, x.url); if (p) return p; }
+    return null;
+  };
   const forwardKey = (account) => FORWARD_PREFIX + account;
 
   async function forwardUrl(env, account) {
@@ -499,6 +505,8 @@ export function makeLine(h) {
     if (!nm) return { ok: false, error: "need_name" };
     const m = checkMessages(messages);
     if (m.error) return { ok: false, ...m };
+    const ip = await imageProblem(env, m.messages);
+    if (ip) return { ok: false, ...ip };
     if (id) { const ex = await db(env, "GET", `${T_TABLE}?select=id&id=eq.${id}&account=eq.${account}`); if (!ex.length) return { ok: false, error: "not_found" }; }
     const row = { id: id || crypto.randomUUID(), account, name: nm, messages: m.messages, updated_at: new Date().toISOString(), updated_by: String(actor).slice(0, 200) };
     if (!id) row.source = String(source || "").slice(0, 80);
@@ -532,6 +540,7 @@ export function makeLine(h) {
     } else {
       const m = checkMessages(messages === undefined && ex ? ex.messages : messages);
       if (m.error) return { ok: false, ...m };
+      if (messages !== undefined) { const ip = await imageProblem(env, m.messages); if (ip) return { ok: false, ...ip }; }
       msgs = m.messages;
     }
     const row = { id: ex ? ex.id : crypto.randomUUID(), account, name: nm || kws[0], keywords: kws, match: mt, messages: msgs, template_id: tid,
@@ -627,8 +636,10 @@ export function checkMessages(messages) {
   }
   return { messages: out };
 }
+// M2b：棚の共有リンク（/m/<24 桁>）なら、プレビューは小さな版の住所（?p=1・無ければ元の画像が返る）
+export const linePreviewUrl = (url) => /^https:[/][/][^/\s]+[/]m[/][0-9a-f]{24}$/.test(String(url || "")) ? url + "?p=1" : url;
 export function toLineMessages(msgs) {
-  return (msgs || []).slice(0, 5).map((m) => m.type === "image" ? { type: "image", originalContentUrl: m.url, previewImageUrl: m.url } : { type: "text", text: String(m.text || "") }).filter((m) => m.type === "image" || m.text);
+  return (msgs || []).slice(0, 5).map((m) => m.type === "image" ? { type: "image", originalContentUrl: m.url, previewImageUrl: linePreviewUrl(m.url) } : { type: "text", text: String(m.text || "") }).filter((m) => m.type === "image" || m.text);
 }
 // 並び順に見て最初に合った 1 件（all＝同じ文・part＝文に入っている）。前後の空白は見ない
 export function matchReply(rows, text) {

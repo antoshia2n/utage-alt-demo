@@ -4,6 +4,7 @@ import { makeBlueprint } from "/js/blueprint.js";
 import { mountSite } from "/js/site.js";
 import { mountRecordings } from "/js/recordings.js";
 import { mountMedia } from "/js/media.js";
+import { pickMedia } from "/js/mediapick.js";
 import { mountUtageCopy } from "/js/utagecopy.js";
 import { watchEdges, revealSelected } from "/js/fbar-edges.js";
 
@@ -912,6 +913,16 @@ async function loadReplies() {
     const again = document.querySelector(`[data-ar-toggle="${CSS.escape(x.id)}"]`); if (again) again.focus();
   }));
 }
+// M2b：LINE の画像の確かめ（サーバーの lineImageProblem と同じ名前）
+const AR_IMG_ERR = {
+  need_preview: (r) => `「${r.name}」は 1MB を超えるので、LINE 用のプレビューが要ります。「メディアから画像を選ぶ」で選び直してください`,
+  line_image_type: (r) => `「${r.name}」は LINE で送れない形式です（png か jpg だけ）`,
+  line_image_too_big: (r) => `「${r.name}」は 10MB を超えていて LINE で送れません`,
+  line_image_link_closed: () => "画像の共有リンクが止まっているか期限切れです。メディアの画面で戻すか、選び直してください",
+  line_image_no_file: () => "画像のファイルがまだ写し終わっていないか、消されています",
+  line_image_unknown: () => "画像の住所がメディアの棚の共有リンクとして見つかりません。選び直してください",
+  bad_image_url: () => "画像の住所は https:// から入れてください",
+};
 let arOpener = null;
 function arEdit(id, opener) {
   arOpener = opener || null;
@@ -942,6 +953,17 @@ function setupReplies() {
   $("line-ar-account").addEventListener("change", () => { arAccount = $("line-ar-account").value; arClose(); loadReplies(); });
   $("line-ar-new").addEventListener("click", (e) => arEdit(null, e.currentTarget));
   $("ar-cancel").addEventListener("click", arClose);
+  // メディアの便 M2b：棚から画像を選んで「画像 住所」の吹き出しを足す（1MB を超える画像はプレビューを作る）
+  $("ar-pick").addEventListener("click", async (e) => {
+    const box = $("ar-messages");
+    const n = arSplit(box.value).length;
+    if (n >= 5) { $("ar-status").textContent = "吹き出しは 5 つまでです。どれかを消してから足してください"; box.focus(); return; }
+    const got = await pickMedia({ getToken: () => token, mode: "line", label: "LINE 自動応答：" + ($("ar-name").value.trim() || "名前なし"), opener: e.currentTarget });
+    if (!got) return;
+    box.value = (box.value.trim() ? box.value.replace(/\s+$/, "") + "\n---\n" : "") + "画像 " + got.url;
+    $("ar-status").textContent = `「${got.name}」の画像を足しました。保存すると反映されます`;
+    box.focus();
+  });
   $("line-ar-form").addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); arClose(); } });
   $("ar-remove").addEventListener("click", async () => {
     const id = $("ar-id").value; if (!id) return;
@@ -966,7 +988,7 @@ function setupReplies() {
     $("ar-save").disabled = true; $("ar-status").textContent = "保存しています…";
     const res = await api("/api/admin/line/replies", { method: "POST", token, body });
     $("ar-save").disabled = false;
-    if (!res.ok) { $("ar-status").textContent = "保存できませんでした（" + (res.error || res.status) + (res.max ? `・${res.max} まで` : "") + "）"; return; }
+    if (!res.ok) { $("ar-status").textContent = AR_IMG_ERR[res.error] ? AR_IMG_ERR[res.error](res) : "保存できませんでした（" + (res.error || res.status) + (res.max ? `・${res.max} まで` : "") + "）"; return; }
     arClose(); await loadReplies();
     $("line-ar-sum").textContent = `「${body.name || keywords[0]}」を保存しました` + (res.overlap ? `（有効な「${res.overlap.join("・")}」とキーワードが重なっています）` : "");
   });

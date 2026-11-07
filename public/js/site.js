@@ -3,6 +3,7 @@
 //  ・書く操作はどれも「サーバーへ送る → 表を読み直す → 描き直す」。読み直すので、画面と表がずれない。
 //  ・名前は学ぶくんと同じ：サイト › カリキュラム › プログラム › コース › コンテンツ。権利はカリキュラムに付く。
 import { api } from "/js/common.js";
+import { pickMedia } from "/js/mediapick.js";
 
 // 残す名前は 9 つ（admin.js の KEY_LABEL と同じ並び・2026-10-29）
 const KEY_LABEL = {
@@ -411,7 +412,7 @@ export function mountSite(host, { getToken, openPerson }) {
 </div>
       <div class="sec"><h3>資料 <span class="hint">生徒が開ける。PDF・スライド・マインドマップの住所</span></h3>
         <div class="rows" id="files">${l.files.map((x, k) => `<div class="rowx file"><input type="text" value="${esc(x.label)}" aria-label="${k + 1} つ目の資料の名前" placeholder="名前"><input type="url" value="${esc(x.url)}" aria-label="${k + 1} つ目の資料の住所" placeholder="https://"><button class="x" data-flx="${k}" aria-label="${k + 1} つ目の資料を消す">×</button></div>`).join("") || '<span class="hint">まだありません</span>'}</div>
-        <span class="err" id="fle"></span><button class="btn sm ghost" id="fladd" style="align-self:flex-start;margin-top:6px;white-space:normal;text-align:left">＋ 資料を足す</button>
+        <span class="err" id="fle"></span><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"><button class="btn sm ghost" id="fladd" style="white-space:normal;text-align:left">＋ 資料を足す</button><button class="btn sm ghost" id="flpick" style="white-space:normal;text-align:left">メディアから選ぶ</button></div>
         ${l.hasMindmap ? '<p class="hint" style="margin:6px 0 0">学ぶくんの本文にあったマインドマップの住所は、これまでどおり生徒の画面に出ます</p>' : ""}</div></div>
     <aside class="lside" aria-label="所属と公開と保存">${memHtml}
       <div class="sec"><h3>公開</h3><div class="radio">
@@ -433,6 +434,15 @@ export function mountSite(host, { getToken, openPerson }) {
     $("#at").onfocus = () => { $("[name=st][value=scheduled]").checked = true; }; $("#days").onfocus = () => { $("[name=st][value=drip]").checked = true; };
     $("#fladd").onclick = () => { grab(l); l.files.push({ label: "", url: "" }); dirty = true; render(); const r = $$("#files input"); r[r.length - 2].focus(); };
     $$("[data-flx]").forEach((b) => (b.onclick = () => { grab(l); l.files.splice(+b.dataset.flx, 1); dirty = true; render(); $("#fladd").focus(); }));
+    // メディアの便 M2b：棚から選ぶと、共有リンクの住所と名前で資料の行を 1 つ足す
+    $("#flpick").onclick = async (e) => {
+      grab(l);
+      const got = await pickMedia({ getToken, mode: "file", label: "会員サイト：" + (l.title || "新しいコンテンツ"), opener: e.currentTarget });
+      if (!got) { $("#flpick")?.focus(); return; }
+      l.files.push({ label: got.name.replace(/[.][a-z0-9]{2,5}$/i, ""), url: got.url }); dirty = true; render();
+      say(`「${got.name}」を資料に足しました。保存すると生徒に出ます`);
+      const r = $$("#files input"); r[r.length - 2]?.focus();
+    };
     const save = async () => {
       ["#te", "#ve", "#me", "#ste", "#fle", "#mne"].forEach((x) => ($(x).textContent = ""));
       const t = $("#t").value.trim(); if (!t) { $("#te").textContent = "題名が空です。題名を入れてから保存してください"; $("#t").focus(); return; }
@@ -585,7 +595,7 @@ export function mountSite(host, { getToken, openPerson }) {
       <div class="sec"><h3>部品 <span class="hint">並べ替え・出す出さない・文言</span></h3><div class="mp-blocks">${MPC.blocks.map((b, i) => `<div class="mp-bl ${b.on ? "" : "off"}"><div class="mp-blh"><label class="mp-tg"><input type="checkbox" data-bon="${i}" ${b.on ? "checked" : ""} aria-label="${BLOCKS[b.k]}を出す"><span></span></label><b>${BLOCKS[b.k]}</b><span class="grow"></span>
         <span class="mv"><button data-bmv="${i}" data-d="-1" ${i === 0 ? "disabled" : ""} aria-label="${BLOCKS[b.k]}を上へ">▲</button><button data-bmv="${i}" data-d="1" ${i === MPC.blocks.length - 1 ? "disabled" : ""} aria-label="${BLOCKS[b.k]}を下へ">▼</button></span>
         <button class="btn sm" data-bed="${i}" aria-expanded="${mpOpen === i}">${mpOpen === i ? "閉じる" : "編集"}</button></div>
-        ${mpOpen === i ? `<div class="mp-blf">${b.k === "hero" ? `<div class="f"><label for="bh-t">見出し <span class="hint">{{呼び名}} に生徒の呼び名が入る</span></label><input type="text" id="bh-t" data-bf="title" maxlength="120" value="${esc(b.title)}"></div><div class="f"><label for="bh-x">ひとこと</label><input type="text" id="bh-x" data-bf="text" maxlength="300" value="${esc(b.text)}"></div><div class="f"><label for="bh-i">背景の画像の住所 <span class="hint">空なら画像なし。https:// から</span></label><input type="url" id="bh-i" data-bf="img" value="${esc(b.img)}" placeholder="https://"></div>`
+        ${mpOpen === i ? `<div class="mp-blf">${b.k === "hero" ? `<div class="f"><label for="bh-t">見出し <span class="hint">{{呼び名}} に生徒の呼び名が入る</span></label><input type="text" id="bh-t" data-bf="title" maxlength="120" value="${esc(b.title)}"></div><div class="f"><label for="bh-x">ひとこと</label><input type="text" id="bh-x" data-bf="text" maxlength="300" value="${esc(b.text)}"></div><div class="f"><label for="bh-i">背景の画像の住所 <span class="hint">空なら画像なし。https:// から</span></label><input type="url" id="bh-i" data-bf="img" value="${esc(b.img)}" placeholder="https://"><button class="btn sm ghost" id="bh-pick" style="margin-top:6px;align-self:flex-start">メディアから選ぶ</button></div>`
           : `<div class="f"><label for="bl-${i}">見出し</label><input type="text" id="bl-${i}" data-bf="label" maxlength="60" value="${esc(b.label)}"></div>${AUTO[b.k] ? `<p class="hint" style="margin:0">${AUTO[b.k]}</p>`
           : `<div class="f"><span class="lbl">中身</span><div class="radio"><label><input type="radio" name="csrc" value="hand" ${b.src !== "apps" ? "checked" : ""}>自分で並べる<span class="hint sub">オプチャ・質問の仕方・申込のページなど、何でも</span></label><label><input type="radio" name="csrc" value="apps" ${b.src === "apps" ? "checked" : ""}>その人が使えるアプリ（自動）<span class="hint sub">権利で開くアプリだけが出る。使えるアプリが無い人には、このカードごと出ない</span></label></div></div>
             ${b.src !== "apps" ? `<div class="rows">${b.items.map((it, k) => `<div class="cardrow"><input type="text" value="${esc(it.title)}" data-li="${k}" data-lf="title" aria-label="${k + 1} 枚目の名前" placeholder="名前"><input type="text" value="${esc(it.desc)}" data-li="${k}" data-lf="desc" aria-label="${k + 1} 枚目のひとこと" placeholder="ひとこと"><input type="url" value="${esc(it.url)}" data-li="${k}" data-lf="url" aria-label="${k + 1} 枚目の住所" placeholder="https://"><button class="x" data-lx="${k}" aria-label="${k + 1} 枚目を消す">×</button></div>`).join("")}</div><button class="btn sm ghost" id="ladd" style="align-self:flex-start">＋ カードを足す</button>` : ""}`}`}<span class="err" id="mpbe"></span></div>` : ""}</div>`).join("")}</div></div>
@@ -602,6 +612,13 @@ export function mountSite(host, { getToken, openPerson }) {
     $$("[data-bed]").forEach((b) => (b.onclick = () => { const i = +b.dataset.bed; mpOpen = mpOpen === i ? null : i; render(); ($(".mp-blf input") || $(`[data-bed="${i}"]`)).focus(); }));
     const mark = () => { dirty = true; $("#mprev").disabled = !published(); $("#mppub").disabled = false; refresh(); };
     $$("[data-bf]").forEach((x) => (x.oninput = () => { MPC.blocks[mpOpen][x.dataset.bf] = x.value; mark(); }));
+    // メディアの便 M2b：背景の画像を棚から選ぶ（共有リンクの住所が入る）
+    if ($("#bh-pick")) $("#bh-pick").onclick = async (e) => {
+      const got = await pickMedia({ getToken, mode: "image", label: "マイページの背景", opener: e.currentTarget });
+      if (!got) return;
+      MPC.blocks[mpOpen].img = got.url; $("#bh-i").value = got.url; mark();
+      say(`背景の画像を「${got.name}」にしました。「公開する」で生徒に出ます`); $("#bh-i").focus();
+    };
     $$("[data-li]").forEach((x) => (x.oninput = () => { MPC.blocks[mpOpen].items[+x.dataset.li][x.dataset.lf] = x.value; mark(); }));
     $$("[data-lx]").forEach((b) => (b.onclick = () => { MPC.blocks[mpOpen].items.splice(+b.dataset.lx, 1); ch("#ladd"); }));
     if ($("#ladd")) $("#ladd").onclick = () => { MPC.blocks[mpOpen].items.push({ title: "", desc: "", url: "" }); ch(); const r = $$("[data-li]"); r[r.length - 3]?.focus(); };
