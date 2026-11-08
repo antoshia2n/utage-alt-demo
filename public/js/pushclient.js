@@ -30,7 +30,7 @@ export function setupStudentPush(el, token) {
     // iPhone の Safari で開いているとき（ホーム画面からではないとき）は、押せないので案内だけ
     if (isIos() && !standalone()) {
       showButtons(false, false);
-      say("iPhone では、共有ボタン →「ホーム画面に追加」でシアラボを足し、<b>ホーム画面のシアラボから開く</b>と受け取れます（iOS 16.4 以上）");
+      say("iPhone では、共有ボタン →「ホーム画面に追加」でシアラボを追加し、<b>ホーム画面のシアラボから開く</b>と受け取れます（iOS 16.4 以上）");
       return;
     }
     if (!pushSupported()) { showButtons(false, false); say("この端末のブラウザは通知に対応していません"); return; }

@@ -78,7 +78,7 @@
   const show = (text, ok) => { const m = $("msg"); m.textContent = text; m.className = "msg " + (ok ? "ok" : "err"); };
   const day = (iso) => iso ? new Date(iso).toLocaleDateString("ja-JP", { timeZone: "Asia/Tokyo" }) : "";
   const STATE = {
-    not_found: "このリンクは使えません。打ち間違いか、もう消されたリンクです。",
+    not_found: "このリンクは使えません。打ち間違いか、もう削除されたリンクです。",
     stopped: "このリンクは止められています。",
     expired: "このリンクの期限が過ぎています。",
     used_up: "このリンクは決まった人数が使い終わりました。",

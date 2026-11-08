@@ -312,11 +312,11 @@ export function makeBlueprint({ $, api, esc, getToken, fail, openView }) {
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <button class="btn small" type="submit">このシナリオに入れて保存</button>
           ${(p.campaigns || []).length ? '<button class="btn ghost small" type="button" id="bp-remove">このシナリオから外す</button>' : ""}
-          ${editView(p) ? '<button class="btn ghost small" type="button" id="bp-open">開いて直す</button>' : ""}
+          ${editView(p) ? '<button class="btn ghost small" type="button" id="bp-open">開いて編集</button>' : ""}
           ${p.url ? `<a class="btn ghost small" href="${esc(p.url)}" target="_blank" rel="noopener">ページを見る</a>` : ""}
           <span class="note" id="bp-assign-status"></span>
         </div>
-        ${p.type === "course" ? '<p class="note" style="margin:0">教材の中身は学ぶくんで直します。</p>' : ""}
+        ${p.type === "course" ? '<p class="note" style="margin:0">教材の中身は学ぶくんで編集します。</p>' : ""}
       </form>`;
     // マーケくん便 4：選んだシナリオでの役目とブロックを入れ直す（そのシナリオに入っていなければ空）。入っていないシナリオは「外す」を押せない
     const fillFor = () => {

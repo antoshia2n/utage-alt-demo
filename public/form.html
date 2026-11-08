@@ -98,7 +98,7 @@
     }
     if (r.error === "bad_answers") {
       for (const b of r.fields || []) { const e = $("e-" + b.key); if (e) { e.textContent = WHY[b.error] || "確かめてください"; e.classList.remove("hidden"); } }
-      return show("赤い字の欄を直してください", false);
+      return show("赤い字の欄を修正してください", false);
     }
     show(r.error === "bad_email" ? "メールアドレスを確かめてください" : "送れませんでした。時間をおいてもう一度お試しください（" + (r.error || "") + "）", false);
   });

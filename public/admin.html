@@ -136,7 +136,7 @@
       <span id="shell-slot" class="hidden"></span>
     </div>
     <div class="content">
-      <h1 class="page-h"><span id="crumb">ホーム</span><span id="crumb-sub" class="crumb-sub"></span></h1>
+      <h1 class="page-h"><span id="crumb">ホーム</span><span id="crumb-sub" class="crumb-sub"></span><button type="button" id="crumb-q" class="s2-qh" data-t="ホーム" data-d="" aria-expanded="false" hidden>?</button></h1>
       <div id="err2" class="msg err hidden" style="margin-bottom:12px"></div>
       <div id="view-home">
         <!-- ムダ 6（2026-10-29）：「使い方を開く」の札は外した。使い方は左の「使い方」（ホームのすぐ下）から開く -->
@@ -178,7 +178,7 @@
                 <li>詳細の「配信対象」のタブ（一覧では件名の下の灰色の行）で、届く相手（「会員だけ」「メール指定 1 件」など）が合っているか確かめる</li>
                 <li>迷ったら、「メール」の「新規作成」→「配信対象の条件」で同じ条件にして「人数を数える」を押し、人数が思ったとおりか見る</li>
                 <li>詳細の上の帯に「いまはテスト宛てにだけ届く」と出ているか見る。「誰にでも届く」と出ていれば、本当に届く</li>
-                <li>送った分は取り消せない。送る列に入ったあとでも、まだ送っていない分は「停止」で止まる</li>
+                <li>送った分はキャンセルできない。送る列に入ったあとでも、まだ送っていない分は「停止」で止まる</li>
               </ol>
             </div>
             <div>
@@ -432,7 +432,7 @@
               <div style="flex:1 1 200px"><label for="rt-name">経路の名前</label><input id="rt-name" type="text" maxlength="40" placeholder="例 x-固定ポスト"></div>
               <button class="btn small" type="submit">住所を作る</button>
             </div>
-            <div id="rt-out" class="hidden" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><code id="rt-url" style="word-break:break-all"></code><button class="btn ghost small" type="button" id="rt-copy">写す</button></div>
+            <div id="rt-out" class="hidden" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><code id="rt-url" style="word-break:break-all"></code><button class="btn ghost small" type="button" id="rt-copy">コピー</button></div>
             <p class="note" id="rt-msg" style="margin:0"></p>
           </form>
           <div id="routes-table" class="table-wrap"></div>
@@ -503,7 +503,7 @@
         <div class="card hidden" data-vpane="subs">
           <div class="list-bar"><p class="note" id="sub-count"></p><select id="sub-filter" class="inline"><option value="">すべて</option><option value="active">続いている</option><option value="failed">失敗</option><option value="canceled">解約</option><option value="ending">停止中（期限まで）</option><option value="suspended">止まった</option><option value="completed">回数どおり済み</option></select></div>
           <div id="subs" class="table-wrap"></div>
-          <p class="note" style="margin:12px 0 0">課金が失敗すると、その人へ自動でメールが届きます（文は各商品の画面で直せます）。解約すると UnivaPay の課金は止まり、もとに戻せません</p>
+          <p class="note" style="margin:12px 0 0">課金が失敗すると、その人へ自動でメールが届きます（文は各商品の画面で編集できます）。解約すると UnivaPay の課金は止まり、もとに戻せません</p>
         </div>
       </div>
       <div id="products-detail" class="hidden"><button type="button" class="back-link" data-back="products">← 一覧へ</button><div id="product-detail"></div></div>
@@ -513,7 +513,7 @@
       <div id="refer-list" class="card">
         <div class="list-bar"><p class="note" id="rf-count"></p></div>
         <div id="referrers" class="table-wrap"></div>
-        <p class="note" style="margin:12px 0 0">報酬の率は「商品」の各商品で決めます（空なら払わない）。紹介のリンクは /register?ref=番号 の形で、生徒は自分の画面の「お知らせ」から写せます</p>
+        <p class="note" style="margin:12px 0 0">報酬の率は「商品」の各商品で決めます（空なら払わない）。紹介のリンクは /register?ref=番号 の形で、生徒は自分の画面の「お知らせ」からコピーできます</p>
       </div>
       <div id="refer-detail" class="hidden"><button type="button" class="back-link" data-back="refer">← 一覧へ</button><div id="referrer-detail"></div></div>
     </div>
@@ -576,7 +576,7 @@
             <span class="note" id="line-ar-sum" style="margin:0"></span><span style="flex:1"></span>
             <button class="btn ghost small" type="button" id="line-ar-new">新規作成</button>
           </div>
-          <p class="note" style="margin:0">有効なものを上から見て、最初に合った 1 件だけ返します。返事は送信数を使いません。UTAGE に同じキーワードが残っていると 2 回届くので、有効にしたら UTAGE 側を消してください。</p>
+          <p class="note" style="margin:0">有効なものを上から見て、最初に合った 1 件だけ返します。返事は送信数を使いません。UTAGE に同じキーワードが残っていると 2 回届くので、有効にしたら UTAGE 側を削除してください。</p>
           <form id="line-ar-form" class="stack hidden card" novalidate>
             <input type="hidden" id="ar-id">
             <div><label for="ar-name">名前（自分用）</label><input id="ar-name" type="text" maxlength="120"></div>

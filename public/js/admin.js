@@ -8,6 +8,7 @@ import { mountWeb } from "/js/web.js";
 import { mountChat } from "/js/chat.js";
 import { pickMedia } from "/js/mediapick.js";
 import { mountUtageCopy } from "/js/utagecopy.js";
+import { initGuide, setViewGuide } from "/js/guide.js";
 import { watchEdges, revealSelected } from "/js/fbar-edges.js";
 
 // ムダ 12（2026-10-29）：フォーム・人の項目・ページ・配信の一覧は、画面ごとに読み直さず 20 秒だけ使い回す（シナリオの一覧と同じ）。
@@ -101,6 +102,7 @@ async function openConsole() {
   // ムダ 1（2026-10-29）：開くときに読むのはホームに要るものだけ。顧客の一覧と数は「顧客管理」、
   // 決済・メール・通知・カレンダー・オプチャは「決済・メール・オプチャ」を開いたときに読む（setupViews）
   setupViews();
+  initGuide(); // 2026-11-08 ガイドの「？」
   loadRooms();
   setupCommunity();
   setupMail();
@@ -376,7 +378,7 @@ async function detail(id) {
     <section class="card" data-pane="ent"><div id="ent-box" class="ent-box"></div></section>
     <section class="card" data-pane="overview">
       <dl class="kv">
-        ${r.names ? `<dt>名前</dt><dd>本名 ${esc(r.names.real || "—")}・ニックネーム ${esc(r.names.nickname || "まだ無い")}${r.names.line.length ? "・LINE 名 " + r.names.line.map((l) => esc(l.name || "（読めない）")).join("、") : ""} <span class="note">（ニックネームはチャットの右のカードで直せます）</span></dd>` : ""}
+        ${r.names ? `<dt>名前</dt><dd>本名 ${esc(r.names.real || "—")}・ニックネーム ${esc(r.names.nickname || "まだ無い")}${r.names.line.length ? "・LINE 名 " + r.names.line.map((l) => esc(l.name || "（読めない）")).join("、") : ""} <span class="note">（ニックネームはチャットの右のカードで編集できます）</span></dd>` : ""}
         <dt>登録した日</dt><dd>${esc(dayOf(p.created_at))}・流入元 ${esc(SOURCE_LABEL[p.source] || p.source)}</dd>
         <dt>最後に動いた</dt><dd>${esc(ago(p.last_event_at))}</dd>
         <dt>ログイン</dt><dd>${p.login_count || 0} 回・教材を開いた ${p.lesson_view_count || 0} 回</dd>
@@ -623,8 +625,8 @@ function renderFolderSide(side, key, type, rows, idOf, rerender) {
     ${btn("", "すべて", rows.length)}
     ${foldersOf(type).map((f) => btn(f.id, f.name, count(f.id))).join("")}
     ${btn("none", "フォルダに入っていない", count("none"))}
-    ${cur && folderEdit[key] ? `<form class="fold-form" data-fold-rename><input type="text" maxlength="40" value="${esc(cur.name)}" aria-label="フォルダの名前"><div class="fold-row"><button class="btn small" type="submit">名前を保存</button><button class="btn ghost small" type="button" data-fold-remove>消す</button></div><p class="note" style="margin:0">消しても中のデータは消えず、「フォルダに入っていない」に戻ります</p></form>`
-      : cur ? `<button type="button" class="link-btn" data-fold-editopen>このフォルダの名前を変える・消す</button>` : ""}
+    ${cur && folderEdit[key] ? `<form class="fold-form" data-fold-rename><input type="text" maxlength="40" value="${esc(cur.name)}" aria-label="フォルダの名前"><div class="fold-row"><button class="btn small" type="submit">名前を保存</button><button class="btn ghost small" type="button" data-fold-remove>削除</button></div><p class="note" style="margin:0">削除しても中のデータは削除されず、「フォルダに入っていない」に戻ります</p></form>`
+      : cur ? `<button type="button" class="link-btn" data-fold-editopen>このフォルダの名前を変える・削除</button>` : ""}
     <form class="fold-form" data-fold-new><input type="text" maxlength="40" placeholder="新しいフォルダの名前" aria-label="新しいフォルダの名前"><button class="btn ghost small" type="submit">＋ フォルダを作る</button></form>
     <p class="note fold-status" style="margin:0">${campData.note === "need_sql" ? esc(FOLDER_ERR.need_sql) : ""}</p>`;
   const status = (t) => { side.querySelector(".fold-status").textContent = t; };
@@ -650,9 +652,9 @@ function renderFolderSide(side, key, type, rows, idOf, rerender) {
       await loadCampaigns(true); folderEdit[key] = false; rerender();
     });
     ren.querySelector("[data-fold-remove]").addEventListener("click", async () => {
-      status("消しています…");
+      status("削除しています…");
       const r = await api("/api/admin/folders", { method: "POST", token, body: { id: cur.id, remove: true } });
-      if (!r.ok) { status("消せませんでした（" + (FOLDER_ERR[r.error] || r.error || r.status) + "）"); return; }
+      if (!r.ok) { status("削除できませんでした（" + (FOLDER_ERR[r.error] || r.error || r.status) + "）"); return; }
       await loadCampaigns(true); folderVal[key] = ""; folderEdit[key] = false; rerender();
     });
   }
@@ -713,8 +715,8 @@ function wireCampPicker(root, after) {
   const add = box.querySelector(".camp-add");
   if (add) add.addEventListener("change", async () => {
     if (!add.value) return;
-    st.textContent = "足しています…";
-    await done(await api("/api/admin/campaigns/assign", { method: "POST", token, body: { part_type, part_id, campaign_id: add.value } }), "シナリオに足しました");
+    st.textContent = "追加しています…";
+    await done(await api("/api/admin/campaigns/assign", { method: "POST", token, body: { part_type, part_id, campaign_id: add.value } }), "シナリオに追加しました");
   });
   box.querySelectorAll("[data-camp-remove]").forEach((b) => b.addEventListener("click", async () => {
     st.textContent = "外しています…";
@@ -789,6 +791,7 @@ function setupViews() {
     $("view-people-wrap").style.display = b.dataset.view === "people" ? "" : "none";
     $("crumb").textContent = b.firstChild.textContent.trim();
     setCrumbSub("");
+    setViewGuide(b.dataset.view, b.firstChild.textContent.trim()); // 2026-11-08 題の横の「？」
     // 便 17：顧客管理はメニューから開くと一覧に戻る。開いた画面のまとまりは閉じない
     if (b.dataset.view === "people") custList();
     // 便 18：一覧 → 詳細の画面は、メニューから開くと一覧に戻る
@@ -918,7 +921,7 @@ async function loadReplies() {
   $("line-ar-sum").textContent = `${r.count} 件（有効 ${r.active} 件）`;
   $("line-ar-rows").innerHTML = arRows.map((x) => `<tr>
     <td>${x.active ? pill("有効") : pill("下書き", "gray")}</td>
-    <td>${esc(x.name)}${x.source ? `<div class="sub">${esc(x.source.startsWith("utage:") ? "UTAGE から写した" : x.source)}</div>` : ""}</td>
+    <td>${esc(x.name)}${x.source ? `<div class="sub">${esc(x.source.startsWith("utage:") ? "UTAGE からコピーした" : x.source)}</div>` : ""}</td>
     <td>${x.keywords.map((k) => esc(k)).join("・")}<div class="sub">${x.match === "part" ? "文に入っている" : "同じ文"}</div></td>
     <td class="ellip" style="max-width:260px">${x.template_name ? "テンプレート「" + esc(x.template_name) + "」" : esc(arJoin(x.messages).slice(0, 80))}</td>
     <td>${x.hits} 回${x.last_hit_at ? `<div class="sub">${fmtTime(x.last_hit_at)}</div>` : ""}</td>
@@ -959,7 +962,7 @@ function arEdit(id, opener) {
   const tpl = x && x.template_name;
   $("ar-msg-wrap").classList.toggle("hidden", !!tpl);
   $("ar-tpl-note").classList.toggle("hidden", !tpl);
-  $("ar-tpl-note").textContent = tpl ? `返す中身はテンプレート「${x.template_name}」です（AI の道具 save_line_template で直せます）` : "";
+  $("ar-tpl-note").textContent = tpl ? `返す中身はテンプレート「${x.template_name}」です（AI の道具 save_line_template で編集できます）` : "";
   $("ar-remove").classList.toggle("hidden", !x);
   $("ar-status").textContent = "";
   $("line-ar-form").classList.remove("hidden");
@@ -980,11 +983,11 @@ function setupReplies() {
   $("ar-pick").addEventListener("click", async (e) => {
     const box = $("ar-messages");
     const n = arSplit(box.value).length;
-    if (n >= 5) { $("ar-status").textContent = "吹き出しは 5 つまでです。どれかを消してから足してください"; box.focus(); return; }
+    if (n >= 5) { $("ar-status").textContent = "吹き出しは 5 つまでです。どれかを削除してから追加してください"; box.focus(); return; }
     const got = await pickMedia({ getToken: () => token, mode: "line", label: "LINE 自動応答：" + ($("ar-name").value.trim() || "名前なし"), opener: e.currentTarget });
     if (!got) return;
     box.value = (box.value.trim() ? box.value.replace(/\s+$/, "") + "\n---\n" : "") + "画像 " + got.url;
-    $("ar-status").textContent = `「${got.name}」の画像を足しました。保存すると反映されます`;
+    $("ar-status").textContent = `「${got.name}」の画像を追加しました。保存すると反映されます`;
     box.focus();
   });
   $("line-ar-form").addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); arClose(); } });
@@ -1115,7 +1118,7 @@ async function openRoom(id, focusId, pane) {
       <div><label for="r-corr">添削後</label><textarea id="r-corr" rows="5">${esc(target.text)}</textarea></div>
       <div><label for="r-com">コメント</label><textarea id="r-com" rows="3" placeholder="どこを、なぜ直したか"></textarea></div>
       <details class="notes-edit" id="r-notes-box"><summary class="note">長文の指摘を追加（原文の範囲に番号を付けて、生徒の画面で左右に並べる）</summary>
-        <p class="note">原文の欄で範囲を選んでから「選んだ部分を引用にする」を押すか、引用の欄に原文の一部をそのまま写してください。</p>
+        <p class="note">原文の欄で範囲を選んでから「選んだ部分を引用にする」を押すか、引用の欄に原文の一部をそのままコピーしてください。</p>
         <div id="r-notes"></div>
         <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><button class="btn ghost small" type="button" id="r-quote">選んだ部分を引用にする</button><button class="btn ghost small" type="button" id="r-addnote">指摘を 1 つ追加</button></div>
       </details>
@@ -1913,7 +1916,7 @@ function renderSeminar(r, { tab = "notices", msg } = {}) {
   }) + `${msg ? `<p class="msg ok" style="margin:12px 0 0">${esc(msg)}</p>` : ""}`
     + tabsHtml([["notices", `通知 ${r.notices.length}`], ["people", `申込者 ${r.registrants.length}`], ["edit", "中身"]], tab)
     + `<section class="card" data-pane="notices">
-      <p class="note" style="margin-top:0">申込者に届く順に並びます。名前を押すと直せます。定時の処理（毎時 7 分）で送るので、送る時刻から最大 1 時間遅れます。送る時刻より後に申し込んだ人には、その通知は送りません。</p>
+      <p class="note" style="margin-top:0">申込者に届く順に並びます。名前を押すと編集できます。定時の処理（毎時 7 分）で送るので、送る時刻から最大 1 時間遅れます。送る時刻より後に申し込んだ人には、その通知は送りません。</p>
       <div id="sn-table" class="table-wrap"></div>
       <div style="margin-top:12px"><button class="btn small" type="button" id="sn-new">通知を追加</button></div>
       <div id="sn-edit"></div>
@@ -2018,7 +2021,7 @@ function noticeEditor(x, n, placeholders) {
     const body = { key: n ? n.key : "n-" + Date.now().toString(36), offset_minutes: offsetFrom($("sn-n").value, unit, $("sn-dir").value), subject: $("sn-sub").value.trim(), body: $("sn-body").value, active: $("sn-active").checked };
     const r = await api(`/api/admin/seminars/${x.id}/notices`, { method: "POST", token, body });
     if (!r.ok) { $("sn-status").textContent = SEM_WHY[r.error] || "保存できませんでした（" + (r.error || r.status) + "）"; return; }
-    openSeminar(x.id, { tab: "notices", msg: (r.created ? "足しました" : "保存しました") + (r.warnings && r.warnings.length ? "。" + r.warnings.join("。") : "") });
+    openSeminar(x.id, { tab: "notices", msg: (r.created ? "追加しました" : "保存しました") + (r.warnings && r.warnings.length ? "。" + r.warnings.join("。") : "") });
   });
   if ($("sn-send")) $("sn-send").addEventListener("click", async () => {
     if (!confirm(`「${n.subject}」を、まだ受け取っていない申込者へいま送ります。よいですか`)) return;
@@ -2528,7 +2531,7 @@ function fieldEditor(f, msg) {
     const why = { bad_label: "項目の名前を入れてください（40 字まで）", need_options: "選択肢を入れてください", bad_options: "選択肢は 30 個・各 60 字まで" };
     if (!r.ok) { $("fd-status").textContent = why[r.error] || "保存できませんでした（" + (r.error || r.status) + "）"; return; }
     await loadForms();
-    fieldEditor(r.field, r.created ? "足しました。フォームの詳細の「聞く項目」に出ます" : "保存しました");
+    fieldEditor(r.field, r.created ? "追加しました。フォームの詳細の「聞く項目」に出ます" : "保存しました");
   });
   if ($("fd-arch")) $("fd-arch").addEventListener("click", async () => {
     const r = await api("/api/admin/fields", { method: "POST", token, body: { key: f.key, archived: !f.archived_at } });
@@ -2547,7 +2550,7 @@ function formEditor(f, msg) {
     title: f ? f.title : "新しいフォーム",
     sub: f ? `/form?f=${esc(f.slug)}` : "題名と聞く項目を決めて保存します。「公開する」に印を付けると住所が開きます",
     pills: f ? [f.active ? pill("公開中") : pill("停止中", "gray"), pill(`回答 ${f.answers}`, "gray")] : [],
-    actions: f && f.active ? `<a class="btn ghost small" href="${esc(url)}" target="_blank" rel="noopener">公開のページを開く</a><button class="btn ghost small" type="button" id="fe-copy">住所を写す</button>` : "",
+    actions: f && f.active ? `<a class="btn ghost small" href="${esc(url)}" target="_blank" rel="noopener">公開のページを開く</a><button class="btn ghost small" type="button" id="fe-copy">住所をコピー</button>` : "",
     foot: f ? campPicker("form", f.id) : "",
   }) + `${msg ? `<p class="msg ok" style="margin:12px 0 0">${esc(msg)}</p>` : ""}`
     + (f ? tabsHtml([["edit", "中身"], ["answers", `回答 ${f.answers}`]], "edit") : `<div style="height:16px"></div>`)
@@ -2567,7 +2570,7 @@ function formEditor(f, msg) {
     + (f ? `<section class="card" data-pane="answers"><div id="fe-answers" class="note">読んでいます…</div></section>` : "");
   if (f) wireTabs($("form-detail"), "edit");
   wireCampPicker($("form-detail"), () => loadForms());
-  if ($("fe-copy")) $("fe-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText(url); $("fe-copy").textContent = "写しました"; } catch { $("fe-copy").textContent = "写せませんでした"; } });
+  if ($("fe-copy")) $("fe-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText(url); $("fe-copy").textContent = "コピーしました"; } catch { $("fe-copy").textContent = "コピーできませんでした"; } });
   $("fe").addEventListener("submit", async (ev) => {
     ev.preventDefault();
     const order = fieldsCache.map((x) => x.key);
@@ -2608,7 +2611,7 @@ let pagesReady = false, pagesCache = [], pagesOrigin = "", currentPage = null;
 // 依頼文の箱（コピーのボタンつき）
 function promptBox(prompt, id) {
   return `<section class="card stack" style="margin-top:16px">
-    <div style="display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap"><b>依頼文</b><button class="btn small" type="button" id="${id}-copy">写す</button></div>
+    <div style="display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap"><b>依頼文</b><button class="btn small" type="button" id="${id}-copy">コピー</button></div>
     <textarea id="${id}" rows="12" readonly style="font-size:13px">${esc(prompt)}</textarea>
     <p class="note" style="margin:0">Claude のチャット（claude.ai）に貼ります。下書きが届くと、このページの「版」に出ます</p></section>`;
 }
@@ -2616,8 +2619,8 @@ function wirePromptBox(id) {
   const b = $(id + "-copy");
   if (!b) return;
   b.addEventListener("click", async () => {
-    try { await navigator.clipboard.writeText($(id).value); b.textContent = "写しました"; }
-    catch { $(id).select(); b.textContent = "選びました（⌘C で写す）"; }
+    try { await navigator.clipboard.writeText($(id).value); b.textContent = "コピーしました"; }
+    catch { $(id).select(); b.textContent = "選びました（⌘C でコピー）"; }
   });
 }
 async function loadPages() {
@@ -2625,7 +2628,7 @@ async function loadPages() {
     pagesReady = true;
     $("pg-new").addEventListener("click", () => newPageRequest());
     $("rt-make").addEventListener("submit", (ev) => { ev.preventDefault(); makeRouteUrl("rt"); });
-    $("rt-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText($("rt-url").textContent); $("rt-copy").textContent = "写しました"; } catch { $("rt-copy").textContent = "写せませんでした"; } });
+    $("rt-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText($("rt-url").textContent); $("rt-copy").textContent = "コピーしました"; } catch { $("rt-copy").textContent = "コピーできませんでした"; } });
   }
   const r = await getList("/api/admin/pages");
   if (!r.ok) { $("pg-count").textContent = "読めませんでした（" + (r.error || r.status) + "）"; return; }
@@ -2651,7 +2654,7 @@ function makeRouteUrl(prefix, slugFixed) {
   if (!ROUTE_NAME_RE.test(name)) { $(prefix + "-msg").textContent = "経路の名前は 1〜40 字（空白・記号は使えません。例 x-固定ポスト）"; return; }
   $(prefix + "-url").textContent = `${pagesOrigin}/${slug}?r=${encodeURIComponent(name)}`;
   $(prefix + "-out").classList.remove("hidden");
-  $(prefix + "-copy").textContent = "写す";
+  $(prefix + "-copy").textContent = "コピー";
 }
 async function loadRoutes() {
   const r = await api("/api/admin/pages/routes?days=30", { token });
@@ -2727,7 +2730,7 @@ function renderPage(r, { tab = "view", version: wantV, msg } = {}) {
       : `<p class="note">まだ下書きが届いていません。「依頼とコメント」の依頼文を Claude に貼ると、ここに出ます</p>`}</section>
       <section class="card" data-pane="versions"><div id="pd-versions" class="table-wrap"></div></section>
       <section class="card stack" data-pane="requests">
-        <div><label for="pd-com">直してほしいところ</label><textarea id="pd-com" rows="4" placeholder="例 1 つ目のボタンの文を「無料で申し込む」に。実績の段を上へ"></textarea></div>
+        <div><label for="pd-com">編集してほしいところ</label><textarea id="pd-com" rows="4" placeholder="例 1 つ目のボタンの文を「無料で申し込む」に。実績の段を上へ"></textarea></div>
         <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="button" id="pd-fix" ${curV ? "" : "disabled"}>直しの依頼文を出す</button><span class="note" id="pd-fix-status"></span></div>
         <div id="pd-prompt-out"></div>
         <div id="pd-requests" class="table-wrap"></div>
@@ -2740,7 +2743,7 @@ function renderPage(r, { tab = "view", version: wantV, msg } = {}) {
         <div><b>経路（先週の見た人）</b><div id="pd-routes" class="table-wrap"></div></div>
         <form id="pd-rt" class="stack" style="margin:0">
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end"><div style="flex:1 1 200px"><label for="pd-name">経路の名前</label><input id="pd-name" type="text" maxlength="40" placeholder="例 x-固定ポスト"></div><button class="btn small" type="submit">このページの住所を作る</button></div>
-          <div id="pd-out" class="hidden" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><code id="pd-url" style="word-break:break-all"></code><button class="btn ghost small" type="button" id="pd-copy">写す</button></div>
+          <div id="pd-out" class="hidden" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><code id="pd-url" style="word-break:break-all"></code><button class="btn ghost small" type="button" id="pd-copy">コピー</button></div>
           <p class="note" id="pd-msg" style="margin:0"></p>
         </form>
       </section>`;
@@ -2788,10 +2791,10 @@ function renderPage(r, { tab = "view", version: wantV, msg } = {}) {
     { key: "viewers", label: "見た人", html: (x) => String(x.viewers) },
   ], r.stats.routes || [], null, "先週はまだ見られていません");
   $("pd-rt").addEventListener("submit", (ev) => { ev.preventDefault(); makeRouteUrl("pd", p.slug); });
-  $("pd-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText($("pd-url").textContent); $("pd-copy").textContent = "写しました"; } catch { $("pd-copy").textContent = "写せませんでした"; } });
+  $("pd-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText($("pd-url").textContent); $("pd-copy").textContent = "コピーしました"; } catch { $("pd-copy").textContent = "コピーできませんでした"; } });
   $("pd-fix").addEventListener("click", async () => {
     const comment = $("pd-com").value.trim();
-    if (!comment) { $("pd-fix-status").textContent = "直してほしいところを書いてください"; return; }
+    if (!comment) { $("pd-fix-status").textContent = "編集してほしいところを書いてください"; return; }
     const q = await api("/api/admin/pages/requests", { method: "POST", token, body: { page_id: p.id, comment, base_version: curV } });
     if (!q.ok) { $("pd-fix-status").textContent = "出せませんでした（" + (q.error || q.status) + "）"; return; }
     $("pd-fix-status").textContent = `依頼番号 ${q.request.id} で残しました`;
@@ -2849,7 +2852,7 @@ function referrerDetail(id, msg) {
     title: x.name || x.email,
     sub: `${esc(x.email)}・紹介の番号 ${esc(x.code)}`,
     pills: [pill(`報酬 ${yen(x.reward_total)}`, "gray"), pill(`払った ${yen(x.paid_total)}`, "gray"), x.unpaid ? pill(`まだ払っていない ${yen(x.unpaid)}`, "warn") : ""],
-    actions: `<button class="btn ghost small" type="button" id="rf-copy">紹介のリンクを写す</button>`,
+    actions: `<button class="btn ghost small" type="button" id="rf-copy">紹介のリンクをコピー</button>`,
   }) + `${msg ? `<p class="msg ok" style="margin:12px 0 0">${esc(msg)}</p>` : ""}`
     + tabsHtml([["people", `紹介で来た人 ${x.people.length}`], ["pay", "払った記録"]], "people")
     + `<section class="card" data-pane="people">
@@ -2871,7 +2874,7 @@ function referrerDetail(id, msg) {
     { key: "bought", label: "購入", html: (q) => `${q.bought} 件` },
     { key: "reward", label: "報酬", html: (q) => esc(q.reward ? yen(q.reward) : "—") },
   ], x.people, (q) => { if (q.id) { openView("people"); detail(q.id); } }, "まだいません");
-  $("rf-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText(x.link); $("rf-copy").textContent = "写しました"; } catch { $("rf-copy").textContent = "写せませんでした"; } });
+  $("rf-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText(x.link); $("rf-copy").textContent = "コピーしました"; } catch { $("rf-copy").textContent = "コピーできませんでした"; } });
   if (!x.unpaid) return;
   $("rf-pay").addEventListener("submit", async (ev) => {
     ev.preventDefault();
@@ -2958,7 +2961,7 @@ function productDetail(id, msg) {
     title: p.name,
     sub: `${esc(KIND_LABEL[p.kind] || p.kind)}・${esc(priceOf(p))}・売れた ${p.sold}${p.list_price_of ? "・紹介用（元：" + esc(p.list_price_of) + "）" : ""}`,
     pills: [p.active ? pill("売る") : pill("売らない", "gray"), p.public ? pill("サイトに出す") : pill("サイトに出さない", "gray")],
-    actions: `<button class="btn ghost small" id="pf-copy" type="button">申し込みのリンクを写す</button>`,
+    actions: `<button class="btn ghost small" id="pf-copy" type="button">申し込みのリンクをコピー</button>`,
     foot: campPicker("product", p.id),
   }) + `${msg ? `<p class="msg ok" style="margin:12px 0 0">${esc(msg)}</p>` : ""}`
     + tabsHtml([["edit", "設定"], ["link", "申し込みのリンク"]], "edit")
@@ -2995,7 +2998,7 @@ function productDetail(id, msg) {
     if (!sel) return;
     sel.innerHTML = '<option value="">（移さない・登録の画面に受付の文を出す）</option>' + pagesCache.map((g) => `<option value="${esc(g.slug)}" ${g.slug === p.thanks_page_slug ? "selected" : ""}>${esc(g.title)}${g.status === "published" ? "" : "（公開していない）"}</option>`).join("");
   }).catch(() => {});
-  $("pf-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText(link); $("pf-copy").textContent = "写しました"; } catch (_) { $("pf-copy").textContent = "写せませんでした"; } });
+  $("pf-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText(link); $("pf-copy").textContent = "コピーしました"; } catch (_) { $("pf-copy").textContent = "コピーできませんでした"; } });
   $("pf").addEventListener("submit", async (ev) => {
     ev.preventDefault();
     const num = (v) => { const t = String(v || "").replace(/[^0-9]/g, ""); return t ? Number(t) : null; };
@@ -3177,7 +3180,7 @@ async function loadPush() {
     const on = sub && r.devices.some((d) => sub.endpoint.endsWith(d.endpoint_tail));
     here = !ps ? "この端末では通知の準備ができませんでした（画面を開き直すと直ることがあります）" : on ? "この端末は受け取っています" : Notification.permission === "denied" ? "この端末は通知を止めています（端末の設定 → 通知 → マーケくんで許可にすると押せます）" : "この端末はまだ受け取っていません";
   } else if (/iphone|ipad|ipod/i.test(navigator.userAgent) && !navigator.standalone) {
-    here = "iPhone は、共有ボタン →「ホーム画面に追加」でマーケくんを足し、そこから開くと押せます";
+    here = "iPhone は、共有ボタン →「ホーム画面に追加」でマーケくんを追加し、そこから開くと押せます";
   }
   st.innerHTML = `${esc(here)}<br>受け取る端末 ${r.count} 台${r.devices.length ? "：" + r.devices.map((d) => esc(d.device || d.service)).join("・") : ""}`;
   return r;
@@ -3399,7 +3402,7 @@ function invRow(i) {
     <span class="acc-state${i.state === "ok" ? " on" : ""}">${esc(INV_STATE[i.state] || i.state)}</span>
     <div class="why">${uses}</div>
     <div class="er-act">
-      <button class="btn ghost small" type="button" data-invcopy="${esc(i.id)}" aria-label="『${esc(i.name)}』のリンクを写す">リンクを写す</button>
+      <button class="btn ghost small" type="button" data-invcopy="${esc(i.id)}" aria-label="『${esc(i.name)}』のリンクをコピー">リンクをコピー</button>
       ${i.state === "ok" ? `<button class="btn ghost small" type="button" data-invsend="${esc(i.id)}" aria-label="『${esc(i.name)}』をメールで送る">メールで送る</button>
       ${asking ? "" : `<button class="btn ghost small" type="button" data-invask="${esc(i.id)}" aria-label="『${esc(i.name)}』を停止">停止</button>`}` : ""}
     </div>
@@ -3446,7 +3449,7 @@ function drawInvites(focusSel) {
     e.target.disabled = false;
     if (!r.ok) return invSay("作れませんでした（" + invErr(r) + "）");
     invOpen = false;
-    try { await navigator.clipboard.writeText(r.invite.url); invSay(`『${r.invite.name}』を作り、リンクを写しました`); } catch { invSay(`『${r.invite.name}』を作りました`); }
+    try { await navigator.clipboard.writeText(r.invite.url); invSay(`『${r.invite.name}』を作り、リンクをコピーしました`); } catch { invSay(`『${r.invite.name}』を作りました`); }
     await loadInvites(`[data-invcopy="${r.invite.id}"]`);
   });
   box.querySelectorAll("[data-wsrm]").forEach((b) => b.addEventListener("click", async () => {
@@ -3469,7 +3472,7 @@ function drawInvites(focusSel) {
   });
   box.querySelectorAll("[data-invcopy]").forEach((b) => b.addEventListener("click", async () => {
     const i = invData.invites.find((x) => x.id === b.dataset.invcopy);
-    try { await navigator.clipboard.writeText(i.url); invSay(`『${i.name}』のリンクを写しました`); } catch { invSay("写せませんでした。リンク：" + i.url); }
+    try { await navigator.clipboard.writeText(i.url); invSay(`『${i.name}』のリンクをコピーしました`); } catch { invSay("コピーできませんでした。リンク：" + i.url); }
   }));
   box.querySelectorAll("[data-invask]").forEach((b) => b.addEventListener("click", () => { invAsk = b.dataset.invask; invSend = null; redraw(`[data-invstop="${invAsk}"]`); }));
   box.querySelectorAll("[data-invcancel]").forEach((b) => b.addEventListener("click", () => { const id = invAsk; invAsk = null; redraw(`[data-invask="${id}"]`); }));

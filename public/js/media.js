@@ -12,7 +12,7 @@ const ERR = {
   bad_slide_url: "Google スライドの住所（https://docs.google.com/presentation/d/…）を入れてください",
   need_name: "名前を入れてください",
   no_store: "置き場につながっていません",
-  not_found: "見つかりませんでした（消されたかもしれません）",
+  not_found: "見つかりませんでした（削除されたかもしれません）",
   no_file: "まだ写し終わっていないファイルです。写し終わってから作ってください",
   bad_days: "日数は 1〜3650 で入れてください",
 };
@@ -60,14 +60,14 @@ export function mountMedia(host, { getToken }) {
     $("#side").querySelectorAll("[data-folder]").forEach((b) => b.addEventListener("click", () => { folder = b.dataset.folder; kind = ""; load(); }));
     const rows = S.items.map((x) => `<tr data-id="${esc(x.id)}">
       <td><span class="st off">${esc(KIND[x.kind] || x.kind)}</span></td>
-      <td class="nm">${editId === x.id ? `<label class="sr" for="ed-name">名前</label><input id="ed-name" value="${esc(x.name)}" style="width:100%;padding:4px 8px;border:1px solid var(--field);border-radius:8px;background:var(--panel)">` : esc(x.name)}<small>${x.source.startsWith("utage:") ? "UTAGE から写した" : x.source === "link" ? "リンク" : "アップロード"}</small></td>
+      <td class="nm">${editId === x.id ? `<label class="sr" for="ed-name">名前</label><input id="ed-name" value="${esc(x.name)}" style="width:100%;padding:4px 8px;border:1px solid var(--field);border-radius:8px;background:var(--panel)">` : esc(x.name)}<small>${x.source.startsWith("utage:") ? "UTAGE からコピーした" : x.source === "link" ? "リンク" : "アップロード"}</small></td>
       <td>${editId === x.id ? `<label class="sr" for="ed-folder">フォルダ</label><input id="ed-folder" value="${esc(x.folder)}" list="folders" style="width:100%;padding:4px 8px;border:1px solid var(--field);border-radius:8px;background:var(--panel)">` : esc(x.folder)}</td>
       <td class="num">${size(x.size)}</td><td class="date">${day(x.created_at)}</td>
       <td class="num">${x.links ? `${x.live ? `<span class="st on">配布中 ${x.live}</span>` : `<span class="st off">止めた</span>`}<small>開いた ${x.opens} 回</small>` : ""}</td>
       <td style="white-space:nowrap;text-align:right">${editId === x.id
         ? `<button class="btn sm pri" type="button" data-save="${esc(x.id)}">保存</button> <button class="btn sm" type="button" data-cancel>キャンセル</button> <button class="btn sm" type="button" data-remove="${esc(x.id)}">削除</button>`
         : `<button class="btn sm" type="button" data-open="${esc(x.id)}" aria-label="「${esc(x.name)}」を別タブで開く">開く ↗</button> <button class="btn sm" type="button" data-share="${esc(x.id)}" aria-expanded="${shareId === x.id}" aria-label="「${esc(x.name)}」の共有リンク">共有</button> <button class="btn sm" type="button" data-edit="${esc(x.id)}" aria-label="「${esc(x.name)}」を編集">編集</button>`}</td></tr>${shareId === x.id ? sharePanel(x) : ""}`).join("");
-    $("#main").innerHTML = `<h1>メディア</h1><p class="lead">画像・PDF・Google スライド・動画を置く棚です。全部で ${S.total} 個・${size(S.bytes) || "0 KB"}。UTAGE の置き場の分は AI が写します。</p>
+    $("#main").innerHTML = `<h1>メディア</h1><p class="lead">画像・PDF・Google スライド・動画を置く棚です。全部で ${S.total} 個・${size(S.bytes) || "0 KB"}。UTAGE の置き場の分は AI がコピーします。</p>
       <div class="bar"><div class="search"><label for="q">探す</label><input type="search" id="q" value="${esc(q)}" placeholder="名前かフォルダの言葉"></div></div>
       <datalist id="folders">${(S.folders || []).map((f) => `<option value="${esc(f.name)}">`).join("")}</datalist>
       <form id="slide-form" class="tbl" style="padding:12px;margin-bottom:10px" hidden>
@@ -99,7 +99,7 @@ export function mountMedia(host, { getToken }) {
       <code style="font-size:12px;word-break:break-all">${esc(k.url)}</code>
       <span class="lead" style="margin:0">開いた ${k.opens} 回${k.expires_at ? `・期限 ${day(k.expires_at)}` : "・期限なし"}</span>
       <span class="grow" style="flex:1"></span>
-      <button class="btn sm" type="button" data-copy="${esc(k.url)}" aria-label="「${esc(k.label || "共有リンク")}」の住所を写す">住所を写す</button>
+      <button class="btn sm" type="button" data-copy="${esc(k.url)}" aria-label="「${esc(k.label || "共有リンク")}」の住所をコピー">住所をコピー</button>
       ${k.state === "live" ? `<button class="btn sm" type="button" data-stop="${esc(k.id)}">止める</button>` : k.state === "stopped" ? `<button class="btn sm" type="button" data-restart="${esc(k.id)}">戻す</button>` : ""}</li>`).join("");
     return `<tr class="share-row"><td colspan="7" style="background:var(--panel2, transparent)">
       <form id="lk-form" class="bar" style="flex-wrap:wrap">
@@ -128,11 +128,11 @@ export function mountMedia(host, { getToken }) {
       const days = $("#lk-days").value;
       const r = await api("/api/admin/media/links", { method: "POST", token: getToken(), body: { media_id: shareId, label: $("#lk-label").value.trim(), days: days ? Number(days) : null } });
       if (!r.ok) { say(errText(r)); return; }
-      try { await navigator.clipboard.writeText(r.url); say("共有リンクを作り、住所を写しました"); } catch (_) { say("共有リンクを作りました"); }
+      try { await navigator.clipboard.writeText(r.url); say("共有リンクを作り、住所をコピーしました"); } catch (_) { say("共有リンクを作りました"); }
       await reloadShare();
     });
     $("#main").querySelectorAll("[data-copy]").forEach((b) => b.addEventListener("click", async () => {
-      try { await navigator.clipboard.writeText(b.dataset.copy); say("住所を写しました"); } catch (_) { say("写せませんでした。住所を選んで写してください"); }
+      try { await navigator.clipboard.writeText(b.dataset.copy); say("住所をコピーしました"); } catch (_) { say("コピーできませんでした。住所を選んでコピーしてください"); }
     }));
     $("#main").querySelectorAll("[data-stop]").forEach((b) => b.addEventListener("click", () => setStop(b.dataset.stop, true)));
     $("#main").querySelectorAll("[data-restart]").forEach((b) => b.addEventListener("click", () => setStop(b.dataset.restart, false)));
@@ -166,7 +166,7 @@ export function mountMedia(host, { getToken }) {
   }
   async function removeItem(id) {
     const x = S.items.find((y) => y.id === id);
-    if (!confirm(`「${x ? x.name : ""}」を削除します。ファイルも消えて戻せません。よろしいですか？`)) return;
+    if (!confirm(`「${x ? x.name : ""}」を削除します。ファイルも削除されて戻せません。よろしいですか？`)) return;
     const r = await api("/api/admin/media/save", { method: "POST", token: getToken(), body: { id, remove: true } });
     if (!r.ok) { say(errText(r)); return; }
     editId = null; await load(); say("削除しました");

@@ -9,7 +9,7 @@ const KAI = { "セミナー": "#2563eb", "打ち合わせ": "#7c3aed", "個別�
 const ISSUE_ORDER = ["名前の日付と収録日が合わない", "ほぼ空（1 分未満か 10MB 未満）", "見る画面で流せる動画が無い（音声だけなど）", "同じ名前の録画がほかにもある"];
 const lkey = (s) => String(s || "").normalize("NFKC").replace(/\s+/g, "").toLowerCase();
 const ERR = {
-  not_found: "録画が見つかりませんでした（消されたかもしれません）",
+  not_found: "録画が見つかりませんでした（削除されたかもしれません）",
   no_video: "この録画には見る画面で流せる動画がありません（音声だけなど）",
   no_link: "先にリンクを発行してください",
   bad_date: "期限の日付が読めませんでした",
@@ -160,7 +160,7 @@ export function mountRecordings(host, { getToken }) {
     const ks = D.rows.filter((r) => r.suggest_kai), ns = D.rows.filter((r) => r.suggest_name);
     const left = D.rows.filter((r) => r.kai === "その他").length;
     return `<h1>整理</h1><p class="lead">案を見て、まとめて承認するだけ。承認しないものはそのまま残ります。承認したあとも「元に戻す」で戻せます。</p>
-    <div class="card"><h2>会の種類の案（「その他」${left} 本）</h2><p>5 分ごとに AI が 6 本ずつ文字起こしを読んで案を出しています（文字起こしがある録画だけ）。違うものは右の選びから直してから承認します。</p>
+    <div class="card"><h2>会の種類の案（「その他」${left} 本）</h2><p>5 分ごとに AI が 6 本ずつ文字起こしを読んで案を出しています（文字起こしがある録画だけ）。違うものは右の選びから編集してから承認します。</p>
       ${(() => { const pend = D.counts.sug_pending || 0, done = Math.max(0, left - pend), pct = left ? Math.round((done / left) * 100) : 100; return `<div class="prog" role="progressbar" aria-label="案の進み具合" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><div style="width:${pct}%"></div></div>
       <p style="margin-top:6px">読み終えた ${done} 本／残り ${pend} 本${pend ? `（あと約 ${Math.ceil(pend / 6) * 5} 分）` : ""}${D.counts.sug_none ? `・案が出ない ${D.counts.sug_none} 本（文字起こしが無いなど。棚の「その他」で選んで「会の種類を変える」でまとめて変えられます）` : ""}</p>`; })()}
       <div class="row2" style="margin-top:10px"><button class="btn sm" type="button" id="suggest">今すぐ 8 本読ませる</button><span class="why" id="sug-note"></span></div></div>
@@ -179,17 +179,17 @@ export function mountRecordings(host, { getToken }) {
     const groups = ISSUE_ORDER.map((name) => [name, D.rows.filter((r) => r.issues.includes(name))]);
     const tiny = groups[1][1];
     const NOTE = {
-      [ISSUE_ORDER[0]]: "別の回の名前や YouTube が付いている見込み。行を押して名前を直します。",
-      [ISSUE_ORDER[1]]: "録り間違いの見込み。消すかどうかは Naoki が決めます（消すのは AI との壁打ちのあと・zoom_archive__delete）。",
+      [ISSUE_ORDER[0]]: "別の回の名前や YouTube が付いている見込み。行を押して名前を編集します。",
+      [ISSUE_ORDER[1]]: "録り間違いの見込み。削除するかどうかは Naoki が決めます（削除するのは AI との壁打ちのあと・zoom_archive__delete）。",
       [ISSUE_ORDER[2]]: "画面つきの動画が無いので、共有リンクを出せません。",
-      [ISSUE_ORDER[3]]: "会員サイトに入れるときや共有のときに取り違えやすい録画です。収録日と中身を見て、片方の名前を直します。",
+      [ISSUE_ORDER[3]]: "会員サイトに入れるときや共有のときに取り違えやすい録画です。収録日と中身を見て、片方の名前を編集します。",
     };
     return `<h1>点検</h1><p class="lead">怪しいものを集めました。ここでは何も消しません。</p>
     ${groups.map(([name, rs]) => `<div class="card"><h2>${esc(name)}（${rs.length} 本）</h2><p>${NOTE[name]}</p></div>
       ${rs.length ? `<div class="tbl" style="margin-bottom:20px"><table><thead><tr><th>収録日</th><th>名前</th><th>会</th><th style="text-align:right">大きさ</th></tr></thead><tbody>
       ${rs.slice(0, 100).map((r) => `<tr class="rw" data-id="${esc(r.id)}" tabindex="0" aria-label="${esc(r.date)} ${esc(r.title)} の詳細を開く"><td class="date">${esc(r.date)}</td><td class="nm">${esc(r.title)}</td><td>${kaiTag(r.kai)}</td><td class="num">${r.size_gb != null ? r.size_gb.toFixed(2) + " GB" : ""}</td></tr>`).join("")}
       </tbody></table></div>` : ""}`).join("")}
-    ${tiny.length ? `<div class="bar"><button class="btn" type="button" id="to-ai">消す候補を AI に渡す文をコピー</button></div>` : ""}`;
+    ${tiny.length ? `<div class="bar"><button class="btn" type="button" id="to-ai">削除候補を AI に渡す文をコピー</button></div>` : ""}`;
   }
 
   // ---------- 詳細 ----------
@@ -326,7 +326,7 @@ export function mountRecordings(host, { getToken }) {
         ${r.issues.includes(ISSUE_ORDER[3]) ? `<p class="warn">同じ名前の録画がほかにもあります。収録日と会の種類がこの回で合っているか確かめてください。</p>` : ""}
         <div class="f"><label for="sm-title">コンテンツの名前（生徒に見える名前）</label><input id="sm-title" value="${esc(m.info.title)}"></div>
         <div class="f"><label for="sm-pub">公開</label><select id="sm-pub"><option value="draft">下書きで入れる（会員サイトの画面で確かめてから公開）</option><option value="published">すぐ公開する</option></select></div>
-        <p class="hint">要約と目次は録画から写します（会員サイトの画面であとから直せます）。話者の名前は伏せたまま出します。</p>
+        <p class="hint">要約と目次は録画からコピーします（会員サイトの画面であとから編集できます）。話者の名前は伏せたまま出します。</p>
         <div class="row2"><button class="btn" type="button" id="sm-cancel">キャンセル</button><button class="btn pri" type="button" id="sm-go">入れる</button></div>
       </div></div>`;
     $("#sm-course").addEventListener("change", (e) => { const c = smData.courses.find((x) => x.id === e.target.value); $("#sm-path").innerHTML = pathNote(c); });
@@ -492,7 +492,7 @@ export function mountRecordings(host, { getToken }) {
       if (!items.length) { undo("そろえる録画にチェックを入れてください", null); $(".ck-n")?.focus(); return; }
       return setMeta(items, "名前をそろえました");
     }
-    if (t.id === "to-ai") { const ok = await copy("マーケくんの録画の点検にある「1 分未満・ほぼ空」の録画を zoom_archive__search で一覧にして、消す候補の下見を出して。消すのは私が決める"); undo(ok ? "AI に渡す文をコピーしました" : "コピーできませんでした", null); return; }
+    if (t.id === "to-ai") { const ok = await copy("マーケくんの録画の点検にある「1 分未満・ほぼ空」の録画を zoom_archive__search で一覧にして、削除候補の下見を出して。削除するのは私が決める"); undo(ok ? "AI に渡す文をコピーしました" : "コピーできませんでした", null); return; }
     const ck = t.closest("[data-ck]"); if (ck) { e.stopPropagation(); ck.checked ? checked.add(ck.dataset.ck) : checked.delete(ck.dataset.ck); render(); return; }
     if (t.id === "ck-all") { rows().slice(0, shown).forEach((r) => (t.checked ? checked.add(r.id) : checked.delete(r.id))); render(); return; }
     if (t.id === "bulk-clear") { checked.clear(); render(); return; }
