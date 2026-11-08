@@ -67,6 +67,7 @@ import { makeBlog } from "./blog.js";
 import { makeLessonQA, openLessonQuestions, QUESTION_MAX } from "./lessonqa.js";
 import { roomNotices } from "./roomview.js";
 import { makeLine, inviteOnFollow } from "./line.js";
+import { makeFlow } from "./flow.js";
 import { makeUtageImport } from "./utageimport.js";
 import { makeSalesMark } from "./salesmark.js";
 import { makeFolders } from "./folders.js";
@@ -283,6 +284,8 @@ async function serveMediaLink(request, env, token) {
   return r || new Response(MEDIA_GONE, { status: 404, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex" } });
 }
 const line = makeLine({ db, logInbound, changes, addEvent, checkImage: (env, url) => media.lineImageProblem(env, url), registerPerson: (env, a) => registerPerson(env, a), audience: (env, f) => deliver.audience(env, f), excluded: (env) => connect.excludedIds(env) });
+// 便 T5：シナリオの「流れ」と AI と作る（中身は src/flow.js）
+const flowApi = makeFlow({ db, plan, guard, line, pages, setStepBody: (env, id, body, by) => deliver.setStep(env, { id, body }, by) });
 // B の便 16a：UTAGE の読者と予約者の取り込み（中身は src/utageimport.js）。新しい人は関数 b_register で入れる
 const utageImport = makeUtageImport({ db, addEvent, logInbound, register: async (env, email, name) => {
   const r = await rawDb(env, "POST", "rpc/b_register", { p_email: email, p_name: name || "", p_source: "other" });
@@ -1912,6 +1915,13 @@ async function handleApi(request, env, url) {
       const r = body.remove ? await connect.removeLabel(env, body, a.email) : await connect.addLabel(env, body, a.email);
       return json(r, r.ok === false ? 400 : 200);
     }
+    // 便 T5：シナリオの流れ・AI と作る・友だち追加の案内の文（画面から）
+    const fl = path.match(/^[/]api[/]admin[/]campaigns[/]([0-9a-f-]{36})[/]flow$/i);
+    if (fl && method === "GET") { const r = await flowApi.flow(env, { campaign_id: fl[1] }); return json(r, r.ok === false ? 400 : 200); }
+    if (path === "/api/admin/ai-drafts" && method === "POST") { const body = await request.json().catch(() => ({})); const r = await flowApi.createRequest(env, body, a.email); return json(r, r.ok === false ? 400 : 200); }
+    const ad = path.match(/^[/]api[/]admin[/]ai-drafts[/]([0-9a-f-]{36})$/i);
+    if (ad && method === "POST") { const body = await request.json().catch(() => ({})); const r = await flowApi.decide(env, { id: ad[1], action: body.action, body: body.body }, a.email); return json(r, r.ok === false ? 400 : 200); }
+    if (path === "/api/admin/line/invite" && method === "POST") { const body = await request.json().catch(() => ({})); const r = await line.setInviteText(env, { account: body.account, text: body.text }, a.email); return json(r, r.ok === false ? 400 : 200); }
     if (path === "/api/admin/steps" && method === "POST") {
       const body = await request.json().catch(() => ({}));
       const r = await deliver.setStep(env, body, a.email);
@@ -2254,6 +2264,20 @@ const TOOLS = [
     say: "LINE の知らせの転送先（UTAGE の住所）を入れる・外す",
     description: "LINE の受け口が受けた知らせを、同じ中身と署名のまま転送する先（UTAGE の Webhook の住所）を入れる。url を空にすると転送を外す（UTAGE に届かなくなる・UTAGE を止める日に使う）。https:// で始まる 500 文字まで。B 自身の住所は入れられない。承認が要る道具：呼ぶと承認待ちになり approval_url が返る。",
     inputSchema: { type: "object", properties: { account: { type: "string" }, url: { type: "string" } }, required: ["account", "url"] },
+  },
+  {
+    name: "get_ai_draft",
+    screen: "blueprint",
+    say: "AI の案の依頼を読む",
+    description: "マーケくんの「流れ」の「AI と作る」で Naoki が出した依頼を読む（便 T5）。id は依頼文に書いてある依頼の番号。返事：依頼（ひとこと note）・直すもの target（名前・配信タイミング when・今の本文 text）・同じシナリオの部品を相手が通る順に並べた flow（前後の配信の本文）・書き方の決まり rules。読んだら put_ai_draft で案を置く。",
+    inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+  },
+  {
+    name: "put_ai_draft",
+    screen: "blueprint",
+    say: "AI の案を置く",
+    description: "get_ai_draft で読んだ依頼に、AI の案（本文だけ）を置く（便 T5）。配信中の本文は変えない。画面の「流れ」のカードに今の本文と並べて出て、採用するかは Naoki が決める（AI からは採用できない）。LINE は 2000 字まで。同じ依頼に置き直すと上書き。",
+    inputSchema: { type: "object", properties: { id: { type: "string" }, body: { type: "string" } }, required: ["id", "body"] },
   },
   {
     name: "get_line_invite",
@@ -3094,6 +3118,8 @@ async function runTool(env, name, args) {
   if (name === "send_line") return await line.send(env, { account: args.account, person_id: args.person_id, filter: args.filter, text: args.text }, "mcp");
   if (name === "get_line_quota") return await line.quota(env, { account: args.account });
   if (name === "set_line_forward") return await line.setForward(env, { account: args.account, url: args.url }, "mcp");
+  if (name === "get_ai_draft") return await flowApi.getRequest(env, { id: args.id });
+  if (name === "put_ai_draft") return await flowApi.putDraft(env, { id: args.id, body: args.body }, "mcp");
   if (name === "get_line_invite") { if (!/^[a-z][a-z_]{1,19}$/.test(String(args.account || ""))) return { ok: false, error: "bad_account" }; const r = await line.inviteText(env, args.account); return { ok: true, account: args.account, ...r, uses_default: !r.text, sends_on_follow: inviteOnFollow(env, args.account) }; }
   if (name === "set_line_invite") return await line.setInviteText(env, { account: args.account, text: args.text }, "mcp");
   if (name === "list_line_inbound") return await line.inbound(env, { account: args.account, days: args.days });

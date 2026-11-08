@@ -374,3 +374,43 @@ body { font-family: "Geist", "Noto Sans JP", "Hiragino Sans", "Hiragino Kaku Got
 .bt-st .when select:first-child { width: 9.5em; }
 .bt-st .tp { min-width: 0; }
 @media (max-width: 1100px) { .bt-st { flex-wrap: wrap; } }
+
+/* 便 T5（2026-11-08）：シナリオの「流れ」。相手が通る順に 1 列のカード（public/js/flowview.js） */
+.fl-sum { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+.fl-box { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; }
+.fl-box b { font-size: 22px; font-weight: 800; }
+.fl-ink { color: #b45309; }
+.fl-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.fl-end { justify-content: flex-end; margin-left: auto; }
+.fl-status { min-height: 1.5em; font-size: 13px; margin: 8px 0; }
+.fl-status:empty { display: none; }
+.fl-list { display: flex; flex-direction: column; max-width: 920px; }
+.fl-stage { font-size: 12px; font-weight: 700; color: var(--muted); letter-spacing: .04em; margin: 8px 0 6px 44px; }
+.fl-item { display: flex; gap: 12px; }
+.fl-rail { display: flex; flex-direction: column; align-items: center; width: 32px; flex: 0 0 32px; }
+.fl-n { width: 32px; height: 32px; border-radius: 50%; background: var(--ink); color: var(--surface); display: grid; place-items: center; font-size: 13px; font-weight: 700; }
+.fl-line { flex: 1 1 auto; width: 2px; background: var(--line); min-height: 16px; }
+.fl-card { flex: 1 1 auto; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 16px; display: flex; flex-direction: column; gap: 10px; }
+.fl-card.fl-hastodo { border-color: #f59e0b; }
+.fl-card.fl-haswait { border: 2px solid #b45309; }
+.fl-kind { font-size: 12px; border: 1px solid #a39a90; border-radius: 999px; padding: 1px 8px; }
+.fl-name { font-size: 15px; }
+.fl-st { font-size: 12px; font-weight: 700; border-radius: 999px; padding: 1px 8px; }
+.fl-on { color: #166534; background: #dcfce7; }
+.fl-off { color: var(--ink); background: var(--bg); border: 1px solid var(--line); }
+.fl-wait { color: #fff; background: #b45309; }
+.fl-when { font-size: 12px; color: var(--muted); margin-left: auto; }
+.fl-todo { background: var(--accent-soft); border-radius: 8px; padding: 8px 12px; }
+.fl-todo-h { font-size: 12px; font-weight: 700; color: #b45309; }
+.fl-todo ul { margin: 4px 0 0; padding-left: 1.2em; }
+.fl-text { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; white-space: pre-wrap; font-size: 13px; overflow-wrap: anywhere; }
+.fl-edit, .fl-ai { display: flex; flex-direction: column; gap: 6px; }
+.fl-edit textarea, .fl-ai textarea { width: 100%; font: inherit; font-size: 14px; line-height: 1.7; border: 1px solid #a39a90; border-radius: 8px; padding: 8px 10px; background: var(--surface); color: var(--ink); }
+.fl-ap { border: 2px solid #b45309; border-radius: 8px; padding: 10px 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.fl-ap-body { flex: 1 1 100%; }
+.fl-ai { border: 1px solid #f59e0b; background: var(--accent-soft); border-radius: 8px; padding: 10px 12px; }
+.fl-ai-wait { border-style: dashed; flex-direction: row; flex-wrap: wrap; align-items: center; }
+.fl-ai-has { border-width: 2px; background: var(--surface); }
+.fl-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.fl-aibtn { background: var(--accent-soft); color: var(--ink); border: 1px solid #b45309; }
+@media (max-width: 700px) { .fl-sum { grid-template-columns: repeat(2, minmax(0, 1fr)); } .fl-two { grid-template-columns: minmax(0, 1fr); } .fl-when { margin-left: 0; flex: 1 1 100%; } }
