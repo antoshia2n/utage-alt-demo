@@ -305,7 +305,7 @@ export function makeDeliver(h) {
       if (before && Number(to) === Number(before.id)) return { ok: false, error: "move_to_self" };
       const [target] = await db(env, "GET", `b_steps?select=id,trigger&id=eq.${Number(to)}`);
       if (!target) return { ok: false, error: "no_target_step" };
-      if (target.trigger !== "moved") return { ok: false, error: "target_not_moved_trigger", hint: "移す先の自動の動きのきっかけを「ほかの自動の動きから移された」にしてください" };
+      if (target.trigger !== "moved") return { ok: false, error: "target_not_moved_trigger", hint: "移す先のステップ配信のトリガーを「ほかのステップ配信から移動」にしてください" };
     }
     if (next.action === "set_field") {
       const a = next.action_args || {};

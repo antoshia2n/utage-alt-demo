@@ -175,18 +175,18 @@
               <h3 class="guide-h3">一斉配信を「送る」前</h3>
               <ol class="guide-check">
                 <li>件名を読み、送るつもりの配信か確かめる。会員向けの案内「新しい会員サイトができました」は、案内の日まで送らない</li>
-                <li>詳細の「宛先」のタブ（一覧では件名の下の灰色の行）で、届く相手（「会員だけ」「メール指定 1 件」など）が合っているか確かめる</li>
-                <li>迷ったら、「メール」の「新しく作る」→「宛先の条件」で同じ条件にして「人数を数える」を押し、人数が思ったとおりか見る</li>
+                <li>詳細の「配信対象」のタブ（一覧では件名の下の灰色の行）で、届く相手（「会員だけ」「メール指定 1 件」など）が合っているか確かめる</li>
+                <li>迷ったら、「メール」の「新規作成」→「配信対象の条件」で同じ条件にして「人数を数える」を押し、人数が思ったとおりか見る</li>
                 <li>詳細の上の帯に「いまはテスト宛てにだけ届く」と出ているか見る。「誰にでも届く」と出ていれば、本当に届く</li>
-                <li>送った分は取り消せない。送る列に入ったあとでも、まだ送っていない分は「止める」で止まる</li>
+                <li>送った分は取り消せない。送る列に入ったあとでも、まだ送っていない分は「停止」で止まる</li>
               </ol>
             </div>
             <div>
               <h3 class="guide-h3">「承認して実行」を押す前</h3>
               <ol class="guide-check">
                 <li>見出しを読み、AI が何をしようとしているかを確かめる</li>
-                <li>「誰に」「件名」「宛先」の行を読み、相手と人数が合っているか確かめる</li>
-                <li>ブロックをまとめて動かすときは、表の行（動く部品）を上から全部読む</li>
+                <li>「誰に」「件名」「配信対象」の行を読み、相手と人数が合っているか確かめる</li>
+                <li>ブロックをまとめて配信開始するときは、表の行（実行される部品）を上から全部読む</li>
                 <li>送る・払った記録のように、あとで戻せないものかどうかを考える</li>
                 <li>迷ったら「却下」。AI はもう一度頼み直せる。承認待ちは頼まれてから 24 時間で期限切れになる</li>
               </ol>
@@ -217,8 +217,8 @@
             <p class="guide-hands">手の回数：クリック 5 回・2 分</p>
             <ol>
               <li>メニューの「メール」を押す</li>
-              <li>「メール」の表で、状態が「下書き」の行を押して詳細を開き、件名と宛先を読む（上の「一斉配信を送る前」の 5 つ）</li>
-              <li>詳細の上の「送る」を押し、出てきた確認の文で件名と宛先をもう一度見て「OK」を押す</li>
+              <li>「メール」の表で、状態が「下書き」の行を押して詳細を開き、件名と配信対象を読む（上の「一斉配信を送る前」の 5 つ）</li>
+              <li>詳細の上の「送る」を押し、出てきた確認の文で件名と配信対象をもう一度見て「OK」を押す</li>
               <li>すぐ送るときは「← メールの一覧へ」で戻り、「いま送る（毎時を待たずに 1 回）」を押す。押さなければ毎時の処理で送られる</li>
             </ol>
             <p class="guide-done">できたか：その配信の状態が「下書き」から「送る列」に変わり、送り終えると「送り終えた」と「送った 1」のように数が出る</p>
@@ -226,7 +226,7 @@
 
           <article class="guide-step">
             <h3 class="guide-h3">承認待ちを見て、承認か却下をする</h3>
-            <p class="guide-where">画面：<b>AI と承認</b>　住所：<code class="guide-code">https://lab.shia2n.jp/admin</code> → メニューの「AI と承認」（スマホの知らせを押しても開く）</p>
+            <p class="guide-where">画面：<b>AI と承認</b>　住所：<code class="guide-code">https://lab.shia2n.jp/admin</code> → メニューの「AI と承認」（スマホの通知を押しても開く）</p>
             <p class="guide-hands">手の回数：クリック 2 回・1 分</p>
             <ol>
               <li>メニューの「AI と承認」を押す（ホームの「やること」の「承認待ち」からでも開く）</li>
@@ -240,7 +240,7 @@
       <!-- 便 20：ファネル構築。企画ごとにパーツを並べてつなぐ場所。タブは「設計図」と「自動の動き（メールを送らないコネクタ）」 -->
       <div id="view-blueprint" style="display:none">
        <div id="blueprint-list">
-        <div class="tabs view-tabs" data-vtabs><button type="button" data-vtab="bp" aria-selected="true">設計図</button><button type="button" data-vtab="auto" aria-selected="false">自動の動き</button></div>
+        <div class="tabs view-tabs" data-vtabs><button type="button" data-vtab="bp" aria-selected="true">設計図</button><button type="button" data-vtab="auto" aria-selected="false">ステップ配信</button></div>
         <div data-vpane="bp">
         <div class="bp-bar">
           <div class="chips" id="bp-chips"></div>
@@ -261,14 +261,14 @@
           </div>
           <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="submit">つくる</button><span class="note" id="bp-new-status"></span></div>
         </form>
-        <div class="legend"><span><i class="lg-run"></i>動いている</span><span><i class="lg-draft"></i>下書き</span><span><i class="lg-stop"></i>止まっている</span><span><i class="lg-iso"></i>どこともつながっていない</span><span class="note">線の数字は先週 7 日に、出元を通って次へ進んだ人数</span></div>
+        <div class="legend"><span><i class="lg-run"></i>配信中</span><span><i class="lg-draft"></i>下書き</span><span><i class="lg-stop"></i>止まっている</span><span><i class="lg-iso"></i>どこともつながっていない</span><span class="note">線の数字は先週 7 日に、出元を通って次へ進んだ人数</span></div>
         <div class="bp-wrap">
           <div class="card bp-canvas" id="bp-canvas"><p class="note">読み込んでいます…</p></div>
           <div class="card bp-panel" id="bp-panel"><p class="note">箱を押すと、中の名前・外の名前・入口と出口・先週の数が出ます。入っているシナリオと役目もここで変えます。</p></div>
         </div>
         </div>
         <div class="card hidden" data-vpane="auto">
-          <div class="list-bar"><p class="note">〜したら → 誰に → 〜する（ラベルを付ける・Naoki に知らせる）。メールを送るものは「メール」のステップ配信にあります</p><div class="cust-actions"><span data-camp-slot="connect"></span><button class="btn small" type="button" id="sf-new">新しく作る</button></div></div>
+          <div class="list-bar"><p class="note">〜したら → 誰に → 〜する（ラベルを付ける・Naoki に通知）。メールを送るものは「メール」のステップ配信にあります</p><div class="cust-actions"><span data-camp-slot="connect"></span><button class="btn small" type="button" id="sf-new">新規作成</button></div></div>
           <div id="steps" class="table-wrap"></div>
         </div>
        </div>
@@ -280,12 +280,12 @@
           <input type="hidden" id="sf-id">
           <section class="card stack">
             <div><label for="sf-name">名前（自分用）</label><input id="sf-name" type="text" maxlength="120"></div>
-            <label class="check"><input type="checkbox" id="sf-active"> <span>動かす（動かした時刻より後のきっかけだけが対象）</span></label>
+            <label class="check"><input type="checkbox" id="sf-active"> <span>配信開始（配信開始より後のトリガーだけが対象）</span></label>
           </section>
           <div class="tabs cust-tabs" role="tablist"><button type="button" role="tab" data-tab="tr" aria-selected="true">① 〜したら</button><button type="button" role="tab" data-tab="sel" aria-selected="false">② 誰に</button><button type="button" role="tab" data-tab="ac" aria-selected="false">③ 〜する</button></div>
           <section class="card stack" data-pane="tr">
             <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <div><label for="sf-trigger">きっかけ</label><select id="sf-trigger" class="inline"></select></div>
+            <div><label for="sf-trigger">トリガー</label><select id="sf-trigger" class="inline"></select></div>
             <div data-tr="purchase"><label for="sf-product">商品の番号（空ならどれでも）</label><input id="sf-product" type="text"></div>
             <div data-tr="label_added"><label for="sf-tlabel">付いたラベル</label><input id="sf-tlabel" type="text" list="label-names"></div>
             <div data-tr="clicked"><label for="sf-turl">押したリンク（空ならどれでも）</label><input id="sf-turl" type="text" placeholder="https://"></div>
@@ -293,11 +293,11 @@
             <div data-tr="page_viewed page_clicked"><label for="sf-tpage">ページ（空ならどれでも）</label><select id="sf-tpage" class="inline"><option value="">どれでも</option></select></div>
             <div data-tr="page_clicked"><label for="sf-tbutton">ボタンの名前（空ならどれでも）</label><input id="sf-tbutton" type="text" maxlength="49" autocapitalize="off" placeholder="例 cta-1"></div>
             <div data-tr="line_linked"><label for="sf-taccount">LINE のアカウント（空ならどれでも）</label><select id="sf-taccount" class="inline"><option value="">どれでも</option><option value="shianin">シアニン</option><option value="college_ops">言語化ライティングカレッジ運営</option></select></div>
-            <div><label for="sf-delay">何時間後</label><input id="sf-delay" type="text" inputmode="numeric" value="0" style="max-width:120px"></div>
+            <div><span class="lbl" id="sf-delay-lbl">配信タイミング（トリガーから）</span><div style="display:flex;align-items:center;gap:6px" role="group" aria-labelledby="sf-delay-lbl"><input id="sf-delay-d" type="text" inputmode="numeric" value="0" aria-label="日" style="max-width:72px"><span>日</span><input id="sf-delay" type="text" inputmode="numeric" value="0" aria-label="時間" style="max-width:72px"><span>時間後</span></div></div>
           </div>
           </section>
           <section class="card stack hidden" data-pane="sel">
-            <div class="note">空なら、きっかけに当たった人全員</div>
+            <div class="note">空なら、トリガーに当たった人全員</div>
             <div style="display:flex;gap:8px;flex-wrap:wrap">
             <div><label for="sf-labels">このラベルを全部持つ人</label><input id="sf-labels" type="text" list="label-names"></div>
             <div><label for="sf-nolabels">このラベルを持たない人</label><input id="sf-nolabels" type="text" list="label-names"></div>
@@ -308,13 +308,13 @@
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <div><label for="sf-action">何をする</label><select id="sf-action" class="inline"></select></div>
             <div data-ac="add_label"><label for="sf-alabel">付けるラベル</label><input id="sf-alabel" type="text" list="label-names"></div>
-            <div data-ac="move_to"><label for="sf-astep">移す先（きっかけが「ほかの自動の動きから移された」のもの）</label><select id="sf-astep" class="inline"><option value="">（選ぶ）</option></select></div>
+            <div data-ac="move_to"><label for="sf-astep">移す先（トリガーが「ほかのステップ配信から移された」のもの）</label><select id="sf-astep" class="inline"><option value="">（選ぶ）</option></select></div>
             <div data-ac="set_field"><label for="sf-afield">書く項目</label><select id="sf-afield" class="inline"><option value="">（選ぶ）</option></select></div>
             <div data-ac="set_field"><label for="sf-avalue">書く値</label><input id="sf-avalue" type="text" maxlength="200"></div>
             <div data-ac="send_line"><label for="sf-aaccount">送る LINE のアカウント</label><select id="sf-aaccount" class="inline"><option value="shianin">シアニン</option><option value="college_ops">言語化ライティングカレッジ運営</option></select></div>
           </div>
-          <div data-ac="send_line" class="note">LINE と結ばれていない人・ブロックした人には送りません。今月の残りが 20 通以下になると送らずに待たせ、Naoki に知らせます</div>
-          <div data-ac="send_email notify_admin"><label for="sf-subject">件名（Naoki への知らせは空でもよい）</label><input id="sf-subject" type="text" maxlength="200"></div>
+          <div data-ac="send_line" class="note">LINE と LINE 連携していない人・ブロックした人には送りません。今月の残りが 20 通以下になると送らずに待たせ、Naoki に通知します</div>
+          <div data-ac="send_email notify_admin"><label for="sf-subject">件名（Naoki への通知は空でもよい）</label><input id="sf-subject" type="text" maxlength="200"></div>
           <div data-ac="send_email notify_admin send_line"><label for="sf-body">本文（LINE は 2000 字まで・件名なし）／メールは（{{name}}・{{email}}・{{product}}・{{label}} が置き換わる。[[ボタンの文字|https://…]] と書くとボタンになる）</label><textarea id="sf-body" rows="5"></textarea></div>
           </section>
           <datalist id="label-names"></datalist>
@@ -341,9 +341,9 @@
         <div id="ml-status" class="note">読み込んでいます…</div>
       </div>
     </details>
-    <details class="setup card" id="push-box" open><summary>スマホの通知（Naoki への知らせ・生徒からのメッセージ・承認待ち）</summary>
+    <details class="setup card" id="push-box" open><summary>スマホの通知（Naoki への通知・生徒からのメッセージ・承認待ち）</summary>
       <div class="stack" style="margin-top:8px">
-        <p class="note" style="margin:0" id="push-howto">知らせを受け取りたい端末でこの画面を開き、「この端末で受け取る」を押して、出てきた確認で「許可」を選ぶ。iPhone はホーム画面に追加したマーケくんから開いたときだけ押せる</p>
+        <p class="note" style="margin:0" id="push-howto">通知を受け取りたい端末でこの画面を開き、「この端末で受け取る」を押して、出てきた確認で「許可」を選ぶ。iPhone はホーム画面に追加したマーケくんから開いたときだけ押せる</p>
         <div><button class="btn" id="push-on">この端末で受け取る</button> <button class="btn ghost" id="push-test">試しに送る</button> <button class="btn ghost" id="push-off">この端末で受け取らない</button></div>
         <div id="push-status" class="note">読み込んでいます…</div>
       </div>
@@ -353,12 +353,12 @@
         <p class="note" style="margin:0">Google カレンダーの設定で、カレンダーを選び「カレンダーの統合」にある「iCal 形式の非公開アドレス」を貼る。URL は画面にも記録にも出さない</p>
         <div class="cal-row" data-which="main">
           <label for="cal-url-main">Google カレンダー（自分の予定）</label><input id="cal-url-main" type="url" inputmode="url" maxlength="500" placeholder="https://calendar.google.com/calendar/ical/.../basic.ics" autocomplete="off">
-          <div><button class="btn" data-cal-save="main">入れる</button> <button class="btn ghost" data-cal-clear="main">外す</button></div>
+          <div><button class="btn" data-cal-save="main">入れる</button> <button class="btn ghost" data-cal-clear="main">削除</button></div>
           <div id="cal-status-main" class="note">読み込んでいます…</div>
         </div>
         <div class="cal-row" data-which="utage">
           <label for="cal-url-utage">UTAGE のカレンダー（個別相談やセミナーの予約）</label><input id="cal-url-utage" type="url" inputmode="url" maxlength="500" placeholder="https://calendar.google.com/calendar/ical/.../basic.ics" autocomplete="off">
-          <div><button class="btn" data-cal-save="utage">入れる</button> <button class="btn ghost" data-cal-clear="utage">外す</button></div>
+          <div><button class="btn" data-cal-save="utage">入れる</button> <button class="btn ghost" data-cal-clear="utage">削除</button></div>
           <div id="cal-status-utage" class="note">読み込んでいます…</div>
         </div>
       </div>
@@ -366,7 +366,7 @@
     <details class="setup card" id="community-box"><summary>オプチャの招待リンク（会員にだけ見える）</summary>
       <div class="stack" style="margin-top:8px">
         <div><label for="cm-url">招待リンク（https:// で始まる）</label><input id="cm-url" type="url" inputmode="url" maxlength="500" placeholder="https://line.me/ti/g2/..."></div>
-        <div><button class="btn" id="cm-save">差し替える</button> <button class="btn ghost" id="cm-clear">外す（入口を閉じる）</button></div>
+        <div><button class="btn" id="cm-save">差し替える</button> <button class="btn ghost" id="cm-clear">無効にする（入口を閉じる）</button></div>
         <div id="cm-status" class="note">読み込んでいます…</div>
       </div>
     </details>
@@ -405,11 +405,11 @@
       <div id="forms-list">
         <div class="tabs view-tabs" data-vtabs><button type="button" data-vtab="forms" aria-selected="true">フォーム</button><button type="button" data-vtab="fields" aria-selected="false">人の項目</button></div>
         <div class="card" data-vpane="forms">
-          <div class="list-bar"><p class="note" id="fm-count"></p><div class="cust-actions"><span data-camp-slot="forms"></span><button class="btn small" type="button" id="fm-new">新しく作る</button></div></div>
+          <div class="list-bar"><p class="note" id="fm-count"></p><div class="cust-actions"><span data-camp-slot="forms"></span><button class="btn small" type="button" id="fm-new">新規作成</button></div></div>
           <div id="forms-table" class="table-wrap"></div>
         </div>
         <div class="card hidden" data-vpane="fields">
-          <div class="list-bar"><p class="note">フォームで聞く欄。答えは顧客ごとに残り、一斉配信の宛先をこの値で絞れます</p><button class="btn small" type="button" id="fd-new">新しく作る</button></div>
+          <div class="list-bar"><p class="note">フォームで聞く欄。答えは顧客ごとに残り、一斉配信の配信対象をこの値で絞れます</p><button class="btn small" type="button" id="fd-new">新規作成</button></div>
           <div id="fields-table" class="table-wrap"></div>
         </div>
       </div>
@@ -420,9 +420,9 @@
       <div id="pages-list">
         <div class="tabs view-tabs" data-vtabs><button type="button" data-vtab="pages" aria-selected="true">ページ</button><button type="button" data-vtab="routes" aria-selected="false">経路</button></div>
         <div class="card" data-vpane="pages">
-          <div class="list-bar"><p class="note" id="pg-count"></p><div class="cust-actions"><span data-camp-slot="pages"></span><button class="btn small" type="button" id="pg-new">新しく作る</button></div></div>
+          <div class="list-bar"><p class="note" id="pg-count"></p><div class="cust-actions"><span data-camp-slot="pages"></span><button class="btn small" type="button" id="pg-new">新規作成</button></div></div>
           <div id="pages-table" class="table-wrap"></div>
-          <p class="note" style="margin:12px 0 0">ページの中身は Claude が書きます。「新しく作る」で依頼文を出し、Claude のチャット（claude.ai）に貼ると、下書きがこの一覧に届きます</p>
+          <p class="note" style="margin:12px 0 0">ページの中身は Claude が書きます。「新規作成」で依頼文を出し、Claude のチャット（claude.ai）に貼ると、下書きがこの一覧に届きます</p>
         </div>
         <div class="card hidden" data-vpane="routes">
           <div class="list-bar"><p class="note" id="rt-count"></p></div>
@@ -436,7 +436,7 @@
             <p class="note" id="rt-msg" style="margin:0"></p>
           </form>
           <div id="routes-table" class="table-wrap"></div>
-          <p class="note" style="margin:12px 0 0">経路は、その人が初めて登録したときのものに決まります。顧客には「経路:名前」のラベルが付き、一斉配信の宛先やコネクタの「誰に」で絞れます</p>
+          <p class="note" style="margin:12px 0 0">経路は、その人が初めて登録したときのものに決まります。顧客には「経路:名前」のラベルが付き、一斉配信の配信対象やステップ配信の「誰に」で絞れます</p>
         </div>
       </div>
       <div id="pages-detail" class="hidden"><button type="button" class="back-link" data-back="pages">← 一覧へ</button><div id="page-detail"></div></div>
@@ -446,12 +446,12 @@
       <div id="deliver-list">
         <div class="tabs view-tabs" data-vtabs><button type="button" data-vtab="bc" aria-selected="true">一斉配信</button><button type="button" data-vtab="step" aria-selected="false">ステップ配信</button></div>
         <div class="card" data-vpane="bc">
-          <div class="list-bar"><p class="note" id="dv-warm"></p><div class="cust-actions"><span data-camp-slot="deliver"></span><button class="btn ghost small" type="button" id="dv-run">いま送る（毎時を待たずに 1 回）</button><button class="btn small" type="button" id="bc-new">新しく作る</button></div></div>
+          <div class="list-bar"><p class="note" id="dv-warm"></p><div class="cust-actions"><span data-camp-slot="deliver"></span><button class="btn ghost small" type="button" id="dv-run">いま送る（毎時を待たずに 1 回）</button><button class="btn small" type="button" id="bc-new">新規作成</button></div></div>
           <p class="note hidden" id="dv-run-status"></p>
           <div id="broadcasts" class="table-wrap"></div>
         </div>
         <div class="card hidden" data-vpane="step">
-          <div class="list-bar"><p class="note">何かをした人へ、決めた時間のあとに順に送るメール。毎時動きます</p><div class="cust-actions"><span data-camp-slot="mailsteps"></span><button class="btn small" type="button" id="ms-new">新しく作る</button></div></div>
+          <div class="list-bar"><p class="note">トリガーから決めた時間のあとに順に送るメール。毎時実行されます</p><div class="cust-actions"><span data-camp-slot="mailsteps"></span><button class="btn small" type="button" id="ms-new">新規作成</button></div></div>
           <div id="mail-steps" class="table-wrap"></div>
         </div>
       </div>
@@ -459,9 +459,9 @@
         <button type="button" class="back-link" data-back="deliver">← 一覧へ</button>
         <div id="bc-detail"></div>
         <div id="bf-wrap" class="hidden">
-          <div class="card cust-head"><h2 style="margin:0 0 2px">新しい一斉配信</h2><div class="note">中身と宛先を決めて下書きに保存します。送るのは、一覧から開いた詳細の「送る」です</div></div>
+          <div class="card cust-head"><h2 style="margin:0 0 2px">新しい一斉配信</h2><div class="note">内容と配信対象を決めて下書きに保存します。送るのは、一覧から開いた詳細の「送る」です</div></div>
         <form id="bf" class="stack">
-          <div class="tabs cust-tabs" role="tablist"><button type="button" role="tab" data-tab="body" aria-selected="true">中身</button><button type="button" role="tab" data-tab="who" aria-selected="false">宛先の条件</button></div>
+          <div class="tabs cust-tabs" role="tablist"><button type="button" role="tab" data-tab="body" aria-selected="true">中身</button><button type="button" role="tab" data-tab="who" aria-selected="false">配信対象の条件</button></div>
           <section class="card stack" data-pane="body">
             <div><label for="bf-subject">件名</label><input id="bf-subject" type="text" maxlength="200"></div>
             <div><label for="bf-body">本文（{{name}} は名前に置き換わる。https のリンクは押したかを数える。[[ボタンの文字|https://…]] と書くとボタンになる）</label><textarea id="bf-body" rows="8"></textarea></div>
@@ -501,7 +501,7 @@
         </div>
         <!-- 便 12c：継続課金と回数を決めた分割の一覧。解約は UnivaPay の課金を永久に止める（戻せない） -->
         <div class="card hidden" data-vpane="subs">
-          <div class="list-bar"><p class="note" id="sub-count"></p><select id="sub-filter" class="inline"><option value="">すべて</option><option value="active">続いている</option><option value="failed">失敗</option><option value="canceled">解約</option><option value="ending">止めた（期限まで）</option><option value="suspended">止まった</option><option value="completed">回数どおり済み</option></select></div>
+          <div class="list-bar"><p class="note" id="sub-count"></p><select id="sub-filter" class="inline"><option value="">すべて</option><option value="active">続いている</option><option value="failed">失敗</option><option value="canceled">解約</option><option value="ending">停止中（期限まで）</option><option value="suspended">止まった</option><option value="completed">回数どおり済み</option></select></div>
           <div id="subs" class="table-wrap"></div>
           <p class="note" style="margin:12px 0 0">課金が失敗すると、その人へ自動でメールが届きます（文は各商品の画面で直せます）。解約すると UnivaPay の課金は止まり、もとに戻せません</p>
         </div>
@@ -545,7 +545,7 @@
           <p class="note" style="margin:12px 0 0">一般公開のメニューは、ページに埋め込むコードが表示されます。Claude にページを依頼するときに「この予約枠を入れて」と伝えると、空き時間を選んで予約できる枠がページに入ります。会員限定のメニューは、マイページの「予約」に表示されます。</p>
         </div>
         <div class="card hidden" data-vpane="seminars">
-          <div class="list-bar"><p class="note" id="sem-count"></p><div class="cust-actions"><span data-camp-slot="seminars"></span><button class="btn small hidden" type="button" id="sem-new">新しく作る</button></div></div>
+          <div class="list-bar"><p class="note" id="sem-count"></p><div class="cust-actions"><span data-camp-slot="seminars"></span><button class="btn small hidden" type="button" id="sem-new">新規作成</button></div></div>
           <div id="seminars" class="table-wrap"></div>
         </div>
         <div class="card hidden" data-vpane="staff">
@@ -593,7 +593,7 @@
         <form id="line-bc" class="stack hidden" style="margin-top:12px" novalidate>
           <div role="radiogroup" aria-label="誰に送るか" style="display:flex;gap:10px 16px;flex-wrap:wrap">
             <label class="check" style="margin:0"><input type="radio" name="line-mode" value="all" checked> <span>友だち全員（ブロックした人・ラベル「除外」の人は外れる）</span></label>
-            <label class="check" style="margin:0"><input type="radio" name="line-mode" value="filter"> <span>条件で絞る（メールを登録して結ばれた人だけ）</span></label>
+            <label class="check" style="margin:0"><input type="radio" name="line-mode" value="filter"> <span>条件で絞る（メール登録で LINE 連携した人だけ）</span></label>
           </div>
           <div id="line-bc-filter" class="stack hidden">
             <div><label for="line-labels">このラベルを全部持つ人（カンマ区切り）</label><input id="line-labels" type="text" list="label-names" placeholder="例 購入者"></div>

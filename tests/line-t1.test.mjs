@@ -68,8 +68,8 @@ test("LINE と結ばれたら、その人へ LINE を送る。ほかのアカウ
   assert.equal(st.pushes.length, 1, "同じきっかけで 2 回送らない");
   const list = await st.deliver.listSteps(env);
   assert.equal(list.steps[0].line_sent, 1);
-  assert.equal(list.triggers.line_linked, "LINE と結ばれた");
-  assert.equal(list.actions.send_line, "LINE を送る");
+  assert.equal(list.triggers.line_linked, "LINE 連携");
+  assert.equal(list.actions.send_line, "LINE 送信");
 });
 
 test("1 日後などの待ちは delay_hours で数える（時刻が来るまで送らない）", async () => {
