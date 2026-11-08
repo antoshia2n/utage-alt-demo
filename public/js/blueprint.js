@@ -5,15 +5,18 @@
 // 線を引き直す・一言で下書きするのは 8e・8g。ここでは見ることと、シナリオの整理だけ。
 
 const TYPE_LABEL = { page: "ページ", step: "ステップ", broadcast: "一斉配信", seminar: "セミナー", booking: "予約", product: "商品", course: "教材", room: "添削", community: "オプチャ", form: "フォーム" };
-const STATE_LABEL = { running: "動いている", draft: "下書き", stopped: "止まっている" };
+const STATE_LABEL = { running: "公開中", draft: "下書き", stopped: "停止中" };
 // 「開いて直す」で開く左のメニューの項目
 const EDIT_VIEW = { form: "forms", step: "connect", broadcast: "deliver", seminar: "deals", booking: "deals", product: "products", room: "rooms", community: "settings" };
 // 便 12a：Claude が作ったページ（lp）は「ページ」の画面で開く。トップの LP と無料登録は固定なので開く先が無い
 const editView = (p) => (p.type === "page" ? (p.lp ? "pages" : null) : EDIT_VIEW[p.type]);
 
+import { makeFlowView } from "/js/flowview.js";
+
 export function makeBlueprint({ $, api, esc, getToken, fail, openView }) {
   let view = "all";
-  let mode = "flow"; // 便 8g-3：flow（レーンと線）／list（一覧の表）
+  let mode = "flow"; // 便 8g-3：flow（レーンと線）／list（一覧の表）／便 T5：seq（相手が通る順の 1 列）
+  const flowView = makeFlowView({ $, api, esc, getToken, fail, openPart: (key) => { selected = key; renderPanel(); const pn = document.getElementById("bp-panel"); if (pn) pn.scrollIntoView({ block: "nearest" }); } });
   let query = "";
   let data = null;
   // 便 8g-4：ブロック（シナリオの中の部品のまとまり）。既定はたたんで 1 箱。開いたものだけ中の部品を並べる
@@ -101,6 +104,7 @@ export function makeBlueprint({ $, api, esc, getToken, fail, openView }) {
 
   function renderCanvas() {
     if (mode === "list") return renderList();
+    if (mode === "seq") return flowView.load($("bp-canvas"), view);
     const lanes = data.lanes;
     const byLane = Object.fromEntries(lanes.map((l) => [l.id, []]));
     const laneIdx = Object.fromEntries(lanes.map((l, i) => [l.id, i]));
@@ -224,7 +228,7 @@ export function makeBlueprint({ $, api, esc, getToken, fail, openView }) {
       ${b.ins.length > 4 || b.outs.length > 4 ? '<p class="note" style="color:var(--warn)">入口か出口が 4 本を超えています。ブロックを分けると読みやすくなります。</p>' : ""}
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
         <button class="btn ghost small" type="button" id="bk-toggle">${openBlocks.has(b.id) ? "たたむ" : "開いて中を並べる"}</button>
-        ${drafts ? `<button class="btn small" type="button" id="bk-publish">下書き ${drafts} 個をまとめて動かす</button>` : ""}
+        ${drafts ? `<button class="btn small" type="button" id="bk-publish">下書き ${drafts} 個をまとめて配信開始する</button>` : ""}
       </div>
       <div id="bk-preview" class="stack" style="margin-top:8px"></div>
       <form id="bk-save" class="stack" style="margin-top:12px">
@@ -245,7 +249,7 @@ export function makeBlueprint({ $, api, esc, getToken, fail, openView }) {
       const pre = await api("/api/admin/blocks/preview", { method: "POST", token: getToken(), body: { campaign_id: b.campaign_id, block_name: b.block_name } });
       if (!pre.ok) { $("bk-preview").innerHTML = `<p class="note">動かせません（${esc(pre.error || pre.status)}${pre.note ? "・" + esc(pre.note) : ""}）</p>`; return; }
       const a = pre.args;
-      $("bk-preview").innerHTML = `<div class="bp-table-wrap"><table class="bp-table" style="min-width:0"><thead><tr><th>種類</th><th>名前</th><th class="r">宛先の人数</th></tr></thead>
+      $("bk-preview").innerHTML = `<div class="bp-table-wrap"><table class="bp-table" style="min-width:0"><thead><tr><th>種類</th><th>名前</th><th class="r">配信対象の人数</th></tr></thead>
         <tbody>${a._preview.map((x) => `<tr><td>${esc(x.type)}</td><td>${esc(x.name)}</td><td class="r num">${x.audience == null ? "—" : x.audience}</td></tr>`).join("")}</tbody></table></div>
         <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="button" id="bk-go">この ${a._preview.length} 個を動かす</button><span class="note" id="bk-go-status"></span></div>`;
       $("bk-go").addEventListener("click", async () => {
@@ -419,7 +423,7 @@ export function makeBlueprint({ $, api, esc, getToken, fail, openView }) {
       const restore = !!cur.archived_at;
       const r = await api("/api/admin/campaigns/archive", { method: "POST", token: getToken(), body: { campaign_id: cur.id, restore } });
       if (!r.ok) {
-        if (r.error === "running_parts") return fail("動いている部品があるのでしまえません：" + r.running.map((x) => x.name).join("・") + "。止めるか、別のシナリオへ移してからしまってください。");
+        if (r.error === "running_parts") return fail("公開中の部品があるのでしまえません：" + r.running.map((x) => x.name).join("・") + "。停止するか、別のシナリオへ移してからしまってください。");
         return fail("できませんでした（" + (r.error || r.status) + "）");
       }
       if (!restore) { view = "all"; }
