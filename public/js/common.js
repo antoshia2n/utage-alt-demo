@@ -52,7 +52,7 @@ export const EVENT_LABEL = {
   email_blocked: "メールを送らなかった",
   email_unsubscribed: "メールの配信を止めた",
   consult_booked: "個別相談を予約した",
-  consult_canceled: "個別相談の予約を取り消した",
+  consult_canceled: "個別相談の予約をキャンセルした",
   consult_done: "面談した",
   deal_won: "成約",
   deal_lost: "失注",
@@ -72,7 +72,7 @@ export const EVENT_LABEL = {
   // チャットの便 C1・C2a（シアニン用の画面のチャット。生徒には出ない）
   chat_note: "チャットのメモ（自分だけ）",
   chat_later: "チャットを後で見るにした",
-  chat_task: "チャットからタスクを足した",
+  chat_task: "チャットからタスクを追加した",
   chat_folder: "チャットをフォルダに入れた",
   chat_saved: "チャットの資料に入れた",
   line_unlinked: "LINE の結びを外した",

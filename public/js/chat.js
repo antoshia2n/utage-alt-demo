@@ -24,7 +24,7 @@ const KEY_LABEL = { shiarabo_basic: "しあらぼ", shiarabo_next_premium: "NEXT
 const ERR = {
   empty: "空です。中身を書いてください", too_long: "長すぎます（8000 字まで）", bad_until: "後で見る日時が正しくありません（これから先・90 日まで）",
   same_chat: "同じチャットには転送できません", message_not_found: "元のメッセージが見つかりませんでした", no_taskmaster: "TaskMaster につながっていません（設定の確認が要ります）",
-  bad_name: "フォルダの名前は 1〜20 字です", name_taken: "同じ名前のフォルダがあります", folders_full: "フォルダがいっぱいです（使っていないものを消すか、名前を短く）", folder_not_found: "そのフォルダは消されています",
+  bad_name: "フォルダの名前は 1〜20 字です", name_taken: "同じ名前のフォルダがあります", folders_full: "フォルダがいっぱいです（使っていないものを削除か、名前を短く）", folder_not_found: "そのフォルダは消されています",
   linked_to_other: "その LINE の友だちは、ほかの人に結ばれています", bad_user: "LINE の友だちの番号が正しくありません", blocked: "ブロックされているので送れません", need_text: "文が空です", no_token: "LINE の鍵がありません（設定の確認が要ります）",
   need_title: "タスクの名前を入れてください", title_too_long: "タスクの名前が長すぎます（300 字まで）", bad_deadline: "期限の形が違います", bad_link_url: "元のメッセージの住所を作れませんでした",
 };
@@ -319,7 +319,7 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
       dialog(`<h2>ニックネーム</h2><p style="margin:0;color:var(--muted);font-size:13px">グループでは、ほかの生徒にこの名前だけが出ます（本名は出ません）。生徒も自分で変えられます。空にすると消します。</p><label for="nk">ニックネーム（20 字まで）</label><input id="nk" maxlength="20" value="${esc(now)}"><p class="err" id="nkerr" role="alert"></p><div class="acts"><button class="btn" data-x>キャンセル</button><button class="btn pri" data-ok>保存</button></div>`, async (d) => {
         const r = await call(`/api/admin/chat/${D.id}/nickname`, "POST", { nickname: $("#nk", d).value });
         if (!r.ok) { $("#nkerr", d).textContent = r.error === "bad_nickname" ? "20 字まで・メールや < > は使えません" : errText(r); return false; }
-        D.names = { ...(D.names || {}), nickname: r.nickname }; drawRight(); toast(r.nickname ? "ニックネームを保存しました" : "ニックネームを消しました"); }); };
+        D.names = { ...(D.names || {}), nickname: r.nickname }; drawRight(); toast(r.nickname ? "ニックネームを保存しました" : "ニックネームを削除しました"); }); };
     $("#toChat").onclick = () => { app.classList.remove("full"); setView("chat"); };
     $("#grab").onclick = () => { const f = app.classList.toggle("full"); app.style.setProperty("--sh", f ? "86vh" : "52vh"); drawRight(); $("#grab").focus(); };
     const sp = $("#split");
@@ -427,7 +427,7 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
   }
   function foldersDlg(opener) {
     lastFocus = opener || lastFocus;
-    dialog(`<h2>フォルダを編集</h2><p style="margin:0;color:var(--muted);font-size:13px">消しても中のチャットは消えません（「フォルダなし」に戻ります）。</p><div id="fl2"></div>
+    dialog(`<h2>フォルダを編集</h2><p style="margin:0;color:var(--muted);font-size:13px">削除しても中のチャットは消えません（「フォルダなし」に戻ります）。</p><div id="fl2"></div>
       <label for="nf2">新しいフォルダ</label><div style="display:flex;gap:6px"><input id="nf2" maxlength="20" placeholder="例 NEXT 受講生"><button class="btn" id="nfb2">作る</button></div>
       <p class="err" id="ferr2" role="alert"></p><div class="acts"><button class="btn pri" data-x>閉じる</button></div>`, null, (d) => {
       const err = (r) => { $("#ferr2", d).textContent = errText(r); };
@@ -435,13 +435,13 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
       const draw = () => {
         const fs = L.folders;
         $("#fl2", d).innerHTML = fs.map((f, k) => `<div class="frow" data-row="${f.id}"><label class="sr" for="fn-${f.id}">${esc(f.name)} の名前</label><input id="fn-${f.id}" maxlength="20" value="${esc(f.name)}"><small>${f.count}</small>
-          <button class="btn" data-up="${f.id}" aria-label="${esc(f.name)} を上へ" ${k === 0 ? "disabled" : ""}>↑</button><button class="btn" data-dn="${f.id}" aria-label="${esc(f.name)} を下へ" ${k === fs.length - 1 ? "disabled" : ""}>↓</button><button class="btn" data-rm="${f.id}" aria-label="${esc(f.name)} を消す">削除</button></div>`).join("") || '<p class="empty">フォルダはまだありません</p>';
+          <button class="btn" data-up="${f.id}" aria-label="${esc(f.name)} を上へ" ${k === 0 ? "disabled" : ""}>↑</button><button class="btn" data-dn="${f.id}" aria-label="${esc(f.name)} を下へ" ${k === fs.length - 1 ? "disabled" : ""}>↓</button><button class="btn" data-rm="${f.id}" aria-label="${esc(f.name)} を削除">削除</button></div>`).join("") || '<p class="empty">フォルダはまだありません</p>';
         $$("[id^=fn-]", d).forEach((i) => { const id = i.id.slice(3); const save = async () => { const f = L.folders.find((x) => x.id === id); if (!f || i.value.trim() === f.name) return; const r = await call("/api/admin/chat/folders", "POST", { id, name: i.value }); if (!r.ok) { err(r); i.value = f.name; return; } $("#ferr2", d).textContent = ""; await loadList(); toast("名前を変えました"); };
           i.onchange = save; i.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); i.blur(); } }; });
         $$("[data-up],[data-dn]", d).forEach((b) => (b.onclick = async () => { const id = b.dataset.up || b.dataset.dn, mv = b.dataset.up ? "up" : "down"; const r = await call("/api/admin/chat/folders", "POST", { id, move: mv }); if (!r.ok) return err(r); await done(`[data-${b.dataset.up ? "up" : "dn"}="${id}"]:not([disabled])`); }));
         $$("[data-rm]", d).forEach((b) => (b.onclick = async () => { const f = L.folders.find((x) => x.id === b.dataset.rm); if (!f) return;
-          if (b.dataset.sure !== "1") { b.dataset.sure = "1"; b.textContent = "本当に消す"; b.classList.add("danger"); return; }
-          const r = await call("/api/admin/chat/folders", "POST", { id: f.id, remove: true }); if (!r.ok) return err(r); if (fsel === f.id) fsel = null; await done("#nf2"); toast(`「${f.name}」を消しました（中のチャットは「フォルダなし」に）`); }));
+          if (b.dataset.sure !== "1") { b.dataset.sure = "1"; b.textContent = "本当に削除"; b.classList.add("danger"); return; }
+          const r = await call("/api/admin/chat/folders", "POST", { id: f.id, remove: true }); if (!r.ok) return err(r); if (fsel === f.id) fsel = null; await done("#nf2"); toast(`「${f.name}」を削除しました（中のチャットは「フォルダなし」に）`); }));
       };
       $("#nfb2", d).onclick = async () => { const r = await call("/api/admin/chat/folders", "POST", { name: $("#nf2", d).value }); if (!r.ok) { err(r); $("#nf2", d).focus(); return; } $("#nf2", d).value = ""; $("#ferr2", d).textContent = ""; await done("#nf2"); toast(`「${r.folder.name}」を作りました`); };
       $("#nf2", d).onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); $("#nfb2", d).click(); } };
@@ -450,7 +450,7 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
   }
   function fwdDlg(m) {
     const others = (L ? L.chats : []).filter((c) => c.person_id !== D.id);
-    dialog(`<h2>転送（メモとして）</h2><p style="margin:0;color:var(--muted);font-size:13px">選んだチャットに、この文をシアニンだけのメモとして写します。相手の生徒には見えません。</p>
+    dialog(`<h2>転送（メモとして）</h2><p style="margin:0;color:var(--muted);font-size:13px">選んだチャットに、この文をシアニンだけのメモとしてコピーします。相手の生徒には見えません。</p>
       <label for="fq">チャットを探す</label><input id="fq" type="search" placeholder="名前で絞る"><div id="fl"></div><p class="err" id="ferr" role="alert"></p><div class="acts"><button class="btn" data-x>キャンセル</button></div>`, null, (d, close) => {
       const draw = () => { const q = $("#fq", d).value.trim(); $("#fl", d).innerHTML = others.filter((c) => !q || nameOf(c).includes(q)).slice(0, 30).map((c) => `<button class="opt" data-to="${c.person_id}">${av(c.person_id, nameOf(c))}${esc(nameOf(c))}</button>`).join("") || '<p class="empty">合うチャットがありません</p>';
         $$("[data-to]", d).forEach((b) => (b.onclick = async () => { const r = await call(`/api/admin/chat/${D.id}/forward`, "POST", { event_id: m.id, to_person_id: b.dataset.to });
@@ -732,7 +732,7 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
     const go = () => { const q = $("#aiq", pane).value.trim(); if (!q) { toast(AIERR.need_question); $("#aiq", pane).focus(); return; } askAi("free", { question: q }); };
     $("#aiask", pane).onclick = go;
     $("#aiq", pane).onkeydown = (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); go(); } };
-    $$("[data-ins]", pane).forEach((b) => (b.onclick = () => { const t = logs[+b.dataset.ins].text; const box = $(G ? "#gcomp" : "#comp"); if (!box) { toast("入力欄がありません（サイトのやり取りに切り替えてください）"); return; } if (!G && noteMode) { noteMode = false; drawMid(); } const bx = $(G ? "#gcomp" : "#comp"); bx.value = t; bx.focus(); if (narrow()) setView("chat"); toast("入力欄に入れました。直してから送ってください"); }));
+    $$("[data-ins]", pane).forEach((b) => (b.onclick = () => { const t = logs[+b.dataset.ins].text; const box = $(G ? "#gcomp" : "#comp"); if (!box) { toast("入力欄がありません（サイトのやり取りに切り替えてください）"); return; } if (!G && noteMode) { noteMode = false; drawMid(); } const bx = $(G ? "#gcomp" : "#comp"); bx.value = t; bx.focus(); if (narrow()) setView("chat"); toast("入力欄に入れました。編集してから送ってください"); }));
     $$("[data-cp]", pane).forEach((b) => (b.onclick = () => navigator.clipboard.writeText(logs[+b.dataset.cp].text).then(() => toast("コピーしました"), () => toast("コピーできませんでした"))));
     $$("[data-memo]", pane).forEach((b) => (b.onclick = async () => { const x = logs[+b.dataset.memo]; const r = await call(`/api/admin/chat/${D.id}/note`, "POST", { text: `【AI の${AIMODE[x.mode]}】\n${x.text}` }); if (!r.ok) { toast(errText(r)); return; } await reload(); toast("メモに残しました（生徒には見えません）"); }));
   }

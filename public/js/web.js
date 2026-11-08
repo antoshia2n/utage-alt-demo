@@ -14,18 +14,18 @@ const ERR = {
   form_not_found: "そのフォームは公開中ではありません",
   too_long: "長すぎる欄があります",
   bad_color: "色を選び直してください",
-  not_found: "見つかりませんでした（消されたかもしれません）",
+  not_found: "見つかりませんでした（削除されたかもしれません）",
   bad_slug: "住所の名前は英小文字・数字・ハイフンの 2〜61 字にしてください",
   slug_taken: "その住所の名前はもう使われています",
   slug_locked: "公開中は住所の名前を変えられません（公開を止めてから）",
-  already_copied: "この記事はもう写してあります",
+  already_copied: "この記事はもうコピーしてあります",
   source_not_found: "コンテンツくんの記事が見つかりません",
   source_not_published: "公開済みの記事だけ写せます",
-  source_empty: "本文が空の記事は写せません",
+  source_empty: "本文が空の記事はコピーできません",
   bad_title: "題を 120 字までで入れてください",
   bad_thumb: "サムネの住所は https:// から入れてください",
   part_not_found: "その部品は使えません（止めたか消されました）",
-  unpublish_first: "公開中の記事は消せません。先に公開を止めてください",
+  unpublish_first: "公開中の記事は削除できません。先に公開を止めてください",
   nothing_to_change: "変えたところがありません",
 };
 const V_ORDER = ["new", "list", "consult", "member", "_default"];
@@ -125,7 +125,7 @@ export function mountWeb(host, { getToken }) {
     const rows = S.parts.map((p) => `<tr class="${edit && edit.id === p.id ? "sel" : ""}"><td class="nm">${esc(p.name)}<small><span class="snip">${esc(p.snippet)}</span></small></td>
       <td>${esc(p.place_label)}</td><td>${V_ORDER.filter((v) => p.rules[v]).map((v) => `<span class="pill ${v === "_default" ? "off" : ""}">${esc(vLabel(v))}</span>`).join("")}</td>
       <td class="num">${p.week.view}</td><td class="num">${p.week.click}</td><td class="num">${p.week.signup}</td>
-      <td style="white-space:nowrap;text-align:right"><button class="btn sm" type="button" data-copy="${esc(p.snippet)}" aria-label="「${esc(p.name)}」の印を写す">印を写す</button> <button class="btn sm" type="button" data-edit="${esc(p.id)}" aria-label="「${esc(p.name)}」を編集">編集</button></td></tr>`).join("");
+      <td style="white-space:nowrap;text-align:right"><button class="btn sm" type="button" data-copy="${esc(p.snippet)}" aria-label="「${esc(p.name)}」の印をコピー">印をコピー</button> <button class="btn sm" type="button" data-edit="${esc(p.id)}" aria-label="「${esc(p.name)}」を編集">編集</button></td></tr>`).join("");
     return `<div class="bar"><span class="hint">ページに印（<span class="snip">&lt;div data-lab-part="part:名前"&gt;&lt;/div&gt;</span>）を置くと、そこに部品が出ます。数は先週 7 日分</span><span class="grow" style="flex:1"></span><button class="btn sm pri" type="button" id="new-part">＋ 部品を作る</button></div>
       ${S.parts.length ? `<div class="tbl"><table><thead><tr><th>部品</th><th>差し込む場所</th><th>出し分け</th><th class="num">見た人</th><th class="num">押した</th><th class="num">登録</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="lead">まだ部品がありません。「＋ 部品を作る」から作れます。</p>'}
       ${edit ? drawEdit() : ""}`;
@@ -166,7 +166,7 @@ export function mountWeb(host, { getToken }) {
       draw(); $("#pname").focus();
     }));
     $("#main").querySelectorAll("[data-copy]").forEach((b) => b.addEventListener("click", async () => {
-      try { await navigator.clipboard.writeText(b.dataset.copy); say("印を写しました。ページの HTML の出したい所に貼ってください"); } catch (_) { say("写せませんでした。表の印を選んで写してください"); }
+      try { await navigator.clipboard.writeText(b.dataset.copy); say("印をコピーしました。ページの HTML の出したい所に貼ってください"); } catch (_) { say("コピーできませんでした。表の印を選んでコピーしてください"); }
     }));
     if (!edit) return;
     root.querySelectorAll("[data-use]").forEach((c) => c.addEventListener("change", () => {
@@ -212,15 +212,15 @@ export function mountWeb(host, { getToken }) {
       <td>${p.gift_part ? esc(partName(p.gift_part) || p.gift_part) : `<span class="hint">${defMid() ? "既定（" + esc(defMid().name) + "）" : "なし"}</span>`}</td>
       <td class="num">${p.week_viewers}</td><td class="num">${esc(jd(p.copied_at))}</td>
       <td style="white-space:nowrap;text-align:right"><a class="btn sm" href="${esc(p.status === "published" ? p.url : p.preview_url)}" target="_blank" rel="noopener" aria-label="「${esc(p.title)}」の見え方を開く">見え方</a> <button class="btn sm" type="button" data-bedit="${esc(p.id)}" aria-label="「${esc(p.title)}」を編集">編集</button></td></tr>`).join("");
-    return `<div class="bar"><span class="hint">コンテンツくんの記事を写して <a href="${esc(B.index_url)}" target="_blank" rel="noopener">${esc(B.index_url.replace(/^https:[/][/]/, ""))}</a> に出します。公開するまで外には出ません。見た人は先週 7 日分</span><span class="grow" style="flex:1"></span><button class="btn sm pri" type="button" id="b-pick">＋ コンテンツくんから写す</button></div>
+    return `<div class="bar"><span class="hint">コンテンツくんの記事をコピーして <a href="${esc(B.index_url)}" target="_blank" rel="noopener">${esc(B.index_url.replace(/^https:[/][/]/, ""))}</a> に出します。公開するまで外には出ません。見た人は先週 7 日分</span><span class="grow" style="flex:1"></span><button class="btn sm pri" type="button" id="b-pick">＋ コンテンツくんからコピー</button></div>
       ${pick ? drawPick() : ""}
-      ${B.posts.length ? `<div class="tbl"><table><thead><tr><th>記事</th><th>状態</th><th>特典（本文の途中）</th><th class="num">見た人</th><th class="num">写した日</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="lead">まだ記事がありません。「＋ コンテンツくんから写す」から始めます。</p>'}
+      ${B.posts.length ? `<div class="tbl"><table><thead><tr><th>記事</th><th>状態</th><th>特典（本文の途中）</th><th class="num">見た人</th><th class="num">コピーした日</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="lead">まだ記事がありません。「＋ コンテンツくんからコピー」から始めます。</p>'}
       ${bed ? drawBed() : ""}`;
   }
   function drawPick() {
     const list = pick.rows ? pick.rows.map((r) => `<tr><td class="nm">${esc(r.title)}<small>${esc(r.type === "note" ? "note" : "X記事")}・${esc(String(r.date || "").slice(0, 10))}</small></td>
-      <td style="white-space:nowrap;text-align:right">${r.blog_id ? `<span class="hint">写し済み（${r.blog_status === "published" ? "公開中" : "下書き"}・/blog/${esc(r.blog_slug)}）</span>` : `<label class="sr" for="sl-${esc(r.id)}">「${esc(r.title)}」の住所の名前</label><input class="in" id="sl-${esc(r.id)}" maxlength="61" placeholder="住所の名前（例：gengoka-skills）" style="width:230px"> <button class="btn sm pri" type="button" data-copy-src="${esc(r.id)}">写す</button>`}</td></tr>`).join("") : "";
-    return `<div class="tbl" style="padding:16px;margin:0 0 14px" id="picker"><h2 style="font-size:16px;margin:0 0 10px">写す記事を選ぶ</h2>
+      <td style="white-space:nowrap;text-align:right">${r.blog_id ? `<span class="hint">コピー済み（${r.blog_status === "published" ? "公開中" : "下書き"}・/blog/${esc(r.blog_slug)}）</span>` : `<label class="sr" for="sl-${esc(r.id)}">「${esc(r.title)}」の住所の名前</label><input class="in" id="sl-${esc(r.id)}" maxlength="61" placeholder="住所の名前（例：gengoka-skills）" style="width:230px"> <button class="btn sm pri" type="button" data-copy-src="${esc(r.id)}">コピー</button>`}</td></tr>`).join("") : "";
+    return `<div class="tbl" style="padding:16px;margin:0 0 14px" id="picker"><h2 style="font-size:16px;margin:0 0 10px">コピーする記事を選ぶ</h2>
       <div class="fld"><label for="pk-acc">アカウント</label><select class="in" id="pk-acc">${(B.accounts || []).map((a) => `<option value="${esc(a.id)}" ${pick.account === a.id ? "selected" : ""}>${esc(a.name)}</option>`).join("")}</select>
       <label for="pk-q" style="min-width:auto">題で探す</label><input class="in" id="pk-q" value="${esc(pick.q)}" placeholder="例：言語化" style="min-width:200px"><button class="btn sm" type="button" id="pk-go">探す</button><button class="btn sm" type="button" id="pk-close">閉じる</button></div>
       <p class="hint" style="margin:0 0 8px">公開済みの X記事と note の新しい順 40 本。住所の名前は lp.shia2n.jp/blog/○○ の ○○（英小文字・数字・ハイフン）</p>
@@ -241,7 +241,7 @@ export function mountWeb(host, { getToken }) {
         <a class="btn sm" href="${esc(pub ? p.url : p.preview_url)}" target="_blank" rel="noopener">見え方を開く</a>
         <button class="btn sm" type="button" id="be-cancel">閉じる</button>
         ${pub ? "" : `<button class="btn sm" type="button" id="be-del" style="color:#b91c1c">${armDel ? "もう一度押すと削除" : "削除"}</button>`}</div>
-      <p class="hint" style="margin:0">本文はここでは直しません。コンテンツくんで直して「写し直す」を押すと入れ替わります（写した日 ${esc(jd(p.copied_at))}）</p></div>`;
+      <p class="hint" style="margin:0">本文はここでは直しません。コンテンツくんで編集して「写し直す」を押すと入れ替わります（コピーした日 ${esc(jd(p.copied_at))}）</p></div>`;
   }
   async function loadPick() {
     const q = new URLSearchParams({ account: pick.account, q: pick.q });
@@ -279,7 +279,7 @@ export function mountWeb(host, { getToken }) {
         if (!r.ok) { say(errText(r)); inp.focus(); return; }
         pick = null; await loadBlog();
         const p = r.post; bed = { id: p.id, title: p.title, slug: p.slug, description: p.description || "", thumb_url: p.thumb_url || "", gift_part: "" }; back = `[data-bedit="${p.id}"]`;
-        draw(); say(`「${p.title}」を下書きに写しました。説明と特典を決めて公開してください`); $("#be-title").focus();
+        draw(); say(`「${p.title}」を下書きにコピーしました。説明と特典を決めて公開してください`); $("#be-title").focus();
       }));
     }
     if (!bed) return;

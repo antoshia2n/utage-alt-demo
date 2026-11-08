@@ -14,7 +14,7 @@ const stubs = { name: "stubs", setup(b) {
   b.onResolve({ filter: /lib\/firebase\.js$/ }, () => ({ path: stub }));
 } };
 await build({
-  stdin: { contents: `export { mountAppShell, setTabTitle } from ${JSON.stringify(path.join(core, "shell/app-shell.js"))};`, resolveDir: core, loader: "js" },
+  stdin: { contents: `export { mountAppShell, setTabTitle } from ${JSON.stringify(path.join(core, "shell/app-shell.js"))};\nexport { guideOn, setGuide, onGuide, ensureGuideCss } from ${JSON.stringify(path.join(core, "shell/guide.js"))};`, resolveDir: core, loader: "js" },
   bundle: true, format: "esm", target: "es2020", minify: true, outfile: "public/js/vendor/app-shell.js",
   banner: { js: `// shia2n-core ${ver}（${rev}）の shell/app-shell.js をまとめたもの。直すときは tools/build-shell.mjs で作り直す` },
   plugins: [stubs],

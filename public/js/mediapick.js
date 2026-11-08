@@ -16,13 +16,13 @@ export const LINE_IMAGE_MAX = 10 * 1024 * 1024;
 const VIEW_TYPES = /^image[/](png|jpeg|gif|webp)$/;
 const size = (n) => !n ? "" : n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB";
 const ERR = {
-  no_file: "まだ写し終わっていないファイルです", not_found: "見つかりませんでした（消されたかもしれません）", no_store: "置き場につながっていません",
+  no_file: "まだ写し終わっていないファイルです", not_found: "見つかりませんでした（削除されたかもしれません）", no_store: "置き場につながっていません",
   preview_too_big: "プレビューを 1MB に収められませんでした", not_image: "画像ではないのでプレビューを作れません",
 };
 
 // 選べないときの理由（選べるなら空）。押したらこの文を出す（灰色で黙って押せなくしない）
 export function blockReason(x, mode) {
-  if (x.waiting) return "UTAGE から写している途中です。写し終わってから選べます（毎時 7 分に進みます）";
+  if (x.waiting) return "UTAGE からコピーしている途中です。写し終わってから選べます（毎時 7 分に進みます）";
   if (x.kind !== "slide" && !x.has_file) return "ファイルがありません（写せなかったか、消されました）";
   const type = String(x.content_type || "").split(";")[0].trim();
   if (mode === "line") {

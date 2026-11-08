@@ -77,7 +77,7 @@ function roadHtml(plan, now, big) {
 const monthsHtml = (plan) => Array.from({ length: WEEKS }, (_, i) => { const d = weekDate(plan, i + 1); return `<span>${i === 0 || d.getUTCDate() <= 7 ? `${d.getUTCMonth() + 1}月` : ""}</span>`; }).join("");
 
 function budgetHtml(plan) {
-  const row = (b, i) => `<div class="gk-bro"><i style="background:${b.c}"></i>${ed(`bud.${i}.n`, b.n, "項目の名前")}<span class="hs"><button type="button" data-bh="${i}" data-d="-1" aria-label="${esc(b.n)}を 1 時間減らす">−</button><b>${b.h}h</b><button type="button" data-bh="${i}" data-d="1" aria-label="${esc(b.n)}を 1 時間増やす">＋</button></span><button class="mv" type="button" data-bmv="${i}" aria-label="${b.g ? "生活の時間へ移す" : "目標に使う時間へ移す"}" title="${b.g ? "生活の時間へ移す" : "目標に使う時間へ移す"}">${b.g ? "←" : "→"}</button><button class="gk-x" type="button" data-del="bud.${i}" aria-label="${esc(b.n)}を消す">×</button></div>`;
+  const row = (b, i) => `<div class="gk-bro"><i style="background:${b.c}"></i>${ed(`bud.${i}.n`, b.n, "項目の名前")}<span class="hs"><button type="button" data-bh="${i}" data-d="-1" aria-label="${esc(b.n)}を 1 時間減らす">−</button><b>${b.h}h</b><button type="button" data-bh="${i}" data-d="1" aria-label="${esc(b.n)}を 1 時間増やす">＋</button></span><button class="mv" type="button" data-bmv="${i}" aria-label="${b.g ? "生活の時間へ移す" : "目標に使う時間へ移す"}" title="${b.g ? "生活の時間へ移す" : "目標に使う時間へ移す"}">${b.g ? "←" : "→"}</button><button class="gk-x" type="button" data-del="bud.${i}" aria-label="${esc(b.n)}を削除">×</button></div>`;
   const sum = budSum(plan), free = 168 - sum, life = sum - goalHours(plan);
   return `<div class="gk-bud2"><div class="gk-numh">リソース予算　1 週間は 168 時間</div>
     <div class="gk-budbar" aria-hidden="true">${plan.bud.filter((b) => !b.g).concat(plan.bud.filter((b) => b.g)).map((b) => `<i style="flex:${b.h};background:${b.c}"></i>`).join("")}${free > 0 ? `<i style="flex:${free};background:#e8e8ee"></i>` : ""}</div>
@@ -85,12 +85,12 @@ function budgetHtml(plan) {
       <div class="gk-budcol"><h4>生活の時間<b>${life}h</b></h4>${plan.bud.map((b, i) => (b.g ? "" : row(b, i))).join("")}</div>
       <div class="gk-budcol goal"><h4>目標に使う時間<b>${goalHours(plan)}h</b></h4>${plan.bud.map((b, i) => (b.g ? row(b, i) : "")).join("")}<p class="note" style="margin:6px 0 0;font-size:11.5px">この時間が、④ 戦術でやることを組むときの上限になります</p></div>
     </div>
-    <div class="gk-budsum"><span>合計 <b class="${free < 0 ? "over" : ""}">${sum}</b> / 168 時間　${free < 0 ? `<b class="over">${-free} 時間オーバー</b>` : free > 0 ? `空き ${free} 時間` : "ぴったり"}</span>${plan.bud.length < 12 ? `<button class="gk-mini-add" type="button" data-add="bud">＋ 項目を足す</button>` : ""}</div></div>`;
+    <div class="gk-budsum"><span>合計 <b class="${free < 0 ? "over" : ""}">${sum}</b> / 168 時間　${free < 0 ? `<b class="over">${-free} 時間オーバー</b>` : free > 0 ? `空き ${free} 時間` : "ぴったり"}</span>${plan.bud.length < 12 ? `<button class="gk-mini-add" type="button" data-add="bud">＋ 項目を追加</button>` : ""}</div></div>`;
 }
 
 export function planHtml(plan, today) {
   const now = weekNo(plan, today), { w, over } = place(plan);
-  const kgi = plan.kgi.map((k, i) => `<div class="gk-bar kgi">${ed(`kgi.${i}.n`, k.n, "数字の名前")}<div class="tr"><i style="width:${kp(k) * 100}%"></i><span class="pace" style="left:${Math.min(1, now / WEEKS) * 100}%"></span></div><span class="v">${ed(`kgi.${i}.v`, fmt(k.v), "今")}<small> / </small>${ed(`kgi.${i}.to`, fmt(k.to), "目標")}${ed(`kgi.${i}.u`, k.u, "単位", "u")}</span><button class="gk-x" type="button" data-del="kgi.${i}" aria-label="${esc(k.n)}を消す">×</button></div>`).join("");
+  const kgi = plan.kgi.map((k, i) => `<div class="gk-bar kgi">${ed(`kgi.${i}.n`, k.n, "数字の名前")}<div class="tr"><i style="width:${kp(k) * 100}%"></i><span class="pace" style="left:${Math.min(1, now / WEEKS) * 100}%"></span></div><span class="v">${ed(`kgi.${i}.v`, fmt(k.v), "今")}<small> / </small>${ed(`kgi.${i}.to`, fmt(k.to), "目標")}${ed(`kgi.${i}.u`, k.u, "単位", "u")}</span><button class="gk-x" type="button" data-del="kgi.${i}" aria-label="${esc(k.n)}を削除">×</button></div>`).join("");
   const rows = plan.ms.map((m, i) => {
     const n = w.findIndex((x) => Array.isArray(x) && x[0] === i && x[1] === 0);
     const st = n > 0 ? weekState(plan, n, now) : "empty", c = ST_COLOR[st], p = msProgress(m), ext = plan.ext[i] || 0;
@@ -100,7 +100,7 @@ export function planHtml(plan, today) {
       <span class="pp">${p == null ? `<span class="note" style="margin:0;font-size:11px">KPI は ④ で決めます</span>` : `<span class="tr"><i style="width:${Math.round(p * 100)}%;background:${c}"></i></span>${Math.round(p * 100)}%`}</span>
       <span class="stt" style="color:${c}">${ST_LABEL[st]}</span>
       <button class="gk-go" type="button" data-ms="${i}">${m.resDone && m.hypDone && m.kpi.length ? "戦術を見る" : "戦術を考える"} →</button>
-      <button class="gk-x" type="button" data-del="ms.${i}" aria-label="状態 ${i + 1} を消す">×</button></div></li>`;
+      <button class="gk-x" type="button" data-del="ms.${i}" aria-label="状態 ${i + 1} を削除">×</button></div></li>`;
   }).join("");
   return `
   <div class="gk-step g1" id="s1">${head(1, "理想", "1 年後、どうなっていたいか")}
@@ -108,7 +108,7 @@ export function planHtml(plan, today) {
   <div class="gk-link">↓ 理想のために、次の 3 か月で届く数字と使える時間</div>
   <div class="gk-step g1" id="s2">${head(2, "条件", "KGI＝13 週で目指す数字（3 つまで）。面談で現実的に決めます")}
     ${kgi ? `<div class="gk-bars">${kgi}</div>` : `<p class="note" style="margin:0">まだありません。例：フォロワー 1,000 人</p>`}
-    ${plan.kgi.length < 3 ? `<button class="gk-add" type="button" data-add="kgi">＋ KGI を足す</button>` : `<p class="note" style="margin:0">KGI は 3 つまでです</p>`}
+    ${plan.kgi.length < 3 ? `<button class="gk-add" type="button" data-add="kgi">＋ KGI を追加</button>` : `<p class="note" style="margin:0">KGI は 3 つまでです</p>`}
     ${budgetHtml(plan)}</div>
   <div class="gk-link">↓ KGI に届いた姿が、13 週の目標になる</div>
   <div class="gk-step g1" id="s3">${head(3, "戦略", "13 週の目標を、1 週ずつの状態に分ける")}
@@ -122,7 +122,7 @@ export function planHtml(plan, today) {
     ${over > 0 ? `<p class="msg err" style="margin:0">週が ${over} つ足りません。予備を減らすか、状態をまとめてください</p>` : ""}
     <div class="gk-sh"><h3 style="font-size:14px">マイルストーン（状態 ${plan.ms.length} 個・予備 ${plan.spare.length} 週）</h3></div>
     ${rows ? `<ul class="gk-mlist">${rows}</ul>` : `<p class="note" style="margin:0">まだありません。1 週で届く「状態」を 10 個ほど並べます。例：毎日投稿の仕組みができている</p>`}
-    ${plan.ms.length < 13 ? `<button class="gk-add" type="button" data-add="ms">＋ 状態を足す（空いている週へ自動で並びます）</button>` : ""}
+    ${plan.ms.length < 13 ? `<button class="gk-add" type="button" data-add="ms">＋ 状態を追加（空いている週へ自動で並びます）</button>` : ""}
     <p class="note" style="margin:0">最初の数週は「型が決まっている」のような、やり方を見つける状態から置くと進めやすくなります。各状態の KPI とやることは「戦術を考える」から決めます</p></div>`;
 }
 export function popHtml(plan, n, now) {
@@ -140,8 +140,8 @@ export function tacHtml(plan, today, sel) {
   if (i == null) return `<div class="gk-step g2" id="s4">${head(4, "戦術を考える", "先に ③ で状態を 1 つ以上置きます")}<button class="gk-add" type="button" data-gv="plan">③ 戦略へ</button></div>`;
   const m = plan.ms[i], n = msWeek(plan, i), hrs = tasksHours(m), cap = goalHours(plan);
   const opts = plan.ms.map((mm, j) => `<option value="${j}" ${j === i ? "selected" : ""}>状態 ${j + 1}：${esc(mm.n || "（まだ書いていません）")}${j === cur ? "（今週）" : ""}</option>`).join("");
-  const kpi = m.kpi.map((k, j) => `<div class="gk-kpid"><input class="gk-in" data-kf="${i}.${j}.n" value="${esc(k.n)}" placeholder="数字の名前（例：X 記事）" aria-label="KPI ${j + 1} の名前" maxlength="30"><input class="gk-in num" data-kf="${i}.${j}.to" value="${k.to ? fmt(k.to) : ""}" inputmode="numeric" placeholder="目標" aria-label="KPI ${j + 1} の目標"><input class="gk-in unit" data-kf="${i}.${j}.u" value="${esc(k.u)}" placeholder="単位" aria-label="KPI ${j + 1} の単位" maxlength="10"><button class="gk-x" type="button" data-del="ms.${i}.kpi.${j}" aria-label="KPI ${j + 1} を消す">×</button></div>`).join("");
-  const tasks = m.tasks.map((t, j) => `<li><span class="tt">${ed(`ms.${i}.tasks.${j}.t`, t.t, "やること")}<span class="wh">いつ：${ed(`ms.${i}.tasks.${j}.when`, t.when, "例：火曜の朝")}${t.from ? "　⑧ 先週の修正から" : ""}</span></span><span class="hr">${ed(`ms.${i}.tasks.${j}.hr`, String(t.hr || 0), "0")}h</span><button class="gk-x" type="button" data-del="ms.${i}.tasks.${j}" aria-label="やること ${j + 1} を消す">×</button></li>`).join("");
+  const kpi = m.kpi.map((k, j) => `<div class="gk-kpid"><input class="gk-in" data-kf="${i}.${j}.n" value="${esc(k.n)}" placeholder="数字の名前（例：X 記事）" aria-label="KPI ${j + 1} の名前" maxlength="30"><input class="gk-in num" data-kf="${i}.${j}.to" value="${k.to ? fmt(k.to) : ""}" inputmode="numeric" placeholder="目標" aria-label="KPI ${j + 1} の目標"><input class="gk-in unit" data-kf="${i}.${j}.u" value="${esc(k.u)}" placeholder="単位" aria-label="KPI ${j + 1} の単位" maxlength="10"><button class="gk-x" type="button" data-del="ms.${i}.kpi.${j}" aria-label="KPI ${j + 1} を削除">×</button></div>`).join("");
+  const tasks = m.tasks.map((t, j) => `<li><span class="tt">${ed(`ms.${i}.tasks.${j}.t`, t.t, "やること")}<span class="wh">いつ：${ed(`ms.${i}.tasks.${j}.when`, t.when, "例：火曜の朝")}${t.from ? "　⑧ 先週の修正から" : ""}</span></span><span class="hr">${ed(`ms.${i}.tasks.${j}.hr`, String(t.hr || 0), "0")}h</span><button class="gk-x" type="button" data-del="ms.${i}.tasks.${j}" aria-label="やること ${j + 1} を削除">×</button></li>`).join("");
   return `<div class="gk-step g2" id="s4">${head(4, "戦術を考える", "調べて、仮説を立てて、この週の KPI とやることに落とす")}
     <label class="gk-pick"><span>どの状態の戦術？</span><select data-sel aria-label="戦術を考える状態">${opts}</select></label>
     <div class="gk-goal13 now"><span class="l">${n > 0 ? `第 ${n} 週・${monthWeek(plan, n)}` : "週が足りません"}${i === cur ? "（今週）" : ""}　<span class="gk-from">③ マイルストーンから</span></span><p>${ed(`ms.${i}.n`, m.n, "どんな状態になっているか")}</p></div>
@@ -150,9 +150,9 @@ export function tacHtml(plan, today, sel) {
     <div class="gk-sub"><h4><label class="gk-ck"><input type="checkbox" data-mck="${i}.hypDone" ${m.hypDone ? "checked" : ""}><span class="tag">2</span>仮説を作った</label><small>「〇〇をすれば、△△になるはず」</small></h4>
       <textarea class="gk-bul" rows="2" data-mtx="${i}.hyp" maxlength="1000" placeholder="・〇〇をすれば、△△になるはず" aria-label="仮説">${esc(m.hyp)}</textarea></div>
     <div class="gk-sub"><h4><span class="tag">3</span>この週の KPI<small>仮説が当たったかを測る数字（5 つまで）</small></h4>
-      ${kpi || `<p class="note" style="margin:0">まだありません。例：X 記事 2 本</p>`}${m.kpi.length < 5 ? `<button class="gk-mini-add" type="button" data-addk="${i}">＋ KPI を足す</button>` : ""}</div>
+      ${kpi || `<p class="note" style="margin:0">まだありません。例：X 記事 2 本</p>`}${m.kpi.length < 5 ? `<button class="gk-mini-add" type="button" data-addk="${i}">＋ KPI を追加</button>` : ""}</div>
     <div class="gk-sub"><h4><span class="tag">4</span>やること<small>いつ・何時間</small></h4>
-      ${tasks ? `<ul class="gk-tac">${tasks}</ul>` : ""}${m.tasks.length < 20 ? `<button class="gk-add" type="button" data-addt="${i}">＋ やることを足す</button>` : ""}
+      ${tasks ? `<ul class="gk-tac">${tasks}</ul>` : ""}${m.tasks.length < 20 ? `<button class="gk-add" type="button" data-addt="${i}">＋ やることを追加</button>` : ""}
       <div class="gk-cap ${hrs > cap ? "over" : ""}"><span>計画 <b>${hrs} 時間</b> ／ 目標に使える ${cap} 時間（② から）</span><span>${hrs > cap ? `<b class="ov">${hrs - cap} 時間はみ出し</b>` : `残り ${cap - hrs} 時間`}</span><div class="tr"><i style="width:${cap ? Math.min(100, (hrs / cap) * 100) : 0}%"></i></div></div></div>
     <div class="gk-act"><button class="btn ghost" type="button" data-back>← 全体像へ戻る</button></div></div>`;
 }
@@ -182,7 +182,7 @@ export function recHtml(plan, today, n) {
   const x = msAt(plan, n), m = x ? plan.ms[x[0]] : null, i = x ? x[0] : null, w = weekRec(plan, n);
   const kpi = m && m.kpi.length ? m.kpi.map((k, j) => k.to >= 1000
     ? `<div class="gk-stp"><div class="n">${esc(k.n || "（名前なし）")}<small>目標 ${fmt(k.to)}${esc(k.u)}</small></div><input class="gk-in big" data-kin="${i}.${j}" value="${fmt(k.v)}" inputmode="numeric" aria-label="${esc(k.n)}の今の数"></div>`
-    : `<div class="gk-stp"><div class="n">${esc(k.n || "（名前なし）")}<small>目標 ${fmt(k.to)}${esc(k.u)}</small></div><div class="c"><button type="button" data-kv="${i}.${j}" data-d="-1" aria-label="${esc(k.n)}を 1 減らす">−</button><input class="gk-in mid" data-kin="${i}.${j}" value="${fmt(k.v)}" inputmode="numeric" aria-label="${esc(k.n)}の今の数"><button type="button" data-kv="${i}.${j}" data-d="1" aria-label="${esc(k.n)}を 1 足す">＋</button></div></div>`).join("")
+    : `<div class="gk-stp"><div class="n">${esc(k.n || "（名前なし）")}<small>目標 ${fmt(k.to)}${esc(k.u)}</small></div><div class="c"><button type="button" data-kv="${i}.${j}" data-d="-1" aria-label="${esc(k.n)}を 1 減らす">−</button><input class="gk-in mid" data-kin="${i}.${j}" value="${fmt(k.v)}" inputmode="numeric" aria-label="${esc(k.n)}の今の数"><button type="button" data-kv="${i}.${j}" data-d="1" aria-label="${esc(k.n)}を 1 追加">＋</button></div></div>`).join("")
     : `<p class="note" style="margin:0">この週の KPI はまだありません。<button class="gk-mini-add" type="button" data-ms="${i ?? ""}">④ 戦術で決める →</button></p>`;
   const tasks = m && m.tasks.length ? `<div class="gk-numh">やることのチェック</div><ul class="gk-tac">${m.tasks.map((t, j) => `<li class="${t.d ? "done" : ""}"><label class="gk-ck"><input type="checkbox" data-td="${i}.${j}" ${t.d ? "checked" : ""}><span>${esc(t.t || "（まだ書いていません）")}</span></label><span class="hr">${t.hr}h${t.when ? "・" + esc(t.when) : ""}</span></li>`).join("")}</ul>` : "";
   const hrs = plan.bud.filter((b) => b.g).map((b) => `<label class="gk-hl">${esc(b.n)}<input class="gk-in hh" data-used="${esc(b.n)}" value="${w.used[b.n] ?? ""}" inputmode="decimal" placeholder="0" aria-label="${esc(b.n)}に使った時間"><small>/ ${b.h}h</small></label>`).join("");
@@ -369,7 +369,7 @@ export function draftHtml(dr, open, done) {
   const kgi = (dr.kgi || []).map((k) => `${esc(k.n)} ${fmt(k.to)}${esc(k.u)}`).join("・");
   return `<section class="gk-draft" aria-label="シアニンと決めた下書き">
     <h3>シアニンと決めた下書きがあります</h3>
-    <p>${dr.source ? esc(dr.source) + "から" : "面談の中身から"}作りました。理想・KGI・13 週の状態が入っています。始めたあとも自由に直せます。</p>
+    <p>${dr.source ? esc(dr.source) + "から" : "面談の中身から"}作りました。理想・KGI・13 週の状態が入っています。始めたあとも自由に編集できます。</p>
     <div class="gk-draft-act"><button class="btn" type="button" data-draft="start">この設計で始める</button><button class="btn ghost" type="button" data-draft="keep">今のままにする</button><button class="gk-mini-add" type="button" data-draft="open" aria-expanded="${open ? "true" : "false"}">中を見る ${open ? "▲" : "▼"}</button></div>
     ${open ? `<dl class="gk-draft-body"><dt>① 理想</dt><dd>${esc(dr.ideal || "（空）")}${dr.idealWhen ? `（${esc(dr.idealWhen)}）` : ""}</dd><dt>② KGI</dt><dd>${kgi || "（空）"}</dd><dt>③ 13 週</dt><dd>${md(weekDate(p, 1))} から${dr.goal13 ? `・${esc(dr.goal13)}` : ""}<ol class="gk-draft-wk">${weeks}</ol></dd></dl>` : ""}
   </section>`;

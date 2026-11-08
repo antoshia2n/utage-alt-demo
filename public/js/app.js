@@ -156,8 +156,8 @@ async function main() {
     $("tab-news").insertAdjacentHTML("afterbegin", `<div class="card" id="referral"><h3>紹介のリンク</h3>
       <p class="note">このリンクから登録した人は、あなたの紹介として記録されます。</p>
       <p class="note" style="word-break:break-all;margin:0"><code>${esc(rf.link)}</code></p>
-      <div style="display:flex;gap:8px;align-items:center;margin-top:8px"><button class="btn ghost small" id="rf-copy" type="button">リンクを写す</button><span class="note">紹介で登録 ${rf.referred} 人${rf.reward_total ? "・報酬 " + Number(rf.reward_total).toLocaleString() + " 円（払い済み " + Number(rf.paid_total).toLocaleString() + " 円）" : ""}</span></div></div>`);
-    $("rf-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText(rf.link); $("rf-copy").textContent = "写しました"; } catch (_) { $("rf-copy").textContent = "写せませんでした"; } });
+      <div style="display:flex;gap:8px;align-items:center;margin-top:8px"><button class="btn ghost small" id="rf-copy" type="button">リンクをコピー</button><span class="note">紹介で登録 ${rf.referred} 人${rf.reward_total ? "・報酬 " + Number(rf.reward_total).toLocaleString() + " 円（払い済み " + Number(rf.paid_total).toLocaleString() + " 円）" : ""}</span></div></div>`);
+    $("rf-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText(rf.link); $("rf-copy").textContent = "コピーしました"; } catch (_) { $("rf-copy").textContent = "コピーできませんでした"; } });
   }
 
   // 個別相談の予約（2026-11-05）：予約できる種類が 1 つでもあれば、左のメニューとホームの 1 行に出す
@@ -788,7 +788,7 @@ main().catch((e) => fail("読み込めませんでした：" + e.message));
 
 
 // ---------- 目標（2026-10-30・2026-11-05 に目標達成くんへ）：目標はしあらぼ管理が正本（読むだけ）。日報・週報はここで書く ----------
-const G_ERR = { empty: "数字か文のどちらかを入れてください", bad_number: "数字の欄に数でないものが入っています", body_too_long: "2000 字までです", day_out_of_range: "その日はもう直せません（7 日前まで）", bad_plan: "送った中身が読めませんでした。画面を読み直してください", plan_too_large: "書いた量が多すぎます。少し短くしてください", not_student: "この画面はしあらぼの生徒向けです", report_incomplete: "理由と来週の進め方を選んでください", week_out_of_range: "その週はまだ出せません", plan_not_saved: "先に設計を保存してください", no_draft: "下書きが見つかりませんでした。画面を読み直してください", draft_closed: "この下書きはもう使いました。画面を読み直してください", bad_report: "送った中身が読めませんでした。画面を読み直してください" };
+const G_ERR = { empty: "数字か文のどちらかを入れてください", bad_number: "数字の欄に数でないものが入っています", body_too_long: "2000 字までです", day_out_of_range: "その日はもう編集できません（7 日前まで）", bad_plan: "送った中身が読めませんでした。画面を読み直してください", plan_too_large: "書いた量が多すぎます。少し短くしてください", not_student: "この画面はしあらぼの生徒向けです", report_incomplete: "理由と来週の進め方を選んでください", week_out_of_range: "その週はまだ出せません", plan_not_saved: "先に設計を保存してください", no_draft: "下書きが見つかりませんでした。画面を読み直してください", draft_closed: "この下書きはもう使いました。画面を読み直してください", bad_report: "送った中身が読めませんでした。画面を読み直してください" };
 const gErr = (r) => G_ERR[r && r.error] || errText(r);
 let gData = null, gToken = null;
 function gDraw() { drawPlan(); }
@@ -833,7 +833,7 @@ async function gSavePlan() {
   const { saved_at: _drop, ...plan } = gData.plan;
   const r = await api("/api/me/goals/plan", { method: "PUT", token: gToken, body: { plan } });
   gSaving = false;
-  if (!r.ok) { gSavedLine("保存できませんでした。" + gErr(r) + "（もう一度直すと、保存し直します）", true); }
+  if (!r.ok) { gSavedLine("保存できませんでした。" + gErr(r) + "（もう一度編集すると、保存し直します）", true); }
   else { gData.plan.saved_at = r.plan.saved_at; gSavedLine(`保存しました（${new Date(r.plan.saved_at).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}）`); }
   if (gAgain) { gAgain = false; gSavePlan(); }
 }
@@ -890,7 +890,7 @@ function wirePlan() {
     if (t.name === "gk-nx") { if (applyNext(gData.plan, gWk(), t.value)) planChanged(t.value === "cont" ? `第 ${gWk() + 1} 週も同じ状態を続けます。③ に反映しました` : "来週は次の状態へ進みます"); return; }
     if (applyWeek(gData.plan, gWk(), t)) { planChanged(""); return; }
     if (applyField(gData.plan, t)) { planChanged(""); return; }
-    if (t.dataset && t.dataset.start != null && /^\d{4}-\d{2}-\d{2}$/.test(t.value)) { const d = new Date(t.value + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); gData.plan.start = d.toISOString().slice(0, 10); planChanged("始めた週を直しました"); }
+    if (t.dataset && t.dataset.start != null && /^\d{4}-\d{2}-\d{2}$/.test(t.value)) { const d = new Date(t.value + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); gData.plan.start = d.toISOString().slice(0, 10); planChanged("始めた週を変更しました"); }
   });
   root.addEventListener("click", (e) => {
     const t = e.target.closest("button, a[data-to]"); if (!t || !gData) return;
@@ -908,7 +908,7 @@ function wirePlan() {
     if (d.ms != null) { openTac(+d.ms); return; }
     if (d.back != null) { gShow("plan"); const o = root.querySelector(".gk-overview"); if (o) o.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
     if (applyAction(gData.plan, d, gNow())) {
-      const msg = d.add === "ms" ? "状態を足しました。空いている週に並びます" : d.del ? "消しました" : d.spare ? (gData.plan.spare.includes(+d.spare) ? `第 ${d.spare} 週を予備にしました` : `第 ${d.spare} 週に状態を戻しました`) : d.bmv != null ? "時間の置き場所を移しました" : "";
+      const msg = d.add === "ms" ? "状態を追加しました。空いている週に並びます" : d.del ? "削除しました" : d.spare ? (gData.plan.spare.includes(+d.spare) ? `第 ${d.spare} 週を予備にしました` : `第 ${d.spare} 週に状態を戻しました`) : d.bmv != null ? "時間の置き場所を移しました" : "";
       planChanged(msg);
       if (d.add) { const sel = { kgi: "kgi", ms: "ms", bud: "bud" }[d.add]; const els = root.querySelectorAll(`[data-ed^="${sel}.${gData.plan[sel].length - 1}."]`); if (els[0]) els[0].focus(); }
       if (d.addk != null) { const el = root.querySelector(`[data-kf="${d.addk}.${gData.plan.ms[d.addk].kpi.length - 1}.n"]`); if (el) el.focus(); }

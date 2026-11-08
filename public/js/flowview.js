@@ -41,7 +41,7 @@ export function makeFlowView({ $, api, esc, getToken, fail, openPart }) {
     const ai = c.ai;
     let aiBox = "";
     if (asking.has(c.key)) {
-      aiBox = `<div class="fl-ai"><label for="fl-n-${k}">AI へのひとこと（どう直したいか）</label>
+      aiBox = `<div class="fl-ai"><label for="fl-n-${k}">AI へのひとこと（どう編集したいか）</label>
         <textarea id="fl-n-${k}" rows="2" placeholder="例：失敗談から入って、最後にブログへ誘導。メンシプは一言だけ"></textarea>
         <div class="note">依頼文に入るもの：シナリオの名前・この配信と前後の配信・配信タイミング・ひとこと。AI はマーケくんの道具で前後を読みます</div>
         <div class="fl-row fl-end"><button type="button" class="btn ghost small" data-aiclose="${k}">キャンセル</button><button type="button" class="btn small" data-aiask="${k}">依頼文をコピー</button></div></div>`;
@@ -51,8 +51,8 @@ export function makeFlowView({ $, api, esc, getToken, fail, openPart }) {
     } else if (ai && ai.status === "ready") {
       aiBox = `<div class="fl-ai fl-ai-has"><div class="fl-row"><b>AI の案</b><span class="note">ひとこと：${esc(ai.note || "なし")}</span></div>
         <div class="fl-two"><div><div class="note">今の本文</div><div class="fl-text">${lines(c.text)}</div></div>
-        <div><label class="note" for="fl-d-${k}">AI の案（直してから採用できる）</label><textarea id="fl-d-${k}" rows="9">${esc(ai.draft || "")}</textarea></div></div>
-        <div class="fl-row fl-end"><button type="button" class="btn ghost small" data-aiagain="${k}">もう一度（ひとことを足す）</button><button type="button" class="btn ghost small" data-aidrop="${esc(ai.id)}">採用しない</button><button type="button" class="btn small" data-aiadopt="${esc(ai.id)}" data-key="${k}">${c.state === "running" || c.state === "test" ? "採用（配信中の本文を入れ替える）" : "採用"}</button></div></div>`;
+        <div><label class="note" for="fl-d-${k}">AI の案（編集してから採用できる）</label><textarea id="fl-d-${k}" rows="9">${esc(ai.draft || "")}</textarea></div></div>
+        <div class="fl-row fl-end"><button type="button" class="btn ghost small" data-aiagain="${k}">もう一度（ひとことを追加）</button><button type="button" class="btn ghost small" data-aidrop="${esc(ai.id)}">採用しない</button><button type="button" class="btn small" data-aiadopt="${esc(ai.id)}" data-key="${k}">${c.state === "running" || c.state === "test" ? "採用（配信中の本文を入れ替える）" : "採用"}</button></div></div>`;
     }
     const acts = [
       c.editable && !isEdit ? `<button type="button" class="btn ghost small" data-editon="${k}">編集</button>` : "",

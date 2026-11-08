@@ -63,7 +63,7 @@ export function mountUtageCopy(host, { getToken }) {
   function head() {
     const L = S && S.latest, C = S && S.current;
     const going = C && !C.finished_at;
-    $("#note-top").textContent = L ? `${L.run} の写し${going ? `・いま取り直し中（残り ${C.queue_left}）` : ""}` : going ? `初回を写しています（残り ${C.queue_left}）` : "";
+    $("#note-top").textContent = L ? `${L.run} の写し${going ? `・いま取り直し中（残り ${C.queue_left}）` : ""}` : going ? `初回をコピーしています（残り ${C.queue_left}）` : "";
   }
   function main() {
     const search = `<div class="bar"><div class="search"><span aria-hidden="true">⌕</span><input type="search" id="q" placeholder="名前・文面・住所で探す（Enter）" value="${esc(q)}" aria-label="写しの中を探す"></div></div>`;

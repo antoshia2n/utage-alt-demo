@@ -99,7 +99,7 @@ export function setupGroups(token, { onUnread } = {}) {
       <h3>${tm ? "スレッド" : esc(data.group.name)}<small>${tm ? esc(data.group.name) : `メンバー ${data.members} 人`}・<button class="link" type="button" id="g-nick">ニックネーム：${esc(data.me.nickname || "未設定")}</button></small></h3></div>
       <div class="g-room" id="g-room">${body}</div>
       <div class="g-thumbs" id="g-thumbs"></div>
-      <form class="g-comp" id="g-comp">${tm ? "" : '<label class="g-ib" aria-label="画像を足す">📷<input id="g-pick" type="file" accept="image/*" multiple hidden></label>'}
+      <form class="g-comp" id="g-comp">${tm ? "" : '<label class="g-ib" aria-label="画像を追加">📷<input id="g-pick" type="file" accept="image/*" multiple hidden></label>'}
         <label for="g-text" class="sr">${tm ? "スレッドに返信" : "メッセージ"}</label><textarea id="g-text" rows="1" maxlength="8000" placeholder="${tm ? "スレッドに返信" : "メッセージ"}"></textarea>
         <button class="g-ib send" type="submit" aria-label="送る">➤</button></form><p class="note" id="g-status" aria-live="polite"></p>`;
     document.getElementById("g-nick").addEventListener("click", () => nickDlg());
