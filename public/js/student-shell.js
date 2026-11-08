@@ -58,6 +58,7 @@ export function mountStudentShell(el, { me, sb, session, onContract }) {
     self: false, // アプリ一覧に「いま開いています」を出さない（生徒にとってはアプリではなく自分の画面）
     account: onContract ? [{ label: "ご契約とお支払い", icon: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5.5" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/></svg>', run: onContract }] : [],
     host: "lab.shia2n.jp",
+    guide: true, // 2026-11-08 右上の「ガイド あり／なし」と題の横の「？」（student-guide.js）
     manual: {
       intro: contract ? "この画面はご契約の確認用です。教材・添削ルームは、しあらぼの会員向けです。" : "しあらぼの教材・添削・相談・ご契約が、この画面にまとまっています。",
       sections: contract ? CONTRACT_SECTIONS : FULL_SECTIONS,

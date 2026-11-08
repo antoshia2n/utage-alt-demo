@@ -78,6 +78,7 @@ async function main() {
       const { mountStudentShell } = await import("/js/student-shell.js");
       mountStudentShell($("shell-slot"), { me: r, sb, session, onContract: () => { location.hash = "#contract"; } });
       $("shell-slot").classList.remove("hidden");
+      try { const { initStudentGuide } = await import("/js/student-guide.js"); initStudentGuide(r.access === "contract" ? "contract" : "home", r.access === "contract" ? "ご契約" : "ホーム"); } catch (e) { console.warn("guide", e); }
       $("who-line").classList.add("hidden");
       $("logout").classList.add("hidden");
     } catch (e) { console.warn("shell", e); }
@@ -91,6 +92,7 @@ async function main() {
       const pick = (name) => {
         ["contract", "booking"].forEach((t) => { $("tab-" + t).classList.toggle("hidden", t !== name); document.querySelector(`.side [data-tab="${t}"]`).setAttribute("aria-selected", String(t === name)); });
         $("crumb").textContent = name === "booking" ? "予約" : "ご契約";
+        window.__labGuide && window.__labGuide(name, $("crumb").textContent);
         if (name === "booking") loadBooking(session.access_token);
       };
       document.querySelector('.side [data-tab="booking"]').addEventListener("click", () => pick("booking"));
@@ -180,7 +182,7 @@ async function main() {
     document.querySelectorAll(".side [data-tab]").forEach((b) => {
       const on = b.dataset.tab === name || (name === "lesson" && b.dataset.tab === "lessons") || (name === "mypage" && b.dataset.tab === "home");
       b.setAttribute("aria-selected", String(on));
-      if (on) $("crumb").textContent = b.dataset.label || b.textContent.trim();
+      if (on) { $("crumb").textContent = b.dataset.label || b.textContent.trim(); window.__labGuide && window.__labGuide(name, $("crumb").textContent); }
       // 5b：スマホの上の帯では、今いるタブを見える位置へ送る
       if (on && window.matchMedia("(max-width: 860px)").matches) b.scrollIntoView({ block: "nearest", inline: "center" });
     });
