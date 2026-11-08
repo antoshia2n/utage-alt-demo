@@ -33,6 +33,14 @@ const MAX_PER_RUN = 100;
 // 便 T1：LINE のアカウントの名前（src/line.js の ACCOUNT_RE と同じ）と、1 通の字数
 const ACCOUNT_RE = /^[a-z][a-z_]{1,19}$/;
 const LINE_TEXT_MAX = 2000;
+// 2026-11-09：宛先をメールで絞った「テスト配信」は、動かしてから 24 時間で自動で止める（下書きの本文のまま送られ続けたため・Naoki OK 00:54）
+export const TEST_TTL_HOURS = 24;
+export function isTestSelector(sel) { return !!sel && Array.isArray(sel.emails) && sel.emails.length > 0 && Object.keys(sel).length === 1; }
+export function testExpired(s, now = Date.now()) {
+  if (!s || !s.active || !isTestSelector(s.selector)) return false;
+  const since = Date.parse(s.active_since || s.updated_at || "");
+  return Number.isFinite(since) && since < now - TEST_TTL_HOURS * 3600e3;
+}
 
 export function makeDeliver(h) {
   const { db, addEvent, logInbound, bin3, sell, connect } = h;
@@ -351,7 +359,14 @@ export function makeDeliver(h) {
   // only（便 T3）：{ trigger, customer_id } を渡すと、そのきっかけで待ち 0 時間のステップを、その人の分だけ動かす（毎時を待たない）
   async function runSteps(env, left, only = null) {
     const out = { checked: 0, sent: 0, blocked: 0, failed: 0, waiting_cap: 0, notified: 0, labeled: 0, skipped: 0, moved: 0, fields_set: 0 };
-    const steps = await db(env, "GET", "b_steps?select=*&active=eq.true&order=sort.asc,id.asc");
+    const all = await db(env, "GET", "b_steps?select=*&active=eq.true&order=sort.asc,id.asc");
+    // テスト配信の期限切れは、ここで止めてから回す（止めたものは送らない）
+    const steps = [];
+    for (const s of all) {
+      if (!testExpired(s)) { steps.push(s); continue; }
+      await db(env, "PATCH", `b_steps?id=eq.${s.id}&active=eq.true`, { active: false, updated_at: new Date().toISOString(), updated_by: `自動：テスト配信の期限（${TEST_TTL_HOURS} 時間）で止めた` }, "return=minimal");
+      out.test_stopped = (out.test_stopped || 0) + 1;
+    }
     for (const s of steps) {
       if (!TRIGGERS[s.trigger]) continue;
       if (only && (s.trigger !== only.trigger || Number(s.delay_hours) > 0)) continue;
