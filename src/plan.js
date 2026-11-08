@@ -97,7 +97,7 @@ export function buildParts({ products = [], steps = [], broadcasts = [], seminar
   // 便 8e：ステップの表はコネクタ（トリガー → セレクタ → アクション）。メールを送らないコネクタは名前で出す
   for (const s of steps) {
     const mail = !s.action || s.action === "send_email";
-    add("step", s.id, "warm", (mail ? s.subject || s.name : s.name || s.subject) || `コネクタ ${s.id}`, s.active ? "running" : "draft",
+    add("step", s.id, "warm", (mail ? s.subject || s.name : s.name || s.subject) || `ステップ配信 ${s.id}`, s.active ? "running" : "draft",
       { trigger: s.trigger, product_id: s.product_id || null, trigger_args: s.trigger_args || {}, action: s.action || "send_email", action_args: s.action_args || {}, note: s.name || "" });
   }
   for (const b of broadcasts) {

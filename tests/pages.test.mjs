@@ -223,7 +223,7 @@ test("自動ラベル「経路:名前」は初めて登録したときの経路"
 
 test("コネクタ：きっかけ「ページを見た」「ページのボタンを押した」をページとボタンで絞れる", async () => {
   assert.equal(TRIGGERS.page_viewed.type, "page_viewed");
-  assert.equal(TRIGGERS.page_clicked.label, "ページのボタンを押した");
+  assert.equal(TRIGGERS.page_clicked.label, "ページのボタンをクリック");
   const s = setup();
   const deliver = makeDeliver({ db: s.db, addEvent: async () => {}, logInbound: async () => {}, bin3: {}, sell: {}, mailcfg: {}, connect: {}, forms: {} });
   const q = deliver.triggerQuery({ trigger: "page_clicked", trigger_args: { page: "zukai-1111", button: "cta-1" }, active_since: "2026-10-09T00:00:00Z" }, "2026-10-10T00:00:00Z");

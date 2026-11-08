@@ -9,30 +9,30 @@
 import { isTestPurchase } from "./purchase.js";
 
 export const TRIGGERS = {
-  registered:           { type: "registered",           label: "無料登録した" },
-  purchase:             { type: "purchase_completed",   label: "買った" },
-  clicked:              { type: "email_clicked",        label: "メールのリンクを押した" },
-  lesson_viewed:        { type: "lesson_viewed",        label: "教材を見た" },
-  correction_submitted: { type: "correction_submitted", label: "添削を出した" },
-  login:                { type: "login",                label: "ログインした" },
-  label_added:          { type: "label_added",          label: "ラベルが付いた" },
+  registered:           { type: "registered",           label: "無料登録" },
+  purchase:             { type: "purchase_completed",   label: "購入" },
+  clicked:              { type: "email_clicked",        label: "メールのリンクをクリック" },
+  lesson_viewed:        { type: "lesson_viewed",        label: "レッスン視聴" },
+  correction_submitted: { type: "correction_submitted", label: "添削の提出" },
+  login:                { type: "login",                label: "ログイン" },
+  label_added:          { type: "label_added",          label: "ラベル追加" },
   // 便 11a：フォームに答えた（trigger_args.form にフォームの住所の名前 slug を入れると、そのフォームだけ）
-  form_submitted:       { type: "form_submitted",       label: "フォームに答えた" },
+  form_submitted:       { type: "form_submitted",       label: "フォーム回答" },
   // 便 12a：公開のページ（trigger_args.page にページの住所の名前、page_clicked は trigger_args.button にボタンの名前を入れると絞れる）。
   // 台帳にいる人だけ（メールのリンクから来た・その端末でフォームに答えた）が出来事になる。まだ登録していない人は数えるだけ
-  page_viewed:          { type: "page_viewed",          label: "ページを見た" },
-  page_clicked:         { type: "page_clicked",         label: "ページのボタンを押した" },
+  page_viewed:          { type: "page_viewed",          label: "ページ閲覧" },
+  page_clicked:         { type: "page_clicked",         label: "ページのボタンをクリック" },
   // 便 11b：ほかの自動の動きの「別の自動の動きへ移す」で、この自動の動きへ移された（出来事 step_entered の payload.to がこの番号）
-  moved:                { type: "step_entered",         label: "ほかの自動の動きから移された" },
+  moved:                { type: "step_entered",         label: "ほかのステップ配信から移動" },
   // 便 T1：LINE と台帳の人が結ばれた（trigger_args.account にアカウントを入れると、そのアカウントだけ）
-  line_linked:          { type: "line_linked",          label: "LINE と結ばれた" },
+  line_linked:          { type: "line_linked",          label: "LINE 連携" },
 };
 
-export const ACTIONS = { send_email: "メールを送る", notify_admin: "Naoki に知らせる", add_label: "ラベルを付ける",
+export const ACTIONS = { send_email: "メール送信", notify_admin: "Naoki に通知", add_label: "ラベル追加",
   // 便 11b：別の自動の動きへ移す（action_args.step_id）・人の項目に値を書く（action_args.field・value）
-  move_to: "別の自動の動きへ移す", set_field: "人の項目に値を書く",
+  move_to: "別のステップ配信へ移動", set_field: "顧客情報を更新",
   // 便 T1：LINE を送る（action_args.account・本文は body。結ばれていない人・ブロックした人には送らない）
-  send_line: "LINE を送る" };
+  send_line: "LINE 送信" };
 
 // 便 T1：LINE の今月の残りがこの数以下になったら、ステップの LINE は送らずに待たせ、Naoki に知らせる（1 日 1 回）
 export const LINE_QUOTA_HOLD = 20;
