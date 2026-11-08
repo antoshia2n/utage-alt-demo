@@ -89,7 +89,7 @@ import { makeNames } from "./names.js";
 import { makeChatAi } from "./chatai.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.78.0-bblog1";
+const VERSION = "0.78.1-btestttl";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -2842,7 +2842,7 @@ const TOOLS = [
     name: "draft_flow",
     screen: "ai_only",
     say: "一言で流れの下書きを作る",
-    description: "一言の下書き。コネクタ（トリガー → セレクタ → アクション）を 1〜10 本、動かさない下書きのまま 1 回で作り、シナリオに入れる。connectors の 1 本の欄は set_step と同じ（name・trigger・trigger_args・product_id・delay_hours・selector・action・action_args・subject・body）に、シナリオの中の役目 role を足したもの。active は渡しても下書きになる。シナリオは campaign_id（いまあるシナリオ）か campaign_title（新しく作る・年月は頭に自動）と starts_on。返事に、作ったコネクタの番号と、そのシナリオの設計図（部品と線）が付く。動かすのは set_step で active true（承認）。途中で形が合わなければ止め、それまでに作った番号 created と止まった位置 index を返す。",
+    description: "一言の下書き。コネクタ（トリガー → セレクタ → アクション）を 1〜10 本、動かさない下書きのまま 1 回で作り、シナリオに入れる。connectors の 1 本の欄は set_step と同じ（name・trigger・trigger_args・product_id・delay_hours・selector・action・action_args・subject・body）に、シナリオの中の役目 role を足したもの。active は渡しても下書きになる。シナリオは campaign_id（いまあるシナリオ）か campaign_title（新しく作る・年月は頭に自動）と starts_on。返事に、作ったコネクタの番号と、そのシナリオの設計図（部品と線）が付く。動かすのは set_step で active true（承認）。途中で形が合わなければ止め、それまでに作った番号 created と止まった位置 index を返す。【呼び方の決まり（2026-11-09）】1 回に渡すのは 2 本まで（shia2n-mcp の窓口は 20 秒で待つのをやめるため、3 本ほどで途中で「つながらない」と返り、B の側では作り続けて重複ができる）。「つながらない」と返ったら同じ呼び出しを繰り返さず、get_blueprint か list_steps で作られた段を確かめてから、足りない段だけを次の呼び出しで足す。",
     inputSchema: {
       type: "object",
       properties: {

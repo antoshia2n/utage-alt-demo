@@ -126,7 +126,7 @@ export function makeBin3(h) {
     const expected = await webhookAuth(env);
     const event = body && body.event;
     const data = (body && body.data) || {};
-    const reqLog = { event: event || null, id: data.id || null, subscription_id: data.subscription_id || (String(event || "").startsWith("subscription_") ? data.id : null), status: data.status || null, meta_source: (data.metadata && data.metadata.source) || null, auth_ok: safeEqual(auth, expected) };
+    const reqLog = { event: event || null, id: data.id || null, subscription_id: data.subscription_id || (String(event || "").startsWith("subscription_") ? data.id : null), status: data.status || null, mode: data.mode || null, meta_source: (data.metadata && data.metadata.source) || null, auth_ok: safeEqual(auth, expected) };
     if (!safeEqual(auth, expected)) {
       await logInbound(env, "univapay", reqLog, { ok: false, error: "unauthorized" }, 401);
       return json({ ok: false, error: "unauthorized" }, 401);
@@ -168,7 +168,9 @@ export function makeBin3(h) {
       } else {
         result = { ok: true, recorded: false, reason: "unknown_subscription" };
         // 決済受け口 便 1：B が知らない定期の入金は、売上に入らないまま埋もれないよう Naoki へ知らせる
-        if (event === "subscription_payment" && h.onUnknownPayment) { try { result.notified = await h.onUnknownPayment(env, subId, data); } catch (_) { result.notified = false; } }
+        // 2026-11-09：試しの決済（UnivaPay の mode test）は記録だけにして、Naoki へは知らせない（昔の試しの定期が毎月知らせを送り続けていたため）
+        if (data.mode === "test") result.mode = "test";
+        else if (event === "subscription_payment" && h.onUnknownPayment) { try { result.notified = await h.onUnknownPayment(env, subId, data); } catch (_) { result.notified = false; } }
       }
     } else result = { ok: true, recorded: false, reason: "not_tracked" };
     await logInbound(env, "univapay", reqLog, result, 200);

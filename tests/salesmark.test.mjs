@@ -148,4 +148,10 @@ test("UnivaPay の入金の知らせ：引き継いだ定期は売上管理へ�
   assert.equal(u.reason, "unknown_subscription");
   assert.equal(u.notified, true);
   assert.deepEqual(unknown, ["44444444-4444-4444-8444-444444444444"]);
+  // 2026-11-09：試しの決済（mode test）の知らない定期は、Naoki へ知らせない
+  const t = await (await send({ id: "55555555-5555-4555-8555-555555555555", status: "current", amount: 3000, mode: "test" })).json();
+  assert.equal(t.reason, "unknown_subscription");
+  assert.equal(t.mode, "test");
+  assert.equal(t.notified, undefined);
+  assert.deepEqual(unknown, ["44444444-4444-4444-8444-444444444444"]);
 });

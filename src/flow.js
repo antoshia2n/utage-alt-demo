@@ -91,7 +91,7 @@ export function makeFlow(h) {
           trigger: s.trigger, delay_hours: s.delay_hours || 0,
           when: `${(TRIGGERS[s.trigger] || {}).label || s.trigger}${ta.account ? `（${LINE_ACCOUNT_NAME[ta.account] || ta.account}）` : ""}から ${delayText(s.delay_hours)}`,
           action_label: ACTIONS[s.action] || s.action, subject: s.subject || "", text: s.body || "", editable: ["send_line", "send_email", "notify_admin"].includes(s.action),
-          audience: test ? `テスト配信（${sel.emails.length} 人）` : Object.keys(sel).length ? "条件で絞った人" : "トリガーに当たった人全員",
+          audience: test ? `テスト配信（${sel.emails.length} 人・動かしてから 24 時間で自動で止まる）` : Object.keys(sel).length ? "条件で絞った人" : "トリガーに当たった人全員",
           state: s.active ? (test ? "test" : "running") : "draft", line_account: (s.action_args || {}).account || ta.account || null });
       } else if (p.type === "page") {
         const r = await pages.getPage(env, { page_id: p.id }).catch(() => null);

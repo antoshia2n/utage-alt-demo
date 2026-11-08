@@ -60,7 +60,7 @@ test("流れ：相手が通る順（ページ → フォーム → 友だち追�
   const s13 = r.cards.find((c) => c.key === "step:13");
   assert.equal(s13.when, "LINE 連携（シアニン）から 1日後");
   assert.equal(s13.state, "test");
-  assert.equal(s13.audience, "テスト配信（1 人）");
+  assert.equal(s13.audience, "テスト配信（1 人・動かしてから 24 時間で自動で止まる）");
   assert.equal(r.cards[0].todos.length, 2, "ページの空欄 2 つ");
   assert.equal(r.cards.find((c) => c.key === "form:f1").note, "シナリオに未追加（設計図から追加できます）");
   assert.equal(r.cards.find((c) => c.key === "line_invite:shianin").uses_default, true);
