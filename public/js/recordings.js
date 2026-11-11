@@ -2,6 +2,7 @@
 //  ・シアニン用の画面（admin.html）の「録画」の中に、影の DOM で入れる（会員サイトと同じ。見た目と id が今の画面とぶつからないため）
 //  ・中身と共有リンクの正本は zoom-to-youtube（R2）。ここは /api/admin/recordings* を呼ぶだけ。書いたら読み直して描き直す
 //  ・上の帯：棚（一覧とリンクの発行）／整理（会の種類の案・名前をそろえる）／点検（日付が合わない・ほぼ空・流せる動画が無い）
+//  ・出し先のスイッチ（2026-11-12 Naoki OK）：詳細の「出し先」で YouTube・会員サイトを入り切り。上の帯の「出し先の決まり」で会の種類ごとの入れ先
 //  ・便 C（2026-11-06 Naoki OK 19:47）：上の帯の「アップロード」から Zoom 以外の動画・音声を入れる。16MB ずつ送り、切れたら続きから
 import { api } from "/js/common.js";
 
@@ -18,6 +19,9 @@ const ERR = {
   bad_type: "この種類のファイルは入れられません（mp4・mov・m4v・webm・m4a・mp3・wav）",
   too_big: "4GB までのファイルにしてください",
   missing_parts: "送れていない片があります。「続きから送る」を押してください",
+  youtube_not_possible: "YouTube へ上げられるのは、11/02 以降に Zoom で録った録画だけです",
+  bad_course: "コースが見つかりませんでした。選び直してください",
+  bad_kai: "会の種類が読めませんでした",
 };
 const UP_EXT = ["mp4", "mov", "m4v", "webm", "m4a", "mp3", "wav"];
 const UP_PART = 16 * 1024 * 1024;
@@ -31,6 +35,7 @@ export function mountRecordings(host, { getToken }) {
     <button class="tab" role="tab" type="button" data-tab="tidy" aria-selected="false">整理<span class="badge" id="b-tidy" hidden></span></button>
     <button class="tab" role="tab" type="button" data-tab="check" aria-selected="false">点検<span class="badge" id="b-check" hidden></span></button>
     <span class="grow"></span><span class="note-top" id="note-top"></span>
+    <button class="btn sm" type="button" id="rt-open">出し先の決まり</button>
     <button class="btn sm pri up-btn" type="button" id="up-open">アップロード</button>
   </div>
   <div class="wrap"><nav class="side" id="side" aria-label="棚"></nav><main id="main" tabindex="-1"><p class="lead">読み込んでいます…</p></main></div>
@@ -52,14 +57,18 @@ export function mountRecordings(host, { getToken }) {
   let mlFrom = null;
   // 便B（2026-11-06）：会員サイトに入れた録画（コンテンツとコース）
   let placed = [], smFrom = null, smData = null;
+  // 出し先のスイッチ（2026-11-12）：会の種類ごとの入れ先と、選べるコース
+  let RC = { courses: {}, course_list: [], from: "" }, rtFrom = null;
+  const courseName = (id) => { const c = RC.course_list.find((x) => x.id === id); return c ? c.path : ""; };
   const placedOf = (id) => placed.filter((p) => p.rec_id === id);
   // 便 A：ラベルの一覧（多い順）
   const allLabels = () => { const m = new Map(); D.rows.forEach((r) => (r.labels || []).forEach((l) => m.set(l, (m.get(l) || 0) + 1))); return [...m].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ja")); };
   const labDatalist = (id) => `<datalist id="${id}">${allLabels().map(([l]) => `<option value="${esc(l)}">`).join("")}</datalist>`;
 
   async function load() {
-    const [r, m] = await Promise.all([call(""), call("/member")]);
+    const [r, m, rc] = await Promise.all([call(""), call("/member"), call("/route-config")]);
     if (m && m.ok) placed = m.placed || [];
+    if (rc && rc.ok) RC = rc;
     if (!r.ok) { $("#main").innerHTML = `<div class="err">録画の一覧を読めませんでした：${esc(errText(r))}</div>`; return; }
     D = r;
     render();
@@ -149,7 +158,7 @@ export function mountRecordings(host, { getToken }) {
     <div class="tbl list"><table><thead><tr><th><input type="checkbox" id="ck-all" aria-label="表に出ている録画を全部選ぶ" ${page.length && page.every((r) => checked.has(r.id)) ? "checked" : ""}></th><th>収録日</th><th>名前</th><th>会</th><th style="text-align:right">長さ</th><th>YouTube</th><th>共有リンク</th><th style="text-align:right">開かれた数</th><th><span class="sr">操作</span></th></tr></thead><tbody>
     ${page.map((r) => `<tr class="rw ${sel === r.id ? "sel" : ""}" data-id="${esc(r.id)}" tabindex="0" aria-label="${esc(r.date)} ${esc(r.title)} の詳細を開く">
       <td class="hide-sp"><input type="checkbox" class="ck" data-ck="${esc(r.id)}" ${checked.has(r.id) ? "checked" : ""} aria-label="「${esc(r.title)}」を選ぶ"></td>
-      <td class="date">${esc(r.date)}</td><td class="nm">${esc(r.title)}${r.kind === "upload" ? '<span class="upl">アップロード</span>' : ""}${placedOf(r.id).length ? `<span class="insite">会員サイト ${placedOf(r.id).length}</span>` : ""}${(r.labels || []).length ? `<span class="labs">${r.labels.map((l) => `<span class="lab">${esc(l)}</span>`).join("")}</span>` : ""}${r.issues.length ? `<small>点検：${esc(r.issues[0])}</small>` : ""}</td><td class="hide-sp">${kaiTag(r.kai)}</td>
+      <td class="date">${esc(r.date)}</td><td class="nm">${esc(r.title)}${r.kind === "upload" ? '<span class="upl">アップロード</span>' : ""}${placedOf(r.id).length ? `<span class="insite">会員サイト ${placedOf(r.id).length}</span>` : ""}${pending(r) ? `<span class="upl">予定：${esc(pending(r))}</span>` : ""}${(r.labels || []).length ? `<span class="labs">${r.labels.map((l) => `<span class="lab">${esc(l)}</span>`).join("")}</span>` : ""}${r.issues.length ? `<small>点検：${esc(r.issues[0])}</small>` : ""}</td><td class="hide-sp">${kaiTag(r.kai)}</td>
       <td class="num hide-sp">${hm(r.minutes) || (r.size_gb != null ? r.size_gb.toFixed(2) + " GB" : "")}</td><td class="hide-sp" style="font-size:12px;color:var(--muted)">${r.youtube ? "あり" : "―"}</td>
       <td>${stLabel(r.share)}</td><td class="num hide-sp">${r.share ? r.share.views : ""}</td><td>${act(r)}</td></tr>`).join("") || `<tr><td colspan="9" class="empty">合う録画がありません</td></tr>`}
     </tbody></table>${rs.length > shown ? `<div class="more"><button class="btn" type="button" id="more">さらに ${Math.min(PAGE, rs.length - shown)} 本を出す（残り ${rs.length - shown} 本）</button></div>` : ""}</div>`;
@@ -192,6 +201,56 @@ export function mountRecordings(host, { getToken }) {
     ${tiny.length ? `<div class="bar"><button class="btn" type="button" id="to-ai">削除候補を AI に渡す文をコピー</button></div>` : ""}`;
   }
 
+  // ---------- 出し先のスイッチ（2026-11-12） ----------
+  function pending(r) {
+    const rt = r.route; if (!rt) return "";
+    const p = [];
+    if (rt.youtube && !r.youtube) p.push("YouTube");
+    if (rt.site && !rt.done_at) p.push("会員サイト");
+    return p.join("・");
+  }
+  function routeSec(r) {
+    const rt = r.route;
+    if (!rt) return "";
+    const def = RC.courses[r.kai] || "";
+    const course = rt.course_id || def;
+    let state = "";
+    if (rt.site) {
+      if (rt.done_at) state = `<p class="why">会員サイトに入れました（${esc(rt.done_at.slice(0, 16).replace("T", " "))}・メールで知らせました）。公開は下の「会員サイト」から。</p>`;
+      else if (rt.youtube && rt.youtube_possible && !r.youtube_url) state = '<p class="why">YouTube に上がってから、YouTube の埋め込みで会員サイトに入れます（YouTube へは 5 分ごとの処理が上げます）。</p>';
+      else if (!course || !courseName(course)) state = '<p class="warn">入れ先のコースが決まっていません。下で選ぶか、上の「出し先の決まり」で会の種類ごとのコースを決めてください。</p>';
+      else state = '<div class="row2"><span class="why">1 時間以内に下書きで入れて、メールで知らせます。</span><button class="btn sm" type="button" id="d-rt-run">今すぐ入れる</button></div>';
+    } else if (rt.youtube && !r.youtube) state = '<p class="why">次の 5 分の処理で YouTube に限定公開で上げます。</p>';
+    return `<div class="sec"><h3>出し先</h3>
+      <div class="f"><label class="tog"><input type="checkbox" id="d-yt" ${rt.youtube ? "checked" : ""} ${rt.youtube_possible ? "" : "disabled"}> YouTube に上げる（限定公開）</label>
+        ${r.youtube ? '<p class="hint">YouTube に上がっています。</p>' : rt.youtube_possible ? "" : '<p class="hint">YouTube へ上げられるのは、11/02 以降に Zoom で録った録画だけです。</p>'}</div>
+      <div class="f"><label class="tog"><input type="checkbox" id="d-in" ${rt.site ? "checked" : ""} ${r.issues.includes(ISSUE_ORDER[2]) ? "disabled" : ""}> 会員サイトに入れる（下書き）</label></div>
+      ${rt.site ? `<div class="f"><label for="d-course">入れるコース</label><select id="d-course"><option value="">会の種類の決まり（${esc(def ? courseName(def) || "見つからないコース" : "未設定")}）</option>${RC.course_list.map((c) => `<option value="${esc(c.id)}" ${rt.course_id === c.id ? "selected" : ""}>${esc(c.path)}</option>`).join("")}</select></div>` : ""}
+      ${state}
+      <p class="hint">${rt.auto ? `会の種類から決めた値です（${esc(RC.from || "")} 以降に録ったセミナーは両方オン・ほかはオフ）。` : '手で変えた値です。<button type="button" class="mini-link" id="d-rt-reset">会の種類の決まりに戻す</button>'}</p>
+    </div>`;
+  }
+  async function setRoute(id, body, label) {
+    const r = await call("/route", "POST", { id, ...body });
+    if (!r.ok) { undo(errText(r), null); return; }
+    await load();
+    undo(label, null);
+  }
+  function openRoute() {
+    rtFrom = root.activeElement;
+    const kais = RC.kais || Object.keys(KAI);
+    $("#mslot").innerHTML = `<div class="scrim" id="rt-scrim"></div><div class="modal" id="rt" role="dialog" aria-modal="true" aria-labelledby="rt-t">
+      <div class="dh"><h2 id="rt-t">出し先の決まり</h2><button class="x" type="button" id="rt-close" aria-label="閉じる">✕</button></div>
+      <div class="db">
+        <p class="hint">「会員サイトに入れる」がオンの録画を、会の種類ごとに決めたコースへ下書きで入れます。録画ごとに別のコースも選べます。</p>
+        ${kais.map((k) => `<div class="f"><label for="rt-${esc(k)}">${esc(k)}</label><select id="rt-${esc(k)}" data-rtk="${esc(k)}"><option value="">決めない</option>${RC.course_list.map((c) => `<option value="${esc(c.id)}" ${RC.courses[k] === c.id ? "selected" : ""}>${esc(c.path)}</option>`).join("")}</select></div>`).join("")}
+        <p class="hint">${esc(RC.from || "")} 以降に録ったセミナーは、最初から YouTube も会員サイトもオンです。ほかの会と、それより前の録画はオフから始まります。</p>
+        <div class="row2"><button class="btn" type="button" id="rt-cancel">キャンセル</button><button class="btn pri" type="button" id="rt-save">保存</button></div>
+      </div></div>`;
+    setTimeout(() => $("#rt select")?.focus(), 30);
+  }
+  function closeRoute() { $("#mslot").innerHTML = ""; rtFrom?.focus?.(); rtFrom = null; }
+
   // ---------- 詳細 ----------
   function drawer() {
     const r = D && D.rows.find((x) => x.id === sel);
@@ -199,6 +258,7 @@ export function mountRecordings(host, { getToken }) {
     const s = r.share;
     $("#drawer").innerHTML = `<div class="dh"><h2 id="d-title">${esc(r.title)}</h2><button class="x" type="button" id="d-close" aria-label="閉じる">✕</button></div>
     <div class="db">
+      ${routeSec(r)}
       <div class="sec"><h3>共有リンク</h3>
       ${s ? `<div class="link"><code>${esc(s.link)}</code><button class="btn sm" type="button" data-copy="${esc(r.id)}">コピー</button></div>
         <div class="row2" style="margin-top:10px">${stLabel(s)}<span class="why">開かれた数 ${s.views}${s.last_viewed_at ? `・最後に開かれた ${esc(s.last_viewed_at.slice(0, 10))}` : ""}</span></div>
@@ -209,7 +269,7 @@ export function mountRecordings(host, { getToken }) {
       : `<div class="issue"><p>まだリンクはありません。発行すると、リンクを知っている人は誰でも見られます（検索には出ません）。</p><button class="btn pri" type="button" data-issue="${esc(r.id)}">リンクを発行してコピー</button></div>`}
       </div>
       <div class="sec"><h3>会員サイト</h3>
-        ${placedOf(r.id).map((p) => `<div class="site-in"><span>${esc(p.path)} › ${esc(p.title)}</span><span class="st ${p.status === "published" ? "on" : ""}">${p.status === "published" ? "● 公開中" : "下書き"}</span></div>`).join("") || '<p class="why" style="margin:0 0 8px">まだどのコースにも入っていません。</p>'}
+        ${placedOf(r.id).map((p) => `<div class="site-in"><span>${esc(p.path)} › ${esc(p.title)}</span><span class="st ${p.status === "published" ? "on" : ""}">${p.status === "published" ? "● 公開中" : "下書き"}</span>${p.status === "published" ? "" : `<button class="btn sm pri" type="button" data-pub="${esc(p.content_id)}" aria-label="「${esc(p.title)}」を公開する">公開する</button>`}</div>`).join("") || '<p class="why" style="margin:0 0 8px">まだどのコースにも入っていません。</p>'}
         ${r.issues.includes(ISSUE_ORDER[2]) ? "" : `<button class="btn ${placedOf(r.id).length ? "" : "pri"}" type="button" id="d-site">${placedOf(r.id).length ? "別のコースにも入れる" : "会員サイトに入れる"}</button>`}
         <p class="hint">会員サイトでは、会員のログインと権利を確かめてから流します。共有リンクとは別で、外へ持ち出せるリンクは作りません。</p>
       </div>
@@ -460,6 +520,30 @@ export function mountRecordings(host, { getToken }) {
     if (t.id === "more") { shown += PAGE; render(); return; }
     if (t.id === "d-close" || t.id === "scrim") return closeDetail();
     if (t.id === "d-site") return openSite();
+    if (t.id === "rt-open") return openRoute();
+    if (t.id === "rt-close" || t.id === "rt-cancel" || t.id === "rt-scrim") return closeRoute();
+    if (t.id === "rt-save") {
+      const courses = {}; $$("#rt [data-rtk]").forEach((x) => (courses[x.dataset.rtk] = x.value || null));
+      const r = await call("/route-config", "POST", { courses });
+      if (!r.ok) { undo(errText(r), null); return; }
+      closeRoute(); await load(); undo("出し先の決まりを保存しました", null); return;
+    }
+    if (t.id === "d-rt-reset") return setRoute(sel, { reset: true }, "会の種類の決まりに戻しました");
+    if (t.id === "d-rt-run") {
+      if (busy) return; busy = true; t.disabled = true;
+      const r = await call("/route-run", "POST", {});
+      busy = false;
+      if (!r.ok) { t.disabled = false; undo(errText(r), null); return; }
+      await load();
+      undo(r.put ? `会員サイトに ${r.put} 本入れて、メールで知らせました` : r.already ? "すでに入っていました（印を付けました）" : "いま入れられる録画はありませんでした", null); return;
+    }
+    const pb = t.closest("[data-pub]");
+    if (pb) {
+      const r = await call("/publish", "POST", { content_id: pb.dataset.pub });
+      if (!r.ok) { undo(errText(r), null); return; }
+      await load();
+      undo("公開しました（生徒の画面に出ます）", async () => { await call("/publish", "POST", { content_id: pb.dataset.pub, status: "draft" }); }); return;
+    }
     if (t.id === "sm-close" || t.id === "sm-cancel" || t.id === "sm-scrim") return closeSite();
     if (t.id === "sm-go") return putSite();
     if (t.id === "d-save") {
@@ -524,6 +608,9 @@ export function mountRecordings(host, { getToken }) {
     const t = e.target;
     if (t.id === "intx") { inTx = t.checked; txIds = null; render(); $("#q")?.focus(); return; }
     const r = D.rows.find((x) => x.id === sel);
+    if (r && t.id === "d-yt") return setRoute(r.id, { youtube: t.checked }, t.checked ? "YouTube に上げるをオンにしました（5 分以内に上げます）" : "YouTube に上げるをオフにしました");
+    if (r && t.id === "d-in") return setRoute(r.id, { site: t.checked }, t.checked ? "会員サイトに入れるをオンにしました" : "会員サイトに入れるをオフにしました");
+    if (r && t.id === "d-course") return setRoute(r.id, { course_id: t.value || null }, "入れるコースを変えました");
     if (!r || !r.share) return;
     if (t.id === "d-stop") {
       const was = r.share.state === "stop";
@@ -550,6 +637,7 @@ export function mountRecordings(host, { getToken }) {
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape" || e.composedPath().includes(host) || !host.isConnected || host.offsetParent === null) return;
     if ($("#ml")) { closeManage(); return; }
+    if ($("#rt")) { closeRoute(); return; }
     if ($("#sm")) { closeSite(); return; }
     if ($("#up")) { closeUpload(); return; }
     const m = $("#fmenu");
@@ -561,6 +649,7 @@ export function mountRecordings(host, { getToken }) {
     if (e.key === "Enter" && e.target.id === "bulk-l") { e.preventDefault(); return addBulk(); }
     if (e.key === "Escape" && $("#ml")) { e.stopPropagation(); return closeManage(); }
     if (e.key === "Escape" && $("#sm")) { e.stopPropagation(); return closeSite(); }
+    if (e.key === "Escape" && $("#rt")) { e.stopPropagation(); return closeRoute(); }
     if (e.key === "Escape" && $("#up")) { e.stopPropagation(); return closeUpload(); }
     if (e.key === "Escape") {
       const m = $("#fmenu");
@@ -597,5 +686,9 @@ export function mountRecordings(host, { getToken }) {
     }
   });
 
-  return { open: () => { if (!D) load(); else render(); } };
+  return {
+    open: () => { if (!D) load(); else render(); },
+    // 出し先のスイッチ：メールの住所（/admin#recording/<id>）から、その録画の詳細を開く
+    openRec: async (id) => { if (!D) await load(); if (D && D.rows.some((x) => x.id === id)) openDetail(id); },
+  };
 }

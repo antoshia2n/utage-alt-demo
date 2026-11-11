@@ -400,8 +400,10 @@ export function makeWatch(ctx) {
     $("wt-meta").textContent = [l.minutes ? l.minutes + " 分" : "", curL.kind || ""].filter(Boolean).join("・");
     $("wt-tq").value = "";
     $("wt-prev").disabled = !neighbor(-1); $("wt-next").disabled = !neighbor(1);
-    if (l.rec) loadRec(l, start, seq);
-    else $("wt-stage").innerHTML = l.youtube_id ? ytFrame(l, start, start != null) : '<div class="wt-frame wt-wait">この教材は文章です。下の要約と資料を見てください</div>';
+    // 出し先のスイッチ（2026-11-12 Naoki）：YouTube に上がっている録画は YouTube の埋め込みを先に出す。無ければ録画の棚（R2）から流す
+    if (l.youtube_id) $("wt-stage").innerHTML = ytFrame(l, start, start != null);
+    else if (l.rec) loadRec(l, start, seq);
+    else $("wt-stage").innerHTML = '<div class="wt-frame wt-wait">この教材は文章です。下の要約と資料を見てください</div>';
     drawTabs(); drawCues(); drawToc(); drawCards(); paintMark(); drawNav();
     root.querySelector(".wt-les.on")?.scrollIntoView({ block: "nearest" });
     $("wt-watch").scrollTop = 0;

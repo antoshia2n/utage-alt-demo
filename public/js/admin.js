@@ -162,6 +162,9 @@ function routeHash() {
   if (gm) { openView("chat"); openChatView("group:" + gm[1], gm[2] ? Number(gm[2]) : null); return true; }
   const cm = h.match(/^#chat(?:[/]([0-9a-f-]{36})(?:[/](\d+|line))?)?$/i);
   if (cm) { openView("chat"); openChatView(cm[1], cm[2] === "line" ? "line" : cm[2] ? Number(cm[2]) : null); return true; }
+  // 出し先のスイッチ（2026-11-12）：録画を会員サイトに入れた知らせのメールから（/admin#recording/録画の番号）
+  const rc = h.match(/^#recording[/](.{4,200})$/);
+  if (rc) { openView("recordings"); recUi && recUi.openRec(decodeURIComponent(rc[1])); return true; }
   const ps = h.match(/^#person[/]([0-9a-f-]{36})$/i);
   if (ps) { openView("people"); detail(ps[1]); return true; }
   return false;
