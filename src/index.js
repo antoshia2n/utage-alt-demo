@@ -156,7 +156,7 @@ async function route(request, env, ctx, url, path) {
   if (path === "/api/auth/send-email" && request.method === "POST") return await deliver.handleAuthEmail(request, env, ctx);
   // 便 12a：公開のページの住所（lp.shia2n.jp）では、ページと /api/p/ の下だけを返す（シアニン用の画面や API はこの住所では開かない）
   if (isPagesHost(env, url)) return await handlePagesHost(request, env, url);
-  if (path === "/mcp" || path.startsWith("/mcp/")) return await handleMcp(request, env, url);
+  if (path === "/mcp" || path.startsWith("/mcp/")) return await handleMcp(request, env, url, ctx);
   // 便B（2026-11-06）：会員サイトの中で録画を流す（合言葉つきの住所。合言葉は下の /api/me/rec/ が渡す）
   if (path === "/learn/rec/video") return await handleRecPlay(request, env, url);
   // メディアの便 M2（2026-11-07）：メディアの共有リンク（ログイン不要・止める・期限・開かれた数）
@@ -3080,7 +3080,7 @@ const TOOLS = [
 
 
 // 道具を 1 回実行する（権限の確かめは呼ぶ側で済ませる）。承認されたあとの実行もここを通る
-async function runTool(env, name, args) {
+async function runTool(env, name, args, ctx) {
   if (name === "find_person") return await core.findPeople(env, args);
   if (name === "get_timeline") return await core.getTimeline(env, args);
   if (name === "stats") return await core.stats(env);
@@ -3268,7 +3268,14 @@ async function runTool(env, name, args) {
   if (name === "set_recording_route") return await recordings.routeSet(env, args.id, args);
   if (name === "recording_route_settings") return await recordings.routeConfig(env, site);
   if (name === "set_recording_route_settings") return await recordings.routeConfigSet(env, args.courses);
-  if (name === "run_recording_route") return await recordings.routeRun(env, site, connect.notifyAdmins);
+  if (name === "run_recording_route") {
+    // 棚を読むのに 20 秒近くかかることがあり、AI の窓口（20 秒で打ち切る）を超えるため、裏で進めて結果はメールで知らせる（2026-11-12）
+    if (ctx && ctx.waitUntil) {
+      ctx.waitUntil(recordings.routeRun(env, site, connect.notifyAdmins).then((r) => logInbound(env, "recording_route", { by: "ai" }, r, r.ok === false ? 500 : 200)));
+      return { ok: true, started: true, note: "裏で進めています。入れた録画は Naoki にメールで知らせ、list_recordings の route.done_at に時刻が入ります" };
+    }
+    return await recordings.routeRun(env, site, connect.notifyAdmins);
+  }
   if (name === "put_recording_in_site") return await recordings.putInSite(env, site, "ai", { id: args.id, course_id: args.course_id, title: args.title, status: "draft" });
   if (name === "recording_site_places") return await recordings.member(env, site, args.id);
   if (name === "get_site") {
@@ -3297,7 +3304,7 @@ async function runTool(env, name, args) {
   return { ok: false, error: "unknown_tool" };
 }
 
-async function handleMcp(request, env, url) {
+async function handleMcp(request, env, url, ctx) {
   const missing = missingConfig(env);
   if (missing.length) return json({ ok: false, error: "not_configured", missing_settings: missing }, 503);
 
@@ -3315,14 +3322,14 @@ async function handleMcp(request, env, url) {
   if (!msg) return json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "parse error" } }, 400);
   if (Array.isArray(msg)) {
     const out = [];
-    for (const m of msg) { const r = await rpc(m, env, url.origin); if (r) out.push(r); }
+    for (const m of msg) { const r = await rpc(m, env, url.origin, ctx); if (r) out.push(r); }
     return out.length ? json(out) : new Response(null, { status: 202 });
   }
-  const r = await rpc(msg, env, url.origin);
+  const r = await rpc(msg, env, url.origin, ctx);
   return r ? json(r) : new Response(null, { status: 202 });
 }
 
-async function rpc(msg, env, origin = "") {
+async function rpc(msg, env, origin = "", ctx = null) {
   const { id, method, params = {} } = msg || {};
   if (id === undefined || id === null) return null; // 知らせ（notifications/*）には返事をしない
   const ok = (result) => ({ jsonrpc: "2.0", id, result });
@@ -3355,7 +3362,7 @@ async function rpc(msg, env, origin = "") {
         // 便 8f-3：承認待ちができたら Naoki のスマホへ（押すとその承認の画面が開く）
         if (result && result.pending_approval) await push.send(env, { title: "承認待ち：" + sayOf(TOOLS, name), body: "AI が承認を頼んでいます。開いて中身を見て決めてください", url: `/admin#approval/${result.approval_id}`, tag: "approval" });
       }
-      else result = await runTool(env, name, args);
+      else result = await runTool(env, name, args, ctx);
       isError = result.ok === false;
     } catch (e) {
       result = { ok: false, error: "failed", detail: String(e.message).slice(0, 300) };
