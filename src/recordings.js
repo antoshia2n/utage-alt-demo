@@ -9,6 +9,7 @@
 //   suggest_kai  「その他」の録画に会の種類の案を AI で付ける（少しずつ。5 分ごとの処理も 6 本ずつ出す）
 //   labels_edit  ラベルの名前を変える・削除（便 A・2026-11-06）
 //   search       文字起こしの中の言葉で探す（多くても 50 件）
+//   route_*      出し先のスイッチ（2026-11-12 Naoki OK）：録画ごとに YouTube・会員サイトを入り切り。会員サイトへ入れるのはここ（routeRun・1 時間ごと）
 //   upload_*     便 C（2026-11-06 Naoki OK 19:47）：Zoom 以外の動画・音声を 16MB ずつ R2 へ入れ、棚に「アップロード」で並べる
 // 見る画面と短いリンクは v.shia2n.jp（zoom-to-youtube）。
 
@@ -72,6 +73,8 @@ export const recordings = {
       const r = await site.saveContent(env, {
         title: String(b.title || "").trim() || info.title, summary: info.summary || "", status,
         minutes, toc: info.toc || [], files: [], can_ask: true, rec_id: info.id, courses: [String(b.course_id || "")],
+        // 出し先のスイッチ：YouTube に上がっていれば、生徒の画面は YouTube の埋め込みを先に出す
+        ...(b.video_url ? { video_url: String(b.video_url) } : {}),
       }, by);
       return r.ok ? { ok: true, content_id: r.id, status } : r;
     }),
@@ -150,6 +153,74 @@ export const recordings = {
     safe(() => {
       if (!["rename", "delete"].includes(action)) return { ok: false, error: "bad_action" };
       return zoom(env).labels_edit({ action, from: String(from || ""), ...(action === "rename" ? { to: String(to || "") } : {}) });
+    }),
+
+  /** 出し先のスイッチ：YouTube・会員サイト・入れるコース（reset で会の種類からの値に戻す） */
+  routeSet: (env, id, b = {}) =>
+    safe(() => {
+      const o = {};
+      if (typeof b.youtube === "boolean") o.youtube = b.youtube;
+      if (typeof b.site === "boolean") o.site = b.site;
+      if (b.course_id !== undefined) o.course_id = b.course_id === null ? null : String(b.course_id);
+      if (b.reset === true) o.reset = true;
+      return zoom(env).route_set(String(id || ""), o);
+    }),
+
+  /** 会の種類ごとの入れ先のコース（読む・変える）。コースの一覧も返す */
+  routeConfig: (env, site) =>
+    safe(async () => {
+      const [c, t] = await Promise.all([zoom(env).route_config(), site.tree(env)]);
+      if (!c.ok) return c;
+      return { ...c, kais: KAIS, course_list: coursePaths(t) };
+    }),
+  routeConfigSet: (env, courses) => safe(() => zoom(env).route_config_set(courses && typeof courses === "object" ? courses : {})),
+
+  /**
+   * スイッチで「会員サイトに入れる」がオンの録画を、会員サイトに下書きで入れ、Naoki にメールで知らせる（1 時間ごと・画面の「今すぐ通す」）。
+   * YouTube もオンの録画は、YouTube に上がるまで待ち、上がったら YouTube の埋め込みを先に出す形で入れる。
+   * すでに同じコースに入っている録画は、入れ直さずに印だけ付ける。1 回に多くて 10 本。
+   */
+  routeRun: (env, site, notify) =>
+    safe(async () => {
+      const [shelf, cfg] = await Promise.all([zoom(env).shelf(), zoom(env).route_config()]);
+      if (!shelf.ok) return shelf;
+      const courses = (cfg && cfg.courses) || {};
+      const todo = shelf.rows.filter((r) => r.route && r.route.site && !r.route.done_at);
+      const res = { ok: true, looked: todo.length, put: 0, already: 0, waiting_youtube: 0, no_course: 0, failed: 0, notes: [] };
+      if (!todo.length) return res;
+      const t = await site.tree(env);
+      const paths = new Map(coursePaths(t).map((c) => [c.id, c.path]));
+      const origin = env.PUBLIC_ORIGIN || "https://lab.shia2n.jp";
+      let n = 0;
+      for (const r of todo) {
+        if (n >= 10) break;
+        if (r.route.youtube && r.route.youtube_possible && !r.youtube_url) { res.waiting_youtube++; continue; }
+        const course = r.route.course_id || courses[r.kai] || "";
+        if (!course || !paths.has(course)) { res.no_course++; continue; }
+        n++;
+        const had = t.contents.find((c) => c.rec_id === r.id && c.active !== false && t.links.some((l) => l.content_id === c.id && l.course_id === course));
+        let contentId = had ? had.id : "";
+        if (!had) {
+          const p = await recordings.putInSite(env, site, "auto:録画の棚", { id: r.id, course_id: course, status: "draft", video_url: r.route.youtube ? r.youtube_url : "" });
+          if (!p.ok) { res.failed++; res.notes.push(`${r.title}：${p.error || "入れられなかった"}`); continue; }
+          contentId = p.content_id;
+          res.put++;
+        } else res.already++;
+        const video = r.route.youtube && r.youtube_url ? `YouTube（限定公開）を埋め込み\n${r.youtube_url}` : "録画の棚（R2）から流す";
+        const text = [
+          had ? "録画は、すでに会員サイトに入っていました（入れ直していません）。" : "録画を会員サイトに下書きで入れました。生徒にはまだ見えません。",
+          "",
+          `録画：${r.title}`,
+          `入れた先：${paths.get(course)}`,
+          `動画：${video}`,
+          "",
+          "公開する（録画の詳細の「会員サイト」から公開を押す）：",
+          `${origin}/admin#recording/${encodeURIComponent(r.id)}`,
+        ].join("\n");
+        try { if (notify) await notify(env, { subject: `【マーケくん】会員サイトに入れました：${r.title}`.slice(0, 120), text }); } catch { /* 知らせが送れなくても印は付ける（入れ直さないため） */ }
+        await zoom(env).route_done(r.id, contentId);
+      }
+      return res;
     }),
 
   suggest: (env, limit) => safe(() => zoom(env).suggest_kai(Math.max(1, Math.min(20, Number(limit) || 8)))),
