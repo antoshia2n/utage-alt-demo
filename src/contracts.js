@@ -5,11 +5,11 @@
 //  ・書類は直さない・消さない（表の仕掛けでも断る）。契約も消さず「しまう」だけ（電子帳簿保存法の保存期間のため）
 //  ・検索は電子帳簿保存法の 3 つ：日付（締結日、無ければ開始日）の範囲・金額の範囲・取引先（会社名・氏名・メール）。組み合わせられる
 //  ・読み書きはシアニン用の画面だけ（呼ぶ側で requireAdmin）。操作は全部 inbound_log に残す
-//  ・署名ページ（便 2）と期限の知らせ（便 3）はまだ無い
+//  ・署名ページは便 2（src/contractsign.js）。期限の知らせ（便 3）はまだ無い
 export const STATUSES = ["draft", "ready", "waiting", "signed", "ended"];
 export const STATUS_LABEL = { draft: "下書き", ready: "署名依頼前", waiting: "署名待ち", signed: "締結済み", ended: "終了・解約" };
 export const ROLES = ["draft", "signed", "certificate", "other"];
-export const SOURCES = ["upload", "docusign", "google_docs", "other"];
+export const SOURCES = ["upload", "docusign", "google_docs", "shiasign", "other"];
 export const MAX_FILE = 30 * 1024 * 1024; // 契約書 1 つの上限（PDF としては十分大きい）
 const C = "b_contracts";
 const F = "b_contract_files";
@@ -110,7 +110,9 @@ export function makeContracts(h) {
     const r = await one(env, id);
     if (!r) return { ok: false, error: "not_found" };
     const files = await db(env, "GET", `${F}?select=*&contract_id=eq.${r.id}&order=created_at.asc`);
-    return { ok: true, contract: view(r, files) };
+    // 便 2：署名の依頼（鍵の指紋は出さない）
+    const signs = await db(env, "GET", `b_contract_signs?select=id,file_id,email,status,expires_at,code_channel,code_sends,verified_at,signed_at,signer_name,signed_file_id,evidence_file_id,tsa_file_id,tsa_error,created_at&contract_id=eq.${r.id}&order=created_at.desc`).catch(() => []);
+    return { ok: true, contract: { ...view(r, files), signs } };
   }
 
   async function create(env, b, actor) {

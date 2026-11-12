@@ -198,3 +198,14 @@ DocuSign を解約しても、契約の作成 → 署名 → 保管 → 検索�
 - 画面：左のメニュー「顧客 › 契約」と、顧客の詳細の「契約」タブ（その人の契約だけ）。`public/js/contracts.js`
 - 開く・入れる・直す・状態・しまうは全部 `inbound_log` に残す（誰が・いつ）
 - MCP：`list_contracts`・`get_contract`・`create_contract`・`save_contract`・`set_contract_status`・`add_contract_doc_link`・`verify_contract_file`（自動）、`archive_contract`（承認が要る）。PDF を入れるのは画面だけ（ファイルは Naoki の手元にある）
+
+## 契約の便 2（2026-11-12・ShiaSign）
+
+相手が署名するページ。電子署名法第 3 条の推定効は狙わない「署名ページ（同意の記録）」（Naoki 判断 2026-11-12）。
+
+- 流れ：契約の詳細の「署名を依頼」→ 相手に署名のリンク（期限 7 日）をメール → `/sign.html#t=…` を開いて「確認コードを送る」→ 6 桁のコード（顧客に結ばれ LINE でつながっていれば LINE、ほかはメール・10 分・5 回まで）→ PDF の全文 → 氏名と同意で署名
+- 署名すると：見せた PDF をそのまま「署名済み」として入れる・署名の記録（日時・IP・端末・国・PDF の指紋・氏名・コードの道）を JSON で「締結完了証明書」に入れる・その指紋を FreeTSA（RFC 3161）へ送り、返った証明（.tsr）も入れる（取れなくても署名は止めず `tsa_error` に残す）・契約を締結済みに・相手と Naoki へ控えのメール（指紋つき）・Naoki のスマホへ通知
+- 鍵（リンク・コード・署名中の画面・控えのリンク）は SHA-256 だけを表に持つ。鍵は住所の `#` のあとに載せ、サーバーの記録やほかのサイトへ渡さない
+- 表：`b_contract_signs`（正本は `supabase/b_contract_signs.sql`・本番に流し済み）。`b_contract_files.source` に `shiasign` を足した
+- 公開の口：`POST /api/sign/open|code|verify|pdf|submit|receipt`（接続元ごとの回数の上限を掛ける）
+- MCP：`request_contract_signature`（承認・外の人にメールが届く）・`cancel_contract_signature`（自動）
