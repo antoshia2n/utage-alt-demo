@@ -125,6 +125,8 @@ export const COVERAGE = {
   "POST /api/admin/contracts/doclink": ["add_contract_doc_link"],
   "GET /api/admin/contracts/file": H("画面に契約書を出すための受け口"),
   "GET /api/admin/contracts/verify": ["verify_contract_file"],
+  "POST /api/admin/contracts/sign-request": ["request_contract_signature"],
+  "POST /api/admin/contracts/sign-cancel": ["cancel_contract_signature"],
   "GET /api/admin/media": ["list_media"],
   "POST /api/admin/media/upload": H("手元のファイルを選んで上げる（ファイルは Naoki のパソコンにある。UTAGE の分は import_utage_media）"),
   "POST /api/admin/media/slide": ["add_media_slide"],

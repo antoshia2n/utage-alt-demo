@@ -4,11 +4,12 @@
 //  ・顧客の詳細の「契約」タブにも同じ部品を出す（personId を渡すと、その人の契約だけ・新規作成はその人に結ぶ）
 //  ・書類は開く（ログインの印つきで読み、画面の中だけの住所 blob: にする）・改ざんチェック（ハッシュ値を計算し直して比べる）
 //  ・消すボタンは無い。「しまう」だけ（元に戻すの帯を出す）
+//  ・便 2：詳細の「署名の依頼」から相手へ署名のリンクを送る（public/sign.html）
 import { api } from "/js/common.js";
 
 const ST = { draft: "下書き", ready: "署名依頼前", waiting: "署名待ち", signed: "締結済み", ended: "終了・解約" };
 const ROLE = { draft: "下書き", signed: "署名済み", certificate: "締結完了証明書", other: "そのほか" };
-const SRC = { upload: "アップロード", docusign: "DocuSign から移した", google_docs: "Google ドキュメント", other: "そのほか" };
+const SRC = { upload: "アップロード", docusign: "DocuSign から移した", google_docs: "Google ドキュメント", shiasign: "署名ページ", other: "そのほか" };
 const ERR = {
   need_title: "契約内容を入れてください", bad_amount: "金額は数字で入れてください（例：300000）", bad_date: "日付を選び直してください",
   end_before_start: "終了日が開始日より前になっています", bad_email: "メールアドレスの形を確かめてください", bad_status: "状態を選び直してください",
@@ -179,6 +180,8 @@ export function mountContracts(host, { getToken, personId = null, personName = "
       <h3>状態</h3>
       <div class="segs" role="group" aria-label="状態">${Object.keys(ST).map((k) => `<button type="button" data-set="${k}" aria-pressed="${x.status === k}">${x.status === k ? "✓ " : ""}${ST[k]}</button>`).join("")}</div>
       ${x.status === "signed" && !x.signed_file ? '<p class="lead soon">締結済みですが、署名済みの書類がまだ入っていません。下の「書類」から入れてください。</p>' : ""}
+      <h3>署名の依頼</h3>
+      ${signBox(x)}
       <h3>書類</h3>
       ${x.files.length ? `<div class="tbl"><table><thead><tr><th>種類</th><th>名前</th><th>指紋（SHA-256）</th><th></th></tr></thead><tbody>${files}</tbody></table></div>` : '<p class="lead">まだ書類はありません。</p>'}
       <form class="addf" id="addf">
@@ -199,10 +202,41 @@ export function mountContracts(host, { getToken, personId = null, personName = "
     $("#main").querySelectorAll("[data-set]").forEach((b) => b.addEventListener("click", () => setStatus(x, b.dataset.set)));
     $("#main").querySelectorAll("[data-open]").forEach((b) => b.addEventListener("click", () => openFile(b.dataset.open)));
     $("#main").querySelectorAll("[data-check]").forEach((b) => b.addEventListener("click", () => check(x, b.dataset.check)));
+    const sr = $("#sig-req"); if (sr) sr.addEventListener("click", () => requestSign(x));
+    $("#main").querySelectorAll("[data-sigcancel]").forEach((b) => b.addEventListener("click", () => cancelSign(x, b.dataset.sigcancel)));
     $("#addf").addEventListener("submit", (e) => { e.preventDefault(); addFile(x); });
     $("#addg").addEventListener("submit", (e) => { e.preventDefault(); addDoc(x); });
     $("#cf").addEventListener("submit", (e) => { e.preventDefault(); save(x); });
     $("#arch").addEventListener("click", () => archive(x, !x.archived));
+  }
+  const SIGN_ST = { open: "署名待ち", signed: "署名済み", cancelled: "取り消し" };
+  function signBox(x) {
+    const signs = x.signs || [];
+    const pdf = x.files.some((f) => f.has_file && f.role === "draft" && /pdf/.test(f.content_type));
+    const open = signs.find((s) => s.status === "open");
+    const rows = signs.map((s) => `<li style="padding:6px 0;border-top:1px solid var(--line,#e6dfd6)"><span class="st ${s.status === "signed" ? "on" : "off"}">${SIGN_ST[s.status] || s.status}</span>
+      ${esc(s.email)}・依頼 ${day(s.created_at)}${s.status === "open" ? `・期限 ${day(s.expires_at)}${s.code_sends ? `・コード ${s.code_sends} 回（${s.code_channel === "line" ? "LINE" : "メール"}）` : "・まだ開いていない"}` : ""}
+      ${s.status === "signed" ? `・${esc(s.signer_name)} が ${day(s.signed_at)} に署名${s.tsa_file_id ? "・時刻の証明あり" : s.tsa_error ? "・時刻の証明は取れず" : ""}` : ""}
+      ${s.status === "open" ? ` <button class="btn sm" type="button" data-sigcancel="${esc(s.id)}">キャンセル</button>` : ""}</li>`).join("");
+    const can = x.status !== "signed" && x.status !== "ended";
+    return `${can ? `<div class="bar" style="flex-wrap:wrap;gap:8px"><button class="btn sm pri" type="button" id="sig-req">${open ? "署名を依頼し直す" : "署名を依頼"}</button>
+      <span class="lead" style="margin:0">${pdf ? `${esc(x.signer_email || "相手のメール未入力")} へ署名のリンク（7 日）を送ります。相手は確認コード（LINE でつながっていれば LINE、ほかはメール）を入れてから署名します。` : "先に下の「書類」で、下書きの PDF を入れてください。"}</span></div>` : ""}
+      ${signs.length ? `<ul style="list-style:none;margin:6px 0 0;padding:0">${rows}</ul>` : ""}`;
+  }
+  async function requestSign(x) {
+    const pdf = x.files.some((f) => f.has_file && f.role === "draft" && /pdf/.test(f.content_type));
+    if (!pdf) { say("先に「書類」で、種類を「下書き」にして契約書の PDF を入れてください"); const r = $("#a-role"); if (r) { r.value = "draft"; r.focus(); } return; }
+    if (!x.signer_email) { say("「中身」で相手のメールを入れて保存してください"); $("#c-email").focus(); return; }
+    if (!confirm(`${x.signer_email} へ署名のお願いのメールを送ります。よろしいですか？`)) return;
+    const r = await api("/api/admin/contracts/sign-request", { method: "POST", token: tok(), body: { contract_id: x.id } });
+    if (!r.ok) { say(SIGN_ERR[r.error] || errText(r)); return; }
+    await openDetail(x.id); say(`${r.to} へ署名のお願いを送りました（期限 ${day(r.expires_at)}）`); refocus("#sig-req");
+  }
+  const SIGN_ERR = { need_pdf: "下書きの PDF がありません", need_email: "相手のメールが入っていません", already_signed: "締結済みの契約です", mail_failed: "メールを送れませんでした。時間をおいてお試しください" };
+  async function cancelSign(x, id) {
+    const r = await api("/api/admin/contracts/sign-cancel", { method: "POST", token: tok(), body: { id } });
+    if (!r.ok) { say(errText(r)); return; }
+    await openDetail(x.id); say("署名の依頼をキャンセルしました。リンクは使えなくなりました");
   }
   const refocus = (sel) => { const b = $("#main").querySelector(sel); if (b) b.focus(); };
 

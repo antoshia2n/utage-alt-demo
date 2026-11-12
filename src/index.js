@@ -84,6 +84,8 @@ import { makeRecToken, handleRecPlay } from "./recplay.js";
 import { makeMarks } from "./marks.js";
 import { makeMedia } from "./media.js";
 import { makeContracts } from "./contracts.js";
+import { makeContractSign } from "./contractsign.js";
+import { clientIp } from "./shield.js";
 import { makeChat } from "./chat.js";
 import { makeGroups } from "./groups.js";
 import { makeNames } from "./names.js";
@@ -266,6 +268,24 @@ const blocks = makeBlocks({ db, logInbound, plan, deliver, draftFlow: (env, a, a
 // メディアの便 M1（2026-11-07）：メディアの棚（R2 の IMAGES の箱の media/ と表 b_media）
 const media = makeMedia({ db, logInbound });
 const contracts = makeContracts({ db, logInbound });
+// 契約の便 2（ShiaSign）：署名ページ（src/contractsign.js）。メールは契約の知らせとして送る（一斉配信ではない）
+async function contractMail(env, { to, subject, text }) {
+  try {
+    const cfg = await mailcfg.get(env);
+    if (!env.EMAIL || !cfg.from) return { ok: false, error: "mail_not_configured" };
+    if (!mailcfg.openFor(cfg, "contract") && !(await bin3.mailAllowed(env, to, "contract"))) return { ok: false, error: "not_test_recipient" };
+    const r = await env.EMAIL.send({ to, from: mailcfg.fromField(cfg), subject, text: mailText(text), html: mailHtml(String(text), { brand: "シアニン" }), ...(cfg.reply_to ? { replyTo: cfg.reply_to } : {}) });
+    return { ok: true, message_id: r && r.messageId || null };
+  } catch (e) { return { ok: false, error: String(e && e.message || e).slice(0, 200) }; }
+}
+const contractSign = makeContractSign({
+  db, logInbound, contracts, mail: contractMail,
+  hasLine: async (env, pid) => (await line.personLinks(env, pid)).links.length > 0,
+  line: async (env, pid, text) => { const l = (await line.personLinks(env, pid)).links[0]; if (!l) return { sent: false }; const r = await line.send(env, { account: l.account, person_id: pid, text }, "contract"); return { sent: !!(r && r.sent) }; },
+  admins: async (env) => (await db(env, "GET", "admins?select=email")).map((a) => a.email).filter(Boolean),
+  notify: (env, m) => push.send(env, m),
+  origin: (env) => env.PUBLIC_ORIGIN || "https://lab.shia2n.jp",
+});
 // 便 S1・S2（2026-11-07）：公開サイトの見た目と部品。部品の出し分けの段階は設計図のレーンと同じ決め方（getTimeline と同じ材料）
 const web = makeWeb({
   db, logInbound, readPersonToken,
@@ -1035,6 +1055,20 @@ async function handleApi(request, env, url) {
     return json({ ok: true });
   }
 
+  // 契約の便 2（ShiaSign）：相手が署名するページの口（ログイン不要・鍵はリンクのハッシュ部分で受け取る・本文の POST だけ）
+  if (path.startsWith("/api/sign/") && method === "POST") {
+    const stop = await guardPublic(request, env, "sign", { ip: "public" }); if (stop) return stop;
+    const b = await request.json().catch(() => ({}));
+    const SIGN_ST = { bad_link: 404, cancelled: 410, expired: 410, already_signed: 409, need_code: 401, no_file: 404 };
+    if (path === "/api/sign/open") { const r = await contractSign.open(env, b); return json(r, r.ok ? 200 : SIGN_ST[r.error] || 400); }
+    if (path === "/api/sign/code") { const r = await contractSign.sendCode(env, b); return json(r, r.ok ? 200 : SIGN_ST[r.error] || 400); }
+    if (path === "/api/sign/verify") { const r = await contractSign.verify(env, b); return json(r, r.ok ? 200 : SIGN_ST[r.error] || 400); }
+    if (path === "/api/sign/pdf") { const r = await contractSign.pdf(env, b); return r.response || json({ ok: false, error: r.error }, SIGN_ST[r.error] || 400); }
+    if (path === "/api/sign/submit") { const r = await contractSign.submit(env, b, { ip: clientIp(request), ua: request.headers.get("user-agent") || "", country: request.cf && request.cf.country || null }); return json(r, r.ok ? 200 : SIGN_ST[r.error] || 400); }
+    if (path === "/api/sign/receipt") { const r = await contractSign.receipt(env, b); return r.response || json({ ok: false, error: r.error }, SIGN_ST[r.error] || 400); }
+    return json({ ok: false, error: "not_found" }, 404);
+  }
+
   if (path === "/api/register" && method === "POST") {
     const body = await request.json().catch(() => ({}));
     const stop = await guardPublic(request, env, "register", { ip: "public", bot: true, token: body.turnstile, email: body.email || "" });
@@ -1450,6 +1484,8 @@ async function handleApi(request, env, url) {
     }
     if (path === "/api/admin/contracts/doclink" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await contracts.addDocLink(env, b, a.email); return json(r, r.ok ? 200 : 400); }
     if (path === "/api/admin/contracts/file" && method === "GET") { const r = await contracts.file(env, url.searchParams.get("id"), a.email); return r || json({ ok: false, error: "not_found" }, 404); }
+    if (path === "/api/admin/contracts/sign-request" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await contractSign.request(env, b, a.email); return json(r, r.ok ? 200 : 400); }
+    if (path === "/api/admin/contracts/sign-cancel" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await contractSign.cancel(env, b, a.email); return json(r, r.ok ? 200 : 400); }
     if (path === "/api/admin/contracts/verify" && method === "GET") { const r = await contracts.verify(env, url.searchParams.get("id")); return json(r, r.ok ? 200 : 400); }
     if (path === "/api/admin/media" && method === "GET") return json(await media.list(env, { kind: url.searchParams.get("kind") || "", folder: url.searchParams.get("folder") || "", q: url.searchParams.get("q") || "", limit: url.searchParams.get("limit") || "" }));
     if (path === "/api/admin/media/upload" && method === "POST") {
@@ -2474,6 +2510,20 @@ const TOOLS = [
     inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
   },
   {
+    name: "request_contract_signature",
+    screen: "contracts",
+    say: "契約書の署名を相手に依頼する（メールが届く）",
+    description: "契約（contract_id）の署名を相手に依頼する（契約の便 2・署名ページ）。相手のメール email（既定は契約の signer_email）へ署名のリンク（期限 7 日）を送り、契約を署名待ちにする。見せる PDF は file_id（既定は最新の下書きの PDF）。前の生きた依頼は使えなくなる。相手は確認コード（LINE でつながっていれば LINE、ほかはメール）を入れてから署名する。承認が要る道具（外の人にメールが届く）。",
+    inputSchema: { type: "object", properties: { contract_id: { type: "string" }, file_id: { type: "string" }, email: { type: "string" } }, required: ["contract_id"] },
+  },
+  {
+    name: "cancel_contract_signature",
+    screen: "contracts",
+    say: "署名の依頼を取り消す",
+    description: "署名の依頼（id は get_contract の signs の id）を取り消す。リンクは使えなくなる。",
+    inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+  },
+  {
     name: "list_media",
     screen: "media",
     say: "メディアの棚を見る",
@@ -3222,6 +3272,8 @@ async function runTool(env, name, args, ctx) {
   if (name === "copy_to_blog") return await blog.copy(env, args, "mcp");
   if (name === "save_blog_post") return await blog.save(env, args, "mcp");
   if (name === "list_contracts") return await contracts.list(env, args);
+  if (name === "request_contract_signature") return await contractSign.request(env, args, "mcp");
+  if (name === "cancel_contract_signature") return await contractSign.cancel(env, args, "mcp");
   if (name === "get_contract") return await contracts.get(env, args.id);
   if (name === "create_contract") return await contracts.create(env, args, "mcp");
   if (name === "save_contract") return await contracts.update(env, args, "mcp");

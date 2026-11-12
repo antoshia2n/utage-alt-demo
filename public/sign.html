@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css">
+<title>契約書の署名｜株式会社Best Life Consulting</title>
+<!-- 契約の便 2（2026-11-12・ShiaSign）：相手が署名するページ。鍵はリンクの # のあと（サーバーの記録にも、ほかのサイトにも渡らない） -->
+<style>
+  .steps{display:flex;gap:6px;margin:4px 0 14px;flex-wrap:wrap}
+  .steps span{font-size:12px;padding:4px 10px;border-radius:999px;border:1px solid #a39a90;color:#6b6259}
+  .steps span[aria-current=step]{background:#b45309;border-color:#b45309;color:#fff}
+  .doc{width:100%;height:70vh;min-height:420px;border:1px solid #a39a90;border-radius:12px;background:#fff}
+  .hash{font-family:ui-monospace,Menlo,monospace;font-size:12px;word-break:break-all}
+  .code{font-size:24px;letter-spacing:.3em;text-align:center;max-width:220px}
+  .agree{display:flex;gap:10px;align-items:flex-start;font-size:15px;line-height:1.6;margin:8px 0}
+  .agree input{width:22px;height:22px;margin-top:3px;flex:none}
+  .fine{font-size:12px;color:#6b6259;line-height:1.7}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top"><span class="brand">株式会社Best Life Consulting</span></header>
+  <main style="padding:20px 0 40px">
+    <h1 style="font-size:24px;margin-bottom:4px">契約書の署名</h1>
+    <div class="steps" id="steps" aria-label="進み具合"><span data-s="1">1 本人確認</span><span data-s="2">2 契約書を読む</span><span data-s="3">3 署名</span><span data-s="4">4 完了</span></div>
+    <div id="box" class="card stack"><p class="note">読み込んでいます…</p></div>
+    <div id="msg" class="msg hidden" role="status" aria-live="polite"></div>
+    <p class="fine">このページは、株式会社Best Life Consulting が契約への同意を記録するための署名ページです。署名すると、署名した日時・接続元・端末の種類・契約書の指紋（SHA-256）を記録し、外部の時刻の証明を取ります。控えはメールでお送りします。</p>
+  </main>
+</div>
+<script type="module">
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const hp = new URLSearchParams(location.hash.slice(1));
+const t = hp.get("t"), r = hp.get("r");
+let session = null, info = null, pdfUrl = null;
+const ERR = {
+  bad_link: "このリンクは使えません。メールのボタンから開き直してください。", cancelled: "この署名の依頼は取り消されました。新しいメールをお待ちください。",
+  expired: "このリンクの期限が切れています。株式会社Best Life Consulting へご連絡ください。", already_signed: "この契約書は、すでに署名が済んでいます。控えはメールをご確認ください。",
+  too_many_codes: "コードを送れる回数を超えました。しばらくしてから、もう一度メールのボタンから開いてください。", send_failed: "コードを送れませんでした。時間をおいてお試しください。",
+  no_code: "先に「確認コードを送る」を押してください。", code_expired: "コードの期限が切れました。もう一度送ってください。", too_many_tries: "まちがいが続いたため、このコードは使えません。もう一度送ってください。",
+  need_code: "確認の時間が切れました。もう一度コードを送ってください。", need_name: "お名前を入れてください。", need_agree: "同意のチェックを入れてください。", too_many: "操作が続いたため止めています。1 分ほどおいてお試しください。", no_file: "契約書が見つかりません。ご連絡ください。",
+};
+const say = (text, bad) => { const m = $("#msg"); m.textContent = text; m.classList.remove("hidden"); m.classList.toggle("err", !!bad); };
+const step = (n) => document.querySelectorAll("#steps [data-s]").forEach((s) => s.toggleAttribute("aria-current", false) || (s.dataset.s === String(n) && s.setAttribute("aria-current", "step")));
+async function post(path, body) {
+  const res = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  if ((res.headers.get("content-type") || "").includes("application/pdf")) return { ok: true, blob: await res.blob() };
+  const j = await res.json().catch(() => ({ ok: false, error: "bad_response" }));
+  return j;
+}
+const errOf = (j) => j.error === "bad_code" ? `コードがちがいます（あと ${j.left} 回）。` : j.error === "wait" ? `${j.seconds} 秒ほどおいてから送れます。` : ERR[j.error] || "うまくいきませんでした。時間をおいてお試しください。";
+
+async function start() {
+  if (r) return receipt();
+  if (!t) { $("#box").innerHTML = `<p>${ERR.bad_link}</p>`; return; }
+  info = await post("/api/sign/open", { t });
+  if (!info.ok) { $("#box").innerHTML = `<p>${esc(errOf(info))}</p>`; return; }
+  step(1);
+  $("#box").innerHTML = `<div><div class="note">契約</div><b style="font-size:17px">${esc(info.title)}</b>${info.company ? `<div class="note">${esc(info.company)}</div>` : ""}</div>
+    <p>ご本人の確認のため、6 桁の確認コードを${info.channel === "line" ? " LINE " : `メール（${esc(info.email)}）`}にお送りします。</p>
+    <button class="btn block" id="send" type="button">確認コードを送る</button>
+    <form id="vf" class="stack hidden" novalidate><div><label for="code">確認コード（6 桁）</label><input id="code" class="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]*"></div>
+      <button class="btn block" type="submit">確かめる</button><button class="btn ghost small" id="again" type="button">コードを送り直す</button></form>`;
+  const send = async (btn) => {
+    btn.disabled = true; const j = await post("/api/sign/code", { t }); btn.disabled = false;
+    if (!j.ok) { say(errOf(j), true); return; }
+    say(j.channel === "line" ? "LINE に確認コードを送りました。" : `メール（${j.email}）に確認コードを送りました。届かないときは迷惑メールもご確認ください。`);
+    $("#send").classList.add("hidden"); $("#vf").classList.remove("hidden"); $("#code").focus();
+  };
+  $("#send").addEventListener("click", (e) => send(e.currentTarget));
+  $("#again").addEventListener("click", (e) => send(e.currentTarget));
+  $("#vf").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const code = $("#code").value.replace(/\D/g, "");
+    if (code.length !== 6) { say("6 桁の数字を入れてください。", true); $("#code").focus(); return; }
+    const j = await post("/api/sign/verify", { t, code });
+    if (!j.ok) { say(errOf(j), true); $("#code").select(); return; }
+    session = j.session; showDoc(j);
+  });
+}
+
+async function showDoc(v) {
+  step(2); say("本人確認ができました。契約書を最後までお読みください。");
+  const j = await post("/api/sign/pdf", { t, session });
+  if (!j.ok) { say(errOf(j), true); return; }
+  pdfUrl = URL.createObjectURL(j.blob);
+  $("#box").innerHTML = `<div><div class="note">契約</div><b style="font-size:17px">${esc(info.title)}</b></div>
+    <iframe class="doc" title="契約書" src="${pdfUrl}"></iframe>
+    <p class="note"><a href="${pdfUrl}" target="_blank" rel="noopener">契約書を別タブで開く ↗</a>（スマホで中が見えないときはこちら）</p>
+    ${v.file ? `<p class="fine">契約書の指紋（SHA-256）：<span class="hash">${esc(v.file.sha256)}</span></p>` : ""}
+    <form id="sf" class="stack" novalidate>
+      <div><label for="name">お名前（署名）</label><input id="name" autocomplete="name" maxlength="80" placeholder="例：山田 太郎"></div>
+      <label class="agree"><input type="checkbox" id="agree"> <span>${esc(v.agree)}</span></label>
+      <button class="btn block" type="submit">署名する</button>
+    </form>`;
+  step(3);
+  $("#sf").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const name = $("#name").value.trim();
+    if (!name) { say(ERR.need_name, true); $("#name").focus(); return; }
+    if (!$("#agree").checked) { say(ERR.need_agree, true); $("#agree").focus(); return; }
+    const btn = e.submitter || $("#sf button"); btn.disabled = true; say("署名を記録しています…");
+    const j = await post("/api/sign/submit", { t, session, name, agree: true });
+    btn.disabled = false;
+    if (!j.ok) { say(errOf(j), true); return; }
+    step(4);
+    $("#box").innerHTML = `<h2 style="margin:0">署名が完了しました</h2>
+      <p>控えをメールでお送りしました。署名した契約書は、メールのボタンから 30 日のあいだ取り出せます。</p>
+      <p class="fine">契約書の指紋（SHA-256）：<span class="hash">${esc(j.sha256)}</span><br>署名の記録の指紋：<span class="hash">${esc(j.evidence_sha256)}</span></p>
+      <a class="btn block" href="${pdfUrl}" download="契約書.pdf">署名した契約書を保存する</a>`;
+    say("署名を受け付けました。ありがとうございました。");
+  });
+}
+
+async function receipt() {
+  step(4);
+  $("#box").innerHTML = `<p>署名した契約書を取り出します。</p><button class="btn block" id="dl" type="button">署名した契約書を保存する</button>`;
+  $("#dl").addEventListener("click", async () => {
+    const j = await post("/api/sign/receipt", { r });
+    if (!j.ok) { say(errOf(j), true); return; }
+    const u = URL.createObjectURL(j.blob); const a = document.createElement("a"); a.href = u; a.download = "署名した契約書.pdf"; a.click();
+    say("保存しました。");
+  });
+}
+start();
+</script>
+</body>
+</html>
