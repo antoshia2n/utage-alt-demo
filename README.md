@@ -184,3 +184,17 @@ UTAGE の代わりになるサイト兼アプリ（PWA）のデモ。架空の�
 - 開かれた数は最初から読むとき（Range なし・bytes=0-）だけ足す。スライドは元の Google の住所へ送る。画像・PDF・動画・音声のほかは保存させる
 - 画面：メディアの行の「共有」。道具 list_media_links・stop_media_link（自動）、create_media_link（承認）
 
+
+## 契約の便 1（2026-11-12・ShiaSign）
+
+DocuSign を解約しても、契約の作成 → 署名 → 保管 → 検索が回るようにする 1 本目。署名ページ（便 2）と期限の通知・バックアップ（便 3）はまだ無い。
+
+- 表：`b_contracts`（契約 1 件 1 行）と `b_contract_files`（書類 1 つ 1 行）。正本は `supabase/b_contracts.sql`（本番に流し済み）
+  - 顧客（member）と売上管理の契約番号は、どちらも空でよい結び
+  - 書類の行は直す・消すを表の仕掛けで断る。契約も消せず「しまう」だけ（電子帳簿保存法の保存期間のため）
+- 書類の中身は R2（`IMAGES`）の `contracts/<契約>/<書類>.<拡張子>`。加工せずに置き、入れたときの SHA-256 を表に持つ。毎回新しい番号なので上書きしない
+- 改ざんチェック：R2 の中身のハッシュ値を計算し直して比べる。違えば `inbound_log` に `contract_file_mismatch`
+- 探す：取引先（会社名・氏名・メール）の言葉・日付の範囲（締結日、無ければ開始日）・金額の範囲。組み合わせられる（電子帳簿保存法の検索の 3 つ）
+- 画面：左のメニュー「顧客 › 契約」と、顧客の詳細の「契約」タブ（その人の契約だけ）。`public/js/contracts.js`
+- 開く・入れる・直す・状態・しまうは全部 `inbound_log` に残す（誰が・いつ）
+- MCP：`list_contracts`・`get_contract`・`create_contract`・`save_contract`・`set_contract_status`・`add_contract_doc_link`・`verify_contract_file`（自動）、`archive_contract`（承認が要る）。PDF を入れるのは画面だけ（ファイルは Naoki の手元にある）
