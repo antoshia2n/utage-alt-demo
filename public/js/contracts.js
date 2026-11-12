@@ -45,6 +45,7 @@ export function mountContracts(host, { getToken, personId = null, personName = "
     @media (max-width:700px){.addf{grid-template-columns:1fr}.fbar>div{min-width:45%}}
   </style>
   <div class="top"><span class="tab" aria-current="page" style="cursor:default">${inPerson ? "この人の契約" : "契約"}</span><span class="grow"></span><span class="note-top" id="note-top"></span>
+    ${inPerson ? "" : '<button class="btn sm" type="button" id="zip">まとめてダウンロード（ZIP）</button>'}
     <button class="btn sm pri" type="button" id="new">新規作成</button></div>
   <div class="wrap">${inPerson ? "" : '<nav class="side" id="side" aria-label="状態"></nav>'}<main id="main" tabindex="-1"><p class="lead">読み込んでいます…</p></main></div>
   <div class="undo" id="undo" hidden><span id="undo-t"></span><button type="button" id="undo-b">元に戻す</button></div>
@@ -182,6 +183,7 @@ export function mountContracts(host, { getToken, personId = null, personName = "
       ${x.status === "signed" && !x.signed_file ? '<p class="lead soon">締結済みですが、署名済みの書類がまだ入っていません。下の「書類」から入れてください。</p>' : ""}
       <h3>署名の依頼</h3>
       ${signBox(x)}
+      ${x.status === "signed" || x.status === "ended" ? `<h3>更新・解約</h3>${lifeBox(x)}` : ""}
       <h3>書類</h3>
       ${x.files.length ? `<div class="tbl"><table><thead><tr><th>種類</th><th>名前</th><th>指紋（SHA-256）</th><th></th></tr></thead><tbody>${files}</tbody></table></div>` : '<p class="lead">まだ書類はありません。</p>'}
       <form class="addf" id="addf">
@@ -202,12 +204,50 @@ export function mountContracts(host, { getToken, personId = null, personName = "
     $("#main").querySelectorAll("[data-set]").forEach((b) => b.addEventListener("click", () => setStatus(x, b.dataset.set)));
     $("#main").querySelectorAll("[data-open]").forEach((b) => b.addEventListener("click", () => openFile(b.dataset.open)));
     $("#main").querySelectorAll("[data-check]").forEach((b) => b.addEventListener("click", () => check(x, b.dataset.check)));
+    const rg = $("#rn-go"); if (rg) rg.addEventListener("click", () => renew(x));
+    const cg = $("#cn-go"); if (cg) cg.addEventListener("click", () => cancelContract(x));
+    loadHist(x);
     const sr = $("#sig-req"); if (sr) sr.addEventListener("click", () => requestSign(x));
     $("#main").querySelectorAll("[data-sigcancel]").forEach((b) => b.addEventListener("click", () => cancelSign(x, b.dataset.sigcancel)));
     $("#addf").addEventListener("submit", (e) => { e.preventDefault(); addFile(x); });
     $("#addg").addEventListener("submit", (e) => { e.preventDefault(); addDoc(x); });
     $("#cf").addEventListener("submit", (e) => { e.preventDefault(); save(x); });
     $("#arch").addEventListener("click", () => archive(x, !x.archived));
+  }
+  function lifeBox(x) {
+    const left = x.days_left;
+    const head = x.end_date ? `終了日 ${day(x.end_date)}${x.status === "signed" && left != null ? (left >= 0 ? `（あと ${left} 日）` : "（過ぎています）") : ""}・自動更新 ${x.auto_renew ? "あり" : "なし"}` : "終了日が入っていません（「中身」で入れると、30 日前に通知します）";
+    return `<p class="lead" style="margin:4px 0">${head}。終了日の 30 日前に Naoki へメールとスマホで通知します。${x.auto_renew ? "何もしなければ、終了日の翌日に同じ長さで延びます。" : "何もしなければ、終了日の翌日に「終了・解約」になります。"}</p>
+      ${x.status === "signed" && x.end_date ? `<div class="addf" style="grid-template-columns:1fr auto 1fr auto">
+        <div><label for="rn-to">新しい終了日（空なら同じ長さだけ延ばす）</label><input type="date" id="rn-to"></div><button class="btn sm pri" type="button" id="rn-go">更新する</button>
+        <div><label for="cn-on">解約の日（空なら今の終了日）</label><input type="date" id="cn-on"></div><button class="btn sm" type="button" id="cn-go">解約する</button></div>` : ""}
+      <div id="hist" class="lead" style="margin-top:8px">履歴を読み込んでいます…</div>`;
+  }
+  async function loadHist(x) {
+    const box = $("#hist"); if (!box) return;
+    const r = await api("/api/admin/contracts/history?id=" + encodeURIComponent(x.id), { token: tok() });
+    if (!r.ok) { box.textContent = "履歴を読めませんでした"; return; }
+    box.innerHTML = r.items.length ? `<ul style="list-style:none;margin:0;padding:0">${r.items.map((h) => `<li style="padding:4px 0;border-top:1px solid var(--line,#e6dfd6)">${day(h.at)}・<b>${esc(h.label)}</b>${h.from_end && h.to_end && h.from_end !== h.to_end ? `・終了日 ${day(h.from_end)} → ${day(h.to_end)}` : h.to_end ? `・${day(h.to_end)}` : ""}${h.note ? `・${esc(h.note)}` : ""}${h.by_who === "auto" ? "（自動）" : ""}</li>`).join("")}</ul>` : "まだ更新・解約の履歴はありません";
+  }
+  async function renew(x) {
+    const r = await api("/api/admin/contracts/renew", { method: "POST", token: tok(), body: { id: x.id, to_end: $("#rn-to").value || undefined } });
+    if (!r.ok) { say(r.error === "bad_date" ? "今の終了日より後の日付にしてください" : errText(r)); $("#rn-to").focus(); return; }
+    await openDetail(x.id); say(`更新しました。終了日 ${day(r.from_end)} → ${day(r.to_end)}`); refocus("#rn-go");
+  }
+  async function cancelContract(x) {
+    const on = $("#cn-on").value || x.end_date;
+    if (!confirm(`${day(on)} で解約します。状態は「終了・解約」になり、自動更新は外れます。よろしいですか？`)) return;
+    const r = await api("/api/admin/contracts/cancel", { method: "POST", token: tok(), body: { id: x.id, on } });
+    if (!r.ok) { say(r.error === "bad_date" ? "開始日より後の日付にしてください" : errText(r)); return; }
+    await openDetail(x.id); say(`${day(r.end_date)} で解約しました`);
+  }
+  async function downloadZip() {
+    say("まとめています…（書類が多いと少しかかります）");
+    const res = await fetch("/api/admin/contracts/export", { headers: { authorization: "Bearer " + tok() } });
+    if (!res.ok) { const j = await res.json().catch(() => ({})); say(j.error === "too_big" ? "書類が多すぎて 1 つにまとめられません。開発部へ知らせてください" : "ダウンロードできませんでした"); return; }
+    const cd = res.headers.get("content-disposition") || ""; const m = cd.match(/filename\*=UTF-8''([^;]+)/);
+    const a = document.createElement("a"); a.href = URL.createObjectURL(await res.blob()); a.download = m ? decodeURIComponent(m[1]) : "契約.zip"; a.click();
+    say("ダウンロードしました。Google Drive などへ置いて保管してください");
   }
   const SIGN_ST = { open: "署名待ち", signed: "署名済み", cancelled: "取り消し" };
   function signBox(x) {
@@ -303,5 +343,6 @@ export function mountContracts(host, { getToken, personId = null, personName = "
   }
 
   $("#new").addEventListener("click", openNew);
+  const zb = $("#zip"); if (zb) zb.addEventListener("click", downloadZip);
   return { open: () => (curId ? openDetail(curId) : load()) };
 }

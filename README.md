@@ -209,3 +209,13 @@ DocuSign を解約しても、契約の作成 → 署名 → 保管 → 検索�
 - 表：`b_contract_signs`（正本は `supabase/b_contract_signs.sql`・本番に流し済み）。`b_contract_files.source` に `shiasign` を足した
 - 公開の口：`POST /api/sign/open|code|verify|pdf|submit|receipt`（接続元ごとの回数の上限を掛ける）
 - MCP：`request_contract_signature`（承認・外の人にメールが届く）・`cancel_contract_signature`（自動）
+
+## 契約の便 3（2026-11-12・ShiaSign）
+
+- 期限：毎時の定時の処理のうち 9 時台（日本時間）だけ、締結済みの契約の終了日を見る（`src/contractlife.js` の daily）
+  - 30 日前から：Naoki（b_admins）へメールとスマホの通知。契約と終了日ごとに 1 回だけ（表の一意の索引でも守る）
+  - 終了日を過ぎたら：自動更新ありは同じ長さだけ延ばして「更新（自動）」、なしは「終了・解約」にして「期間満了」を履歴へ
+- 画面：契約の詳細の「更新・解約」（新しい終了日で更新／解約の日で解約）と履歴。左のメニュー「契約」の右上に「まとめてダウンロード（ZIP）」
+- ZIP の中：はじめに.txt・契約の台帳.csv（書類 1 つ 1 行・指紋つき）・更新と解約の履歴.csv・書類/（取引年月日_取引先_金額_種類_番号）。しまった契約も入る。90MB まで
+- 表：`b_contract_history`（正本は `supabase/b_contract_history.sql`・本番に流し済み・直せない・消せない）
+- MCP：`get_contract_history`・`renew_contract`・`cancel_contract`（自動）

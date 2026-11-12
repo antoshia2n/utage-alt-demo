@@ -85,6 +85,7 @@ import { makeMarks } from "./marks.js";
 import { makeMedia } from "./media.js";
 import { makeContracts } from "./contracts.js";
 import { makeContractSign } from "./contractsign.js";
+import { makeContractLife } from "./contractlife.js";
 import { clientIp } from "./shield.js";
 import { makeChat } from "./chat.js";
 import { makeGroups } from "./groups.js";
@@ -141,6 +142,8 @@ export default {
         const md = await media.drain(env, { limit: 60, budgetMs: 600000 });
         if (md.copied || md.failed) await logInbound(env, "media_drain", { cron: event.cron }, md, 200);
         // 出し先のスイッチ（2026-11-12）：「会員サイトに入れる」がオンの録画を下書きで入れ、Naoki にメールで知らせる
+        // 契約の便 3：9 時台（日本時間）に契約の終了日を見る（30 日前の通知・自動更新・期間満了）
+        try { await contractLife.daily(env); } catch (e) { await logInbound(env, "contract_daily", {}, { ok: false, error: String(e.message).slice(0, 200) }, 500); }
         const rt = await recordings.routeRun(env, site, connect.notifyAdmins);
         if (rt.put || rt.already || rt.failed || rt.ok === false) await logInbound(env, "recording_route", { cron: event.cron }, rt, rt.ok === false ? 500 : 200);
       } catch (e) {
@@ -283,6 +286,13 @@ const contractSign = makeContractSign({
   hasLine: async (env, pid) => (await line.personLinks(env, pid)).links.length > 0,
   line: async (env, pid, text) => { const l = (await line.personLinks(env, pid)).links[0]; if (!l) return { sent: false }; const r = await line.send(env, { account: l.account, person_id: pid, text }, "contract"); return { sent: !!(r && r.sent) }; },
   admins: async (env) => (await db(env, "GET", "admins?select=email")).map((a) => a.email).filter(Boolean),
+  notify: (env, m) => push.send(env, m),
+  origin: (env) => env.PUBLIC_ORIGIN || "https://lab.shia2n.jp",
+});
+// 契約の便 3：期限の通知・更新・解約の履歴・まとめてダウンロード（src/contractlife.js）
+const contractLife = makeContractLife({
+  db, logInbound, contracts, mail: contractMail,
+  admins: async (env) => (await db(env, "GET", "admins?select=email")).map((x) => x.email).filter(Boolean),
   notify: (env, m) => push.send(env, m),
   origin: (env) => env.PUBLIC_ORIGIN || "https://lab.shia2n.jp",
 });
@@ -1484,6 +1494,14 @@ async function handleApi(request, env, url) {
     }
     if (path === "/api/admin/contracts/doclink" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await contracts.addDocLink(env, b, a.email); return json(r, r.ok ? 200 : 400); }
     if (path === "/api/admin/contracts/file" && method === "GET") { const r = await contracts.file(env, url.searchParams.get("id"), a.email); return r || json({ ok: false, error: "not_found" }, 404); }
+    if (path === "/api/admin/contracts/history" && method === "GET") { const r = await contractLife.history(env, url.searchParams.get("id")); return json(r, r.ok ? 200 : 400); }
+    if (path === "/api/admin/contracts/renew" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await contractLife.renew(env, b, a.email); return json(r, r.ok ? 200 : 400); }
+    if (path === "/api/admin/contracts/cancel" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await contractLife.cancel(env, b, a.email); return json(r, r.ok ? 200 : 400); }
+    if (path === "/api/admin/contracts/export" && method === "GET") {
+      const r = await contractLife.exportZip(env, a.email);
+      if (!r.ok) return json(r, 400);
+      return new Response(r.body, { headers: { "content-type": "application/zip", "cache-control": "private, no-store", "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(r.name)}` } });
+    }
     if (path === "/api/admin/contracts/sign-request" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await contractSign.request(env, b, a.email); return json(r, r.ok ? 200 : 400); }
     if (path === "/api/admin/contracts/sign-cancel" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await contractSign.cancel(env, b, a.email); return json(r, r.ok ? 200 : 400); }
     if (path === "/api/admin/contracts/verify" && method === "GET") { const r = await contracts.verify(env, url.searchParams.get("id")); return json(r, r.ok ? 200 : 400); }
@@ -2510,6 +2528,27 @@ const TOOLS = [
     inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
   },
   {
+    name: "get_contract_history",
+    screen: "contracts",
+    say: "契約の更新・解約の履歴を見る",
+    description: "契約 1 件（id）の更新・解約・期間満了・30 日前の通知の履歴（新しい順）。",
+    inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+  },
+  {
+    name: "renew_contract",
+    screen: "contracts",
+    say: "契約を更新する（終了日を延ばす）",
+    description: "締結済みの契約（id）を更新する。to_end（新しい終了日 YYYY-MM-DD・省くと同じ長さだけ延ばす）・note。履歴に残る。",
+    inputSchema: { type: "object", properties: { id: { type: "string" }, to_end: { type: "string" }, note: { type: "string" } }, required: ["id"] },
+  },
+  {
+    name: "cancel_contract",
+    screen: "contracts",
+    say: "契約を解約する",
+    description: "契約（id）を解約する。on（解約の日＝新しい終了日 YYYY-MM-DD・省くと今の終了日）・note。状態は「終了・解約」、自動更新は外れる。履歴に残る。",
+    inputSchema: { type: "object", properties: { id: { type: "string" }, on: { type: "string" }, note: { type: "string" } }, required: ["id"] },
+  },
+  {
     name: "request_contract_signature",
     screen: "contracts",
     say: "契約書の署名を相手に依頼する（メールが届く）",
@@ -3272,6 +3311,9 @@ async function runTool(env, name, args, ctx) {
   if (name === "copy_to_blog") return await blog.copy(env, args, "mcp");
   if (name === "save_blog_post") return await blog.save(env, args, "mcp");
   if (name === "list_contracts") return await contracts.list(env, args);
+  if (name === "get_contract_history") return await contractLife.history(env, args.id);
+  if (name === "renew_contract") return await contractLife.renew(env, args, "mcp");
+  if (name === "cancel_contract") return await contractLife.cancel(env, args, "mcp");
   if (name === "request_contract_signature") return await contractSign.request(env, args, "mcp");
   if (name === "cancel_contract_signature") return await contractSign.cancel(env, args, "mcp");
   if (name === "get_contract") return await contracts.get(env, args.id);
