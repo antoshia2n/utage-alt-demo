@@ -83,6 +83,7 @@ import { utageCopy } from "./utagecopy.js";
 import { makeRecToken, handleRecPlay } from "./recplay.js";
 import { makeMarks } from "./marks.js";
 import { makeMedia } from "./media.js";
+import { makeContracts } from "./contracts.js";
 import { makeChat } from "./chat.js";
 import { makeGroups } from "./groups.js";
 import { makeNames } from "./names.js";
@@ -264,6 +265,7 @@ const blocks = makeBlocks({ db, logInbound, plan, deliver, draftFlow: (env, a, a
 // B の便 14a：LINE の受け口（中身は src/line.js）
 // メディアの便 M1（2026-11-07）：メディアの棚（R2 の IMAGES の箱の media/ と表 b_media）
 const media = makeMedia({ db, logInbound });
+const contracts = makeContracts({ db, logInbound });
 // 便 S1・S2（2026-11-07）：公開サイトの見た目と部品。部品の出し分けの段階は設計図のレーンと同じ決め方（getTimeline と同じ材料）
 const web = makeWeb({
   db, logInbound, readPersonToken,
@@ -1434,6 +1436,21 @@ async function handleApi(request, env, url) {
     if (path === "/api/admin/blog/copy" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await blog.copy(env, b, a.email); return json(r, r.ok ? 200 : 400); }
     if (path === "/api/admin/blog/post" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await blog.save(env, b, a.email); return json(r, r.ok ? 200 : 400); }
     if (path === "/api/admin/web/part" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await web.savePart(env, b, a.email); return json(r, r.ok ? 200 : 400); }
+    // 契約の便 1（2026-11-12・ShiaSign）：契約の台帳と書類（src/contracts.js）
+    if (path === "/api/admin/contracts" && method === "GET") { const sp = url.searchParams; const r = await contracts.list(env, { q: sp.get("q") || "", status: sp.get("status") || "", kind: sp.get("kind") || "", from: sp.get("from") || "", to: sp.get("to") || "", min: sp.get("min") ?? "", max: sp.get("max") ?? "", person_id: sp.get("person_id") || "", archived: sp.get("archived") === "1" }); return json(r, r.ok ? 200 : 400); }
+    if (path === "/api/admin/contracts/one" && method === "GET") { const r = await contracts.get(env, url.searchParams.get("id")); return json(r, r.ok ? 200 : 404); }
+    if (path === "/api/admin/contracts" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await contracts.create(env, b, a.email); return json(r, r.ok ? 200 : 400); }
+    if (path === "/api/admin/contracts/save" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await contracts.update(env, b, a.email); return json(r, r.ok ? 200 : 400); }
+    if (path === "/api/admin/contracts/status" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await contracts.setStatus(env, b, a.email); return json(r, r.ok ? 200 : 400); }
+    if (path === "/api/admin/contracts/archive" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await contracts.archive(env, b, a.email); return json(r, r.ok ? 200 : 400); }
+    if (path === "/api/admin/contracts/file" && method === "POST") {
+      const sp = url.searchParams;
+      const r = await contracts.addFile(env, { contract_id: sp.get("contract_id"), role: sp.get("role"), name: sp.get("name"), source: sp.get("source"), size: request.headers.get("content-length"), type: request.headers.get("content-type"), body: request.body }, a.email);
+      return json(r, r.ok ? 200 : 400);
+    }
+    if (path === "/api/admin/contracts/doclink" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await contracts.addDocLink(env, b, a.email); return json(r, r.ok ? 200 : 400); }
+    if (path === "/api/admin/contracts/file" && method === "GET") { const r = await contracts.file(env, url.searchParams.get("id"), a.email); return r || json({ ok: false, error: "not_found" }, 404); }
+    if (path === "/api/admin/contracts/verify" && method === "GET") { const r = await contracts.verify(env, url.searchParams.get("id")); return json(r, r.ok ? 200 : 400); }
     if (path === "/api/admin/media" && method === "GET") return json(await media.list(env, { kind: url.searchParams.get("kind") || "", folder: url.searchParams.get("folder") || "", q: url.searchParams.get("q") || "", limit: url.searchParams.get("limit") || "" }));
     if (path === "/api/admin/media/upload" && method === "POST") {
       const r = await media.upload(env, { name: url.searchParams.get("name"), folder: url.searchParams.get("folder"), size: request.headers.get("content-length"), type: request.headers.get("content-type"), body: request.body }, a.email);
@@ -2401,6 +2418,62 @@ const TOOLS = [
     inputSchema: { type: "object", properties: { id: { type: "string" }, title: { type: "string" }, description: { type: "string" }, thumb_url: { type: "string" }, gift_part: { type: "string" }, slug: { type: "string" }, action: { type: "string" } }, required: ["id"] },
   },
   {
+    name: "list_contracts",
+    screen: "contracts",
+    say: "契約の一覧を見る・探す",
+    description: "契約の台帳（契約の便 1・ShiaSign）を見る・探す。q（会社名・氏名・メール・契約内容・種別の言葉）・status（draft 下書き／ready 署名依頼前／waiting 署名待ち／signed 締結済み／ended 終了・解約）・kind（種別）・from／to（日付の範囲 YYYY-MM-DD。締結日、無ければ開始日）・min／max（金額の範囲・円）・person_id（顧客の id）・archived（true でしまった分も）。全部「かつ」で組み合わさる。返すもの：契約ごとの id・契約先・金額・開始日・終了日・締結日・残りの日数 days_left・自動更新・状態・書類の一覧（役目・名前・ハッシュ値 sha256）。状態ごとの数 counts。",
+    inputSchema: { type: "object", properties: { q: { type: "string" }, status: { type: "string" }, kind: { type: "string" }, from: { type: "string" }, to: { type: "string" }, min: { type: "integer" }, max: { type: "integer" }, person_id: { type: "string" }, archived: { type: "boolean" } } },
+  },
+  {
+    name: "get_contract",
+    screen: "contracts",
+    say: "契約を 1 件見る",
+    description: "契約 1 件（id）の中身と書類の一覧。",
+    inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+  },
+  {
+    name: "create_contract",
+    screen: "contracts",
+    say: "契約を台帳に入れる",
+    description: "契約を 1 件、台帳に入れる。title（契約内容・必須）・kind（種別）・company（会社名）・signer_name（相手の氏名）・signer_email・amount（円）・start_date／end_date／signed_on（YYYY-MM-DD）・auto_renew（自動更新）・person_id（顧客の id）・sales_contract_id（売上管理の契約の番号）・note・status（既定は draft。DocuSign から移すときは signed）。書類（PDF）は画面の「契約」から入れる（ファイルは Naoki の手元にある）。",
+    inputSchema: { type: "object", properties: { title: { type: "string" }, kind: { type: "string" }, company: { type: "string" }, signer_name: { type: "string" }, signer_email: { type: "string" }, amount: { type: "integer" }, start_date: { type: "string" }, end_date: { type: "string" }, signed_on: { type: "string" }, auto_renew: { type: "boolean" }, person_id: { type: "string" }, sales_contract_id: { type: "integer" }, note: { type: "string" }, status: { type: "string" } }, required: ["title"] },
+  },
+  {
+    name: "save_contract",
+    screen: "contracts",
+    say: "契約の中身を直す",
+    description: "契約 1 件（id）の欄を直す。送った欄だけ変わる（欄の名前は create_contract と同じ。status は set_contract_status で）。直す前の値は記録に残る。",
+    inputSchema: { type: "object", properties: { id: { type: "string" }, title: { type: "string" }, kind: { type: "string" }, company: { type: "string" }, signer_name: { type: "string" }, signer_email: { type: "string" }, amount: { type: "integer" }, start_date: { type: "string" }, end_date: { type: "string" }, signed_on: { type: "string" }, auto_renew: { type: "boolean" }, person_id: { type: "string" }, sales_contract_id: { type: "integer" }, note: { type: "string" } }, required: ["id"] },
+  },
+  {
+    name: "set_contract_status",
+    screen: "contracts",
+    say: "契約の状態を変える",
+    description: "契約 1 件（id）の状態 status を変える（draft／ready／waiting／signed／ended）。waiting にすると依頼した日と相手 requested_to（既定は signer_email）を残す。signed は締結日 signed_on（既定は今日）。署名済みの書類が無いまま signed にすると warnings に no_signed_file。",
+    inputSchema: { type: "object", properties: { id: { type: "string" }, status: { type: "string" }, requested_to: { type: "string" }, signed_on: { type: "string" } }, required: ["id", "status"] },
+  },
+  {
+    name: "archive_contract",
+    screen: "contracts",
+    say: "契約をしまう・戻す",
+    description: "契約 1 件（id）をしまう（archived=true）・戻す（false）。契約と書類は消さない（電子帳簿保存法の保存期間のため・消す道具は無い）。承認が要る道具：呼ぶと承認待ちになり approval_url が返る。",
+    inputSchema: { type: "object", properties: { id: { type: "string" }, archived: { type: "boolean" } }, required: ["id", "archived"] },
+  },
+  {
+    name: "add_contract_doc_link",
+    screen: "contracts",
+    say: "Google ドキュメントの契約書を契約に結ぶ",
+    description: "Google ドキュメント（https://docs.google.com/document/d/…）で作った契約書を、契約（contract_id）の下書きとしてリンクで入れる。name。",
+    inputSchema: { type: "object", properties: { contract_id: { type: "string" }, url: { type: "string" }, name: { type: "string" } }, required: ["contract_id", "url"] },
+  },
+  {
+    name: "verify_contract_file",
+    screen: "contracts",
+    say: "契約書が書き換えられていないか確かめる",
+    description: "契約の書類 1 つ（id は get_contract の files の id）の中身のハッシュ値（SHA-256）を計算し直し、入れたときの値と比べる。match が false なら書き換えか、置き場から消えた（missing）。",
+    inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+  },
+  {
     name: "list_media",
     screen: "media",
     say: "メディアの棚を見る",
@@ -3148,6 +3221,14 @@ async function runTool(env, name, args, ctx) {
   if (name === "list_blog_sources") return await blog.sources(env, args);
   if (name === "copy_to_blog") return await blog.copy(env, args, "mcp");
   if (name === "save_blog_post") return await blog.save(env, args, "mcp");
+  if (name === "list_contracts") return await contracts.list(env, args);
+  if (name === "get_contract") return await contracts.get(env, args.id);
+  if (name === "create_contract") return await contracts.create(env, args, "mcp");
+  if (name === "save_contract") return await contracts.update(env, args, "mcp");
+  if (name === "set_contract_status") return await contracts.setStatus(env, args, "mcp");
+  if (name === "archive_contract") return await contracts.archive(env, args, "mcp");
+  if (name === "add_contract_doc_link") return await contracts.addDocLink(env, args, "mcp");
+  if (name === "verify_contract_file") return await contracts.verify(env, args.id);
   if (name === "list_media") return await media.list(env, args);
   if (name === "import_utage_media") return await media.importUtage(env, { items: args.items }, "mcp");
   if (name === "media_import_status") return await media.importStatus(env);
