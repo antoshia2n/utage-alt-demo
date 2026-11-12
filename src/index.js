@@ -77,6 +77,7 @@ import { makeMypage, APP_URLS } from "./mypage.js";
 import { makeInvite } from "./invite.js";
 import { makeGoals } from "./goals.js";
 import { mailText, mailHtml } from "./mailhtml.js";
+import { makeXkMail } from "./xkmail.js";
 import { makeNews, newsQuery } from "./news.js";
 import { recordings } from "./recordings.js";
 import { utageCopy } from "./utagecopy.js";
@@ -145,6 +146,7 @@ export default {
         // 契約の便 3：9 時台（日本時間）に契約の終了日を見る（30 日前の通知・自動更新・期間満了）
         try { await contractLife.daily(env); } catch (e) { await logInbound(env, "contract_daily", {}, { ok: false, error: String(e.message).slice(0, 200) }, 500); }
         const rt = await recordings.routeRun(env, site, connect.notifyAdmins);
+        try { await xkMail.run(env); } catch (e) { await logInbound(env, "xk_mail", {}, { ok: false, error: String(e.message).slice(0, 200) }, 500); }
         if (rt.put || rt.already || rt.failed || rt.ok === false) await logInbound(env, "recording_route", { cron: event.cron }, rt, rt.ok === false ? 500 : 200);
       } catch (e) {
         await logInbound(env, "cron", { cron: event.cron }, { ok: false, error: String(e.message).slice(0, 200) }, 500);
@@ -281,6 +283,17 @@ async function contractMail(env, { to, subject, text }) {
     return { ok: true, message_id: r && r.messageId || null };
   } catch (e) { return { ok: false, error: String(e && e.message || e).slice(0, 200) }; }
 }
+// X攻略くんの知らせのメール（2026-11-12）：日曜 20 時台と月曜 7 時台に、メールをオンにした人へ。宛先は member のログインのアドレスだけ
+async function xkSend(env, { to, subject, text }) {
+  try {
+    const cfg = await mailcfg.get(env);
+    if (!env.EMAIL || !cfg.from) return { ok: false, error: "mail_not_configured" };
+    if (!(await bin3.mailAllowed(env, to, "xkoryaku"))) return { ok: false, error: "not_test_recipient" };
+    const r = await env.EMAIL.send({ to, from: mailcfg.fromField(cfg), subject, text: mailText(text), html: mailHtml(String(text), { brand: "X攻略くん" }), ...(cfg.reply_to ? { replyTo: cfg.reply_to } : {}) });
+    return { ok: true, message_id: r && r.messageId || null };
+  } catch (e) { return { ok: false, error: String(e && e.message || e).slice(0, 200) }; }
+}
+const xkMail = makeXkMail({ rawDb, logInbound, send: xkSend });
 const contractSign = makeContractSign({
   db, logInbound, contracts, mail: contractMail,
   hasLine: async (env, pid) => (await line.personLinks(env, pid)).links.length > 0,
