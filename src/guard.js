@@ -43,6 +43,8 @@ export const DEFAULT_MODES = {
   list_contracts: "auto", get_contract: "auto", create_contract: "auto", save_contract: "auto", set_contract_status: "auto", add_contract_doc_link: "auto", verify_contract_file: "auto", archive_contract: "approve",
   // 契約の便 2：署名の依頼は承認（外の人にメールが届く）。取り消しは自動
   request_contract_signature: "approve", cancel_contract_signature: "auto",
+  // 契約の便 3：履歴を読む・更新・解約は自動（台帳の中だけで、人へは届かない）
+  get_contract_history: "auto", renew_contract: "auto", cancel_contract: "auto",
   list_media: "auto", import_utage_media: "auto", media_import_status: "auto", add_media_slide: "auto", save_media: "auto", remove_media: "approve",
   list_media_links: "auto", create_media_link: "approve", stop_media_link: "auto",
   // 便 16a：UTAGE の取り込みの様子

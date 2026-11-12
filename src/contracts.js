@@ -117,7 +117,7 @@ export function makeContracts(h) {
 
   async function create(env, b, actor) {
     const s = shape(b || {}); if (!s.ok) return s;
-    const row = { id: crypto.randomUUID(), ...s.row, status: "draft", updated_by: clean(actor, 200) };
+    const row = { id: crypto.randomUUID(), ...s.row, status: "draft", archived: false, updated_by: clean(actor, 200) };
     if (b && b.status && STATUSES.includes(b.status)) row.status = b.status; // DocuSign から移すときは最初から「締結済み」で入れられる
     await db(env, "POST", C, [row], "return=minimal");
     await log(env, "contract_create", { id: row.id, title: row.title, status: row.status, actor }, { ok: true });
