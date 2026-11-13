@@ -183,10 +183,47 @@ export function makeResults(h) {
     const xm = u.match(X_RE);
     const w = WHOSE.includes(whose) ? whose : xm && SELF_X.includes(xm[1].toLowerCase()) ? "me" : "person";
     const row = (await db(env, "POST", T, [{ whose: w, folder: cleanFolder(folder || ""), title: "", link_url: u, source: ["link", "panel", "mcp"].includes(source) ? source : "link", ...BASE, ...stamp(actor) }], "return=representation"))[0];
+    return { ok: true, item: view(await sortLink(env, row, actor)) };
+  }
+  // リンクの行を AI に仕分けさせる。フォルダを決めて入れた行はそのまま・自分の X のポストは「自分の実績」のまま
+  async function sortLink(env, row, actor) {
+    const xm = String(row.link_url || "").match(X_RE);
     const s = await sortOne(env, row, {});
     const keep = row.folder ? { folder: row.folder, whose: row.whose } : xm && SELF_X.includes(xm[1].toLowerCase()) ? { whose: "me" } : {};
-    const done = await patch(env, row.id, { ...s, ...keep, ...stamp(actor) });
-    return { ok: true, item: view(done || row) };
+    return (await patch(env, row.id, { ...s, ...keep, ...stamp(actor) })) || row;
+  }
+
+  // 実績の便 3（2026-11-13 Naoki OK 18:00）：ほかのアプリ（X攻略くんのパネル）が表に足しただけの行（ai=none）を、5 分ごとの処理で仕分ける。
+  // パネルは同じ置き場へ行を 1 つ足すだけにして、本文を読むのと AI の仕分けはここに 1 か所で持つ（鍵を新しく渡さないため）
+  async function drainPending(env, limit = 5) {
+    const rows = await db(env, "GET", `${T}?select=*&ai=eq.none&archived=eq.false&order=created_at.asc&limit=${Math.min(Math.max(parseInt(limit, 10) || 5, 1), 20)}`);
+    let sorted = 0; const failed = [];
+    for (const r of rows) {
+      try {
+        if (r.link_url && !r.r2_key) await sortLink(env, r, r.updated_by || "panel");
+        else await patch(env, r.id, { ai: "unsure", ai_note: "読めるものが無かった", ...stamp("pending") });
+        sorted++;
+      } catch (e) { failed.push({ id: r.id, error: String((e && e.message) || e).slice(0, 120) }); }
+    }
+    return { ok: true, sorted, failed };
+  }
+
+  // ---------- 実績の便 3：AI（Claude）の道具 ----------
+  // 探す：画面の一覧と同じ絞り込み＋checked_only（人が確かめた行だけ）。既定 30・最大 100
+  async function find(env, { whose, folder, inbox, q, publish, checked_only, limit } = {}) {
+    const r = await list(env, { whose, folder, inbox: inbox ? "1" : "", q, publish, limit: 2000 });
+    if (!r.ok) return r;
+    let items = r.items;
+    if (checked_only) items = items.filter((x) => x.checked);
+    const n = Math.min(Math.max(parseInt(limit, 10) || 30, 1), 100);
+    return { ok: true, count: items.length, shown: Math.min(n, items.length), inbox: r.inbox, folders: r.folders, items: items.slice(0, n),
+      note: "成果の数字は checked が true の行だけが人の確かめ済み。false は AI の案。載せてよい範囲 publish が name か anon の行だけを外へ出す" };
+  }
+  // 1 件を開く：一覧の欄に加えて、AI が読んだ文（ai_text）
+  async function one(env, id) {
+    const row = await get(env, id);
+    if (!row) return { ok: false, error: "not_found" };
+    return { ok: true, item: { ...view(row), ai_text: row.ai_text || "", archived: !!row.archived } };
   }
 
   // 直す（フォルダ・成果・誰・日付・本人の言葉・ラベル・載せてよい範囲・顧客への結び）と、しまう・戻す
@@ -281,5 +318,5 @@ export function makeResults(h) {
     return { ok: true, taken: done.length, failed, skipped: got.skipped || [] };
   }
 
-  return { list, get, upload, addLink, save, resort, file, folderEdit, readFolders, driveStatus, drainDrive };
+  return { list, get, upload, addLink, save, resort, file, folderEdit, readFolders, driveStatus, drainDrive, drainPending, find, one };
 }
