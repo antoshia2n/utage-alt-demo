@@ -52,7 +52,7 @@
     { "name": "HIT_LIMIT", "namespace_id": "2102", "simple": { "limit": 60, "period": 60 } }
   ],
   // 便 3：1 時間ごとに、添削が返って読まれていない人へメールを 1 通
-  "triggers": { "crons": ["7 * * * *"] },
+  "triggers": { "crons": ["7 * * * *", "*/5 * * * *"] }, // 実績の便 2：5 分ごとはドライブの「実績の受け箱」だけ（src/index.js の RESULTS_CRON）
   // ブランチとプルリクの試しの組み立て（npx wrangler preview）に要る。中身は空でよい
   "previews": {},
   "observability": { "enabled": true }

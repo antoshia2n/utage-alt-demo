@@ -85,3 +85,20 @@ test("フォルダ：足す・名前を変えると中身も移る・中身が�
   assert.ok(l.folders.person.some((f) => f.name === "メンシプ"));
   assert.ok(!l.folders.person.some((f) => f.name === "収益化"));
 });
+
+test("ドライブの受け箱：取り込んで AI が仕分け、取り込んだ番号だけ知らせる・許可が無ければ止まる", async () => {
+  const { res, env, s } = setup(JSON.stringify({ whose: "me", folder: "売上・成約", title: "35 回で 805,440 円の売上", confident: true }));
+  const told = [];
+  env.ZOOM = {
+    results_inbox_take: async () => ({ ok: true, files: [{ file_id: "abcdefghijk1", name: "uriage.png", mime: "image/png", size: 7, data: new Uint8Array([137, 80, 78, 71, 1, 2, 3]).buffer }, { file_id: "abcdefghijk2", name: "memo.txt", mime: "text/plain", size: 3, data: new Uint8Array([1, 2, 3]).buffer }], skipped: [] }),
+    results_inbox_done: async (ids) => { told.push(...ids); return { ok: true }; },
+  };
+  const r = await res.drainDrive(env);
+  assert.equal(r.taken, 2, "種類の合わないファイルも、2 回目に回さないよう取り込んだ扱い");
+  assert.deepEqual(told, ["abcdefghijk1", "abcdefghijk2"]);
+  assert.equal(s.t.b_results.length, 1);
+  assert.equal(s.t.b_results[0].source, "drive");
+  assert.equal(s.t.b_results[0].folder, "売上・成約");
+  env.ZOOM.results_inbox_take = async () => ({ ok: false, error: "need_permit" });
+  assert.equal((await res.drainDrive(env)).error, "need_permit");
+});

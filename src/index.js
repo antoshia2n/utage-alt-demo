@@ -130,6 +130,15 @@ export default {
   // 定時の処理（1 時間ごと）：添削が返って 1 時間読まれていない人へメールを 1 通
   async scheduled(event, env, ctx) {
     env = withStore(env);
+    // 実績の便 2（2026-11-13）：5 分ごとの合図は、ドライブの「実績の受け箱」を取り込むだけ（毎時の処理は走らせない）
+    if (event.cron === RESULTS_CRON) {
+      ctx.waitUntil((async () => {
+        if (missingConfig(env).length) return;
+        try { const r = await results.drainDrive(env); if (r.taken || r.error) await logInbound(env, "results_drive", { cron: event.cron }, r, r.ok === false ? 500 : 200); }
+        catch (e) { await logInbound(env, "results_drive", { cron: event.cron }, { ok: false, error: String(e.message).slice(0, 200) }, 500); }
+      })());
+      return;
+    }
     ctx.waitUntil((async () => {
       if (missingConfig(env).length) return;
       try {
@@ -277,6 +286,7 @@ const blocks = makeBlocks({ db, logInbound, plan, deliver, draftFlow: (env, a, a
 const media = makeMedia({ db, logInbound });
 // 実績の便 1（2026-11-13）：実績の棚（R2 の IMAGES の箱の results/ と表 b_results）
 const results = makeResults({ db, logInbound });
+const RESULTS_CRON = "*/5 * * * *"; // wrangler.jsonc の triggers.crons と同じ文字
 const contracts = makeContracts({ db, logInbound });
 // 契約の便 2（ShiaSign）：署名ページ（src/contractsign.js）。メールは契約の知らせとして送る（一斉配信ではない）
 async function contractMail(env, { to, subject, text }) {
@@ -1545,6 +1555,8 @@ async function handleApi(request, env, url) {
     if (path === "/api/admin/results/save" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await results.save(env, b, a.email); return json(r, r.ok ? 200 : 400); }
     if (path === "/api/admin/results/resort" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await results.resort(env, b.id, a.email); return json(r, r.ok ? 200 : 400); }
     if (path === "/api/admin/results/folder" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await results.folderEdit(env, b, a.email); return json(r, r.ok ? 200 : 400); }
+    if (path === "/api/admin/results/drive" && method === "GET") return json(await results.driveStatus(env));
+    if (path === "/api/admin/results/drive" && method === "POST") { const r = await results.drainDrive(env); return json(r, r.ok === false ? 400 : 200); }
     if (path === "/api/admin/results/file" && method === "GET") { const r = await results.file(env, url.searchParams.get("id")); return r || json({ ok: false, error: "not_found" }, 404); }
     if (path === "/api/admin/media" && method === "GET") return json(await media.list(env, { kind: url.searchParams.get("kind") || "", folder: url.searchParams.get("folder") || "", q: url.searchParams.get("q") || "", limit: url.searchParams.get("limit") || "" }));
     if (path === "/api/admin/media/upload" && method === "POST") {

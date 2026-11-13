@@ -139,6 +139,8 @@ export const COVERAGE = {
   "POST /api/admin/results/resort": H("AI にもう一度仕分けさせる（画面のボタン）"),
   "POST /api/admin/results/folder": H("フォルダを足す・名前を変える・消す（画面）"),
   "GET /api/admin/results/file": H("画面に画像を出すための受け口"),
+  "GET /api/admin/results/drive": H("ドライブの受け箱の様子（画面の上の 1 行）"),
+  "POST /api/admin/results/drive": H("ドライブの受け箱をいま取り込む（画面のボタン。ふだんは 5 分ごとの処理）"),
   "GET /api/admin/media": ["list_media"],
   "POST /api/admin/media/upload": H("手元のファイルを選んで上げる（ファイルは Naoki のパソコンにある。UTAGE の分は import_utage_media）"),
   "POST /api/admin/media/slide": ["add_media_slide"],
