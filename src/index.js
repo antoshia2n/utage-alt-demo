@@ -85,6 +85,7 @@ import { utageCopy } from "./utagecopy.js";
 import { makeRecToken, handleRecPlay } from "./recplay.js";
 import { makeMarks } from "./marks.js";
 import { makeMedia } from "./media.js";
+import { makeResults, MAX_UPLOAD as RESULTS_MAX } from "./results.js";
 import { makeContracts } from "./contracts.js";
 import { makeContractSign } from "./contractsign.js";
 import { makeContractLife } from "./contractlife.js";
@@ -274,6 +275,8 @@ const blocks = makeBlocks({ db, logInbound, plan, deliver, draftFlow: (env, a, a
 // B の便 14a：LINE の受け口（中身は src/line.js）
 // メディアの便 M1（2026-11-07）：メディアの棚（R2 の IMAGES の箱の media/ と表 b_media）
 const media = makeMedia({ db, logInbound });
+// 実績の便 1（2026-11-13）：実績の棚（R2 の IMAGES の箱の results/ と表 b_results）
+const results = makeResults({ db, logInbound });
 const contracts = makeContracts({ db, logInbound });
 // 契約の便 2（ShiaSign）：署名ページ（src/contractsign.js）。メールは契約の知らせとして送る（一斉配信ではない）
 async function contractMail(env, { to, subject, text }) {
@@ -1531,6 +1534,18 @@ async function handleApi(request, env, url) {
     if (path === "/api/admin/contracts/sign-request" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await contractSign.request(env, b, a.email); return json(r, r.ok ? 200 : 400); }
     if (path === "/api/admin/contracts/sign-cancel" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await contractSign.cancel(env, b, a.email); return json(r, r.ok ? 200 : 400); }
     if (path === "/api/admin/contracts/verify" && method === "GET") { const r = await contracts.verify(env, url.searchParams.get("id")); return json(r, r.ok ? 200 : 400); }
+    // 実績の便 1（2026-11-13 Naoki OK 16:50）：実績の棚
+    if (path === "/api/admin/results" && method === "GET") return json(await results.list(env, { whose: url.searchParams.get("whose") || "", folder: url.searchParams.get("folder"), inbox: url.searchParams.get("inbox") || "", q: url.searchParams.get("q") || "", publish: url.searchParams.get("publish") || "" }));
+    if (path === "/api/admin/results/upload" && method === "POST") {
+      if ((parseInt(request.headers.get("content-length"), 10) || 0) > RESULTS_MAX) return json({ ok: false, error: "too_big" }, 400);
+      const r = await results.upload(env, { name: url.searchParams.get("name"), whose: url.searchParams.get("whose") || "", folder: url.searchParams.get("folder") || "", size: request.headers.get("content-length"), type: request.headers.get("content-type"), body: request.body }, a.email);
+      return json(r, r.ok ? 200 : 400);
+    }
+    if (path === "/api/admin/results/link" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await results.addLink(env, b, a.email); return json(r, r.ok ? 200 : 400); }
+    if (path === "/api/admin/results/save" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await results.save(env, b, a.email); return json(r, r.ok ? 200 : 400); }
+    if (path === "/api/admin/results/resort" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await results.resort(env, b.id, a.email); return json(r, r.ok ? 200 : 400); }
+    if (path === "/api/admin/results/folder" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await results.folderEdit(env, b, a.email); return json(r, r.ok ? 200 : 400); }
+    if (path === "/api/admin/results/file" && method === "GET") { const r = await results.file(env, url.searchParams.get("id")); return r || json({ ok: false, error: "not_found" }, 404); }
     if (path === "/api/admin/media" && method === "GET") return json(await media.list(env, { kind: url.searchParams.get("kind") || "", folder: url.searchParams.get("folder") || "", q: url.searchParams.get("q") || "", limit: url.searchParams.get("limit") || "" }));
     if (path === "/api/admin/media/upload" && method === "POST") {
       const r = await media.upload(env, { name: url.searchParams.get("name"), folder: url.searchParams.get("folder"), size: request.headers.get("content-length"), type: request.headers.get("content-type"), body: request.body }, a.email);
