@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fakeStore } from "./fake-store.mjs";
-import { makeResults } from "../src/results.js";
+import { makeResults, matchFolder } from "../src/results.js";
 
 function setup(answer) {
   const s = fakeStore();
@@ -101,4 +101,14 @@ test("ドライブの受け箱：取り込んで AI が仕分け、取り込ん�
   assert.equal(s.t.b_results[0].folder, "売上・成約");
   env.ZOOM.results_inbox_take = async () => ({ ok: false, error: "need_permit" });
   assert.equal((await res.drainDrive(env)).error, "need_permit");
+});
+
+test("AI の返したフォルダの名前の揺れ（中黒・全角半角・一部だけ）を、今あるフォルダに当てる", () => {
+  const L = ["X のポスト・数字", "売上・成約"];
+  assert.equal(matchFolder("売上･成約", L), "売上・成約");
+  assert.equal(matchFolder("売上 成約", L), "売上・成約");
+  assert.equal(matchFolder("売上", L), "売上・成約");
+  assert.equal(matchFolder("Xのポスト", L), "X のポスト・数字");
+  assert.equal(matchFolder("収益化", L), "");
+  assert.equal(matchFolder("", L), "");
 });

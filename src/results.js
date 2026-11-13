@@ -34,6 +34,15 @@ function parseFolders(v) {
   for (const line of String(v).split("\n")) { const m = line.match(/^(me|person):(.+)$/); if (m) { const n = cleanFolder(m[2]); if (n && !out[m[1]].includes(n)) out[m[1]].push(n); } }
   return out;
 }
+// AI が返したフォルダの名前を、今あるフォルダに当てる。中黒・空白・全角半角の違いは同じとみなし、
+// そろえたうえで完全に同じものが無ければ、片方がもう片方を含むものが 1 つだけのときに当てる（2026-11-13：「売上・成約」があるのに「合うフォルダが無い」で受け箱へ入った）
+const norm = (s) => String(s || "").normalize("NFKC").toLowerCase().replace(/[\s・･/／:：、,，.。()（）「」『』\-ー_]/g, "");
+export function matchFolder(name, list) {
+  const n = norm(name); if (!n) return "";
+  const exact = list.find((x) => norm(x) === n); if (exact) return exact;
+  const part = list.filter((x) => { const m = norm(x); return m && (m.includes(n) || n.includes(m)); });
+  return part.length === 1 ? part[0] : "";
+}
 const formatFolders = (f) => [...f.me.map((n) => `me:${n}`), ...f.person.map((n) => `person:${n}`)].join("\n");
 
 export function makeResults(h) {
@@ -84,7 +93,7 @@ export function makeResults(h) {
     if (!env.AI || typeof env.AI.run !== "function") return { ai: "failed", ai_note: "AI につながっていない" };
     const sys = [
       "あなたは実績の棚の仕分け係。渡されたスクショか投稿の文から、成果を読み取って JSON 1 つだけを返す。説明や前置きは書かない。",
-      "形：{\"whose\":\"me か person\",\"folder\":\"下のフォルダの名前のどれか。合うものが無いか自信が無ければ空\",\"title\":\"成果を 1 行（数字を入れる。例：3 か月で X フォロワー 1,000 人）\",\"who_name\":\"誰の実績か（名前か @ID。分からなければ空）\",\"achieved_on\":\"YYYY-MM-DD（読めなければ空）\",\"labels\":[\"短いラベル 1〜4 個\"],\"quote\":\"本人の言葉があれば 1〜2 文（無ければ空）\",\"confident\":true か false,\"note\":\"迷った理由を 1 文（無ければ空）\"}",
+      "形：{\"whose\":\"me か person\",\"folder\":\"下のフォルダの名前のどれかを一字も変えずにそのまま写す。合うものが無ければ空\",\"title\":\"成果を 1 行（数字を入れる。例：3 か月で X フォロワー 1,000 人）\",\"who_name\":\"誰の実績か（名前か @ID。分からなければ空）\",\"achieved_on\":\"YYYY-MM-DD（読めなければ空）\",\"labels\":[\"短いラベル 1〜4 個\"],\"quote\":\"本人の言葉があれば 1〜2 文（無ければ空）\",\"confident\":true か false,\"note\":\"迷った理由を 1 文（無ければ空）\"}",
       `me（自分の実績＝シアニン本人。X の @${SELF_X.join("・@")} やシアニンの売上）のフォルダ：${f.me.join("／") || "（なし）"}`,
       `person（生徒・お客さんの実績）のフォルダ：${f.person.join("／") || "（なし）"}`,
       "confident は「成果の数字が読めて、合うフォルダがある」なら true。誰の実績か・いつかが分からなくても true でよい（空のまま返す）。数字がかすれて読み違えそうなとき、どのフォルダにも合わないときだけ false。",
@@ -103,8 +112,7 @@ export function makeResults(h) {
     }
     if (!out || typeof out !== "object") return { ai: "failed", ai_note: "AI の答えが読めなかった" };
     const whose = out.whose === "me" ? "me" : "person";
-    const folder = cleanFolder(out.folder);
-    const okFolder = folder && f[whose].includes(folder) ? folder : "";
+    const okFolder = matchFolder(out.folder, f[whose]);
     const sure = out.confident === true && !!okFolder && !!clean(out.title, 200);
     return {
       whose, folder: sure ? okFolder : "", title: clean(out.title, 200) || row.title, who_name: clean(out.who_name, 80) || row.who_name,
