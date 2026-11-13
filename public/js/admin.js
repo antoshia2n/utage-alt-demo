@@ -4,6 +4,7 @@ import { makeBlueprint } from "/js/blueprint.js";
 import { mountSite } from "/js/site.js";
 import { mountRecordings } from "/js/recordings.js";
 import { mountMedia } from "/js/media.js";
+import { mountResults } from "/js/results.js";
 import { mountContracts } from "/js/contracts.js";
 import { mountWeb } from "/js/web.js";
 import { mountChat } from "/js/chat.js";
@@ -764,11 +765,11 @@ const pill = (t, kind = "") => `<span class="pill ${kind}">${esc(t)}</span>`;
 // ---------- 添削ルーム ----------
 let currentRoom = null;
 // 便 8c：左のメニュー。押した項目の画面だけを出し、上のナビにその名前を出す
-const VIEWS = ["home", "blueprint", "people", "chat", "rooms", "deals", "ai", "products", "deliver", "settings", "refer", "guide", "forms", "pages", "line", "access", "invites", "site", "web", "recordings", "media", "contracts", "utagecopy"];
+const VIEWS = ["home", "blueprint", "people", "chat", "rooms", "deals", "ai", "products", "deliver", "settings", "refer", "guide", "forms", "pages", "line", "access", "invites", "site", "web", "recordings", "media", "results", "contracts", "utagecopy"];
 // 会員サイト（2026-10-29）：影の DOM の中に描く。顧客管理のその人の画面へは openPerson で移る
 let siteUi = null;
 // 録画（2026-11-06）：録画の棚も影の DOM の中に描く（public/js/recordings.js）
-let recUi = null, mediaUi = null, webUi = null, contractsUi = null;
+let recUi = null, mediaUi = null, resultsUi = null, webUi = null, contractsUi = null;
 let ucUi = null;
 // 便 20：コネクタだけの画面は無くした。"connect" は行き先の名前としてだけ残す。
 // メールを送るコネクタ（ステップ配信）は メール、送らないもの（自動の動き）は ファネル構築 のタブで開く。part を渡すとその 1 件を開く
@@ -831,6 +832,10 @@ function setupViews() {
     if (b.dataset.view === "contracts") {
       if (!contractsUi) contractsUi = mountContracts($("contracts-host"), { getToken: () => token });
       contractsUi.open();
+    }
+    if (b.dataset.view === "results") {
+      if (!resultsUi) resultsUi = mountResults($("results-host"), { getToken: () => token });
+      resultsUi.open();
     }
     if (b.dataset.view === "media") {
       if (!mediaUi) mediaUi = mountMedia($("media-host"), { getToken: () => token });
