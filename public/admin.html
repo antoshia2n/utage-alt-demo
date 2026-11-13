@@ -68,7 +68,7 @@
     <div class="grp-box" data-grp="people">
       <button class="grp" type="button" aria-expanded="true">顧客</button>
       <div class="grp-items">
-        <button class="it" type="button" data-view="people" aria-selected="false">顧客管理</button>
+        <button class="it" type="button" data-view="people" aria-selected="false">顧客一覧</button>
         <button class="it" type="button" data-view="contracts" aria-selected="false">契約</button>
         <button class="it" type="button" data-view="chat" aria-selected="false">チャット<span class="badge hidden" id="chat-badge"></span></button>
         <button class="it" type="button" data-view="rooms" aria-selected="false">添削ルーム<span class="badge hidden" id="rooms-badge"></span></button>
@@ -77,16 +77,16 @@
       </div>
     </div>
     <!-- 便 20：パーツ＝お客さんが見る・受け取る物。パーツの一覧は企画で絞れる -->
-    <!-- 2026-11-13 Naoki OK 17:45：上の帯を 6 つのまとまりに（ホーム・顧客・集客と販売・サイト・素材・設定）。機能が増えたら、まとまりの中へ足す -->
+    <!-- 2026-11-13 Naoki OK 17:45：上の帯を 6 つのまとまりに（ホーム・顧客・ファネル・サイト・素材・設定）。17:50 名前を一般的な呼び名にそろえた（中の文の呼び名は次の便）。機能が増えたら、まとまりの中へ足す -->
     <div class="grp-box" data-grp="parts">
-      <button class="grp" type="button" aria-expanded="true">集客と販売</button>
+      <button class="grp" type="button" aria-expanded="true">ファネル</button>
       <div class="grp-items">
         <!-- 便 20：ファネル構築は企画ごとにパーツを並べてつなぐ場所（設計図と自動の動き） -->
-        <button class="it" type="button" data-view="blueprint" aria-selected="false">ファネル構築</button>
+        <button class="it" type="button" data-view="blueprint" aria-selected="false">設計図</button>
         <button class="it" type="button" data-view="pages" aria-selected="false">ページ</button>
         <button class="it" type="button" data-view="forms" aria-selected="false">フォーム</button>
-        <button class="it" type="button" data-view="deliver" aria-selected="false">メール</button>
-        <button class="it" type="button" data-view="deals" aria-selected="false">セミナーと予約</button>
+        <button class="it" type="button" data-view="deliver" aria-selected="false">メール配信</button>
+        <button class="it" type="button" data-view="deals" aria-selected="false">セミナー・予約</button>
         <button class="it" type="button" data-view="products" aria-selected="false">商品</button>
       </div>
     </div>
@@ -94,7 +94,7 @@
       <button class="grp" type="button" aria-expanded="true">サイト</button>
       <div class="grp-items">
         <button class="it" type="button" data-view="site" aria-selected="false">会員サイト</button>
-        <button class="it" type="button" data-view="web" aria-selected="false">公開サイト</button>
+        <button class="it" type="button" data-view="web" aria-selected="false">ブログ・公開ページ</button>
       </div>
     </div>
     <div class="grp-box" data-grp="assets">
@@ -104,14 +104,14 @@
         <button class="it" type="button" data-view="recordings" aria-selected="false">録画</button>
         <button class="it" type="button" data-view="results" aria-selected="false">実績</button>
         <button class="it" type="button" data-view="media" aria-selected="false">メディア</button>
-        <button class="it" type="button" data-view="utagecopy" aria-selected="false">UTAGE の写し</button>
+        <button class="it" type="button" data-view="utagecopy" aria-selected="false">UTAGE のバックアップ</button>
       </div>
     </div>
     <div class="grp-box" data-grp="settings">
       <button class="grp" type="button" aria-expanded="true">設定</button>
       <div class="grp-items">
         <button class="it" type="button" data-view="ai" aria-selected="false">AI と承認<span class="badge hidden" id="ai-badge"></span></button>
-        <button class="it" type="button" data-view="settings" aria-selected="false">決済・メール・オプチャ</button>
+        <button class="it" type="button" data-view="settings" aria-selected="false">外部連携</button>
         <button class="it" type="button" data-view="access" aria-selected="false">アプリの公開</button>
         <button class="it" type="button" data-view="invites" aria-selected="false">招待リンク</button>
       </div>
