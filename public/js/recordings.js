@@ -273,7 +273,7 @@ export function mountRecordings(host, { getToken }) {
         ${r.issues.includes(ISSUE_ORDER[2]) ? "" : `<button class="btn ${placedOf(r.id).length ? "" : "pri"}" type="button" id="d-site">${placedOf(r.id).length ? "別のコースにも入れる" : "会員サイトに入れる"}</button>`}
         <p class="hint">会員サイトでは、会員のログインと権利を確かめてから流します。共有リンクとは別で、外へ持ち出せるリンクは作りません。</p>
       </div>
-      <div class="sec"><h3>録画</h3><dl class="meta"><dt>収録日</dt><dd>${esc(r.date)}</dd>${r.minutes != null ? `<dt>長さ</dt><dd>${hm(r.minutes)}</dd>` : ""}<dt>大きさ</dt><dd>${r.size_gb != null ? r.size_gb.toFixed(2) + " GB" : "―"}</dd><dt>YouTube</dt><dd>${r.youtube ? "あり（限定公開）" : "なし"}</dd><dt>名前の正本</dt><dd>${r.managed ? "管理シートの E 列" : "この画面"}</dd>${r.issues.length ? `<dt>点検</dt><dd>${r.issues.map(esc).join("・")}</dd>` : ""}</dl></div>
+      <div class="sec"><h3>録画</h3><dl class="meta"><dt>収録日</dt><dd>${esc(r.date)}</dd>${r.minutes != null ? `<dt>長さ</dt><dd>${hm(r.minutes)}</dd>` : ""}<dt>大きさ</dt><dd>${r.size_gb != null ? r.size_gb.toFixed(2) + " GB" : "―"}</dd><dt>YouTube</dt><dd>${r.youtube ? "あり（限定公開）" : "なし"}</dd><dt>名前の正本</dt><dd>${r.managed ? "管理シートの E 列（この画面で変えるとシートにも入る）" : "この画面"}</dd>${r.issues.length ? `<dt>点検</dt><dd>${r.issues.map(esc).join("・")}</dd>` : ""}</dl></div>
       <div class="sec"><h3>ラベル</h3>
         <div class="chips">${(r.labels || []).map((l) => `<span class="chip lab-chip">${esc(l)}<button type="button" data-rmlab="${esc(l)}" aria-label="ラベル「${esc(l)}」を外す">✕</button></span>`).join("") || '<span class="why">まだありません</span>'}</div>
         <div class="row2"><input id="d-lab" list="lab-d" placeholder="ラベルを入れて Enter" aria-label="ラベルを追加" class="lab-in">${labDatalist("lab-d")}<button class="btn" type="button" id="d-lab-add">追加</button></div>
@@ -281,7 +281,7 @@ export function mountRecordings(host, { getToken }) {
       </div>
       <div class="sec"><h3>会の種類と名前</h3>
         <div class="f"><label for="d-kai">会の種類</label><select id="d-kai">${Object.keys(KAI).map((k) => `<option ${k === r.kai ? "selected" : ""}>${k}</option>`).join("")}</select></div>
-        <div class="f"><label for="d-name">名前</label><input id="d-name" value="${esc(r.title)}" ${r.managed ? "disabled" : ""}>${r.managed ? '<p class="hint">管理シートに行がある録画です。名前はシートの E 列で変えてください（次の 5 分の処理でそろいます）。</p>' : ""}</div>
+        <div class="f"><label for="d-name">名前</label><input id="d-name" value="${esc(r.title)}">${r.managed ? '<p class="hint">管理シートに行がある録画です。保存すると、シートの E 列（タイトル）にも同じ名前が入ります。R2 と YouTube の名前は 5 分ほどでそろいます。</p>' : ""}</div>
         <div class="row2"><button class="btn" type="button" id="d-save">編集を保存</button><span class="why">⌘／Ctrl＋Enter でも保存</span></div>
       </div>
     </div>`;
@@ -551,7 +551,8 @@ export function mountRecordings(host, { getToken }) {
       const kai = $("#d-kai").value, name = $("#d-name").value.trim();
       const item = { id: r.id };
       if (kai !== r.kai) item.kai = kai;
-      if (!r.managed && name && name !== r.title) item.title = name;
+      // 2026-11-13（Naoki「録画の名前を変えたい」）：管理シートに行がある録画も変えられる。名前はシートの E 列へ書き戻す（zoom-to-youtube 第34版）
+      if (name && name !== r.title) item.title = name;
       if (Object.keys(item).length === 1) { undo("変わったところはありません", null); return; }
       return setMeta([item], "編集を保存しました");
     }
