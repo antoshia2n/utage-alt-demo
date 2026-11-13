@@ -87,7 +87,7 @@ export function makeResults(h) {
       "形：{\"whose\":\"me か person\",\"folder\":\"下のフォルダの名前のどれか。合うものが無いか自信が無ければ空\",\"title\":\"成果を 1 行（数字を入れる。例：3 か月で X フォロワー 1,000 人）\",\"who_name\":\"誰の実績か（名前か @ID。分からなければ空）\",\"achieved_on\":\"YYYY-MM-DD（読めなければ空）\",\"labels\":[\"短いラベル 1〜4 個\"],\"quote\":\"本人の言葉があれば 1〜2 文（無ければ空）\",\"confident\":true か false,\"note\":\"迷った理由を 1 文（無ければ空）\"}",
       `me（自分の実績＝シアニン本人。X の @${SELF_X.join("・@")} やシアニンの売上）のフォルダ：${f.me.join("／") || "（なし）"}`,
       `person（生徒・お客さんの実績）のフォルダ：${f.person.join("／") || "（なし）"}`,
-      "数字を読み違えそうなとき、誰の実績か分からないとき、どのフォルダにも合わないときは confident を false にする。",
+      "confident は「成果の数字が読めて、合うフォルダがある」なら true。誰の実績か・いつかが分からなくても true でよい（空のまま返す）。数字がかすれて読み違えそうなとき、どのフォルダにも合わないときだけ false。",
     ].join("\n");
     const content = [{ type: "text", text: [text ? `投稿の文：\n${clean(text, 3000)}` : "", row.link_url ? `住所：${row.link_url}` : "", "この実績を仕分けて。"].filter(Boolean).join("\n\n") }];
     if (image) content.push({ type: "image_url", image_url: { url: image } });
@@ -141,7 +141,7 @@ export function makeResults(h) {
   async function patch(env, id, p) { const r = await db(env, "PATCH", `${T}?id=eq.${id}`, p, "return=representation"); return r[0] || null; }
 
   // 画面から 1 つ上げる（20MB まで）。上げたらその場で AI が仕分ける
-  async function upload(env, { name, size, type, body, whose, folder }, actor) {
+  async function upload(env, { name, size, type, body, whose, folder, source }, actor) {
     if (!env.IMAGES) return { ok: false, error: "no_store" };
     const ext = extOf(name);
     const ct = EXT_TYPE[ext] || "";
@@ -155,7 +155,7 @@ export function makeResults(h) {
     const key = `results/${id}.${ext}`;
     await env.IMAGES.put(key, buf, { httpMetadata: { contentType: ct } });
     const w = WHOSE.includes(whose) ? whose : "person";
-    const row = (await db(env, "POST", T, [{ id, whose: w, folder: cleanFolder(folder || ""), title: clean(String(name).replace(/[.][a-z0-9]{2,5}$/i, ""), 200), r2_key: key, content_type: ct, size: buf.byteLength, source: "upload", ...BASE, ...stamp(actor) }], "return=representation"))[0];
+    const row = (await db(env, "POST", T, [{ id, whose: w, folder: cleanFolder(folder || ""), title: clean(String(name).replace(/[.][a-z0-9]{2,5}$/i, ""), 200), r2_key: key, content_type: ct, size: buf.byteLength, source: source === "drive" ? "drive" : "upload", ...BASE, ...stamp(actor) }], "return=representation"))[0];
     const s = await sortOne(env, row, { buf, type: ct });
     const keepFolder = row.folder ? { folder: row.folder, whose: row.whose } : {}; // フォルダを開いて上げたときは、そのフォルダのまま
     const done = await patch(env, id, { ...s, ...keepFolder, ...stamp(actor) });
@@ -246,5 +246,26 @@ export function makeResults(h) {
     return { ok: false, error: "bad_action" };
   }
 
-  return { list, get, upload, addLink, save, resort, file, folderEdit, readFolders };
+  // ---------- 実績の便 2：ドライブの「実績の受け箱」（zoom-to-youtube が読む。結び ZOOM） ----------
+  async function driveStatus(env) {
+    if (!env.ZOOM || typeof env.ZOOM.results_inbox_status !== "function") return { ok: false, error: "no_binding" };
+    try { return await env.ZOOM.results_inbox_status(); } catch (e) { return { ok: false, error: "zoom_failed", message: String((e && e.message) || e).slice(0, 200) }; }
+  }
+  // 古い順に 5 枚ずつ取り込み、AI に仕分けさせてから「取り込んだ」と知らせる（ドライブのファイルは動かさない）
+  async function drainDrive(env) {
+    if (!env.ZOOM || typeof env.ZOOM.results_inbox_take !== "function") return { ok: false, error: "no_binding" };
+    const got = await env.ZOOM.results_inbox_take(5);
+    if (!got || !got.ok) return { ok: false, error: (got && got.error) || "zoom_failed", message: got && got.message };
+    const done = [], failed = [];
+    for (const f of got.files || []) {
+      try {
+        const r = await upload(env, { name: f.name, size: String(f.size || f.data.byteLength), type: f.mime, body: f.data, source: "drive" }, "drive");
+        if (r.ok || r.error === "bad_type") done.push(f.file_id); else failed.push({ name: f.name, error: r.error });
+      } catch (e) { failed.push({ name: f.name, error: String((e && e.message) || e).slice(0, 120) }); }
+    }
+    if (done.length) await env.ZOOM.results_inbox_done(done);
+    return { ok: true, taken: done.length, failed, skipped: got.skipped || [] };
+  }
+
+  return { list, get, upload, addLink, save, resort, file, folderEdit, readFolders, driveStatus, drainDrive };
 }

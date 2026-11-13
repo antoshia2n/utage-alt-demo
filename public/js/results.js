@@ -55,7 +55,7 @@ export function mountResults(host, { getToken }) {
   const errText = (r) => ERR[r.error] || `うまくいきませんでした（${r.error || r.status}）`;
 
   // 見ている場所：{ inbox } か { whose, folder } か すべて（null）
-  let S = null, at = null, q = "", sel = null, back = null, blobUrl = null, undoFn = null, undoTimer = null, linkOpen = false;
+  let D = null, S = null, at = null, q = "", sel = null, back = null, blobUrl = null, undoFn = null, undoTimer = null, linkOpen = false;
 
   async function load() {
     const p = new URLSearchParams();
@@ -65,6 +65,14 @@ export function mountResults(host, { getToken }) {
     const r = await api("/api/admin/results?" + p, { token: getToken() });
     if (!r.ok) { $("#main").innerHTML = `<p class="lead">${esc(errText(r))}</p>`; return; }
     S = r; draw();
+    if (!D) { D = await api("/api/admin/results/drive", { token: getToken() }).catch(() => ({ ok: false })); draw(); }
+  }
+  const PERMIT_URL = "https://zoom-to-youtube.gameister1.workers.dev/oauth/start?for=workspace";
+  function driveLine() {
+    if (!D) return "";
+    if (!D.ok) return `<p class="hint">ドライブの受け箱：様子を読めませんでした（${esc(D.error || "")}）</p>`;
+    if (!D.permitted) return `<div class="drop" style="text-align:left;border-style:solid">ドライブの「実績の受け箱」を読むには、Google の許可を 1 回出し直してください：<a href="${PERMIT_URL}" target="_blank" rel="noopener">許可を出し直す ↗</a>（ふだんの Google アカウントを選ぶ）</div>`;
+    return `<p class="hint">ドライブの受け箱：<a href="${esc(D.folder_url)}" target="_blank" rel="noopener">実績の受け箱を開く ↗</a>　入れたスクショは 5 分ごとにここへ入ります${D.waiting ? `（まだ ${D.waiting} 枚）<button class="btn sm" type="button" id="drive-now" style="margin-left:6px">いま取り込む</button>` : ""}</p>`;
   }
   const isAt = (w, f) => at && !at.inbox && at.whose === w && at.folder === f;
 
@@ -93,6 +101,7 @@ export function mountResults(host, { getToken }) {
       <td><span class="st ${PUB[x.publish][0]}">${esc(PUB_SHORT[x.publish])}</span></td></tr>`).join("");
     $("#main").innerHTML = `<h1>${esc(title)}</h1><p class="lead">${esc(lead)}</p>
       ${at && !at.inbox ? `<div class="fold-tools"><button class="btn sm" type="button" id="f-ren">フォルダの名前を変える</button><button class="btn sm" type="button" id="f-del">フォルダを削除</button></div>` : ""}
+      ${driveLine()}
       <div class="drop" id="drop"><b>ここに画像やポストのリンクを落とすと追加</b>（スクショ・PDF・X の住所。複数まとめて OK）</div>
       <form id="link-form" class="bar" ${linkOpen ? "" : "hidden"}><label for="lk-url">ポストなどの住所</label><input id="lk-url" placeholder="https://x.com/…/status/…" style="flex:1;min-width:240px;padding:6px 8px;border:1px solid var(--field);border-radius:8px;background:var(--panel)"><button class="btn sm pri" type="submit">追加</button><button class="btn sm" type="button" id="lk-cancel">キャンセル</button></form>
       <div class="bar"><div class="search"><label for="q">探す</label><input type="search" id="q" value="${esc(q)}" placeholder="成果・誰・ラベル・本人の言葉"></div><span class="lead" style="margin:0">${S.count} 件</span></div>
@@ -105,6 +114,7 @@ export function mountResults(host, { getToken }) {
     const ren = $("#f-ren"); if (ren) ren.addEventListener("click", renameFolder);
     const del = $("#f-del"); if (del) del.addEventListener("click", removeFolder);
     wireDrop();
+    const dn = $("#drive-now"); if (dn) dn.addEventListener("click", async () => { dn.disabled = true; say("ドライブから取り込んで、AI が読んでいます…"); const r = await api("/api/admin/results/drive", { method: "POST", token: getToken() }); D = null; await load(); say(r.ok ? `${r.taken} 枚を取り込みました` : errText(r)); });
   }
 
   function wireDrop() {
