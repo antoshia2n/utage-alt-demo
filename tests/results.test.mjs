@@ -112,3 +112,19 @@ test("AI の返したフォルダの名前の揺れ（中黒・全角半角・�
   assert.equal(matchFolder("収益化", L), "");
   assert.equal(matchFolder("", L), "");
 });
+
+test("確かめ済みの実績は、AI がもう一度仕分けても成果を書き換えない・人が保存すると確かめ済み・実績でないものは受け箱", async () => {
+  let ans = { whose: "me", folder: "売上・成約", title: "35 回で 805,440 円", confident: true };
+  const { res, env } = setup(() => JSON.stringify(ans));
+  const r = await res.upload(env, { name: "a.png", size: "7", type: "image/png", body: png() }, "a");
+  assert.equal(r.item.checked, false);
+  const s1 = await res.save(env, { id: r.item.id, title: "35 回で 700,920 円" }, "a");
+  assert.equal(s1.item.checked, true);
+  ans = { whose: "me", folder: "X のポスト・数字", title: "35 回で 805,400 円", labels: ["売上"], confident: true };
+  const s2 = await res.resort(env, r.item.id, "a");
+  assert.equal(s2.item.title, "35 回で 700,920 円");
+  assert.equal(s2.item.folder, "X のポスト・数字");
+  ans = { is_result: false, whose: "me", folder: "売上・成約", title: "価格表", confident: true };
+  const r3 = await res.upload(env, { name: "b.png", size: "7", type: "image/png", body: png() }, "a");
+  assert.equal(r3.item.folder, ""); assert.match(r3.item.ai_note, /実績ではなさそう/);
+});

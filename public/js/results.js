@@ -94,7 +94,7 @@ export function mountResults(host, { getToken }) {
       : at.inbox ? "AI が迷ったものです。行を開いてフォルダを選ぶと移ります。" : "このフォルダを開いたまま入れたものは、このフォルダに入ります（中身は AI が読みます）。";
     const rows = S.items.map((x) => `<tr class="rw ${sel === x.id ? "sel" : ""}" data-id="${esc(x.id)}" tabindex="0" aria-label="「${esc(x.title || "（成果なし）")}」の詳細を開く">
       <td>${x.has_image ? '<span class="ev">画像</span>' : '<span class="ev">ポスト</span>'}</td>
-      <td class="nm">${esc(x.title || "（まだ読めていない）")}${x.ai === "done" ? '<span class="ai done">AI が仕分け</span>' : x.ai === "unsure" ? '<span class="ai unsure">AI が迷った</span>' : x.ai === "failed" ? '<span class="ai failed">AI が読めず</span>' : ""}
+      <td class="nm">${esc(x.title || "（まだ読めていない）")}${x.checked ? "" : '<span class="ai unsure" title="AI が読んだ案。詳細で確かめて保存すると消える">AI の案</span>'}${x.ai === "done" ? '<span class="ai done">AI が仕分け</span>' : x.ai === "unsure" ? '<span class="ai unsure">AI が迷った</span>' : x.ai === "failed" ? '<span class="ai failed">AI が読めず</span>' : ""}
         ${x.labels.length ? `<span class="labs">${x.labels.map((l) => `<span class="lab">${esc(l)}</span>`).join("")}</span>` : ""}${!at ? `<small>${esc(WHOSE[x.whose])}${x.folder ? ` › ${esc(x.folder)}` : " › 受け箱"}</small>` : ""}</td>
       <td>${esc(x.who_name || (x.whose === "me" ? "自分" : ""))}</td>
       <td class="date">${esc(day(x.achieved_on) || day(x.created_at))}</td>
@@ -174,6 +174,7 @@ export function mountResults(host, { getToken }) {
       <div class="db">
         <div class="sec" id="pv">${x.has_image ? '<p class="lead">画像を読み込んでいます…</p>' : ""}${x.link_url ? `<p style="margin:6px 0"><a href="${esc(x.link_url)}" target="_blank" rel="noopener">${esc(x.link_url)} ↗</a></p>` : ""}</div>
         ${x.ai_note ? `<p class="hint">AI：${esc(x.ai_note)}</p>` : ""}
+        ${x.checked ? `<p class="hint">確かめ済み（AI はもう成果・誰・いつ・本人の言葉を書き換えません）</p>` : `<p class="hint" style="color:var(--ink,#b45309)">成果の欄は AI が読んだ案です。画像と見比べて、合っていれば（直したら）「保存」で確かめ済みになります。</p>`}
         <div class="sec"><div class="row2">
           <div class="f"><label for="d-whose">まとまり</label><select id="d-whose"><option value="me" ${x.whose === "me" ? "selected" : ""}>自分の実績</option><option value="person" ${x.whose === "person" ? "selected" : ""}>生徒・お客さんの実績</option></select></div>
           <div class="f"><label for="d-folder">フォルダ</label><select id="d-folder">${opts(x.whose)}</select></div></div>
