@@ -141,3 +141,11 @@ test("探す：checked_only で人が確かめた行だけ・既定は 30 件ま
   assert.equal(one.item.ai_text, "読んだ文");
   assert.equal((await res.one(env, "nope")).ok, false);
 });
+
+test("画像だけのポスト（文が住所だけ）は AI に回さず、スクショも入れるよう受け箱で知らせる", async () => {
+  const { res, env, calls } = setup(JSON.stringify({ is_result: false }));
+  globalThis.fetch = async () => new Response(JSON.stringify({ author_name: "シアニン", author_url: "https://x.com/antoshia2n", html: '<p><a href="https://t.co/abc">https://t.co/abc</a></p>&mdash; シアニン (@antoshia2n) September 9, 2026' }), { status: 200 });
+  const r = await res.addLink(env, { url: "https://x.com/antoshia2n/status/2097619575886254393", source: "panel" }, "a");
+  assert.equal(r.item.ai, "unsure"); assert.match(r.item.ai_note, /スクショ/); assert.equal(r.item.whose, "me");
+  assert.equal(calls.length, 0, "AI には回していない");
+});
