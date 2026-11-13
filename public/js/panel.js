@@ -1,5 +1,5 @@
 // シアニンパネルの細い画面（/panel・2026-11-02 開発部）。今日の 5 種類の動き（名前なし）と、やることの数。
-// 読むだけ。返事や書き換えはアプリ（/admin）で行う。人の行を押すと /admin#person/番号 が別タブで開く
+// 読むだけ（実績を入れる欄だけは書く・2026-11-13）。返事や書き換えはアプリ（/admin）で行う。人の行を押すと /admin#person/番号 が別タブで開く
 import { getClient, api } from "./common.js";
 
 const $ = (id) => document.getElementById(id);
@@ -85,6 +85,83 @@ document.addEventListener("click", (e) => {
   if (f && data) { filter = filter === f.dataset.f ? "" : f.dataset.f; render(); }
 });
 $("mp-re").addEventListener("click", load);
+
+// ---------- 実績の便 3（2026-11-13 Naoki OK 18:14）：見ているポストか、スクショを実績の棚へ ----------
+// 見ているタブの住所は、シアニンパネル（拡張機能）の bridge-marke.js に聞く（{ src: "marke", type: "peek" } ⇄ { src: "marke-ext" }）
+const POST_RE = /^https:\/\/(?:www\.)?(?:x|twitter)\.com\/[A-Za-z0-9_]{1,30}\/status\/\d{5,25}/;
+const inFrame = window.parent !== window;
+let tabUrl = "", seq = 0, busy = false;
+const waiting = new Map();
+function peek() {
+  if (!inFrame) return Promise.resolve({ url: "" });
+  return new Promise((ok) => {
+    const id = ++seq; waiting.set(id, ok);
+    window.parent.postMessage({ src: "marke", type: "peek", id }, "*");
+    setTimeout(() => { if (waiting.has(id)) { waiting.delete(id); ok({ url: "" }); } }, 3000);
+  });
+}
+addEventListener("message", (e) => {
+  if (e.source !== window.parent) return;
+  const m = e.data || {};
+  if (m.src !== "marke-ext") return;
+  if (m.type === "reply" && waiting.has(m.id)) { const ok = waiting.get(m.id); waiting.delete(m.id); ok(m.ok ? m.data || {} : {}); }
+  if (m.type === "tab") readTab();
+});
+async function readTab() {
+  const d = await peek();
+  const m = String(d.url || "").match(POST_RE);
+  tabUrl = m ? m[0] : "";
+  drawPost();
+}
+function drawPost() {
+  $("mp-res-post").innerHTML = tabUrl
+    ? `<div class="mp-post"><code title="${esc(tabUrl)}">${esc(tabUrl.replace(/^https:\/\/(www\.)?/, ""))}</code><button type="button" class="mp-add" id="mp-add" ${busy ? "disabled" : ""}>${busy ? "入れています…" : "このポストを入れる"}</button></div>`
+    : `<p class="mp-hint">${inFrame ? "X で実績のポストを開くと、ここから 1 押しで入れられる" : "シアニンパネルの中で開くと、見ている X のポストを入れられる"}</p>`;
+}
+const WHOSE_SAY = { me: "自分の実績", person: "生徒・お客さんの実績" };
+const SAY_ERR = { already: "このポストはもう実績の棚にある", too_big: "20MB より大きい画像は入れられない", bad_type: "入れられるのは画像（png・jpg・webp・gif）と PDF だけ", bad_url: "ポストの住所が読めなかった" };
+function said(r) {
+  const box = $("mp-resmsg");
+  if (r.status === 401 || r.status === 403) { box.className = "mp-resmsg bad"; box.textContent = "マーケくんにログインし直してから、もう一度"; return; }
+  if (!r.ok) { box.className = "mp-resmsg bad"; box.textContent = SAY_ERR[r.error] || "入れられなかった。もう一度"; return; }
+  const it = r.item || {};
+  box.className = "mp-resmsg";
+  box.innerHTML = it.folder
+    ? `入れた → ${esc(WHOSE_SAY[it.whose] || "")} › ${esc(it.folder)}${it.title ? `：${esc(it.title)}` : ""}（AI の案。数字は<a href="/admin#results" target="_blank" rel="noopener">棚</a>で確かめる）`
+    : `入れた → 受け箱（${esc(it.ai_note || "AI がフォルダを決められなかった")}）。<a href="/admin#results" target="_blank" rel="noopener">棚</a>で仕分ける`;
+}
+async function token() {
+  const sb = await getClient();
+  const { data: s } = await sb.auth.getSession();
+  return s.session ? s.session.access_token : "";
+}
+async function addPost() {
+  if (busy || !tabUrl) return;
+  busy = true; drawPost(); $("mp-resmsg").textContent = "AI が読んでいます…";
+  try { said(await api("/api/admin/results/link", { method: "POST", body: { url: tabUrl, source: "panel" }, token: await token() })); }
+  catch { said({ ok: false }); }
+  finally { busy = false; drawPost(); }
+}
+async function addFile(f) {
+  if (busy || !f) return;
+  busy = true; drawPost(); $("mp-resmsg").className = "mp-resmsg"; $("mp-resmsg").textContent = "上げて、AI が読んでいます…";
+  try {
+    const name = f.name && /[.][a-z0-9]{2,5}$/i.test(f.name) ? f.name : `スクショ.${(f.type.split("/")[1] || "png").replace("jpeg", "jpg")}`;
+    const res = await fetch(`/api/admin/results/upload?${new URLSearchParams({ name, source: "panel" })}`, { method: "POST", headers: { authorization: "Bearer " + (await token()), "content-type": f.type || "application/octet-stream" }, body: f });
+    const r = await res.json().catch(() => ({ ok: false })); r.status = res.status; said(r);
+  } catch { said({ ok: false }); }
+  finally { busy = false; drawPost(); }
+}
+document.addEventListener("click", (e) => { if (e.target.closest("#mp-add")) addPost(); });
+document.addEventListener("paste", (e) => {
+  const f = [...(e.clipboardData?.files || [])].find((x) => /^image\//.test(x.type));
+  if (f) { e.preventDefault(); addFile(f); }
+});
+const drop = $("mp-drop");
+drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); addFile([...(e.dataTransfer?.files || [])][0]); });
+readTab();
 // パネルへ戻ってきたら読み直す（アプリで返事をしたあと、数が古いまま残らないように）
-document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { load(); readTab(); } });
 load();
