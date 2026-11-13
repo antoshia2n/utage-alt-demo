@@ -197,7 +197,7 @@ export function mountSite(host, { getToken, openPerson }) {
       ${ps.length ? `<div class="chcard">${ps.map((p, i) => `<div class="lsrow" style="grid-template-columns:auto minmax(0,1fr) auto auto"><span class="num">${i + 1}</span><div class="tt">${esc(p.title)}<small>${STL[p.status]}・コース ${p.chapters.length}</small></div>
         <span class="mv"><button data-mvp="${i}" data-d="-1" ${i === 0 ? "disabled" : ""} aria-label="『${esc(p.title)}』を上へ">▲</button><button data-mvp="${i}" data-d="1" ${i === ps.length - 1 ? "disabled" : ""} aria-label="『${esc(p.title)}』を下へ">▼</button></span>
         <span class="act"><button class="btn sm ghost" data-rmp="${p.id}" aria-label="『${esc(p.title)}』をこのカリキュラムから外す">外す</button></span></div>`).join("")}</div>` : '<div class="empty">まだプログラムが入っていません</div>'}`
-      : tab === "rights" ? `<div class="sec"><p class="hint" style="margin:0 0 8px">チェックした権利を、今持っている人に、このカリキュラムが開きます。権利を人に付ける・外すのは顧客管理です</p><div class="rights">${keys.map((r) => `<label><input type="checkbox" name="kr" value="${esc(r)}" ${k.rights.includes(r) ? "checked" : ""}><span>${esc(rname(r))}<small>${esc(r)}</small></span></label>`).join("")}</div></div>
+      : tab === "rights" ? `<div class="sec"><p class="hint" style="margin:0 0 8px">チェックした権利を、今持っている人に、このカリキュラムが開きます。権利を人に付ける・外すのは顧客一覧です</p><div class="rights">${keys.map((r) => `<label><input type="checkbox" name="kr" value="${esc(r)}" ${k.rights.includes(r) ? "checked" : ""}><span>${esc(rname(r))}<small>${esc(r)}</small></span></label>`).join("")}</div></div>
       <div class="stick"><button class="btn pri" id="rsave">保存する</button></div>`
       : `<div class="sec"><div class="f"><label for="kn">カリキュラムの名前</label><input type="text" id="kn" value="${esc(k.title)}"><span class="err" id="kne"></span></div>
       <div class="f"><label for="kd">メモ <span class="hint">Naoki だけが見る</span></label><input type="text" id="kd" value="${esc(k.desc)}"></div>
@@ -775,7 +775,7 @@ export function mountSite(host, { getToken, openPerson }) {
     const stop = (st) => { const d = daysAgo(st.last_viewed_at); return d == null || d >= 14; };
     const rows = STU.filter((st) => (!stuF.cur || opens(st).some((k) => k.id === stuF.cur)) && (!stuF.stop || stop(st)) && (!stuF.q || (st.name + st.email).includes(stuF.q)));
     const all = STU.map((st) => ({ st, p: prog(st) }));
-    m.innerHTML = `${crumbs()}<h1>受講生</h1><p class="lead">このサイトのカリキュラムを開ける人と、学びの進み具合です。名前や連絡先などの人の情報は、顧客管理としあらぼ管理が正本です。開ける・閉じるは権利の付け外しで行います。</p>
+    m.innerHTML = `${crumbs()}<h1>受講生</h1><p class="lead">このサイトのカリキュラムを開ける人と、学びの進み具合です。名前や連絡先などの人の情報は、顧客一覧としあらぼ管理が正本です。開ける・閉じるは権利の付け外しで行います。</p>
     <div class="kpis"><div class="kpi"><b>${STU.length}</b><span>開ける人</span></div><div class="kpi"><b>${STU.filter((x) => x.viewed_ids.length).length}</b><span>1 本以上見た人</span></div><div class="kpi"><b>${STU.length ? Math.round(all.reduce((a, x) => a + x.p, 0) / STU.length) : 0}%</b><span>平均の進み具合</span></div><div class="kpi"><b>${STU.filter(stop).length}</b><span>14 日以上見ていない人</span></div></div>
     <div class="tools"><input class="search" type="search" id="sq" placeholder="名前かメールで探す" value="${esc(stuF.q)}" aria-label="名前かメールで探す">
       <select id="sk" aria-label="カリキュラムで絞る" style="width:auto"><option value="">すべてのカリキュラム</option>${ks.map((k) => `<option value="${k.id}" ${stuF.cur === k.id ? "selected" : ""}>${esc(k.title)}</option>`).join("")}</select>
@@ -784,7 +784,7 @@ export function mountSite(host, { getToken, openPerson }) {
     ${rows.map((st) => { const p = prog(st), d = daysAgo(st.last_viewed_at); return `<tr><td>${esc(st.name || st.email)}<div>${st.rights.map((r) => `<span class="key">${esc(rname(r))}</span>`).join(" ")}</div></td><td>${opens(st).map((k) => esc(k.title)).join("・") || '<span class="err">なし</span>'}</td>
       <td><div style="display:flex;gap:8px;align-items:center"><div class="bar-p" style="width:90px"><i style="width:${p}%"></i></div>${p}%</div></td>
       <td>${d == null ? '<span class="err">まだ見ていない</span>' : `${d === 0 ? "今日" : d === 1 ? "昨日" : d + " 日前"}${d >= 14 ? ' <span class="err">止まっている</span>' : ""}`}</td>
-      <td><button class="btn sm" data-stu="${st.id}">顧客管理で開く →</button></td></tr>`; }).join("") || '<tr><td colspan="5" class="hint">当たる人がいません</td></tr>'}</tbody></table></div>
+      <td><button class="btn sm" data-stu="${st.id}">顧客一覧で開く →</button></td></tr>`; }).join("") || '<tr><td colspan="5" class="hint">当たる人がいません</td></tr>'}</tbody></table></div>
     <p class="hint">進み具合は、生徒が教材を開いた記録から数えます（「見終わった」を押す形は、まだありません）</p>`;
     $("#sq").oninput = (e) => { stuF.q = e.target.value; const p = e.target.selectionStart; render(); $("#sq").focus(); $("#sq").setSelectionRange(p, p); };
     $("#sk").onchange = (e) => { stuF.cur = e.target.value; render(); $("#sk").focus(); };

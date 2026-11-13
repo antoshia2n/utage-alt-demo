@@ -55,7 +55,7 @@ export function mountWeb(host, { getToken }) {
     .snip{font-family:ui-monospace,monospace;font-size:12px;background:var(--soft,#f7f3ee);border-radius:6px;padding:2px 6px;word-break:break-all}
     tr.sel td{background:#fffbf5}
   </style>
-  <div class="top"><span class="tab" aria-current="page" style="cursor:default">公開サイト</span><span class="grow"></span><span class="note-top" id="note-top"></span></div>
+  <div class="top"><span class="tab" aria-current="page" style="cursor:default">ブログ・公開ページ</span><span class="grow"></span><span class="note-top" id="note-top"></span></div>
   <div class="wrap" style="display:block"><main id="main" tabindex="-1" style="max-width:1080px;margin:0 auto"><p class="lead">読み込んでいます…</p></main></div>
   <div id="live" class="sr" aria-live="polite"></div>`;
   const $ = (s) => root.querySelector(s);
@@ -80,7 +80,7 @@ export function mountWeb(host, { getToken }) {
   }
 
   function head() {
-    return `<h1>公開サイト</h1><p class="lead">ブログとファネルページの見た目と部品です。1 か所を編集すると、差し込んだ全ページが変わります。</p>
+    return `<h1>ブログ・公開ページ</h1><p class="lead">ブログとファネルページの見た目と部品です。1 か所を編集すると、差し込んだ全ページが変わります。</p>
       <div class="tabs" role="tablist">${[["look", "見た目"], ["parts", "部品"], ["blog", "ブログ"]].map(([k, l]) => `<button role="tab" type="button" data-tab="${k}" aria-selected="${tab === k}">${l}</button>`).join("")}</div>`;
   }
 
