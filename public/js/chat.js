@@ -139,7 +139,7 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
   function headHtml() {
     const isLater = !!D.later_until, lk = D.line && D.line.links.length;
     return `<div class="mh"><button class="btn back" id="toList" aria-label="一覧へ戻る">←</button><button class="btn md" id="leftBtn" aria-expanded="${app.classList.contains("leftopen")}">一覧</button>${av(D.id, D.card.name)}
-      <div style="min-width:0"><h1>${esc(D.card.name || D.person.email)}</h1><small>${esc(D.card.email)}${isLater ? `・後で（${esc(fmtTime(D.later_until))} まで）` : ""}・<a href="#person/${D.id}" id="toPerson">顧客管理で開く →</a></small></div>
+      <div style="min-width:0"><h1>${esc(D.card.name || D.person.email)}</h1><small>${esc(D.card.email)}${isLater ? `・後で（${esc(fmtTime(D.later_until))} まで）` : ""}・<a href="#person/${D.id}" id="toPerson">顧客一覧で開く →</a></small></div>
       <span class="seg" role="tablist" aria-label="やりとりの場所"><button role="tab" data-ch="site" aria-selected="${chan === "site"}">サイト</button><button role="tab" data-ch="line" aria-selected="${chan === "line"}">LINE${lk ? "" : '<span class="un">未接続</span>'}</button></span><span class="g"></span>
       <button class="btn" id="fbtn" aria-label="フォルダ：${esc(fname(D.folder_id) || "なし")}">${D.folder_id ? "▸ " + esc(fname(D.folder_id)) : "フォルダへ"}</button>
       <button class="btn" id="later">${isLater ? "後でを外す" : "後で"}</button>
@@ -290,7 +290,7 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
   function cardHtml() {
     const c = D.card;
     const N = D.names || { real: c.name, nickname: "", line: [] };
-    return `<div class="card"><div class="h"><b>${esc(c.name || c.email)}</b><a href="#person/${D.id}" id="cust">顧客管理へ移動 →</a></div><dl>
+    return `<div class="card"><div class="h"><b>${esc(c.name || c.email)}</b><a href="#person/${D.id}" id="cust">顧客一覧へ移動 →</a></div><dl>
       <dt>本名</dt><dd>${esc(N.real || "—")}</dd>
       <dt>ニックネーム</dt><dd>${N.nickname ? esc(N.nickname) : '<span style="color:var(--muted)">まだ無い</span>'} <button class="lk" id="nickEdit">編集</button></dd>
       ${N.line.length ? `<dt>LINE 名</dt><dd>${N.line.map((l) => esc(l.name || "（読めない）")).join("、")}</dd>` : ""}
@@ -367,7 +367,7 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
     closeMenu(); lastFocus = from; menuAt = Date.now();
     const el = document.createElement("div"); el.className = "menu"; el.setAttribute("role", "menu"); el.setAttribute("aria-label", "メッセージの操作");
     el.innerHTML = `<button role="menuitem" data-a="copy">コピー<small>C</small></button><button role="menuitem" data-a="fwd">転送（メモとして）…<small>F</small></button><button role="menuitem" data-a="keep">${m.kept ? "資料から外す" : "資料に入れる"}<small>S</small></button><hr>
-      <div class="mh2" aria-hidden="true">連携</div><button role="menuitem" data-a="task">タスクへ追加（TaskMaster）…<small>T</small></button><button role="menuitem" data-a="person">顧客管理で開く →</button><hr>
+      <div class="mh2" aria-hidden="true">連携</div><button role="menuitem" data-a="task">タスクへ追加（TaskMaster）…<small>T</small></button><button role="menuitem" data-a="person">顧客一覧で開く →</button><hr>
       <button role="menuitem" data-a="ai">AI で分析</button><button role="menuitem" data-a="claude">Claude に聞く（依頼文をコピー）</button><button role="menuitem" data-a="later">このチャットを後で見る…</button>${m.corr || (m.lesson && !m.me) ? '<button role="menuitem" data-a="room">添削ルームで開く →</button>' : ""}`;
     root.appendChild(el);
     const w = el.offsetWidth, h = el.offsetHeight; el.style.left = Math.max(8, Math.min(x, innerWidth - w - 8)) + "px"; el.style.top = Math.max(8, Math.min(y, innerHeight - h - 8)) + "px";
@@ -565,7 +565,7 @@ export function mountChat(host, { getToken, openPerson, openRoom }) {
     el.innerHTML = `<div class="erow" role="group" aria-label="スタンプ">${EMO.map((k) => `<button role="menuitem" data-e="${k}" aria-label="スタンプ ${k}">${k}</button>`).join("")}</div>
       ${inThread ? "" : '<button role="menuitem" data-a="thread">スレッドで返信</button>'}<button role="menuitem" data-a="copy">コピー<small>C</small></button><hr>
       <div class="mh2" aria-hidden="true">連携</div><button role="menuitem" data-a="task">タスクへ追加（TaskMaster）…</button>
-      ${student ? `<button role="menuitem" data-a="dm">${esc(m.name)}との 1 対 1 を開く</button><button role="menuitem" data-a="person">${esc(m.name)}を顧客管理で開く →</button>` : ""}<hr>
+      ${student ? `<button role="menuitem" data-a="dm">${esc(m.name)}との 1 対 1 を開く</button><button role="menuitem" data-a="person">${esc(m.name)}を顧客一覧で開く →</button>` : ""}<hr>
       <button role="menuitem" data-a="ai">AI で分析</button><button role="menuitem" data-a="claude">Claude に聞く（依頼文をコピー）</button>`;
     root.appendChild(el);
     const w = el.offsetWidth, h = el.offsetHeight; el.style.left = Math.max(8, Math.min(x, innerWidth - w - 8)) + "px"; el.style.top = Math.max(8, Math.min(y, innerHeight - h - 8)) + "px";

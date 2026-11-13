@@ -898,7 +898,7 @@ async function openLine(user) {
       : `<div class="msg-me"><div class="bubble chat mine"><div class="pre">${esc(m.text)}</div></div><div class="meta"><time>${fmtTime(m.at)}</time>${m.ok === false ? '<span class="pill warn">送れなかった</span>' : ""}${m.by === "AI" ? '<span class="pill gray">AI から</span>' : ""}</div></div>`;
   $("line-detail").innerHTML = `
     <h2 style="margin-bottom:2px">${esc(r.name || "（名前を読めない）")}</h2>
-    <div class="note" style="margin-bottom:12px">${r.person ? `${esc(r.person.email)}・<button class="link" type="button" id="line-person">顧客管理で開く</button>・<a href="#chat/${esc(r.person.id)}/line">チャットで開く</a>` : "メールの登録はまだ（LINE だけの人）。チャットの「LINE」から手で結べます"}${r.blocked ? "・ブロックされている" : ""}</div>
+    <div class="note" style="margin-bottom:12px">${r.person ? `${esc(r.person.email)}・<button class="link" type="button" id="line-person">顧客一覧で開く</button>・<a href="#chat/${esc(r.person.id)}/line">チャットで開く</a>` : "メールの登録はまだ（LINE だけの人）。チャットの「LINE」から手で結べます"}${r.blocked ? "・ブロックされている" : ""}</div>
     <div class="room">${r.messages.map(item).join("") || '<p class="note">B が受けたやりとりはまだありません。</p>'}</div>
     ${r.blocked ? '<p class="note">ブロックされているので送れません。</p>' : `<form id="line-reply" class="stack reply-form">
       <label for="lr-text" class="sr">返す文</label><textarea id="lr-text" rows="3" maxlength="2000" placeholder="LINE で返す文（文字だけ・今月の送信数を 1 通使う）"></textarea>
@@ -1216,7 +1216,7 @@ async function loadDeals(focusId, msg) {
   const c = await api("/api/admin/consults", { token });
   if (!c.ok) { $("consults-count").textContent = "読めませんでした（" + (c.error || c.status) + "）"; }
   else {
-    $("consults-count").textContent = c.count === 0 ? "これからの予約は 0 件です。予約が入ると、ここに日時の順で並びます" : `これからの予約 ${c.count} 件。行を押すと顧客管理でその人の詳細が開きます`;
+    $("consults-count").textContent = c.count === 0 ? "これからの予約は 0 件です。予約が入ると、ここに日時の順で並びます" : `これからの予約 ${c.count} 件。行を押すと顧客一覧でその人の詳細が開きます`;
     table("consults", [
       { key: "slot", label: "日時", html: (x) => esc(x.label) },
       { key: "name", label: "名前", sortVal: (x) => x.name || x.email, html: (x) => `<div class="c-name">${esc(x.name || x.email)}</div>` },

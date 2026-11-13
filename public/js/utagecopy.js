@@ -6,7 +6,7 @@
 import { api } from "/js/common.js";
 
 const ERR = {
-  no_binding: "UTAGE の写し（shia2n-mcp）にまだつながっていません。shia2n-mcp の結合を待っています",
+  no_binding: "UTAGE のバックアップ（shia2n-mcp）にまだつながっていません。shia2n-mcp の結合を待っています",
   no_run: "まだ 1 回も読み終えていません。初回は数時間かかります（15 分ごとに進みます）",
   not_found: "見つかりませんでした",
   personal: "個人の情報は数だけを見せています",
@@ -15,7 +15,7 @@ const ERR = {
 export function mountUtageCopy(host, { getToken }) {
   const root = host.shadowRoot || host.attachShadow({ mode: "open" });
   root.innerHTML = `<link rel="stylesheet" href="/css/recordings.css"><link rel="stylesheet" href="/css/utagecopy.css">
-  <div class="top"><span class="tab" aria-current="page" style="cursor:default">UTAGE の写し</span><span class="grow"></span><span class="note-top" id="note-top"></span></div>
+  <div class="top"><span class="tab" aria-current="page" style="cursor:default">UTAGE のバックアップ</span><span class="grow"></span><span class="note-top" id="note-top"></span></div>
   <div class="wrap"><nav class="side" id="side" aria-label="棚"></nav><main id="main" tabindex="-1"><p class="lead">読み込んでいます…</p></main></div>
   <div class="scrim" id="scrim" hidden></div>
   <section class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="d-title" hidden></section>
@@ -98,7 +98,7 @@ export function mountUtageCopy(host, { getToken }) {
       <div class="db"><p class="hint">${esc(it.path || "")}${it.url ? `・<a href="${esc(it.url)}" target="_blank" rel="noopener">UTAGE で開く ↗</a>` : ""}</p>
       ${it.info ? `<p class="hint">${Object.entries(it.info).filter(([, v]) => v != null && v !== "").map(([k, v]) => `${esc(k)}：${esc(v)}`).join("・")}</p>` : ""}
       <div class="uc-text">${r.text ? esc(r.text) : '<span class="hint">本文はありません（名前だけの品目）</span>'}</div>
-      <p class="hint">AI に渡すときは「UTAGE の写しの ${esc(ref)} を読んで」と言えば同じものを読めます。</p></div>`;
+      <p class="hint">AI に渡すときは「UTAGE のバックアップの ${esc(ref)} を読んで」と言えば同じものを読めます。</p></div>`;
     d.hidden = false; $("#scrim").hidden = false;
     setTimeout(() => $("#d-close")?.focus(), 30);
   }

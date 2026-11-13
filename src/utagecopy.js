@@ -2,7 +2,7 @@
 // 写しの正本は shia2n-mcp（保管庫の utage-archive/）。ここは結び UTAGE（entrypoint UtageReader）の archive_* で読むだけで、表は持たない。
 // 個人の情報（読者・LINE 友だち・申込者・受講生・売上）は shia2n-mcp が数しか返さない。
 function reader(env) {
-  if (!env.UTAGE || typeof env.UTAGE.archive_status !== "function") throw Object.assign(new Error("shia2n-mcp の UTAGE の写し（v1.68.0）につながっていません"), { code: "no_binding" });
+  if (!env.UTAGE || typeof env.UTAGE.archive_status !== "function") throw Object.assign(new Error("shia2n-mcp の UTAGE のバックアップ（v1.68.0）につながっていません"), { code: "no_binding" });
   return env.UTAGE;
 }
 async function safe(fn) {

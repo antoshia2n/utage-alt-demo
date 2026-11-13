@@ -227,7 +227,7 @@ export function makePages(h) {
       countdown: "期間限定の残り（便 T2）：<span data-lab-countdown></span> の所に「あと 2日 3時間 4分」が入る（set_page_close で期限を決めたページだけ）。期限を過ぎると、決めたページか「公開は終了しました」の画面になる",
       booking: "予約の枠：<div data-lab-part=\"booking:予約の種類の住所の名前\"></div>。空き時間の一覧と、名前・メール・相談したいこと・同意の欄が入る。予約した人は台帳に入り、受付のメールが届く",
       look: "公開サイトの見た目（便 S1）：B が /_lab/look.css を自分で読ませる。色は var(--lab-c)（主の色）・var(--lab-c2)（差し色）・var(--lab-bg)・var(--lab-card)・var(--lab-line)・var(--lab-fg)・var(--lab-mut)、角は var(--lab-r)、字は var(--lab-font)・var(--lab-head) を使う（テーマを替えると全ページが変わる）。記事の装飾は class lab-toc（目次）・lab-box（ボックス）・lab-fuki（ふきだし）",
-      part: "公開サイトの部品（便 S2）：<div data-lab-part=\"part:部品の名前\"></div>。中身（題・文・ボタンか申込の枠）は読者の段階で変わり、マーケくんの「公開サイト › 部品」で 1 か所を直すと全部のページで変わる。使える部品は get_web の parts",
+      part: "公開サイトの部品（便 S2）：<div data-lab-part=\"part:部品の名前\"></div>。中身（題・文・ボタンか申込の枠）は読者の段階で変わり、マーケくんの「ブログ・公開ページ › 部品」で 1 か所を直すと全部のページで変わる。使える部品は get_web の parts",
       thanks: "サンクスページ（目的 thanks）：申込の枠もボタンも要らない。申込を受け付けたこと・日時・参加の URL はメールで届くこと・迷惑メールの確かめ方を書く。セミナーの回に結ぶのは set_seminar の thanks_page_slug",
       forms: fl.filter((f) => f.active).map((f) => ({ slug: f.slug, title: f.title })),
       forms_not_open: fl.filter((f) => !f.active).map((f) => ({ slug: f.slug, title: f.title })),
