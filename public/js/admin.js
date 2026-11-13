@@ -167,6 +167,8 @@ function routeHash() {
   // 出し先のスイッチ（2026-11-12）：録画を会員サイトに入れた知らせのメールから（/admin#recording/録画の番号）
   const rc = h.match(/^#recording[/](.{4,200})$/);
   if (rc) { openView("recordings"); recUi && recUi.openRec(decodeURIComponent(rc[1])); return true; }
+  // 実績の便 3（2026-11-13）：X攻略くんのパネルの「今日入れたもの」から（/admin#results）
+  if (h === "#results") { openView("results"); return true; }
   const ps = h.match(/^#person[/]([0-9a-f-]{36})$/i);
   if (ps) { openView("people"); detail(ps[1]); return true; }
   return false;

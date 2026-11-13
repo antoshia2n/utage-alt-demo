@@ -136,6 +136,9 @@ export default {
         if (missingConfig(env).length) return;
         try { const r = await results.drainDrive(env); if (r.taken || r.error) await logInbound(env, "results_drive", { cron: event.cron }, r, r.ok === false ? 500 : 200); }
         catch (e) { await logInbound(env, "results_drive", { cron: event.cron }, { ok: false, error: String(e.message).slice(0, 200) }, 500); }
+        // 実績の便 3：X攻略くんのパネルが足した行（まだ仕分けていない）を仕分ける
+        try { const r = await results.drainPending(env); if (r.sorted || r.failed.length) await logInbound(env, "results_pending", { cron: event.cron }, r, r.failed.length ? 500 : 200); }
+        catch (e) { await logInbound(env, "results_pending", { cron: event.cron }, { ok: false, error: String(e.message).slice(0, 200) }, 500); }
       })());
       return;
     }
@@ -3277,6 +3280,9 @@ const TOOLS = [
   { name: "list_entitlement_keys", screen: "people", say: "手で付けられる権利を見る", description: "人に手で付けられる権利のキーの一覧。", inputSchema: { type: "object", properties: {} } },
   { name: "set_entitlement", screen: "people", say: "人に権利を手で付ける・外す", description: "人に権利を手で付ける・外す（手で付けたものだけ外せる）。承認が要る道具。action：grant（person_id・key・reason が要る。expires_at は任意）／revoke（person_id・entitlement_id・reason）。", inputSchema: { type: "object", properties: { action: { type: "string", enum: ["grant", "revoke"] }, person_id: { type: "string" }, key: { type: "string" }, entitlement_id: { type: "string" }, reason: { type: "string" }, expires_at: { type: "string" } }, required: ["action", "person_id", "reason"] } },
   { name: "get_person_values", screen: "people", say: "人の項目の答えを見る", description: "その人の項目の答え（フォームで答えた値など）。", inputSchema: { type: "object", properties: { person_id: { type: "string" } }, required: ["person_id"] } },
+  { name: "find_results", screen: "results", say: "実績の棚を探す", description: "実績の棚（自分の実績と、生徒・お客さんの実績。スクショ・ポストのリンク）を探す。絞り込み：whose（me＝自分の実績／person＝生徒・お客さんの実績）・folder（フォルダの名前）・inbox（true で受け箱＝フォルダがまだ無い行）・q（成果・誰・ラベル・本人の言葉・リンクの言葉）・publish（unknown まだ聞いていない／name 名前を出してよい／anon 伏せればよい／no 出さない）・checked_only（true で人が確かめた行だけ）・limit（既定 30・最大 100）。しまった行は出ない。成果の数字は checked が false なら AI の案なので、外へ出す前に Naoki に確かめる。LP やポストに載せてよいのは publish が name か anon の行だけ（anon は名前を伏せる）。", inputSchema: { type: "object", properties: { whose: { type: "string", enum: ["me", "person"] }, folder: { type: "string" }, inbox: { type: "boolean" }, q: { type: "string" }, publish: { type: "string", enum: ["unknown", "name", "anon", "no"] }, checked_only: { type: "boolean" }, limit: { type: "number" } } } },
+  { name: "get_result", screen: "results", say: "実績を 1 件開く", description: "実績 1 件の全部の欄（成果 title・誰 who_name・日付 achieved_on・本人の言葉 quote・ラベル・載せてよい範囲 publish・リンク link_url・画像があるか has_image・AI の仕分けの様子 ai と ai_note・AI が読んだ文 ai_text・人が確かめたか checked）。id は find_results の id。画像そのものは返さない（マーケくんの「素材 › 実績」の画面で見る）。", inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
+  { name: "add_result_link", screen: "results", say: "実績の棚にリンクで入れる", description: "ポストなどのリンクを実績の棚に入れる。X のポストは本文を読んで AI が仕分ける（成果・誰・フォルダ・ラベル。迷ったら受け箱）。@antoshia2n のポストは自分の実績。url（https で始まる住所）・whose（me／person。省くと AI が決める）・folder（フォルダの名前。省くと AI が今あるフォルダから選ぶ）。同じ住所がもう棚にあれば入れずに already と、その id を返す。AI の仕分けは案で、Naoki が画面で保存すると確かめ済みになる。", inputSchema: { type: "object", properties: { url: { type: "string" }, whose: { type: "string", enum: ["me", "person"] }, folder: { type: "string" } }, required: ["url"] } },
   { name: "list_recordings", screen: "recordings", say: "録画の棚を見る", description: "R2 に保管した Zoom の録画の棚（全部で 500 本ほど）。絞り込み：kai（セミナー・打ち合わせ・個別相談・Zoom添削・その他）・date_from／date_to（YYYY-MM-DD）・words（題名の言葉）・transcript_words（文字起こしの中の言葉）・shared（true＝共有中／false＝未発行）・with_issues（点検の録画）・with_suggestions（整理の案がある録画）・label（ラベル）・month（YYYY-MM）・limit（既定 30・最大 100）。行の id を issue_recording_link などに渡す。", inputSchema: { type: "object", properties: { kai: { type: "string", enum: ["セミナー", "打ち合わせ", "個別相談", "Zoom添削", "その他"] }, date_from: { type: "string" }, date_to: { type: "string" }, words: { type: "string" }, transcript_words: { type: "string" }, shared: { type: "boolean" }, with_issues: { type: "boolean" }, with_suggestions: { type: "boolean" }, label: { type: "string" }, month: { type: "string" }, limit: { type: "number" } } } },
   { name: "issue_recording_link", screen: "recordings", say: "録画の共有リンクを出す", description: "録画 1 本の共有リンク（https://v.shia2n.jp/…）を出す。すでにあればそれを返す。リンクを知っている人は誰でも見られる（検索には出ない）。id は list_recordings の id。", inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
   { name: "set_recording_link", screen: "recordings", say: "録画の共有を止める・期限を決める", description: "録画の共有リンクを止める（stopped: true）・再開する（false）・期限（expires: YYYY-MM-DD、その日の終わりまで。空で期限なし）。", inputSchema: { type: "object", properties: { id: { type: "string" }, stopped: { type: "boolean" }, expires: { type: "string" } }, required: ["id"] } },
@@ -3487,6 +3493,9 @@ async function runTool(env, name, args, ctx) {
   if (name === "list_entitlement_keys") return await bridge.entitlementKeys(env);
   if (name === "set_entitlement") return args.action === "grant" ? await bridge.grantManual(env, args, "mcp") : args.action === "revoke" ? await bridge.revokeManual(env, args, "mcp") : { ok: false, error: "bad_action" };
   if (name === "get_person_values") return await forms.personValues(env, args.person_id);
+  if (name === "find_results") return await results.find(env, args);
+  if (name === "get_result") return await results.one(env, args.id);
+  if (name === "add_result_link") return await results.addLink(env, { url: args.url, whose: args.whose, folder: args.folder, source: "mcp" }, "ai");
   if (name === "list_recordings") return await recordings.find(env, args);
   if (name === "issue_recording_link") return await recordings.issue(env, args.id);
   if (name === "set_recording_link") return await recordings.setLink(env, args.id, args);
