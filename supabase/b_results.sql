@@ -38,3 +38,7 @@ create index if not exists b_results_folder on public.b_results (whose, folder);
 create index if not exists b_results_person on public.b_results (person_id);
 alter table public.b_results enable row level security;
 revoke all on public.b_results from anon, authenticated;
+
+-- 2026-11-13 17:40 Naoki OK：AI の成果の欄は「案」。人が詳細で保存すると checked=true（確かめ済み）になり、AI は成果・誰・いつ・本人の言葉を書き換えない。
+-- LP・ブログの部品にできるのは確かめ済みだけ（実績の便 3）。戻し方：alter table public.b_results drop column checked;
+alter table public.b_results add column if not exists checked boolean not null default false;

@@ -61,7 +61,7 @@ export function makeResults(h) {
 
   const view = (r) => ({ id: r.id, whose: r.whose, folder: r.folder || "", title: r.title || "", who_name: r.who_name || "", person_id: r.person_id || null,
     achieved_on: r.achieved_on || null, quote: r.quote || "", labels: r.labels || [], publish: r.publish, has_image: !!r.r2_key, content_type: r.content_type || "",
-    link_url: r.link_url || null, source: r.source, ai: r.ai, ai_note: r.ai_note || "", created_at: r.created_at, updated_at: r.updated_at, updated_by: r.updated_by || "" });
+    link_url: r.link_url || null, source: r.source, ai: r.ai, ai_note: r.ai_note || "", checked: !!r.checked, created_at: r.created_at, updated_at: r.updated_at, updated_by: r.updated_by || "" });
 
   // 一覧。whose＋folder で 1 つのフォルダ、inbox=1 で受け箱（フォルダが空）、q は成果・誰・ラベル・本人の言葉の言葉
   async function list(env, { whose, folder, inbox, q, publish, limit } = {}) {
@@ -93,7 +93,8 @@ export function makeResults(h) {
     if (!env.AI || typeof env.AI.run !== "function") return { ai: "failed", ai_note: "AI につながっていない" };
     const sys = [
       "あなたは実績の棚の仕分け係。渡されたスクショか投稿の文から、成果を読み取って JSON 1 つだけを返す。説明や前置きは書かない。",
-      "形：{\"whose\":\"me か person\",\"folder\":\"下のフォルダの名前のどれかを一字も変えずにそのまま写す。合うものが無ければ空\",\"title\":\"成果を 1 行（数字を入れる。例：3 か月で X フォロワー 1,000 人）\",\"who_name\":\"誰の実績か（名前か @ID。分からなければ空）\",\"achieved_on\":\"YYYY-MM-DD（読めなければ空）\",\"labels\":[\"短いラベル 1〜4 個\"],\"quote\":\"本人の言葉があれば 1〜2 文（無ければ空）\",\"confident\":true か false,\"note\":\"迷った理由を 1 文（無ければ空）\"}",
+      "成果は画像や文に書いてある数字をそのまま写す。足し算・かけ算・合計・換算はしない（書いていない数字を作らない）。実績（成果の報告）ではないもの（価格表・説明の画面など）なら is_result を false にする。",
+      "形：{\"is_result\":true か false,\"whose\":\"me か person\",\"folder\":\"下のフォルダの名前のどれかを一字も変えずにそのまま写す。合うものが無ければ空\",\"title\":\"成果を 1 行（書いてある数字をそのまま。例：3 か月で X フォロワー 1,000 人）\",\"who_name\":\"誰の実績か（名前か @ID。分からなければ空）\",\"achieved_on\":\"YYYY-MM-DD（読めなければ空）\",\"labels\":[\"短いラベル 1〜4 個\"],\"quote\":\"本人の言葉があれば 1〜2 文（無ければ空）\",\"confident\":true か false,\"note\":\"迷った理由を 1 文（無ければ空）\"}",
       `me（自分の実績＝シアニン本人。X の @${SELF_X.join("・@")} やシアニンの売上）のフォルダ：${f.me.join("／") || "（なし）"}`,
       `person（生徒・お客さんの実績）のフォルダ：${f.person.join("／") || "（なし）"}`,
       "confident は「成果の数字が読めて、合うフォルダがある」なら true。誰の実績か・いつかが分からなくても true でよい（空のまま返す）。数字がかすれて読み違えそうなとき、どのフォルダにも合わないときだけ false。",
@@ -113,11 +114,14 @@ export function makeResults(h) {
     if (!out || typeof out !== "object") return { ai: "failed", ai_note: "AI の答えが読めなかった" };
     const whose = out.whose === "me" ? "me" : "person";
     const okFolder = matchFolder(out.folder, f[whose]);
-    const sure = out.confident === true && !!okFolder && !!clean(out.title, 200);
+    const notResult = out.is_result === false;
+    const sure = !notResult && out.confident === true && !!okFolder && !!clean(out.title, 200);
+    // 人が確かめた実績は、成果・誰・いつ・本人の言葉を書き換えない（AI が付け直すのはフォルダとラベルだけ）
+    if (row.checked) return { whose: row.whose, folder: sure ? okFolder : row.folder, labels: cleanLabels(out.labels).length ? cleanLabels(out.labels) : row.labels, ai: sure ? "done" : row.folder ? "done" : "unsure", ai_note: sure || row.folder ? "" : clean(out.note || "合うフォルダが無い", 500) };
     return {
       whose, folder: sure ? okFolder : "", title: clean(out.title, 200) || row.title, who_name: clean(out.who_name, 80) || row.who_name,
       achieved_on: dateOk(out.achieved_on) || row.achieved_on, labels: cleanLabels(out.labels).length ? cleanLabels(out.labels) : row.labels, quote: clean(out.quote, 1000) || row.quote,
-      ai: sure ? "done" : "unsure", ai_note: clean(sure ? "" : (out.note || (okFolder ? "自信が無い" : "合うフォルダが無い")), 500), ai_text: clean(text || "", 4000),
+      ai: sure ? "done" : "unsure", ai_note: clean(sure ? "" : notResult ? "実績ではなさそう（価格表や説明の画面など）" : (out.note || (okFolder ? "自信が無い" : "合うフォルダが無い")), 500), ai_text: clean(text || "", 4000),
     };
   }
   const b64 = (buf) => { const u = new Uint8Array(buf); let s = ""; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000)); return btoa(s); };
@@ -144,7 +148,7 @@ export function makeResults(h) {
     } catch (_) { return ""; }
   }
 
-  const BASE = { publish: "unknown", ai: "none", labels: [], archived: false }; // 載せてよい範囲は必ず「まだ聞いていない」で入る
+  const BASE = { publish: "unknown", ai: "none", labels: [], archived: false, checked: false }; // 載せてよい範囲は必ず「まだ聞いていない」で入る
   const stamp = (actor) => ({ updated_at: new Date().toISOString(), updated_by: clean(actor || "admin", 200) });
   async function patch(env, id, p) { const r = await db(env, "PATCH", `${T}?id=eq.${id}`, p, "return=representation"); return r[0] || null; }
 
@@ -201,6 +205,8 @@ export function makeResults(h) {
     if ("person_id" in b) { if (b.person_id && !UUID_RE.test(String(b.person_id))) return { ok: false, error: "bad_person" }; p.person_id = b.person_id || null; }
     if ("archived" in b) p.archived = !!b.archived;
     if (p.folder && p.folder !== row.folder && row.ai === "unsure") p.ai = "done"; // 受け箱から人が移した
+    // 詳細の「保存」（成果の欄を送ってくる）で、人が確かめた印を付ける。しまう・戻すだけでは付けない
+    if ("title" in b) p.checked = true;
     if (!Object.keys(p).length) return { ok: false, error: "nothing" };
     const done = await patch(env, row.id, { ...p, ...stamp(actor) });
     return { ok: true, item: view(done) };
