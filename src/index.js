@@ -136,9 +136,6 @@ export default {
         if (missingConfig(env).length) return;
         try { const r = await results.drainDrive(env); if (r.taken || r.error) await logInbound(env, "results_drive", { cron: event.cron }, r, r.ok === false ? 500 : 200); }
         catch (e) { await logInbound(env, "results_drive", { cron: event.cron }, { ok: false, error: String(e.message).slice(0, 200) }, 500); }
-        // 実績の便 3：X攻略くんのパネルが足した行（まだ仕分けていない）を仕分ける
-        try { const r = await results.drainPending(env); if (r.sorted || r.failed.length) await logInbound(env, "results_pending", { cron: event.cron }, r, r.failed.length ? 500 : 200); }
-        catch (e) { await logInbound(env, "results_pending", { cron: event.cron }, { ok: false, error: String(e.message).slice(0, 200) }, 500); }
       })());
       return;
     }
@@ -1551,7 +1548,7 @@ async function handleApi(request, env, url) {
     if (path === "/api/admin/results" && method === "GET") return json(await results.list(env, { whose: url.searchParams.get("whose") || "", folder: url.searchParams.get("folder"), inbox: url.searchParams.get("inbox") || "", q: url.searchParams.get("q") || "", publish: url.searchParams.get("publish") || "" }));
     if (path === "/api/admin/results/upload" && method === "POST") {
       if ((parseInt(request.headers.get("content-length"), 10) || 0) > RESULTS_MAX) return json({ ok: false, error: "too_big" }, 400);
-      const r = await results.upload(env, { name: url.searchParams.get("name"), whose: url.searchParams.get("whose") || "", folder: url.searchParams.get("folder") || "", size: request.headers.get("content-length"), type: request.headers.get("content-type"), body: request.body }, a.email);
+      const r = await results.upload(env, { name: url.searchParams.get("name"), whose: url.searchParams.get("whose") || "", folder: url.searchParams.get("folder") || "", source: url.searchParams.get("source") === "panel" ? "panel" : "", size: request.headers.get("content-length"), type: request.headers.get("content-type"), body: request.body }, a.email);
       return json(r, r.ok ? 200 : 400);
     }
     if (path === "/api/admin/results/link" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await results.addLink(env, b, a.email); return json(r, r.ok ? 200 : 400); }

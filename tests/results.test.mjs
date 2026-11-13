@@ -129,19 +129,7 @@ test("確かめ済みの実績は、AI がもう一度仕分けても成果を�
   assert.equal(r3.item.folder, ""); assert.match(r3.item.ai_note, /実績ではなさそう/);
 });
 
-// 実績の便 3（2026-11-13）：X攻略くんのパネルは表に行を足すだけ。5 分ごとの処理がそれを仕分ける。AI の道具は探す・開く・リンクで入れる
-test("パネルが足した行（ai=none）は 5 分ごとの処理で仕分けられ、自分のポストは自分の実績のまま", async () => {
-  const { res, env, s } = setup(JSON.stringify({ is_result: true, whose: "me", folder: "X のポスト・数字", title: "1 ポストで 100 万インプ", confident: true }));
-  s.t.b_results = [{ id: "11111111-1111-1111-1111-111111111111", whose: "me", folder: "", title: "", link_url: "https://x.com/antoshia2n/status/123456789", source: "panel", publish: "unknown", ai: "none", labels: [], archived: false, checked: false, created_at: "2026-11-13T09:00:00Z", updated_by: "x-koryaku" }];
-  globalThis.fetch = async () => new Response(JSON.stringify({ author_name: "シアニン", author_url: "https://x.com/antoshia2n", html: "<p>100 万インプ</p>" }), { status: 200 });
-  const r = await res.drainPending(env);
-  assert.equal(r.sorted, 1);
-  const row = s.t.b_results[0];
-  assert.equal(row.ai, "done"); assert.equal(row.whose, "me"); assert.equal(row.folder, "X のポスト・数字");
-  const again = await res.drainPending(env);
-  assert.equal(again.sorted, 0, "仕分けた行はもう回らない");
-});
-
+// 実績の便 3（2026-11-13）：AI の道具は探す・開く・リンクで入れる。マーケくんのパネルからはリンクとスクショを入れる
 test("探す：checked_only で人が確かめた行だけ・既定は 30 件まで。開く：AI が読んだ文も返す", async () => {
   const { res, env, s } = setup("{}");
   s.t.b_results = Array.from({ length: 35 }, (_, i) => ({ id: `00000000-0000-0000-0000-${String(i).padStart(12, "0")}`, whose: "person", folder: "収益化", title: `初収益 ${i}`, publish: "unknown", ai: "done", labels: [], archived: false, checked: i < 2, created_at: `2026-11-13T09:${String(i).padStart(2, "0")}:00Z`, ai_text: i === 0 ? "読んだ文" : "" }));
