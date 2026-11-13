@@ -167,7 +167,7 @@ export function makeResults(h) {
     const key = `results/${id}.${ext}`;
     await env.IMAGES.put(key, buf, { httpMetadata: { contentType: ct } });
     const w = WHOSE.includes(whose) ? whose : "person";
-    const row = (await db(env, "POST", T, [{ id, whose: w, folder: cleanFolder(folder || ""), title: clean(String(name).replace(/[.][a-z0-9]{2,5}$/i, ""), 200), r2_key: key, content_type: ct, size: buf.byteLength, source: source === "drive" ? "drive" : "upload", ...BASE, ...stamp(actor) }], "return=representation"))[0];
+    const row = (await db(env, "POST", T, [{ id, whose: w, folder: cleanFolder(folder || ""), title: clean(String(name).replace(/[.][a-z0-9]{2,5}$/i, ""), 200), r2_key: key, content_type: ct, size: buf.byteLength, source: source === "drive" ? "drive" : source === "panel" ? "panel" : "upload", ...BASE, ...stamp(actor) }], "return=representation"))[0];
     const s = await sortOne(env, row, { buf, type: ct });
     const keepFolder = row.folder ? { folder: row.folder, whose: row.whose } : {}; // フォルダを開いて上げたときは、そのフォルダのまま
     const done = await patch(env, id, { ...s, ...keepFolder, ...stamp(actor) });
@@ -191,21 +191,6 @@ export function makeResults(h) {
     const s = await sortOne(env, row, {});
     const keep = row.folder ? { folder: row.folder, whose: row.whose } : xm && SELF_X.includes(xm[1].toLowerCase()) ? { whose: "me" } : {};
     return (await patch(env, row.id, { ...s, ...keep, ...stamp(actor) })) || row;
-  }
-
-  // 実績の便 3（2026-11-13 Naoki OK 18:00）：ほかのアプリ（X攻略くんのパネル）が表に足しただけの行（ai=none）を、5 分ごとの処理で仕分ける。
-  // パネルは同じ置き場へ行を 1 つ足すだけにして、本文を読むのと AI の仕分けはここに 1 か所で持つ（鍵を新しく渡さないため）
-  async function drainPending(env, limit = 5) {
-    const rows = await db(env, "GET", `${T}?select=*&ai=eq.none&archived=eq.false&order=created_at.asc&limit=${Math.min(Math.max(parseInt(limit, 10) || 5, 1), 20)}`);
-    let sorted = 0; const failed = [];
-    for (const r of rows) {
-      try {
-        if (r.link_url && !r.r2_key) await sortLink(env, r, r.updated_by || "panel");
-        else await patch(env, r.id, { ai: "unsure", ai_note: "読めるものが無かった", ...stamp("pending") });
-        sorted++;
-      } catch (e) { failed.push({ id: r.id, error: String((e && e.message) || e).slice(0, 120) }); }
-    }
-    return { ok: true, sorted, failed };
   }
 
   // ---------- 実績の便 3：AI（Claude）の道具 ----------
@@ -318,5 +303,5 @@ export function makeResults(h) {
     return { ok: true, taken: done.length, failed, skipped: got.skipped || [] };
   }
 
-  return { list, get, upload, addLink, save, resort, file, folderEdit, readFolders, driveStatus, drainDrive, drainPending, find, one };
+  return { list, get, upload, addLink, save, resort, file, folderEdit, readFolders, driveStatus, drainDrive, find, one };
 }
