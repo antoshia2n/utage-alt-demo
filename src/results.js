@@ -130,12 +130,17 @@ export function makeResults(h) {
     let image = null, text = "";
     if (buf && /^image\/(png|jpeg|webp|gif)$/.test(type || "") && buf.byteLength <= AI_IMAGE_MAX) image = `data:${type};base64,${b64(buf)}`;
     if (row.link_url) text = await readPost(row.link_url);
+    // 2026-11-13（パネルの初回で分かった）：画像だけのポストは、埋め込みの口では本文が住所 1 本しか取れず、AI は「実績ではない」と答えてしまう。
+    // 文がほとんど無いときは AI に回さず、スクショも入れるよう受け箱で知らせる
+    if (!image && text && postBody(text).length < 4) return { ai: "unsure", ai_note: "ポストに文がほとんど無く、画像は読めない。スクショも入れると AI が読める", ai_text: clean(text, 4000) };
     if (!image && !text) {
       const why = buf && buf.byteLength > AI_IMAGE_MAX ? "画像が大きくて AI に見せられなかった" : type === "application/pdf" ? "PDF は AI がまだ読めない" : "読めるものが無かった";
       return { ai: "unsure", ai_note: why };
     }
     return await classify(env, row, { image, text });
   }
+  // 読んだ文から、書き手の行・住所・日付の行を外した本文
+  const postBody = (t) => String(t).split("\n").slice(1).join(" ").replace(/https?:\/\/\S+/g, "").replace(/&mdash;.*$/, "").replace(/\s+/g, "").trim();
   // X のポストは公開の埋め込みの口で本文を読む（ログインは要らない・失敗しても空で続ける）
   async function readPost(url) {
     if (!X_RE.test(url)) return "";
