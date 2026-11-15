@@ -115,13 +115,20 @@ export function makeMypage({ db, pages, learn, names }) {
 
   // 生徒ごとの中身
   async function dataFor(env, customer, email) {
-    const lib = await learn.lessonsFor(env, customer, email);
-    const viewed = await db(env, "GET", `events?select=payload,occurred_at&customer_id=eq.${customer.id}&type=eq.lesson_viewed&order=occurred_at.desc&limit=2000`);
+    // 2026-11-15「会員サイトが重い」：互いに関係しない読み込みを同時に（順に待つと 2.6 秒かかっていた）
+    const t = Date.now();
+    const [lib, viewed, newsRows, ents, idx, fresh] = await Promise.all([
+      learn.lessonsFor(env, customer, email),
+      db(env, "GET", `events?select=payload,occurred_at&customer_id=eq.${customer.id}&type=eq.lesson_viewed&order=occurred_at.desc&limit=2000`),
+      db(env, "GET", newsQuery(env, 1)),
+      db(env, "GET", `member_entitlement?select=key,expires_at&member_id=eq.${customer.id}`),
+      names(env).catch(() => null), // 呼び名が読めなければ台帳の名前
+      freshIds(env),
+    ]);
     const views = viewed.map((e) => ({ id: e.payload && e.payload.lesson_id, at: e.occurred_at })).filter((v) => v.id);
     const order = [...new Set(views.map((v) => v.id))];
-    const [news] = await db(env, "GET", newsQuery(env, 1));
-    const t = Date.now();
-    const keys = (await db(env, "GET", `member_entitlement?select=key,expires_at&member_id=eq.${customer.id}`)).filter((e) => !e.expires_at || Date.parse(e.expires_at) > t).map((e) => e.key);
+    const [news] = newsRows;
+    const keys = ents.filter((e) => !e.expires_at || Date.parse(e.expires_at) > t).map((e) => e.key);
     let apps = [];
     if (keys.length) {
       const rows = await db(env, "GET", `member_access?select=target&entitlement_key=in.(${keys.map(encodeURIComponent).join(",")})&limit=1000`);
@@ -129,8 +136,8 @@ export function makeMypage({ db, pages, learn, names }) {
       apps = PUBLISH_APPS.filter((a) => open.has(a.target) && APP_URLS[a.target]).map((a) => ({ name: a.name, url: APP_URLS[a.target] }));
     }
     let name = customer.name || "";
-    try { const idx = await names(env); name = idx.byEmail.get(String(email || "").toLowerCase()) || name; } catch { /* 呼び名が読めなければ台帳の名前 */ }
-    return { name, next: pickNext(lib.programs || [], order), apps, news: news || null, programs: lib.programs || [], views, fresh: await freshIds(env) };
+    try { if (idx) name = idx.byEmail.get(String(email || "").toLowerCase()) || name; } catch { /* 呼び名が読めなければ台帳の名前 */ }
+    return { name, next: pickNext(lib.programs || [], order), apps, news: news || null, programs: lib.programs || [], views, fresh };
   }
   // 新しく入った順のコンテンツの番号（見られるかは呼ぶ側で絞る）
   async function freshIds(env) {
