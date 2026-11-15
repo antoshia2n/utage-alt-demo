@@ -1595,6 +1595,25 @@ async function handleApi(request, env, url) {
     if (path === "/api/admin/contracts/sign-request" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await contractSign.request(env, b, a.email); return json(r, r.ok ? 200 : 400); }
     if (path === "/api/admin/contracts/sign-cancel" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await contractSign.cancel(env, b, a.email); return json(r, r.ok ? 200 : 400); }
     if (path === "/api/admin/contracts/verify" && method === "GET") { const r = await contracts.verify(env, url.searchParams.get("id")); return json(r, r.ok ? 200 : 400); }
+    // スキルの棚の便 1（2026-11-16 Naoki OK 00:36）：スキル・レシピ・仮説。正本は GitHub の shia2n-skills、読む・書くのは shia2n-mcp の SkillsReader（鍵はあちらだけ）
+    if (path === "/api/admin/skills" || path.startsWith("/api/admin/skills/")) {
+      if (!env.SKILLS || typeof env.SKILLS.shelf !== "function") return json({ ok: false, error: "no_binding" }, 503);
+      if (path === "/api/admin/skills" && method === "GET") { const r = await env.SKILLS.shelf(); return json(r, r && r.ok ? 200 : 502, { "cache-control": "no-store" }); }
+      if (path === "/api/admin/skills/recipe" && method === "POST") {
+        const b = await request.json().catch(() => ({}));
+        const uses = Array.isArray(b.uses) ? b.uses.slice(0, 12).map((u) => ({ skill: String(u && u.skill || ""), pin: ["keep", "now", "latest"].includes(u && u.pin) ? u.pin : "keep", strength: u && u.strength ? String(u.strength).slice(0, 10) : null })) : [];
+        const r = await env.SKILLS.saveRecipe({ name: String(b.name || ""), create: !!b.create, purpose: b.purpose == null ? null : String(b.purpose), uses }, a.email);
+        return json(r, r && r.ok ? 200 : 400);
+      }
+      if (path === "/api/admin/skills/hypothesis" && method === "POST") {
+        const b = await request.json().catch(() => ({}));
+        const r = b.action === "add" ? await env.SKILLS.addHypothesis({ title: String(b.title || ""), words: String(b.words || ""), target: b.target ? String(b.target) : undefined })
+          : b.action === "update" ? await env.SKILLS.updateHypothesis({ id: String(b.id || ""), status: b.status ? String(b.status) : undefined, note: b.note ? String(b.note) : undefined })
+          : { ok: false, error: "bad_action" };
+        return json(r, r && r.ok ? 200 : 400);
+      }
+      return json({ ok: false, error: "not_found" }, 404);
+    }
     // 実績の便 1（2026-11-13 Naoki OK 16:50）：実績の棚
     if (path === "/api/admin/results" && method === "GET") return json(await results.list(env, { whose: url.searchParams.get("whose") || "", folder: url.searchParams.get("folder"), inbox: url.searchParams.get("inbox") || "", q: url.searchParams.get("q") || "", publish: url.searchParams.get("publish") || "" }));
     if (path === "/api/admin/results/upload" && method === "POST") {

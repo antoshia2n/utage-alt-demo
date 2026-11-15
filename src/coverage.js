@@ -135,6 +135,11 @@ export const COVERAGE = {
   "POST /api/admin/contracts/cancel": ["cancel_contract"],
   "GET /api/admin/contracts/export": H("まとめてダウンロード（ZIP）を Naoki の手元へ保存する画面の受け口（AI は list_contracts と get_contract で読める）"),
   // 実績の便 1（2026-11-13）：AI の道具（探す・1 件を開く・リンクで入れる）は便 3 で足す。それまでは画面だけ
+  // スキルの棚の便 1（2026-11-16）：AI は shia2n-mcp の skills__list・recipes__list・recipes__get・hypotheses__add・hypotheses__update で同じ正本を直接読む・書く
+  "ANY /api/admin/skills": H("スキルの棚の受け口のまとめ（つながりが無いときに 503 を返すだけ）"),
+  "GET /api/admin/skills": H("棚の画面の一覧。AI は shia2n-mcp の skills__list・recipes__list で同じ正本を読む"),
+  "POST /api/admin/skills/recipe": H("レシピの組み合わせを画面で保存する。AI は正本を recipes__get で読む（書くのは Naoki の画面）"),
+  "POST /api/admin/skills/hypothesis": H("仮説を画面で足す・状態を変える。AI は shia2n-mcp の hypotheses__add・hypotheses__update で同じ正本に書く"),
   "GET /api/admin/results": ["find_results", "get_result"],
   "POST /api/admin/results/upload": H("手元の画像を選んで上げる（ファイルは Naoki のパソコンにある。ドライブの受け箱は実績の便 2）"),
   "POST /api/admin/results/link": ["add_result_link"],
