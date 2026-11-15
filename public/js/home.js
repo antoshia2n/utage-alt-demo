@@ -158,8 +158,9 @@ const isArchive = (p) => /セミナーアーカイブ/.test(p.title || "");
 export function genres(programs, flat) {
   const byId = new Map(flat.map((x) => [x.id, x]));
   return (programs || []).filter((p) => !isArchive(p)).map((p) => {
-    const ls = p.courses.flatMap((c) => c.lessons).filter((l, i, a) => a.findIndex((m) => m.id === l.id) === i);
-    const pick = (l) => byId.get(l.id);
+    const ls = p.courses.flatMap((c) => c.lessons.map((l) => ({ ...l, _course: c.title }))).filter((l, i, a) => a.findIndex((m) => m.id === l.id) === i);
+    // カードの下の字と種類の札は、このジャンルの中の呼び方にする（アーカイブの棚の名前を出さない・2026-11-15）
+    const pick = (l) => { const x = byId.get(l.id); return x && { ...x, course: l._course || x.course, kind: (l.seq || 0) >= SEM_SEQ ? "セミナー" : "講座" }; };
     return {
       id: p.id, title: p.title, sub: p.courses.map((c) => c.title).filter((t) => t && t !== p.title).join("・"),
       courses: ls.filter((l) => (l.seq || 0) < SEM_SEQ).sort((a, b) => (a.seq || 0) - (b.seq || 0)).map(pick).filter(Boolean),
