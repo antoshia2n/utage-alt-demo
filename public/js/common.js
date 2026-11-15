@@ -20,14 +20,48 @@ export function getClient() {
   return clientPromise;
 }
 
+// 押したボタンが「動いている」と分かるように（2026-11-15 Naoki「ボタンタップの挙動がよくわからない。押せた？ってなりがち」）
+//  ・押した直後（0.8 秒以内）に始まった書き込み（GET 以外）のあいだ、そのボタンを「処理中…」にして二度押しを止める
+//  ・終わったら元に戻す（画面が描き直されてボタンが消えていれば何もしない）。結果の一言は各画面の通知がこれまでどおり出す
+//  ・画面の中の箱（shadow DOM）のボタンも拾う。すべての画面で同じ動きにするため、ここ 1 か所に置く
+let lastBtn = null, lastAt = 0;
+if (typeof document !== "undefined") {
+  document.addEventListener("click", (e) => {
+    const b = (e.composedPath ? e.composedPath() : [e.target]).find((n) => n && n.tagName === "BUTTON");
+    if (b && !b.disabled) { lastBtn = b; lastAt = Date.now(); }
+  }, true);
+}
+function busyStart(method) {
+  if (method === "GET" || !lastBtn || Date.now() - lastAt > 800 || !lastBtn.isConnected) return null;
+  const b = lastBtn; lastBtn = null;
+  if (b.dataset.busy) return null;
+  b.dataset.busy = "1";
+  const keep = { html: b.innerHTML, w: b.style.minWidth, op: b.style.opacity, cur: b.style.cursor, dis: b.disabled };
+  b.style.minWidth = b.offsetWidth + "px"; // 字が変わっても幅を動かさない（隣のボタンがずれないため）
+  b.disabled = true; b.setAttribute("aria-busy", "true");
+  b.style.opacity = ".7"; b.style.cursor = "progress";
+  b.textContent = "処理中…";
+  return () => {
+    delete b.dataset.busy;
+    if (!b.isConnected) return;
+    b.innerHTML = keep.html; b.style.minWidth = keep.w; b.style.opacity = keep.op; b.style.cursor = keep.cur;
+    b.disabled = keep.dis; b.removeAttribute("aria-busy");
+  };
+}
+
 export async function api(path, { method = "GET", body, token } = {}) {
   const headers = { "content-type": "application/json" };
   if (token) headers.authorization = `Bearer ${token}`;
-  const res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
-  const data = await res.json().catch(() => ({ ok: false, error: "bad_response" }));
-  if (!res.ok && data.ok !== false) data.ok = false;
-  data.status = res.status;
-  return data;
+  const done = busyStart(method);
+  try {
+    const res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+    const data = await res.json().catch(() => ({ ok: false, error: "bad_response" }));
+    if (!res.ok && data.ok !== false) data.ok = false;
+    data.status = res.status;
+    return data;
+  } finally {
+    if (done) done();
+  }
 }
 
 export const SOURCE_LABEL = { x: "X", note: "note", youtube: "YouTube", direct: "直接", other: "その他" };

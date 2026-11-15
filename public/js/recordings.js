@@ -258,7 +258,7 @@ export function mountRecordings(host, { getToken }) {
   async function setRoute(id, body, label) {
     const r = await call("/route", "POST", { id, ...body });
     if (!r.ok) { undo(errText(r), null); return; }
-    await load();
+    load(); // 一言を先に出し、棚の読み直しは後ろで（押せたと分かるまでを短くするため・2026-11-15）
     undo(label, null);
   }
   function openRoute() {
@@ -361,14 +361,14 @@ export function mountRecordings(host, { getToken }) {
     busy = false;
     if (!r.ok) { undo(errText(r), null); return; }
     const ok = await copy(r.link);
-    await load();
+    load(); // 一言を先に出し、棚の読み直しは後ろで（押せたと分かるまでを短くするため・2026-11-15）
     undo(r.created ? (ok ? "リンクを発行してコピーしました" : "リンクを発行しました（コピーは詳細から）") : (ok ? "リンクをコピーしました" : "リンクは詳細にあります"), null);
   }
   async function setMeta(items, label, undoItems) {
     const before = undoItems || items.map((m) => { const r = D.rows.find((x) => x.id === m.id); return { id: m.id, ...(m.kai !== undefined ? { kai: r.kai } : {}), ...(m.title !== undefined ? { title: r.title } : {}), ...(m.labels_add ? { labels_remove: m.labels_add.filter((l) => !(r.labels || []).some((x) => lkey(x) === lkey(l))) } : {}) }; });
     const r = await call("/meta", "POST", { items });
     if (!r.done) { undo(r.refused?.[0]?.why || errText(r), null); return; }
-    await load();
+    load(); // 一言を先に出し、棚の読み直しは後ろで（押せたと分かるまでを短くするため・2026-11-15）
     undo(`${label}（${r.done} 本）${r.refused?.length ? `・${r.refused.length} 本は変えられませんでした` : ""}`, async () => { await call("/meta", "POST", { items: before }); });
   }
 
@@ -520,7 +520,7 @@ export function mountRecordings(host, { getToken }) {
     const title = $("#up-title").value.trim() || upFile.name;
     upState = null; closeUpload();
     shelf = "all"; filters.add("up");
-    await load();
+    load(); // 一言を先に出し、棚の読み直しは後ろで（押せたと分かるまでを短くするため・2026-11-15）
     undo(`「${title}」をアップロードしました（棚に「アップロード」で並びます）`, null);
   }
   async function abortUpload() {
@@ -568,14 +568,15 @@ export function mountRecordings(host, { getToken }) {
       const r = await call("/route-run", "POST", {});
       busy = false;
       if (!r.ok) { t.disabled = false; undo(errText(r), null); return; }
-      await load();
+      load(); // 一言を先に出し、棚の読み直しは後ろで（押せたと分かるまでを短くするため・2026-11-15）
       undo(r.put ? `会員サイトに ${r.put} 本入れて、メールで知らせました` : r.already ? "すでに入っていました（印を付けました）" : "いま入れられる録画はありませんでした", null); return;
     }
     const pb = t.closest("[data-pub]");
     if (pb) {
       const r = await call("/publish", "POST", { content_id: pb.dataset.pub });
       if (!r.ok) { undo(errText(r), null); return; }
-      await load();
+      pb.textContent = "● 公開しました"; pb.disabled = true; // 棚を読み直すまでの間も、押せたと分かるように
+      load(); // 一言を先に出し、棚の読み直しは後ろで（押せたと分かるまでを短くするため・2026-11-15）
       undo("公開しました（生徒の画面に出ます）", async () => { await call("/publish", "POST", { content_id: pb.dataset.pub, status: "draft" }); }); return;
     }
     if (t.id === "sm-close" || t.id === "sm-cancel" || t.id === "sm-scrim") return closeSite();
@@ -630,7 +631,7 @@ export function mountRecordings(host, { getToken }) {
       const r = await call("/thumb", "POST", { id: sel, big: $("#d-tbig").value, sub: $("#d-tsub").value });
       busy = false;
       if (!r.ok) { undo(errText(r), null); return; }
-      await load();
+      load(); // 一言を先に出し、棚の読み直しは後ろで（押せたと分かるまでを短くするため・2026-11-15）
       undo(r.thumb ? "サムネの言葉を編集で保存しました" : "サムネの言葉を AI に作り直してもらいます（5 分ほど）", null);
       return;
     }
@@ -660,14 +661,14 @@ export function mountRecordings(host, { getToken }) {
       const was = r.share.state === "stop";
       const res = await call("/share", "POST", { id: r.id, stopped: t.checked });
       if (!res.ok) { undo(errText(res), null); return; }
-      await load();
+      load(); // 一言を先に出し、棚の読み直しは後ろで（押せたと分かるまでを短くするため・2026-11-15）
       undo(t.checked ? "共有を止めました（次に開いた人から見られません）" : "共有を再開しました", async () => { await call("/share", "POST", { id: r.id, stopped: was }); });
     }
     if (t.id === "d-exp") {
       const was = r.share.expires || "";
       const res = await call("/share", "POST", { id: r.id, expires: t.value || "" });
       if (!res.ok) { undo(errText(res), null); return; }
-      await load();
+      load(); // 一言を先に出し、棚の読み直しは後ろで（押せたと分かるまでを短くするため・2026-11-15）
       undo(t.value ? `期限を ${t.value} にしました` : "期限を外しました", async () => { await call("/share", "POST", { id: r.id, expires: was }); });
     }
   });
