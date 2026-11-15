@@ -52,7 +52,7 @@ test("YouTube もオン：上がるまで待ち、上がったら YouTube の住
   const r2 = await recordings.routeRun(up.env, up.site, up.notify);
   assert.equal(r2.put, 1);
   assert.equal(up.saved[0].video_url, "https://www.youtube.com/watch?v=abcdefghijk");
-  assert.match(up.mails[0].text, /YouTube（限定公開）を埋め込み/);
+  assert.match(up.mails[0].text, /録画の棚（R2）から流す（YouTube（限定公開）にも切り替えられる）/);
 });
 
 test("会員サイトがオフ・入れ終えた録画・入れ先が無い録画は入れない", async () => {

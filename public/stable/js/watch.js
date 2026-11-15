@@ -81,6 +81,7 @@ export function makeWatch(ctx) {
             <button type="button" class="wt-pill" id="wt-done" aria-pressed="false">${ICON.check}<span>視聴済み</span></button>
             <button type="button" class="wt-pill" id="wt-lab">${ICON.tag}<span>ラベル</span></button>
             <button type="button" class="wt-pill" id="wt-link">${ICON.link}<span>会員用リンクをコピー</span></button>
+            <button type="button" class="wt-pill" id="wt-src" hidden><span>YouTube で見る</span></button>
           </div>
           <div class="wt-labs" id="wt-labs"></div>
           <div id="wt-cards"></div>
@@ -291,6 +292,28 @@ export function makeWatch(ctx) {
   }
 
   // ---------- 動画 ----------
+  // 2026-11-16：R2 と YouTube の両方がある回だけ、切り替えのボタンを出す
+  let onYt = false;
+  function drawSrc() {
+    const b = $("wt-src"); if (!b) return;
+    const both = !!(curL && curL.rec && curL.youtube_id);
+    b.hidden = !both;
+    b.querySelector("span").textContent = onYt ? "録画の棚で見る" : "YouTube で見る";
+  }
+  function switchSrc() {
+    if (!curL || !curL.rec || !curL.youtube_id) return;
+    const at = video ? Math.floor(video.currentTime) : null;
+    if (!onYt) {
+      if (video) { video.pause(); video.removeAttribute("src"); video.load(); }
+      video = null; rec = null;
+      $("wt-tools").hidden = true; $("wt-stamp").hidden = true; $("wt-qat-box").hidden = true;
+      $("wt-stage").innerHTML = ytFrame(curL, at, true);
+      onYt = true; drawSrc(); drawTabs(); drawCues(); drawToc();
+    } else {
+      onYt = false; drawSrc();
+      loadRec(curL, null, openSeq);
+    }
+  }
   const ytFrame = (l, start, auto) => `<div class="wt-frame"><iframe src="https://www.youtube-nocookie.com/embed/${esc(l.youtube_id)}${start || auto ? `?start=${Math.floor(start || 0)}&autoplay=1` : ""}" title="${esc(l.title)} の動画" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe></div>`;
   async function loadRec(l, start, seq) {
     $("wt-stage").innerHTML = '<div class="wt-frame wt-wait">読み込んでいます…</div>';
@@ -299,6 +322,7 @@ export function makeWatch(ctx) {
     if (!r || !r.ok || !r.video) {
       rec = null;
       $("wt-stage").innerHTML = l.youtube_id ? ytFrame(l, start) : '<div class="wt-frame wt-wait">いまは再生できません。読み込み直してください</div>';
+      onYt = !!l.youtube_id; drawSrc();
       drawTabs(); return;
     }
     rec = { cues: Array.isArray(r.cues) ? r.cues : [], chapters: Array.isArray(r.chapters) ? r.chapters : [], summary: r.summary || "", date: r.date || "" };
@@ -400,9 +424,11 @@ export function makeWatch(ctx) {
     $("wt-meta").textContent = [l.minutes ? l.minutes + " 分" : "", curL.kind || ""].filter(Boolean).join("・");
     $("wt-tq").value = "";
     $("wt-prev").disabled = !neighbor(-1); $("wt-next").disabled = !neighbor(1);
-    // 出し先のスイッチ（2026-11-12 Naoki）：YouTube に上がっている録画は YouTube の埋め込みを先に出す。無ければ録画の棚（R2）から流す
-    if (l.youtube_id) $("wt-stage").innerHTML = ytFrame(l, start, start != null);
-    else if (l.rec) loadRec(l, start, seq);
+    // 2026-11-16 Naoki「R2 優先で、サブで YouTube も」：録画の棚（R2）を先に流す。YouTube もある回は「YouTube で見る」で切り替えられる。
+    // R2 が読めないときは YouTube へ落とす（loadRec の中）。棚に無い回は YouTube だけ
+    onYt = false; drawSrc();
+    if (l.rec) loadRec(l, start, seq);
+    else if (l.youtube_id) $("wt-stage").innerHTML = ytFrame(l, start, start != null);
     else $("wt-stage").innerHTML = '<div class="wt-frame wt-wait">この教材は文章です。下の要約と資料を見てください</div>';
     drawTabs(); drawCues(); drawToc(); drawCards(); paintMark(); drawNav();
     root.querySelector(".wt-les.on")?.scrollIntoView({ block: "nearest" });
@@ -442,6 +468,7 @@ export function makeWatch(ctx) {
   $("wt-star").onclick = () => { const m = markOf(cur); saveMark(cur, { star: !m.star }, m.star ? "お気に入りから外しました" : "お気に入りに入れました"); };
   $("wt-done").onclick = () => { const m = markOf(cur); saveMark(cur, { done: !m.done }, m.done ? "未視聴に戻しました" : "視聴済みにしました"); };
   $("wt-lab").onclick = () => labelWin(false);
+  $("wt-src").onclick = switchSrc;
   $("wt-link").onclick = async () => {
     const t = video ? Math.floor(video.currentTime) : 0;
     const link = `${location.origin}/app#lesson/${encodeURIComponent(cur)}${t > 0 ? "/t" + t : ""}`;
