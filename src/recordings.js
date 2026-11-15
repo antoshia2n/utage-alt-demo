@@ -223,6 +223,9 @@ export const recordings = {
       return res;
     }),
 
+  /** サムネの言葉（型 A・2026-11-15）を手で編集する。big を空にすると AI に作り直してもらう */
+  thumbSet: (env, id, b = {}) => safe(() => zoom(env).thumb_set(String(id || ""), { big: String(b.big ?? ""), sub: String(b.sub ?? "") })),
+
   suggest: (env, limit) => safe(() => zoom(env).suggest_kai(Math.max(1, Math.min(20, Number(limit) || 8)))),
 
   /**
