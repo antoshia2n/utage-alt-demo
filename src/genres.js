@@ -25,6 +25,21 @@ export function dateSeq(c) {
   return /^\d{8}$/.test(d) ? Number(d) : 20000101;
 }
 
+// AI へ渡すジャンルの中身（2026-11-15 開発部が既存 290 本を精査して決めた線引き）
+const HINT = [
+  [/習慣力/, "習慣化・自己管理・健康・記録・先延ばし・継続の仕組み"],
+  [/思考力/, "思考整理・問い・フレームワーク・目標設定と計画・読書とインプット・マインドマップ"],
+  [/マインドセット/, "やる気・行動力・継続の心構え・ブレない心・成果が出る人の考え方"],
+  [/AI活用力/, "ChatGPT などの AI ツールの使い方・AI で時短する方法"],
+  [/仕事力/, "タスクとスケジュール管理・メモ術・作業の生産性"],
+  [/ライティング力/, "言語化・文章術・コピー・ストーリー・伝え方と話し方（X や記事に限らない書く力）"],
+  [/影響力/, "X・SNS の運用・ポスト・図解・X 記事・バズ・フォロワー獲得・X の収益化"],
+  [/ビジネスモデル/, "商品設計・マネタイズ・オンラインビジネスの全体像・事業戦略・note やメンバーシップの設計"],
+  [/マーケティング力/, "ペルソナ・顧客理解・リサーチ・ファン化・ファネル・プロモーション・ポジショニング"],
+  [/セールス力/, "セールスライティング・LP・オファー・セミナーセールス・販売の流れ"],
+];
+const hintOf = (t) => (HINT.find(([re]) => re.test(t)) || [null, ""])[1];
+
 export function makeGenres({ db }) {
   const get = (env, q) => db(env, "GET", q);
 
@@ -71,12 +86,12 @@ export function makeGenres({ db }) {
     if (!env.AI || typeof env.AI.run !== "function") return { ok: false, error: "no_ai" };
     const [{ genres, pending }, sug] = await Promise.all([state(env), readSug(env)]);
     const todo = pending.filter((c) => !sug[c.id]).slice(0, Math.max(1, Math.min(20, Number(limit) || 8)));
-    const menu = genres.map((g, i) => `${i + 1}. ${g.title}（${g.course_title}）`).join("\n");
+    const menu = genres.map((g, i) => `${i + 1}. ${g.title}：${hintOf(g.title) || g.course_title}`).join("\n");
     let made = 0, failed = 0, lastErr = "";
     for (const c of todo) {
       try {
         const r = await env.AI.run(AI_MODEL, { temperature: 0.1, max_tokens: 160, messages: [
-          { role: "system", content: `会員サイトの動画を、次のジャンルのどれか 1 つに仕分ける。\n${menu}\n答えは JSON だけ：{"n": ジャンルの番号, "why": "理由を 30 文字以内"}` },
+          { role: "system", content: `会員サイトの動画を、次のジャンルのどれか 1 つに仕分ける。題名の言葉（「マインド」「ライティング」など）に引っぱられず、動画で身につく力で選ぶ。\n${menu}\n答えは JSON だけ：{"n": ジャンルの番号, "why": "理由を 30 文字以内"}` },
           { role: "user", content: `題名：${c.title}\n要約：${String(c.summary || "").slice(0, 600)}` },
         ] });
         const text = typeof r?.response === "string" ? r.response : JSON.stringify(r?.response ?? r?.result?.response ?? "");
