@@ -1240,39 +1240,52 @@ async function handleApi(request, env, url) {
         // 2026-11-05：個別相談の予約は、マイページを開く前の生徒（ご契約だけの画面）でも、種類の権利が合えば出す
         booking_ready: await booking.forMember(env, customer, sa.ent, sa.admin).then((x) => x.ready).catch(() => false) });
     }
-    const lib = await learn.lessonsFor(env, customer, v.email);
-    const announcements = await db(env, "GET", newsQuery(env, 20)); // 便 25：下書き・取り下げ・まだ日時の来ていないものは出さない
-    const viewed = await db(env, "GET", `events?select=payload,occurred_at&customer_id=eq.${customer.id}&type=eq.lesson_viewed&order=occurred_at.desc&limit=3000`);
+    // 2026-11-15 Naoki「生徒側の会員サイトが重い」：ここまで 1 つずつ順に待っていた読み込みを、互いに関係しないものは同時に読む。
+    // かかった時間は Server-Timing に出す（ブラウザの開発ツールで、どれが重いかを見るため）
+    const T = {};
+    const timed = (name, p) => { const t0 = Date.now(); return Promise.resolve(p).then((x) => { T[name] = Date.now() - t0; return x; }); };
+    const ent = sa.ent;
+    const tier = homeTier(sa.admin, ent);
+    const [lib, announcements, viewed, roomEv, community, openTargets, markList, homeRows, referral, bookingReady, goalsReady] = await Promise.all([
+      timed("lessons", learn.lessonsFor(env, customer, v.email)),
+      timed("news", db(env, "GET", newsQuery(env, 20))), // 便 25：下書き・取り下げ・まだ日時の来ていないものは出さない
+      timed("viewed", db(env, "GET", `events?select=payload,occurred_at&customer_id=eq.${customer.id}&type=eq.lesson_viewed&order=occurred_at.desc&limit=3000`)),
+      timed("room", roomEvents(env, customer.id)),
+      timed("community", communityFor(env, ent, v.email)),
+      timed("apps", sa.admin ? null : openAppTargets(env, ent)),
+      timed("marks", marks.all(env, customer.id)), // 便 B2：お気に入り・視聴済み・自分のラベル
+      timed("home_rows", (async () => { try { const h = await site.homeRows(env); return (h.rows && h.rows[tier]) || null; } catch { return null; } })()),
+      timed("referral", refer.mine(env, customer, url.origin)), // 便 8g-2：自分の紹介のリンクと数（紹介した人の名前は出さない）
+      timed("booking", booking.forMember(env, customer, ent, sa.admin).then((x) => x.ready).catch(() => false)),
+      timed("goals", goals.isStudent(env, customer.id).catch(() => false)),
+    ]);
     const viewedIds = [...new Set(viewed.map((e) => e.payload && e.payload.lesson_id).filter(Boolean))];
     // 生徒のホーム（2026-11-04）：見た記録を新しい順に（学びの記録・続きから・おすすめに使う）
     const views = viewed.filter((e) => e.payload && e.payload.lesson_id).slice(0, 1000).map((e) => ({ id: e.payload.lesson_id, at: e.occurred_at }));
-    const room = roomState(await roomEvents(env, customer.id));
-    const ent = sa.ent;
-    const community = await communityFor(env, ent, v.email);
+    const room = roomState(roomEv);
+    const open = sa.admin ? null : new Set(openTargets || []);
     return json({
-      ok: true, access: "full", admin: sa.admin, apps: sa.admin ? [] : await openAppTargets(env, ent),
+      ok: true, access: "full", admin: sa.admin, apps: sa.admin ? [] : openTargets,
       // 生徒の画面の「アプリ」（2026-11-04）：公開しているアプリの全部と、その人が開けるか。管理者は全部開ける
-      app_catalog: await (async () => { const open = sa.admin ? null : new Set(await openAppTargets(env, ent));
-        return PUBLISH_APPS.filter((a) => APP_URLS[a.target]).map((a) => ({ target: a.target, name: a.name, url: APP_URLS[a.target], open: !open || open.has(a.target) })); })(),
+      app_catalog: PUBLISH_APPS.filter((a) => APP_URLS[a.target]).map((a) => ({ target: a.target, name: a.name, url: APP_URLS[a.target], open: !open || open.has(a.target) })),
       me: { name: customer.name, email: customer.email, source: customer.source },
       lessons: lib.flat, announcements, viewed: viewedIds, views,
-      marks: await marks.all(env, customer.id), // 便 B2：お気に入り・視聴済み・自分のラベル
+      marks: markList,
       // 版（ホームの段の並びを決める）：メンシプだけの人は mem、モニターは mon、ほかは lab
-      tier: homeTier(sa.admin, ent),
+      tier,
       // 版ごとのホームの段（管理画面で決めた並び。空なら決まった並び）
-      home_rows: await (async () => { try { const h = await site.homeRows(env); return (h.rows && h.rows[homeTier(sa.admin, ent)]) || null; } catch { return null; } })(),
+      home_rows: homeRows,
       library: { source: lib.source, member: lib.member, lesson_count: lib.lesson_count, programs: lib.programs },
       room_unread: room.unreadForStudent,
       entitlement: ent,
       community: community.state,
       community_url: community.url,
-      // 便 8g-2：自分の紹介のリンクと数（紹介した人の名前は出さない）
-      referral: await refer.mine(env, customer, url.origin),
+      referral,
       // 予約（2026-11-05）：その人の権利で予約できる個別相談の種類（audience=member）が 1 つでもあれば、左のメニューに出る
-      booking_ready: await booking.forMember(env, customer, ent, sa.admin).then((x) => x.ready).catch(() => false),
+      booking_ready: bookingReady,
       // 目標タブ（2026-10-30）：しあらぼ管理の生徒に結ばれた人だけ（ゲストには出ない）
-      goals_ready: await goals.isStudent(env, customer.id).catch(() => false),
-    });
+      goals_ready: goalsReady,
+    }, 200, { "server-timing": Object.entries(T).map(([k, ms]) => `${k};dur=${ms}`).join(", ") });
   }
 
   // 目標タブ（2026-10-30）：自分の目標を読む・日報と週報を書く。マイページの全部が開く人で、しあらぼ管理の生徒に結ばれた人だけ
