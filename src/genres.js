@@ -66,23 +66,23 @@ export function makeGenres({ db }) {
     const [{ genres, pending }, sug] = await Promise.all([state(env), readSug(env)]);
     const todo = pending.filter((c) => !sug[c.id]).slice(0, Math.max(1, Math.min(20, Number(limit) || 8)));
     const menu = genres.map((g, i) => `${i + 1}. ${g.title}（${g.course_title}）`).join("\n");
-    let made = 0, failed = 0;
+    let made = 0, failed = 0, lastErr = "";
     for (const c of todo) {
       try {
         const r = await env.AI.run(AI_MODEL, { temperature: 0.1, max_tokens: 160, messages: [
           { role: "system", content: `会員サイトの動画を、次のジャンルのどれか 1 つに仕分ける。\n${menu}\n答えは JSON だけ：{"n": ジャンルの番号, "why": "理由を 30 文字以内"}` },
           { role: "user", content: `題名：${c.title}\n要約：${String(c.summary || "").slice(0, 600)}` },
         ] });
-        const text = String((r && (r.response ?? r.result?.response)) || "");
+        const text = typeof r?.response === "string" ? r.response : JSON.stringify(r?.response ?? r?.result?.response ?? "");
         const j = JSON.parse((text.match(/\{[\s\S]*\}/) || ["{}"])[0]);
         const g = genres[Number(j.n) - 1];
-        if (!g) { failed++; continue; }
+        if (!g) { failed++; lastErr = "no_genre:" + text.slice(0, 80); continue; }
         sug[c.id] = { program_id: g.program_id, title: g.title, why: String(j.why || "").slice(0, 60), at: new Date().toISOString() };
         made++;
-      } catch { failed++; }
+      } catch (e) { failed++; lastErr = String((e && e.message) || e).slice(0, 160); }
     }
     if (made) await writeSug(env, sug);
-    return { ok: true, looked: todo.length, made, failed, remaining: pending.filter((c) => !sug[c.id]).length };
+    return { ok: true, looked: todo.length, made, failed, ...(lastErr ? { last_error: lastErr } : {}), remaining: pending.filter((c) => !sug[c.id]).length };
   }
 
   /** 承認：items = [{ id: コンテンツ, program_id: ジャンル }]。そのジャンルの最初のコースに、収録日の並びの番号で入れる */
