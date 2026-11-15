@@ -625,6 +625,13 @@ export function makeBooking(h) {
 
   // ---- 会員の予約（マイページ・ログインした人）----
   // その人が予約できる種類と空き時間・自分のこれからの予約
+  // 生徒の画面を開いたときに要るのは「予約できる種類が 1 つでもあるか」だけ（2026-11-15：forMember は空き枠をカレンダーから
+  // 種類ごとに順に読むので 7 秒かかり、会員サイトを開くたびに待たせていた）。空き枠は予約の画面を開いたときに forMember で読む
+  async function readyFor(env, customer, ent, admin) {
+    const types = (await db(env, "GET", "b_booking_types?select=*&audience=eq.member&archived_at=is.null&order=created_at.asc")).filter((t) => canBook(t, ent, admin, customer.id));
+    return types.length > 0;
+  }
+
   async function forMember(env, customer, ent, admin, at = Date.now()) {
     const types = (await db(env, "GET", "b_booking_types?select=*&audience=eq.member&archived_at=is.null&order=created_at.asc")).filter((t) => canBook(t, ent, admin, customer.id));
     const mine = (await bookings(env)).filter((b) => b.customer_id === customer.id && Date.parse(b.slot) > at).sort((a, b) => a.slot.localeCompare(b.slot));
@@ -737,5 +744,5 @@ export function makeBooking(h) {
     return { ok: r.result === "sent", result: r.result, to: p.email, error: r.error || r.reason || null };
   }
 
-  return { list, get, set, getSlots, publicSlots, book, run, forPlan, forMember, memberBook, memberCancel, listTemplates, setTemplate, testTemplate };
+  return { list, get, set, getSlots, publicSlots, book, run, forPlan, forMember, readyFor, memberBook, memberCancel, listTemplates, setTemplate, testTemplate };
 }
