@@ -2,10 +2,9 @@
 //  ・ジャンル＝セミナーアーカイブ以外のプログラム（今ある「○○力」）。生徒の教材の「ジャンルから探す」がそのまま読む
 //  ・セミナーアーカイブにしか入っていないコンテンツを「仕分け前」として並べ、AI（Workers AI）がどのジャンルに入るかの案を出す
 //  ・Naoki が承認すると、そのジャンルの最初のコースに入る（並びの番号は収録日の 8 桁＝生徒の画面では「関連するセミナー」に並ぶ）
-//  ・案は表 b_settings の 1 行（key=genre_suggest）に置く。承認するまで生徒の画面は何も変わらない
+//  ・案は R2（IMAGES）の site/genre_suggest.json に置く。承認するまで生徒の画面は何も変わらない
 import { AI_MODEL } from "./chatai.js";
 
-const KEY = "genre_suggest";
 const T = { programs: "b_site_programs", courses: "b_site_courses", contents: "b_site_contents", links: "b_site_content_courses" };
 const isArchive = (title) => /セミナーアーカイブ/.test(String(title || ""));
 // ジャンル＝名前が「○○力」のプログラム（言語化ライティングカレッジのような講座の一式は入れない）
@@ -25,11 +24,14 @@ export function dateSeq(c) {
 export function makeGenres({ db }) {
   const get = (env, q) => db(env, "GET", q);
 
+  // 案の置き場は R2（IMAGES）の 1 つのファイル（b_settings は 1 行 500 文字までで入らないため）
+  const SUG_KEY = "site/genre_suggest.json";
   async function readSug(env) {
-    try { const [r] = await get(env, `settings?select=value&key=eq.${KEY}`); return r && r.value ? JSON.parse(r.value) : {}; } catch { return {}; }
+    try { const o = env.IMAGES && (await env.IMAGES.get(SUG_KEY)); return o ? JSON.parse(await o.text()) : {}; } catch { return {}; }
   }
   async function writeSug(env, v) {
-    await db(env, "POST", "settings?on_conflict=key", [{ key: KEY, value: JSON.stringify(v), updated_at: new Date().toISOString(), updated_by: "genres" }], "resolution=merge-duplicates,return=minimal");
+    if (!env.IMAGES) throw new Error("no_r2");
+    await env.IMAGES.put(SUG_KEY, JSON.stringify(v), { httpMetadata: { contentType: "application/json" } });
   }
 
   async function state(env) {
