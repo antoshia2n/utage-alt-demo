@@ -1238,7 +1238,7 @@ async function handleApi(request, env, url) {
         lessons: [], announcements: [], viewed: [], library: { source: "manabu", member: false, lesson_count: 0, programs: [] },
         room_unread: 0, entitlement: sa.ent, community: null, community_url: null, referral: null,
         // 2026-11-05：個別相談の予約は、マイページを開く前の生徒（ご契約だけの画面）でも、種類の権利が合えば出す
-        booking_ready: await booking.forMember(env, customer, sa.ent, sa.admin).then((x) => x.ready).catch(() => false) });
+        booking_ready: await booking.readyFor(env, customer, sa.ent, sa.admin).catch(() => false) });
     }
     // 2026-11-15 Naoki「生徒側の会員サイトが重い」：ここまで 1 つずつ順に待っていた読み込みを、互いに関係しないものは同時に読む。
     // かかった時間は Server-Timing に出す（ブラウザの開発ツールで、どれが重いかを見るため）
@@ -1256,7 +1256,7 @@ async function handleApi(request, env, url) {
       timed("marks", marks.all(env, customer.id)), // 便 B2：お気に入り・視聴済み・自分のラベル
       timed("home_rows", (async () => { try { const h = await site.homeRows(env); return (h.rows && h.rows[tier]) || null; } catch { return null; } })()),
       timed("referral", refer.mine(env, customer, url.origin)), // 便 8g-2：自分の紹介のリンクと数（紹介した人の名前は出さない）
-      timed("booking", booking.forMember(env, customer, ent, sa.admin).then((x) => x.ready).catch(() => false)),
+      timed("booking", booking.readyFor(env, customer, ent, sa.admin).catch(() => false)),
       timed("goals", goals.isStudent(env, customer.id).catch(() => false)),
     ]);
     const viewedIds = [...new Set(viewed.map((e) => e.payload && e.payload.lesson_id).filter(Boolean))];
