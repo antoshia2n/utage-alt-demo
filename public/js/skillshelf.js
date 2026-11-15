@@ -75,8 +75,9 @@ export function mountSkillShelf(host, { getToken }) {
 
   let S = null, tab = "skills", q = "", back = null, dirty = false;
 
-  async function load() {
-    const r = await call("/api/admin/skills");
+  // at：保存の直後に返ったコミット。GitHub は main を 1 分ほど前の形で返すことがあるので、保存の直後はそのコミットで読む
+  async function load(at) {
+    const r = await call("/api/admin/skills" + (at ? `?at=${encodeURIComponent(at)}` : ""));
     if (!r.ok) { $("#main").innerHTML = `<p class="lead">${esc(errText(r.error))}</p>`; return; }
     S = r; draw();
   }
@@ -247,7 +248,7 @@ export function mountSkillShelf(host, { getToken }) {
     if (!r.ok) { showErr(errText(r.error)); return; }
     dirty = false;
     const nm = E.name;
-    await load();
+    await load(r.at);
     say(`レシピ「${nm}」を ${r.version} で保存しました（正本 ${r.commit}）`);
     openRecipe(nm);
   }
@@ -286,7 +287,7 @@ export function mountSkillShelf(host, { getToken }) {
       if (!words) { showErr("中身を入れてください"); $("#h-words").focus(); return; }
       const r = await call("/api/admin/skills/hypothesis", { action: "add", title, words, target: $("#h-target").value.trim() || undefined });
       if (!r.ok) { showErr(errText(r.error)); return; }
-      dirty = false; await load(); say(`仮説 ${r.id} を追加しました（正本 ${r.commit}）`);
+      dirty = false; await load(r.at); say(`仮説 ${r.id} を追加しました（正本 ${r.commit}）`);
     });
     $("#main").querySelectorAll("[data-more]").forEach((b) => b.addEventListener("click", () => { const el = $(`#b-${CSS.escape(b.dataset.more)}`); const open = el.classList.toggle("open"); b.setAttribute("aria-expanded", String(open)); b.textContent = open ? "たたむ ▲" : "全文 ▼"; }));
     $("#main").querySelectorAll("textarea[id^=n-]").forEach((t) => t.addEventListener("input", () => { dirty = true; }));
@@ -297,7 +298,7 @@ export function mountSkillShelf(host, { getToken }) {
       const r = await call("/api/admin/skills/hypothesis", { action: "update", id, status: status || undefined, note: note || undefined });
       b.disabled = false;
       if (!r.ok) { say(errText(r.error)); return; }
-      dirty = false; await load(); say(`仮説 ${r.id} を保存しました（正本 ${r.commit}）`);
+      dirty = false; await load(r.at); say(`仮説 ${r.id} を保存しました（正本 ${r.commit}）`);
       const n = $(`[data-note="${CSS.escape(id)}"]`); if (n) n.focus();
     }));
   }
