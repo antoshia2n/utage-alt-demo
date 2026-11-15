@@ -106,6 +106,11 @@ async function main() {
     $("tab-contract").insertAdjacentHTML("afterbegin", r.member_waiting
       ? '<div class="card"><h3>マイページは準備中です</h3><p class="note" style="margin:0">教材は今までどおり <a href="https://manabu.shia2n.jp/" target="_blank" rel="noopener">学ぶくん ↗</a> で見られます。ご契約の内容と、定期の停止はここからできます。</p></div>'
       : '<div class="card"><h3>この画面はご契約の確認用です</h3><p class="note" style="margin:0">教材・添削ルーム・マイページは、しあらぼの会員向けです。ご契約の内容と、定期の停止はここからできます。</p></div>');
+    // スキルズの管理 3便目（2026-11-15）：会員（マイページの準備中の人）には、生徒に出しているスキルを受け取るカードを出す
+    if (r.member_waiting) {
+      $("tab-contract").firstElementChild.insertAdjacentHTML("afterend", '<div id="skills-slot" class="stack"></div>');
+      import("/js/skills.js").then((m) => m.mountSkills($("skills-slot"), session.access_token)).catch((e) => console.warn("skills", e));
+    }
     $("crumb").textContent = "ご契約";
     document.querySelector('.side [data-tab="contract"]').setAttribute("aria-selected", "true");
     document.querySelector('.side [data-tab="contract"]').addEventListener("click", () => loadContract(session.access_token));
@@ -175,7 +180,7 @@ async function main() {
     if (name === "goals") loadGoals(token);
     if (name === "booking") loadBooking(token);
     if (name === "contract") loadContract(token);
-    if (name === "apps") renderApps(r);
+    if (name === "apps") { renderApps(r); import("/js/skills.js").then((m) => m.mountSkills($("skills-slot-apps"), token)).catch((e) => console.warn("skills", e)); } // スキルズの管理 3便目
     if (name === "home") drawHome();
     if (name === "news") markNewsSeen(r);
     // 便 8c：左のメニューの印と、上のナビの名前
@@ -955,7 +960,8 @@ function renderApps(r) {
   const mine = list.filter((a) => a.open), rest = list.filter((a) => !a.open);
   box.innerHTML = `<h1 class="lt">アプリ</h1>`
     + (mine.length ? `<section><h2 class="ah">使えるアプリ<span class="cnt">${mine.length}</span></h2><div class="apg">${mine.map(tile).join("")}</div></section>` : `<p class="note">いま使えるアプリはありません。</p>`)
-    + (rest.length ? `<section><h2 class="ah">シアラボ会員で使えるアプリ</h2><div class="apg">${rest.map(tile).join("")}</div></section>` : "");
+    + (rest.length ? `<section><h2 class="ah">シアラボ会員で使えるアプリ</h2><div class="apg">${rest.map(tile).join("")}</div></section>` : "")
+    + `<div id="skills-slot-apps" class="stack"></div>`;
 }
 const NEWS_SEEN = "lab:news-seen";
 function paintNewsDot(r) {
