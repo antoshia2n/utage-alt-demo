@@ -69,7 +69,8 @@ export function makeGenres({ db }) {
     const gset = new Set(genres.map((g) => g.program_id));
     const by = new Map();
     for (const l of links) { const p = progOf.get(l.course_id); if (!p) continue; if (!by.has(l.content_id)) by.set(l.content_id, new Set()); by.get(l.content_id).add(p); }
-    const pending = contents.filter((c) => { const ps = by.get(c.id); return ps && [...ps].some((p) => archive.has(p)) && ![...ps].some((p) => gset.has(p)); });
+    // 仕分けに出すのは生徒に見えている（公開中の）ものだけ。下書きは公開したときに出る（2026-11-15）
+    const pending = contents.filter((c) => { const ps = by.get(c.id); return c.status !== "draft" && ps && [...ps].some((p) => archive.has(p)) && ![...ps].some((p) => gset.has(p)); });
     return { genres, pending };
   }
 
