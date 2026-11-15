@@ -66,3 +66,16 @@ button{font:inherit;cursor:pointer;color:inherit}
 .mp-open{align-self:center;font-size:12.5px;font-weight:700;color:var(--accent);text-decoration:none;padding:8px 12px;border-radius:8px}
 .mp-open:hover{background:var(--accent-soft)}
 @media (pointer:coarse){.mp-re{min-height:44px}.mp-go{min-height:44px}.mp-cnt{min-height:60px}}
+/* 実績の便 3（2026-11-13）：実績を入れる */
+.mp-shelf{color:var(--faint);text-decoration:none;font-weight:600}
+.mp-post{display:flex;align-items:center;gap:8px;margin:2px 0 8px}
+.mp-post code{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:"DM Mono",ui-monospace,monospace;font-size:12px;color:var(--muted);background:var(--hair);border-radius:6px;padding:4px 6px}
+.mp-add{flex:none;min-height:30px;padding:0 12px;border:0;border-radius:8px;background:var(--accent);color:#fff;font-size:12.5px;font-weight:700;cursor:pointer}
+.mp-add:disabled{opacity:.55;cursor:default}
+.mp-hint{margin:2px 0 8px;font-size:12px;color:var(--faint)}
+.mp-drop{border:1.5px dashed var(--line);border-radius:10px;padding:10px;text-align:center;font-size:12px;color:var(--faint);cursor:default;outline:none}
+.mp-drop.over,.mp-drop:focus-visible{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.mp-resmsg{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.6}
+.mp-resmsg:empty{display:none}
+.mp-resmsg.bad{color:var(--warn)}
+.mp-resmsg a{color:var(--accent);font-weight:700;text-decoration:none}

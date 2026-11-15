@@ -224,8 +224,8 @@ body { font-family: "Geist", "Noto Sans JP", "Hiragino Sans", "Hiragino Kaku Got
 .bt-wkwrap { border: 1px solid var(--line); border-radius: 12px; overflow: auto; max-height: 520px; user-select: none; -webkit-user-select: none; touch-action: none; }
 .bt-wkg { display: grid; grid-template-columns: 52px repeat(7, minmax(56px, 1fr)); min-width: 480px; }
 .bt-wkg .hd { position: sticky; top: 0; z-index: 1; background: var(--surface); border-bottom: 1px solid var(--line); text-align: center; padding: 8px 0; font-weight: 600; font-size: 13px; }
-.bt-wkg .hd small { display: block; font-weight: 400; color: var(--muted); font-size: 11px; }
-.bt-wkg .tm { font-size: 11px; color: var(--muted); text-align: right; padding: 0 6px; height: 22px; line-height: 22px; border-right: 1px solid var(--line); }
+.bt-wkg .hd small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; }
+.bt-wkg .tm { font-size: 12px; color: var(--muted); text-align: right; padding: 0 6px; height: 22px; line-height: 22px; border-right: 1px solid var(--line); }
 .bt-wkg .cell { height: 22px; border: 0; border-right: 1px solid color-mix(in srgb, var(--line) 55%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent); background: var(--surface); cursor: crosshair; padding: 0; }
 .bt-wkg .cell.hr { border-bottom-color: var(--line); }
 .bt-wkg .cell.on { background: var(--accent-soft); border-bottom-color: color-mix(in srgb, var(--accent) 35%, transparent); }
@@ -239,9 +239,9 @@ body { font-family: "Geist", "Noto Sans JP", "Hiragino Sans", "Hiragino Kaku Got
 .bt-ic:hover:not(:disabled) { color: var(--ink); border-color: var(--field, #a39a90); }
 .bt-ic:disabled { opacity: .35; cursor: default; }
 .bt-mini { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
-.bt-mini .wd { text-align: center; font-size: 11px; color: var(--muted); }
+.bt-mini .wd { text-align: center; font-size: 12px; color: var(--muted); }
 .bt-mini .md { min-height: 42px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); cursor: pointer; font: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 0; }
-.bt-mini .md small { font-size: 10px; color: var(--accent); }
+.bt-mini .md small { font-size: 12px; color: var(--accent); }
 .bt-mini .md.x { background: repeating-linear-gradient(45deg, var(--bg), var(--bg) 5px, var(--line) 5px, var(--line) 10px); color: var(--muted); }
 .bt-mini .md.past, .bt-mini .md.blank { background: transparent; border-color: transparent; color: var(--muted); opacity: .5; cursor: default; }
 .bt-ov { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
@@ -265,7 +265,7 @@ body { font-family: "Geist", "Noto Sans JP", "Hiragino Sans", "Hiragino Kaku Got
 .bt-qi.open .bt-qrow { background: var(--accent-soft); }
 .bt-qrow .bt-qh { background: transparent; flex: 1; }
 .bt-qrow .grip { width: 28px; display: grid; place-items: center; color: var(--muted); cursor: grab; font-size: 12px; letter-spacing: -2px; flex: none; }
-.bt-qi.fixed .grip { cursor: default; letter-spacing: 0; font-size: 11px; }
+.bt-qi.fixed .grip { cursor: default; letter-spacing: 0; font-size: 12px; }
 .bt-qi.fixed .bt-qh .lb { font-weight: 400; color: var(--muted); }
 .bt-qi.drag { opacity: .45; }
 .bt-qi.over { box-shadow: inset 0 2px 0 var(--accent); }
@@ -337,7 +337,7 @@ body { font-family: "Geist", "Noto Sans JP", "Hiragino Sans", "Hiragino Kaku Got
 .bt-phone { border: 1px solid var(--line); border-radius: 16px; overflow: hidden; background: var(--surface); }
 .bt-phone .ph-h { padding: 12px 14px; border-bottom: 1px solid var(--line); background: var(--bg); }
 .bt-phone .ph-h b { display: block; font-size: 14px; }
-.bt-phone .ph-h span { font-size: 11px; color: var(--muted); }
+.bt-phone .ph-h span { font-size: 12px; color: var(--muted); }
 .bt-phone .ph-b { padding: 14px; font-size: 13px; line-height: 1.8; white-space: pre-wrap; word-break: break-word; max-height: 460px; overflow: auto; }
 @media (max-width: 900px) { .bt-mcols { grid-template-columns: 1fr; } }
 /* 2026-11-06 予約の便⑤：Google カレンダー */
@@ -374,3 +374,43 @@ body { font-family: "Geist", "Noto Sans JP", "Hiragino Sans", "Hiragino Kaku Got
 .bt-st .when select:first-child { width: 9.5em; }
 .bt-st .tp { min-width: 0; }
 @media (max-width: 1100px) { .bt-st { flex-wrap: wrap; } }
+
+/* 便 T5（2026-11-08）：シナリオの「流れ」。相手が通る順に 1 列のカード（public/js/flowview.js） */
+.fl-sum { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+.fl-box { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; }
+.fl-box b { font-size: 22px; font-weight: 800; }
+.fl-ink { color: #b45309; }
+.fl-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.fl-end { justify-content: flex-end; margin-left: auto; }
+.fl-status { min-height: 1.5em; font-size: 13px; margin: 8px 0; }
+.fl-status:empty { display: none; }
+.fl-list { display: flex; flex-direction: column; max-width: 920px; }
+.fl-stage { font-size: 12px; font-weight: 700; color: var(--muted); letter-spacing: .04em; margin: 8px 0 6px 44px; }
+.fl-item { display: flex; gap: 12px; }
+.fl-rail { display: flex; flex-direction: column; align-items: center; width: 32px; flex: 0 0 32px; }
+.fl-n { width: 32px; height: 32px; border-radius: 50%; background: var(--ink); color: var(--surface); display: grid; place-items: center; font-size: 13px; font-weight: 700; }
+.fl-line { flex: 1 1 auto; width: 2px; background: var(--line); min-height: 16px; }
+.fl-card { flex: 1 1 auto; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 16px; display: flex; flex-direction: column; gap: 10px; }
+.fl-card.fl-hastodo { border-color: #f59e0b; }
+.fl-card.fl-haswait { border: 2px solid #b45309; }
+.fl-kind { font-size: 12px; border: 1px solid #a39a90; border-radius: 999px; padding: 1px 8px; }
+.fl-name { font-size: 15px; }
+.fl-st { font-size: 12px; font-weight: 700; border-radius: 999px; padding: 1px 8px; }
+.fl-on { color: #166534; background: #dcfce7; }
+.fl-off { color: var(--ink); background: var(--bg); border: 1px solid var(--line); }
+.fl-wait { color: #fff; background: #b45309; }
+.fl-when { font-size: 12px; color: var(--muted); margin-left: auto; }
+.fl-todo { background: var(--accent-soft); border-radius: 8px; padding: 8px 12px; }
+.fl-todo-h { font-size: 12px; font-weight: 700; color: #b45309; }
+.fl-todo ul { margin: 4px 0 0; padding-left: 1.2em; }
+.fl-text { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; white-space: pre-wrap; font-size: 13px; overflow-wrap: anywhere; }
+.fl-edit, .fl-ai { display: flex; flex-direction: column; gap: 6px; }
+.fl-edit textarea, .fl-ai textarea { width: 100%; font: inherit; font-size: 14px; line-height: 1.7; border: 1px solid #a39a90; border-radius: 8px; padding: 8px 10px; background: var(--surface); color: var(--ink); }
+.fl-ap { border: 2px solid #b45309; border-radius: 8px; padding: 10px 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.fl-ap-body { flex: 1 1 100%; }
+.fl-ai { border: 1px solid #f59e0b; background: var(--accent-soft); border-radius: 8px; padding: 10px 12px; }
+.fl-ai-wait { border-style: dashed; flex-direction: row; flex-wrap: wrap; align-items: center; }
+.fl-ai-has { border-width: 2px; background: var(--surface); }
+.fl-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.fl-aibtn { background: var(--accent-soft); color: var(--ink); border: 1px solid #b45309; }
+@media (max-width: 700px) { .fl-sum { grid-template-columns: repeat(2, minmax(0, 1fr)); } .fl-two { grid-template-columns: minmax(0, 1fr); } .fl-when { margin-left: 0; flex: 1 1 100%; } }

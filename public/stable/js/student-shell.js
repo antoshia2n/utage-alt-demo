@@ -19,7 +19,7 @@ const FULL_SECTIONS = [
     { t: "振り返り", d: "返ってきた添削だけを新しい順に並べます。番号の付いた色の範囲を押すと、指摘が光ります。" },
   ] },
   { title: "相談", items: [
-    { t: "予約", d: "シアニンとの個別相談を予約します。日時を選び、聞かれていることを書いて予約します。取り消しもここからできます。" },
+    { t: "予約", d: "シアニンとの個別相談を予約します。日時を選び、聞かれていることを書いて予約します。キャンセルもここからできます。" },
   ] },
   { title: "契約", items: [
     { t: "ご契約", d: "続いている定期のお支払いと、分割のお支払いの残りが見られます。定期はここから止められます。" },
@@ -36,7 +36,7 @@ const FULL_TOURS = [
   ] },
   { id: "room", title: "添削を出す", desc: "文章を出して、返ってきたものを見る", before: go("room"), steps: [
     { el: side("room"), title: "添削ルーム", body: "シアニンと 1 対 1 の部屋です。返事があると数字が付きます。" },
-    { el: "#c-text", title: "文章を貼る", body: "添削してほしい文章を貼ります。画像も足せます。" },
+    { el: "#c-text", title: "文章を貼る", body: "添削してほしい文章を貼ります。画像も追加できます。" },
     { el: "#c-send", title: "出す", body: "「出す」で届きます。⌘／Ctrl＋Enter でも出せます。返ってきたものは「振り返り」にもたまります。" },
   ] },
   { id: "contract", title: "ご契約を見る", desc: "お支払いの確認と、定期の止め方", before: go("contract"), steps: [
@@ -58,6 +58,7 @@ export function mountStudentShell(el, { me, sb, session, onContract }) {
     self: false, // アプリ一覧に「いま開いています」を出さない（生徒にとってはアプリではなく自分の画面）
     account: onContract ? [{ label: "ご契約とお支払い", icon: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5.5" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/></svg>', run: onContract }] : [],
     host: "lab.shia2n.jp",
+    guide: true, // 2026-11-08 右上の「ガイド あり／なし」と題の横の「？」（student-guide.js）
     manual: {
       intro: contract ? "この画面はご契約の確認用です。教材・添削ルームは、しあらぼの会員向けです。" : "しあらぼの教材・添削・相談・ご契約が、この画面にまとまっています。",
       sections: contract ? CONTRACT_SECTIONS : FULL_SECTIONS,

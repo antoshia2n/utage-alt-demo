@@ -65,6 +65,7 @@ export function mountAdminShell(el, { who, sb, session }) {
   const shell = mountAppShell({
     appId: "marke-admin",
     appName: "マーケくん",
+    guide: true,
     host: "lab.shia2n.jp",
     theme: false, // 暗い画面は OS の設定（prefers-color-scheme）だけで持ち、[data-theme] では切り替えない
     manual: buildManual(),

@@ -3,7 +3,7 @@
 // 種類のラベル：会員サイトのコンテンツにまだ種類の欄が無いので、今はプログラムとコースから決める（管理画面で選べるようにするのは 3 本目）。
 // テーマ：入っているプログラムがそのままテーマ。今日のおすすめは、テーマの中からまだ見ていないものを日付で決めた 4 本。
 import { esc } from "/stable/js/common.js";
-import { thumbA } from "/stable/js/thumb.js"; // 録画のサムネだけを先に生徒の版へ（2026-11-15 Naoki）
+import { thumbA } from "/stable/js/thumb.js";
 
 // 版ごとの段の並び（器）。3 本目で管理画面から並べ替えられるようにする
 export const HOME_ROWS = {
@@ -150,15 +150,53 @@ export function homeHtml(ctx) {
 }
 
 /** 教材の図書館：上の絞り込み（すべて＋種類）と、種類ごとの棚。種類を選ぶと、コースごとに全部を並べる */
-export function libraryHtml(flat, views, kind) {
+// ---- ジャンルから探す（2026-11-15 Naoki OK：悩みではなく、今ある「○○力」のプログラムをそのままジャンルにする）----
+// セミナーアーカイブ以外のプログラム 1 つ＝ジャンル 1 つ。小さい字はその中のコース名。
+// 中は「まず見る講座（並びの番号が小さいもの・順番どおり）」と「関連するセミナー（日付の番号・新しい順）」に分ける
+const SEM_SEQ = 10000000; // 8 桁（YYYYMMDD）の並びの番号はセミナーの日付
+const isArchive = (p) => /セミナーアーカイブ/.test(p.title || "");
+export function genres(programs, flat) {
+  const byId = new Map(flat.map((x) => [x.id, x]));
+  return (programs || []).filter((p) => !isArchive(p)).map((p) => {
+    const ls = p.courses.flatMap((c) => c.lessons.map((l) => ({ ...l, _course: c.title }))).filter((l, i, a) => a.findIndex((m) => m.id === l.id) === i);
+    // カードの下の字と種類の札は、このジャンルの中の呼び方にする（アーカイブの棚の名前を出さない・2026-11-15）
+    const pick = (l) => { const x = byId.get(l.id); return x && { ...x, course: l._course || x.course, kind: (l.seq || 0) >= SEM_SEQ ? "セミナー" : "講座" }; };
+    return {
+      id: p.id, title: p.title, sub: p.courses.map((c) => c.title).filter((t) => t && t !== p.title).join("・"),
+      courses: ls.filter((l) => (l.seq || 0) < SEM_SEQ).sort((a, b) => (a.seq || 0) - (b.seq || 0)).map(pick).filter(Boolean),
+      seminars: ls.filter((l) => (l.seq || 0) >= SEM_SEQ).sort((a, b) => (b.seq || 0) - (a.seq || 0)).map(pick).filter(Boolean),
+    };
+  }).filter((g) => g.courses.length + g.seminars.length);
+}
+function genreHome(gs, flat, seen) {
+  const newest = flat.filter((x) => x.kind === "セミナー" || x.kind === "アーカイブ").slice().sort((a, b) => (b.seq || 0) - (a.seq || 0)).slice(0, 8);
+  return `<section class="row"><div class="rh"><h2>ジャンルから探す<span class="cnt">${gs.length}</span></h2></div>
+    <div class="genres">${gs.map((g) => `<button type="button" class="gcard" data-kind="g:${esc(g.id)}"><b>${esc(g.title)}</b>${g.sub ? `<span class="gs">${esc(g.sub)}</span>` : ""}<span class="gn">講座 ${g.courses.length}・セミナー ${g.seminars.length} →</span></button>`).join("")}</div></section>
+    ${newest.length ? `<section class="row"><div class="rh"><h2>新しいセミナー</h2><button type="button" class="more" data-kind="セミナー">すべて</button></div>${rail(newest, seen)}<div class="board" aria-hidden="true"></div></section>` : ""}`;
+}
+function genrePage(g, seen) {
+  return `<button type="button" class="back" data-kind="ジャンル">← ジャンルから探す</button>
+    <header class="gh"><h2>${esc(g.title)}</h2>${g.sub ? `<p>${esc(g.sub)}｜まず講座を順番に、そのあと気になるセミナーを。</p>` : ""}</header>
+    ${g.courses.length ? `<section class="row"><div class="rh"><h2>まず見る講座<span class="cnt">${g.courses.length}</span></h2></div><ol class="steps">${g.courses.map((x, i) => `<li><span class="sn">${i + 1}</span>${card(x, seen)}</li>`).join("")}</ol></section>` : ""}
+    ${g.seminars.length ? `<section class="row"><div class="rh"><h2>関連するセミナー（新しい順）<span class="cnt">${g.seminars.length}</span></h2></div><div class="grid">${g.seminars.map((x) => card(x, seen)).join("")}</div></section>` : ""}`;
+}
+
+export function libraryHtml(flat, views, kind, programs) {
   const seen = new Set(views.map((v) => v.id));
   const kinds = KINDS.filter((k) => flat.some((x) => x.kind === k));
-  const chips = `<div class="chips" role="group" aria-label="種類で絞り込む">${["すべて", ...kinds].map((k) => `<button type="button" data-kind="${esc(k)}" aria-pressed="${(kind || "すべて") === k}">${esc(k)}${k === "すべて" ? "" : `<span>${flat.filter((x) => x.kind === k).length}</span>`}</button>`).join("")}</div>`;
+  const gs = programs ? genres(programs, flat) : [];
+  const top = gs.length ? ["ジャンル", "すべて", ...kinds] : ["すべて", ...kinds];
+  const cur = String(kind || (gs.length ? "ジャンル" : "すべて"));
+  const on = (k) => (k === "ジャンル" ? cur === "ジャンル" || cur.startsWith("g:") : cur === k);
+  const chips = `<div class="chips" role="group" aria-label="種類で絞り込む">${top.map((k) => `<button type="button" data-kind="${esc(k)}" aria-pressed="${on(k)}">${esc(k)}${k === "すべて" || k === "ジャンル" ? "" : `<span>${flat.filter((x) => x.kind === k).length}</span>`}</button>`).join("")}</div>`;
   let body;
-  if (!kind || kind === "すべて") {
+  if (cur === "ジャンル") body = genreHome(gs, flat, seen);
+  else if (cur.startsWith("g:")) { const g = gs.find((x) => x.id === cur.slice(2)); body = g ? genrePage(g, seen) : genreHome(gs, flat, seen); }
+  else if (cur === "すべて") {
     body = kinds.map((k) => { const items = flat.filter((x) => x.kind === k); const newest = k === "セミナー" || k === "アーカイブ" ? [...items].reverse() : items;
       return `<section class="row"><div class="rh"><h2>${esc(k)}<span class="cnt">${items.length}</span></h2><button type="button" class="more" data-kind="${esc(k)}">すべて</button></div>${rail(newest.slice(0, 8), seen)}<div class="board" aria-hidden="true"></div></section>`; }).join("");
   } else {
+    kind = cur;
     const items = flat.filter((x) => x.kind === kind);
     const groups = new Map();
     items.forEach((x) => { const g = x.program === x.course || kind === "セミナー" || kind === "アーカイブ" ? x.course : x.program; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(x); });
@@ -173,7 +211,7 @@ export function libraryHtml(flat, views, kind) {
 export function searchHtml(flat, views, q, kind) {
   const seen = new Set(views.map((v) => v.id));
   const s = q.trim().toLowerCase();
-  const items = flat.filter((x) => (!kind || kind === "すべて" || x.kind === kind) && String(x.title).toLowerCase().includes(s));
+  const items = flat.filter((x) => (!kind || kind === "すべて" || kind === "ジャンル" || String(kind).startsWith("g:") || x.kind === kind) && String(x.title).toLowerCase().includes(s));
   return items.length ? `<section class="row"><div class="rh"><h2>「${esc(q.trim())}」<span class="cnt">${items.length}</span></h2></div><div class="grid">${items.slice(0, 60).map((x) => card(x, seen)).join("")}</div></section>`
     : `<p class="note">「${esc(q.trim())}」に合う教材はありませんでした。言葉を短くするか、上の種類を「すべて」にして探してください。</p>`;
 }

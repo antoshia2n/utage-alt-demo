@@ -1,6 +1,7 @@
 import { getClient, api, esc, fmtTime, authImage, shrinkImage, noticeHtml } from "/stable/js/common.js";
 import { correctionHtml, wireNotes } from "/stable/js/correction.js";
 import { setupStudentPush } from "/stable/js/pushclient.js";
+import { setupGroups } from "/stable/js/studentgroups.js";
 import { flatten, homeHtml, libraryHtml, searchHtml } from "/stable/js/home.js";
 import { makeWatch } from "/stable/js/watch.js";
 import { planHtml, chainHtml, popHtml, homeCardHtml, tacHtml, recHtml, reviewHtml, growHtml, reportFor, applyAction, applyField, applyWeek, applyNext, carryTry, setPath, weekNo, weekInfo, WEEKS, draftHtml } from "/stable/js/goalplan.js";
@@ -77,6 +78,7 @@ async function main() {
       const { mountStudentShell } = await import("/stable/js/student-shell.js");
       mountStudentShell($("shell-slot"), { me: r, sb, session, onContract: () => { location.hash = "#contract"; } });
       $("shell-slot").classList.remove("hidden");
+      try { const { initStudentGuide } = await import("/stable/js/student-guide.js"); initStudentGuide(r.access === "contract" ? "contract" : "home", r.access === "contract" ? "ご契約" : "ホーム"); } catch (e) { console.warn("guide", e); }
       $("who-line").classList.add("hidden");
       $("logout").classList.add("hidden");
     } catch (e) { console.warn("shell", e); }
@@ -90,6 +92,7 @@ async function main() {
       const pick = (name) => {
         ["contract", "booking"].forEach((t) => { $("tab-" + t).classList.toggle("hidden", t !== name); document.querySelector(`.side [data-tab="${t}"]`).setAttribute("aria-selected", String(t === name)); });
         $("crumb").textContent = name === "booking" ? "予約" : "ご契約";
+        window.__labGuide && window.__labGuide(name, $("crumb").textContent);
         if (name === "booking") loadBooking(session.access_token);
       };
       document.querySelector('.side [data-tab="booking"]').addEventListener("click", () => pick("booking"));
@@ -117,7 +120,7 @@ async function main() {
 
   const viewed = new Set(r.viewed);
   const views = Array.isArray(r.views) ? r.views : r.viewed.map((id) => ({ id, at: "1970-01-01T00:00:00Z" }));
-  let flat = [], libKind = "すべて";
+  let flat = [], libKind = "ジャンル";
   const lib = r.library || { source: "demo", member: true, programs: [] };
   // 便 6a：学ぶくんの本物の教材（プログラム → コース → 教材）
   const lessons = {};
@@ -136,8 +139,8 @@ async function main() {
     flat = flatten(lib.programs);
     flat.forEach((x) => { lessons[x.id] = x; });
     const drawLib = (kind) => {
-      libKind = kind || "すべて";
-      $("tab-lessons").innerHTML = libraryHtml(flat, views, libKind);
+      libKind = kind || "ジャンル";
+      $("tab-lessons").innerHTML = libraryHtml(flat, views, libKind, lib.programs); // ジャンルから探す（2026-11-15）
       $("tab-lessons").querySelectorAll("[data-kind]").forEach((b) => b.addEventListener("click", () => { drawLib(b.dataset.kind); $("tab-lessons").scrollIntoView({ block: "start" }); }));
       $("lib-q").addEventListener("input", (e) => {
         const q = e.target.value;
@@ -146,7 +149,7 @@ async function main() {
         if (q.trim()) $("lib-found").innerHTML = searchHtml(flat, views, q, libKind);
       });
     };
-    drawLib("すべて");
+    drawLib("ジャンル");
   } else {
     $("tab-lessons").innerHTML = r.lessons.map(lessonRow).join("") || '<p class="note">教材はまだありません。</p>';
   }
@@ -160,8 +163,8 @@ async function main() {
     $("tab-news").insertAdjacentHTML("afterbegin", `<div class="card" id="referral"><h3>紹介のリンク</h3>
       <p class="note">このリンクから登録した人は、あなたの紹介として記録されます。</p>
       <p class="note" style="word-break:break-all;margin:0"><code>${esc(rf.link)}</code></p>
-      <div style="display:flex;gap:8px;align-items:center;margin-top:8px"><button class="btn ghost small" id="rf-copy" type="button">リンクを写す</button><span class="note">紹介で登録 ${rf.referred} 人${rf.reward_total ? "・報酬 " + Number(rf.reward_total).toLocaleString() + " 円（払い済み " + Number(rf.paid_total).toLocaleString() + " 円）" : ""}</span></div></div>`);
-    $("rf-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText(rf.link); $("rf-copy").textContent = "写しました"; } catch (_) { $("rf-copy").textContent = "写せませんでした"; } });
+      <div style="display:flex;gap:8px;align-items:center;margin-top:8px"><button class="btn ghost small" id="rf-copy" type="button">リンクをコピー</button><span class="note">紹介で登録 ${rf.referred} 人${rf.reward_total ? "・報酬 " + Number(rf.reward_total).toLocaleString() + " 円（払い済み " + Number(rf.paid_total).toLocaleString() + " 円）" : ""}</span></div></div>`);
+    $("rf-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText(rf.link); $("rf-copy").textContent = "コピーしました"; } catch (_) { $("rf-copy").textContent = "コピーできませんでした"; } });
   }
 
   // 個別相談の予約（2026-11-05）：予約できる種類が 1 つでもあれば、左のメニューとホームの 1 行に出す
@@ -177,14 +180,14 @@ async function main() {
     if (name === "goals") loadGoals(token);
     if (name === "booking") loadBooking(token);
     if (name === "contract") loadContract(token);
-    if (name === "apps") renderApps(r);
+    if (name === "apps") { renderApps(r); import("/stable/js/skills.js").then((m) => m.mountSkills($("skills-slot-apps"), token)).catch((e) => console.warn("skills", e)); } // スキルズの管理 3便目
     if (name === "home") drawHome();
     if (name === "news") markNewsSeen(r);
     // 便 8c：左のメニューの印と、上のナビの名前
     document.querySelectorAll(".side [data-tab]").forEach((b) => {
       const on = b.dataset.tab === name || (name === "lesson" && b.dataset.tab === "lessons") || (name === "mypage" && b.dataset.tab === "home");
       b.setAttribute("aria-selected", String(on));
-      if (on) $("crumb").textContent = b.dataset.label || b.textContent.trim();
+      if (on) { $("crumb").textContent = b.dataset.label || b.textContent.trim(); window.__labGuide && window.__labGuide(name, $("crumb").textContent); }
       // 5b：スマホの上の帯では、今いるタブを見える位置へ送る
       if (on && window.matchMedia("(max-width: 860px)").matches) b.scrollIntoView({ block: "nearest", inline: "center" });
     });
@@ -239,7 +242,7 @@ async function main() {
   const room = setupRoom(token, r.community_url, r.community);
   room.setBadge(r.room_unread);
   // 便 15b：#room/chat・#room/corr は、部屋のその枠を開く
-  if (location.hash.startsWith("#room")) { room.setPane(location.hash.split("/")[1]); showTab("room"); }
+  if (location.hash.startsWith("#room")) { room.setPane(location.hash.split("/")[1], location.hash.split("/")[2]); showTab("room"); }
   // マイページ：公開中の版があれば左の一番上に出し、住所に # が無ければ最初に開く。枠の高さは枠の中から知らせてもらう
   const mp = await mpWait;
   if (mp.ok && mp.html) {
@@ -284,8 +287,8 @@ async function main() {
   if (location.hash === "#contract") showTab("contract");
   // 便 8g-1：通知を押して開いた画面がもう出ているとき、住所の # だけが変わるので、ここで部屋へ移る
   window.addEventListener("hashchange", () => {
-    const [h, pane] = location.hash.slice(1).split("/");
-    if (h === "room") room.setPane(pane);
+    const [h, pane, gid] = location.hash.slice(1).split("/");
+    if (h === "room") room.setPane(pane, gid);
     if (["home", "lessons", "room", "review", "contract", "news", "mypage", "apps"].includes(h) || (h === "booking" && bookingReady) || (h === "goals" && goalsReady)) showTab(h);
     routeLesson();
   });
@@ -596,8 +599,11 @@ function setupRoom(token, communityUrl, communityState) {
   let opened = false, pending = [], timer = null, lastCount = -1, lastSig = "";
   // 便 15b：今の枠（corr 添削／chat やり取り）と、まだ開いていない枠の新着の数（部屋を開くと全部既読になるので、枠を見るまでここで覚える）
   let pane = null, last = { messages: [], notices: [] };
-  const seen = { corr: 0, chat: 0 };
-  try { const p = localStorage.getItem("room_pane"); if (p === "corr" || p === "chat") pane = p; } catch (_) {}
+  const seen = { corr: 0, chat: 0, group: 0 };
+  try { const p = localStorage.getItem("room_pane"); if (p === "corr" || p === "chat" || p === "group") pane = p; } catch (_) {}
+  // チャットの便 C2b：グループの枠（入っているグループがある人だけに出す）
+  let groupOpen = null, roomUnread = 0, groupUnread = 0;
+  const groupsUi = setupGroups(token, { onUnread: (n) => { groupUnread = n; seen.group = pane === "group" ? 0 : n; drawPaneBadges(); setBadge(roomUnread + groupUnread, true); } });
 
   // 便 7a：招待リンクは会員にだけ届く（会員でない人には URL そのものが返らない）
   $("community").innerHTML = communityUrl
@@ -606,7 +612,8 @@ function setupRoom(token, communityUrl, communityState) {
       ? `<h3>生徒同士の場</h3><p class="note">会員になると、ほかの受講生と話せるオープンチャットの招待リンクがここに出ます。</p>`
       : `<h3>生徒同士の場</h3><p class="note">オープンチャットの招待リンクを準備中です。</p>`;
 
-  const setBadge = (n) => {
+  const setBadge = (n, total) => {
+    if (!total) { roomUnread = n; n = n + groupUnread; }
     const b = $("room-badge");
     b.textContent = n > 0 ? String(n) : "";
     b.classList.toggle("hidden", !(n > 0));
@@ -667,9 +674,13 @@ function setupRoom(token, communityUrl, communityState) {
 
   // 枠を替える。出す欄の案内とボタンも、その枠の出し方に替える
   const showPane = (p) => {
-    pane = p === "chat" ? "chat" : "corr";
+    pane = p === "chat" ? "chat" : p === "group" && !$("pane-group").classList.contains("hidden") ? "group" : "corr";
     seen[pane] = 0;
     try { localStorage.setItem("room_pane", pane); } catch (_) {}
+    const grp = pane === "group";
+    ["room-list", "composer"].forEach((id) => $(id).classList.toggle("hidden", grp));
+    $("group-box").classList.toggle("hidden", !grp);
+    if (grp) { document.querySelectorAll("#tab-room [data-pane]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.pane === "group"))); drawPaneBadges(); groupsUi.open(groupOpen); groupOpen = null; return; }
     const chat = pane === "chat";
     $("c-text").placeholder = chat ? "シアニンへのメッセージ（質問・連絡など）" : "添削してほしい文章を貼ってください";
     $("c-send").textContent = chat ? "送る" : "出す";
@@ -682,6 +693,11 @@ function setupRoom(token, communityUrl, communityState) {
     const r = await api("/api/room", { token });
     if (r.ok) roomCache = { r, at: Date.now() };
     if (!r.ok) { $("room-list").innerHTML = `<div class="msg err">読めませんでした。${esc(errText(r))}</div>`; return; }
+    // C2b：グループに入っていればグループの枠を出す
+    const hasGroups = (r.groups || []).length > 0;
+    $("pane-group").classList.toggle("hidden", !hasGroups);
+    groupUnread = r.groups_unread || 0; if (pane !== "group") seen.group = groupUnread;
+    if (pane === "group" && !hasGroups) pane = null;
     const notices = r.notices || [];
     const un = unreadOf(r.messages);
     seen.corr = Math.max(seen.corr, un.corr); seen.chat = Math.max(seen.chat, un.chat);
@@ -754,7 +770,7 @@ function setupRoom(token, communityUrl, communityState) {
   return {
     setBadge,
     open: () => { opened = true; load(true); },
-    setPane: (p) => { if (p === "chat" || p === "corr") { pane = p; seen[p] = 0; } },
+    setPane: (p, id) => { if (p === "chat" || p === "corr" || p === "group") { pane = p; seen[p] = 0; } if (p === "group" && id) groupOpen = id; if (opened && p === "group") showPane("group"); },
   };
 }
 
@@ -779,7 +795,7 @@ main().catch((e) => fail("読み込めませんでした：" + e.message));
 
 
 // ---------- 目標（2026-10-30・2026-11-05 に目標達成くんへ）：目標はしあらぼ管理が正本（読むだけ）。日報・週報はここで書く ----------
-const G_ERR = { empty: "数字か文のどちらかを入れてください", bad_number: "数字の欄に数でないものが入っています", body_too_long: "2000 字までです", day_out_of_range: "その日はもう直せません（7 日前まで）", bad_plan: "送った中身が読めませんでした。画面を読み直してください", plan_too_large: "書いた量が多すぎます。少し短くしてください", not_student: "この画面はしあらぼの生徒向けです", report_incomplete: "理由と来週の進め方を選んでください", week_out_of_range: "その週はまだ出せません", plan_not_saved: "先に設計を保存してください", no_draft: "下書きが見つかりませんでした。画面を読み直してください", draft_closed: "この下書きはもう使いました。画面を読み直してください", bad_report: "送った中身が読めませんでした。画面を読み直してください" };
+const G_ERR = { empty: "数字か文のどちらかを入れてください", bad_number: "数字の欄に数でないものが入っています", body_too_long: "2000 字までです", day_out_of_range: "その日はもう編集できません（7 日前まで）", bad_plan: "送った中身が読めませんでした。画面を読み直してください", plan_too_large: "書いた量が多すぎます。少し短くしてください", not_student: "この画面はしあらぼの生徒向けです", report_incomplete: "理由と来週の進め方を選んでください", week_out_of_range: "その週はまだ出せません", plan_not_saved: "先に設計を保存してください", no_draft: "下書きが見つかりませんでした。画面を読み直してください", draft_closed: "この下書きはもう使いました。画面を読み直してください", bad_report: "送った中身が読めませんでした。画面を読み直してください" };
 const gErr = (r) => G_ERR[r && r.error] || errText(r);
 let gData = null, gToken = null;
 function gDraw() { drawPlan(); }
@@ -824,7 +840,7 @@ async function gSavePlan() {
   const { saved_at: _drop, ...plan } = gData.plan;
   const r = await api("/api/me/goals/plan", { method: "PUT", token: gToken, body: { plan } });
   gSaving = false;
-  if (!r.ok) { gSavedLine("保存できませんでした。" + gErr(r) + "（もう一度直すと、保存し直します）", true); }
+  if (!r.ok) { gSavedLine("保存できませんでした。" + gErr(r) + "（もう一度編集すると、保存し直します）", true); }
   else { gData.plan.saved_at = r.plan.saved_at; gSavedLine(`保存しました（${new Date(r.plan.saved_at).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}）`); }
   if (gAgain) { gAgain = false; gSavePlan(); }
 }
@@ -881,7 +897,7 @@ function wirePlan() {
     if (t.name === "gk-nx") { if (applyNext(gData.plan, gWk(), t.value)) planChanged(t.value === "cont" ? `第 ${gWk() + 1} 週も同じ状態を続けます。③ に反映しました` : "来週は次の状態へ進みます"); return; }
     if (applyWeek(gData.plan, gWk(), t)) { planChanged(""); return; }
     if (applyField(gData.plan, t)) { planChanged(""); return; }
-    if (t.dataset && t.dataset.start != null && /^\d{4}-\d{2}-\d{2}$/.test(t.value)) { const d = new Date(t.value + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); gData.plan.start = d.toISOString().slice(0, 10); planChanged("始めた週を直しました"); }
+    if (t.dataset && t.dataset.start != null && /^\d{4}-\d{2}-\d{2}$/.test(t.value)) { const d = new Date(t.value + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); gData.plan.start = d.toISOString().slice(0, 10); planChanged("始めた週を変更しました"); }
   });
   root.addEventListener("click", (e) => {
     const t = e.target.closest("button, a[data-to]"); if (!t || !gData) return;
@@ -899,7 +915,7 @@ function wirePlan() {
     if (d.ms != null) { openTac(+d.ms); return; }
     if (d.back != null) { gShow("plan"); const o = root.querySelector(".gk-overview"); if (o) o.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
     if (applyAction(gData.plan, d, gNow())) {
-      const msg = d.add === "ms" ? "状態を足しました。空いている週に並びます" : d.del ? "消しました" : d.spare ? (gData.plan.spare.includes(+d.spare) ? `第 ${d.spare} 週を予備にしました` : `第 ${d.spare} 週に状態を戻しました`) : d.bmv != null ? "時間の置き場所を移しました" : "";
+      const msg = d.add === "ms" ? "状態を追加しました。空いている週に並びます" : d.del ? "削除しました" : d.spare ? (gData.plan.spare.includes(+d.spare) ? `第 ${d.spare} 週を予備にしました` : `第 ${d.spare} 週に状態を戻しました`) : d.bmv != null ? "時間の置き場所を移しました" : "";
       planChanged(msg);
       if (d.add) { const sel = { kgi: "kgi", ms: "ms", bud: "bud" }[d.add]; const els = root.querySelectorAll(`[data-ed^="${sel}.${gData.plan[sel].length - 1}."]`); if (els[0]) els[0].focus(); }
       if (d.addk != null) { const el = root.querySelector(`[data-kf="${d.addk}.${gData.plan.ms[d.addk].kpi.length - 1}.n"]`); if (el) el.focus(); }
@@ -944,7 +960,8 @@ function renderApps(r) {
   const mine = list.filter((a) => a.open), rest = list.filter((a) => !a.open);
   box.innerHTML = `<h1 class="lt">アプリ</h1>`
     + (mine.length ? `<section><h2 class="ah">使えるアプリ<span class="cnt">${mine.length}</span></h2><div class="apg">${mine.map(tile).join("")}</div></section>` : `<p class="note">いま使えるアプリはありません。</p>`)
-    + (rest.length ? `<section><h2 class="ah">シアラボ会員で使えるアプリ</h2><div class="apg">${rest.map(tile).join("")}</div></section>` : "");
+    + (rest.length ? `<section><h2 class="ah">シアラボ会員で使えるアプリ</h2><div class="apg">${rest.map(tile).join("")}</div></section>` : "")
+    + `<div id="skills-slot-apps" class="stack"></div>`;
 }
 const NEWS_SEEN = "lab:news-seen";
 function paintNewsDot(r) {

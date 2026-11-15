@@ -3,6 +3,14 @@ import { correctionHtml, wireNotes } from "/stable/js/correction.js";
 import { makeBlueprint } from "/stable/js/blueprint.js";
 import { mountSite } from "/stable/js/site.js";
 import { mountRecordings } from "/stable/js/recordings.js";
+import { mountMedia } from "/stable/js/media.js";
+import { mountResults } from "/stable/js/results.js";
+import { mountContracts } from "/stable/js/contracts.js";
+import { mountWeb } from "/stable/js/web.js";
+import { mountChat } from "/stable/js/chat.js";
+import { pickMedia } from "/stable/js/mediapick.js";
+import { mountUtageCopy } from "/stable/js/utagecopy.js";
+import { initGuide, setViewGuide } from "/stable/js/guide.js";
 import { watchEdges, revealSelected } from "/stable/js/fbar-edges.js";
 
 // ムダ 12（2026-10-29）：フォーム・人の項目・ページ・配信の一覧は、画面ごとに読み直さず 20 秒だけ使い回す（シナリオの一覧と同じ）。
@@ -96,6 +104,7 @@ async function openConsole() {
   // ムダ 1（2026-10-29）：開くときに読むのはホームに要るものだけ。顧客の一覧と数は「顧客管理」、
   // 決済・メール・通知・カレンダー・オプチャは「決済・メール・オプチャ」を開いたときに読む（setupViews）
   setupViews();
+  initGuide(); // 2026-11-08 ガイドの「？」
   loadRooms();
   setupCommunity();
   setupMail();
@@ -130,6 +139,14 @@ async function openConsole() {
   $("src").addEventListener("change", () => (custFull ? search() : renderCustomers()));
 }
 
+// チャットの便 C1：チャットの画面（public/js/chat.js）。開くたびに一覧を読み直す。左のメニューの数は要返信の数
+let chatUi = null;
+async function openChatView(id, focusId) {
+  if (!chatUi) chatUi = mountChat($("chat-host"), { getToken: () => token, openPerson: (pid) => { openView("people"); detail(pid); }, openRoom: (pid, pane) => { openView("rooms"); openRoom(pid, null, pane); } });
+  await chatUi.open(id, focusId);
+  const n = chatUi.needCount(), b = $("chat-badge");
+  if (b) { b.textContent = n > 0 ? String(n) : ""; b.classList.toggle("hidden", !(n > 0)); }
+}
 function routeHash() {
   const h = location.hash;
   if (h.startsWith("#approval/")) { document.querySelector('[data-view="ai"]').click(); return true; }
@@ -140,6 +157,20 @@ function routeHash() {
   const pm = h.match(/^#page[/]([0-9a-f-]{36})$/i);
   if (pm) { openView("pages"); openPage(pm[1]); return true; }
   // 2026-11-02 シアニンパネルの「今日の動き」から（/admin#person/人の番号）：顧客管理のその人の画面を開く
+  // チャットの便 C1：#chat/<人の番号>/<メッセージの番号>（TaskMaster のタスクのリンクから戻る）
+  // C2a-2：#chat/<人の番号>/line で LINE のやりとりを開く（LINE の画面の「チャットで開く」）
+  // C2b：#chat/group/<グループの番号>/<メッセージの番号>（タスクと通知から戻る）
+  const gm = h.match(/^#chat[/]group[/]([0-9a-f-]{36})(?:[/](\d+))?$/i);
+  if (gm) { openView("chat"); openChatView("group:" + gm[1], gm[2] ? Number(gm[2]) : null); return true; }
+  const cm = h.match(/^#chat(?:[/]([0-9a-f-]{36})(?:[/](\d+|line))?)?$/i);
+  if (cm) { openView("chat"); openChatView(cm[1], cm[2] === "line" ? "line" : cm[2] ? Number(cm[2]) : null); return true; }
+  // 出し先のスイッチ（2026-11-12）：録画を会員サイトに入れた知らせのメールから（/admin#recording/録画の番号）
+  const rc = h.match(/^#recording[/](.{4,200})$/);
+  if (rc) { openView("recordings"); recUi && recUi.openRec(decodeURIComponent(rc[1])); return true; }
+  // 毎週の確認（2026-11-15）：日曜のメールから（/admin#recordings-week）
+  if (h === "#recordings-week") { openView("recordings"); recUi && recUi.openWeek(); return true; }
+  // 実績の便 3（2026-11-13）：X攻略くんのパネルの「今日入れたもの」から（/admin#results）
+  if (h === "#results") { openView("results"); return true; }
   const ps = h.match(/^#person[/]([0-9a-f-]{36})$/i);
   if (ps) { openView("people"); detail(ps[1]); return true; }
   return false;
@@ -257,7 +288,7 @@ function renderCustomers() {
   });
 }
 
-const CUST_TABS = [["overview", "概要"], ["ent", "権利"], ["values", "項目と回答"], ["events", "出来事"], ["deal", "商談と面談"], ["mail", "メール"]];
+const CUST_TABS = [["overview", "概要"], ["ent", "権利"], ["values", "項目と回答"], ["events", "出来事"], ["deal", "商談と面談"], ["contracts", "契約"], ["mail", "メール"]];
 let entKeys = null, entRm = null, entAddOpen = false;
 async function loadEntKeys() {
   if (entKeys) return entKeys;
@@ -280,9 +311,9 @@ function entPane(rows, keys) {
       <span class="ent-src ent-${s}">${esc(ENT_SRC_LABEL[s])}</span>
       <div class="why">理由：${esc(r.reason || "（なし）")}　·　${r.granted_at ? esc(entDay(r.granted_at)) + " から" : ""}${r.expires_at ? `　·　<b class="${entSoon(r) ? "ent-soon" : ""}">${esc(entDay(r.expires_at))} まで${entLive(r) ? "" : "（期限切れ）"}</b>` : "　·　期限なし"}</div>
       <div class="er-act">${s === "manual"
-        ? (entRm === String(r.id) ? "" : `<button class="btn ghost small" type="button" data-entrm="${esc(r.id)}">外す</button>`)
+        ? (entRm === String(r.id) ? "" : `<button class="btn ghost small" type="button" data-entrm="${esc(r.id)}">削除</button>`)
         : `<span class="note">${s === "payment" ? "解約で自動で外れます" : "返金・解約で自動で外れます"}</span>`}</div>
-      ${entRm === String(r.id) ? `<div class="conf"><span>外す理由</span><input id="ent-rm-why" type="text" maxlength="200" placeholder="例：退会の申し出（10/24）" aria-label="外す理由"><button class="btn ghost small" type="button" data-entrmcancel>やめる</button><button class="btn small danger" type="button" data-entrmgo="${esc(r.id)}">外す</button></div>` : ""}
+      ${entRm === String(r.id) ? `<div class="conf"><span>除外の理由</span><input id="ent-rm-why" type="text" maxlength="200" placeholder="例：退会の申し出（10/24）" aria-label="除外の理由"><button class="btn ghost small" type="button" data-entrmcancel>やめる</button><button class="btn small danger" type="button" data-entrmgo="${esc(r.id)}">削除</button></div>` : ""}
     </div>`;
   }).join("") : '<p class="note">権利はありません</p>'}
   <div class="addbox${entAddOpen ? " open" : ""}">${entAddOpen ? `
@@ -348,7 +379,7 @@ async function detail(id) {
         ${p.deal && p.deal.stage !== "none" ? `<span class="pill warn">${esc(STAGE[p.deal.stage])}</span>` : ""}
         ${r.room && r.room.unreplied ? `<span class="pill warn">添削の未返信 ${r.room.unreplied}</span>` : ""}
       </div>
-      <div class="pill-row" id="labels">${(r.labels || []).map((x) => `<span class="pill ${x.auto ? "gray" : "warn"}" title="${x.auto ? "自動で付いた" : "手で付けた"}">${esc(x.label)}${x.auto ? "" : ` <a href="#" data-unlabel="${esc(x.label)}" aria-label="外す">×</a>`}</span>`).join("") || '<span class="note">ラベルは無し</span>'}
+      <div class="pill-row" id="labels">${(r.labels || []).map((x) => `<span class="pill ${x.auto ? "gray" : "warn"}" title="${x.auto ? "自動で付いた" : "手で付けた"}">${esc(x.label)}${x.auto ? "" : ` <a href="#" data-unlabel="${esc(x.label)}" aria-label="削除">×</a>`}</span>`).join("") || '<span class="note">ラベルは無し</span>'}
         <form id="lb" class="lb-inline"><input id="lb-name" type="text" maxlength="40" placeholder="＋ ラベル" list="label-names" aria-label="ラベルを手で付ける"><button class="btn ghost small" type="submit">付ける</button><span class="note" id="lb-status"></span></form>
       </div>
     </div>
@@ -356,6 +387,7 @@ async function detail(id) {
     <section class="card" data-pane="ent"><div id="ent-box" class="ent-box"></div></section>
     <section class="card" data-pane="overview">
       <dl class="kv">
+        ${r.names ? `<dt>名前</dt><dd>本名 ${esc(r.names.real || "—")}・ニックネーム ${esc(r.names.nickname || "まだ無い")}${r.names.line.length ? "・LINE 名 " + r.names.line.map((l) => esc(l.name || "（読めない）")).join("、") : ""} <span class="note">（ニックネームはチャットの右のカードで編集できます）</span></dd>` : ""}
         <dt>登録した日</dt><dd>${esc(dayOf(p.created_at))}・流入元 ${esc(SOURCE_LABEL[p.source] || p.source)}</dd>
         <dt>最後に動いた</dt><dd>${esc(ago(p.last_event_at))}</dd>
         <dt>ログイン</dt><dd>${p.login_count || 0} 回・教材を開いた ${p.lesson_view_count || 0} 回</dd>
@@ -391,6 +423,8 @@ async function detail(id) {
       <dt>入金</dt><dd>${p.contract.paid.map((x) => esc(x.month) + " " + esc(x.state)).join("・")}</dd></dl>` : ""}
       <details class="setup" id="meet-box"><summary>面談の記録（consult-manager）</summary><div id="meet" class="note" style="margin-top:8px">開くと読みます</div></details>
     </section>
+    <!-- 契約の便 1（ShiaSign）：この人の契約（public/js/contracts.js を personId つきで出す） -->
+    <section class="card" data-pane="contracts"><div id="ct-host"></div></section>
     <section class="card" data-pane="mail">
       <h4 style="margin-top:0">メールを送る <span class="note">（いまはテスト宛てだけに届く）</span></h4>
       <form id="mail" class="stack">
@@ -403,6 +437,7 @@ async function detail(id) {
     custTab = k;
     document.querySelectorAll(".cust-tabs [data-tab]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === k)));
     document.querySelectorAll("#detail [data-pane]").forEach((s) => s.classList.toggle("hidden", s.dataset.pane !== k));
+    if (k === "contracts" && $("ct-host") && !$("ct-host").shadowRoot) mountContracts($("ct-host"), { getToken: () => token, personId: id, personName: p.name || "", personEmail: p.email || "" }).open();
   };
   document.querySelectorAll(".cust-tabs [data-tab]").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
   document.querySelectorAll("[data-tabgo]").forEach((b) => b.addEventListener("click", () => { showTab(b.dataset.tabgo); $("m-sub").focus(); }));
@@ -450,7 +485,7 @@ async function detail(id) {
     ev.preventDefault();
     $("m-status").textContent = "送っています…";
     const res = await api(`/api/admin/people/${id}/email`, { method: "POST", token, body: { subject: $("m-sub").value, body: $("m-body").value } });
-    const why = { not_test_recipient: "テスト宛てではないので送りませんでした", unsubscribed: "配信を止めている人なので送りませんでした" };
+    const why = { not_test_recipient: "テスト宛てではないので送りませんでした", unsubscribed: "配信停止中の人なので送りませんでした" };
     const msg = res.result === "sent" ? "送りました"
       : res.result === "blocked" ? (why[res.reason] || "送りませんでした") + "（記録には残しました）"
       : "送れませんでした（" + (res.error || res.status) + "）";
@@ -463,7 +498,7 @@ async function detail(id) {
     detail(id); search();
   });
 }
-const ACTOR_LABEL = { site: "サイト", admin: "画面", mcp: "AI", system: "自動", cron: "定時", connector: "コネクタ", student: "本人", univapay: "決済" };
+const ACTOR_LABEL = { site: "サイト", admin: "画面", mcp: "AI", system: "自動", cron: "定時", connector: "ステップ配信", student: "本人", univapay: "決済" };
 
 // 上の帯：いまの場所の続き（顧客の名前など）
 // マーケくん便 3：上の帯で機能を選ぶと、左にはその機能の項目だけが出る。項目が 1 つの機能（ファネル構築）は左を畳んで広く使う
@@ -602,8 +637,8 @@ function renderFolderSide(side, key, type, rows, idOf, rerender) {
     ${btn("", "すべて", rows.length)}
     ${foldersOf(type).map((f) => btn(f.id, f.name, count(f.id))).join("")}
     ${btn("none", "フォルダに入っていない", count("none"))}
-    ${cur && folderEdit[key] ? `<form class="fold-form" data-fold-rename><input type="text" maxlength="40" value="${esc(cur.name)}" aria-label="フォルダの名前"><div class="fold-row"><button class="btn small" type="submit">名前を保存</button><button class="btn ghost small" type="button" data-fold-remove>消す</button></div><p class="note" style="margin:0">消しても中のデータは消えず、「フォルダに入っていない」に戻ります</p></form>`
-      : cur ? `<button type="button" class="link-btn" data-fold-editopen>このフォルダの名前を変える・消す</button>` : ""}
+    ${cur && folderEdit[key] ? `<form class="fold-form" data-fold-rename><input type="text" maxlength="40" value="${esc(cur.name)}" aria-label="フォルダの名前"><div class="fold-row"><button class="btn small" type="submit">名前を保存</button><button class="btn ghost small" type="button" data-fold-remove>削除</button></div><p class="note" style="margin:0">削除しても中のデータは削除されず、「フォルダに入っていない」に戻ります</p></form>`
+      : cur ? `<button type="button" class="link-btn" data-fold-editopen>このフォルダの名前を変える・削除</button>` : ""}
     <form class="fold-form" data-fold-new><input type="text" maxlength="40" placeholder="新しいフォルダの名前" aria-label="新しいフォルダの名前"><button class="btn ghost small" type="submit">＋ フォルダを作る</button></form>
     <p class="note fold-status" style="margin:0">${campData.note === "need_sql" ? esc(FOLDER_ERR.need_sql) : ""}</p>`;
   const status = (t) => { side.querySelector(".fold-status").textContent = t; };
@@ -629,9 +664,9 @@ function renderFolderSide(side, key, type, rows, idOf, rerender) {
       await loadCampaigns(true); folderEdit[key] = false; rerender();
     });
     ren.querySelector("[data-fold-remove]").addEventListener("click", async () => {
-      status("消しています…");
+      status("削除しています…");
       const r = await api("/api/admin/folders", { method: "POST", token, body: { id: cur.id, remove: true } });
-      if (!r.ok) { status("消せませんでした（" + (FOLDER_ERR[r.error] || r.error || r.status) + "）"); return; }
+      if (!r.ok) { status("削除できませんでした（" + (FOLDER_ERR[r.error] || r.error || r.status) + "）"); return; }
       await loadCampaigns(true); folderVal[key] = ""; folderEdit[key] = false; rerender();
     });
   }
@@ -662,7 +697,7 @@ function campPicker(type, id) {
   return `<div class="camp-pick" data-part="${esc(type)}|${esc(String(id))}">
     <label>フォルダ<select class="inline fold-set"><option value="">（フォルダに入っていない）</option>${foldersOf(type).map((x) => `<option value="${x.id}" ${f && f.id === x.id ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select></label>
     <span class="camp-label">シナリオ</span>${cs.map((c) => `<span class="pill camp-chip">${esc(c.name)}<button type="button" class="chip-x" data-camp-remove="${c.id}" aria-label="${esc(c.name)} から外す">×</button></span>`).join("") || '<span class="sub">入っていない</span>'}
-    ${rest.length ? `<select class="inline camp-add" aria-label="シナリオに足す"><option value="">＋ シナリオに足す</option>${rest.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select>` : ""}
+    ${rest.length ? `<select class="inline camp-add" aria-label="シナリオに追加"><option value="">＋ シナリオに追加</option>${rest.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select>` : ""}
     <span class="note camp-status"></span></div>`;
 }
 function wireCampPicker(root, after) {
@@ -672,7 +707,7 @@ function wireCampPicker(root, after) {
   const st = box.querySelector(".camp-status");
   const done = async (r, okText) => {
     if (!r.ok) {
-      st.textContent = r.error === "part_not_found" ? "設計図に出ていない物（止めている商品など）はシナリオに入れられません"
+      st.textContent = r.error === "part_not_found" ? "設計図に出ていない物（停止中の商品など）はシナリオに入れられません"
         : r.error === "need_sql" ? FOLDER_ERR.need_sql : "変えられませんでした（" + (r.error || r.status) + "）";
       return;
     }
@@ -692,8 +727,8 @@ function wireCampPicker(root, after) {
   const add = box.querySelector(".camp-add");
   if (add) add.addEventListener("change", async () => {
     if (!add.value) return;
-    st.textContent = "足しています…";
-    await done(await api("/api/admin/campaigns/assign", { method: "POST", token, body: { part_type, part_id, campaign_id: add.value } }), "シナリオに足しました");
+    st.textContent = "追加しています…";
+    await done(await api("/api/admin/campaigns/assign", { method: "POST", token, body: { part_type, part_id, campaign_id: add.value } }), "シナリオに追加しました");
   });
   box.querySelectorAll("[data-camp-remove]").forEach((b) => b.addEventListener("click", async () => {
     st.textContent = "外しています…";
@@ -734,11 +769,12 @@ const pill = (t, kind = "") => `<span class="pill ${kind}">${esc(t)}</span>`;
 // ---------- 添削ルーム ----------
 let currentRoom = null;
 // 便 8c：左のメニュー。押した項目の画面だけを出し、上のナビにその名前を出す
-const VIEWS = ["home", "blueprint", "people", "rooms", "deals", "ai", "products", "deliver", "settings", "refer", "guide", "forms", "pages", "line", "access", "invites", "site", "recordings"];
+const VIEWS = ["home", "blueprint", "people", "chat", "rooms", "deals", "ai", "products", "deliver", "settings", "refer", "guide", "forms", "pages", "line", "access", "invites", "site", "web", "recordings", "media", "results", "contracts", "utagecopy"];
 // 会員サイト（2026-10-29）：影の DOM の中に描く。顧客管理のその人の画面へは openPerson で移る
 let siteUi = null;
 // 録画（2026-11-06）：録画の棚も影の DOM の中に描く（public/js/recordings.js）
-let recUi = null;
+let recUi = null, mediaUi = null, resultsUi = null, webUi = null, contractsUi = null;
+let ucUi = null;
 // 便 20：コネクタだけの画面は無くした。"connect" は行き先の名前としてだけ残す。
 // メールを送るコネクタ（ステップ配信）は メール、送らないもの（自動の動き）は ファネル構築 のタブで開く。part を渡すとその 1 件を開く
 function openView(name, part) {
@@ -767,6 +803,7 @@ function setupViews() {
     $("view-people-wrap").style.display = b.dataset.view === "people" ? "" : "none";
     $("crumb").textContent = b.firstChild.textContent.trim();
     setCrumbSub("");
+    setViewGuide(b.dataset.view, b.firstChild.textContent.trim()); // 2026-11-08 題の横の「？」
     // 便 17：顧客管理はメニューから開くと一覧に戻る。開いた画面のまとまりは閉じない
     if (b.dataset.view === "people") custList();
     // 便 18：一覧 → 詳細の画面は、メニューから開くと一覧に戻る
@@ -787,6 +824,27 @@ function setupViews() {
     if (b.dataset.view === "forms") loadForms();
     if (b.dataset.view === "pages") loadPages();
     if (b.dataset.view === "line") loadLine();
+    if (b.dataset.view === "utagecopy") {
+      if (!ucUi) ucUi = mountUtageCopy($("uc-host"), { getToken: () => token });
+      ucUi.open();
+    }
+    if (b.dataset.view === "chat") openChatView();
+    if (b.dataset.view === "web") {
+      if (!webUi) webUi = mountWeb($("web-host"), { getToken: () => token });
+      webUi.open();
+    }
+    if (b.dataset.view === "contracts") {
+      if (!contractsUi) contractsUi = mountContracts($("contracts-host"), { getToken: () => token });
+      contractsUi.open();
+    }
+    if (b.dataset.view === "results") {
+      if (!resultsUi) resultsUi = mountResults($("results-host"), { getToken: () => token });
+      resultsUi.open();
+    }
+    if (b.dataset.view === "media") {
+      if (!mediaUi) mediaUi = mountMedia($("media-host"), { getToken: () => token });
+      mediaUi.open();
+    }
     if (b.dataset.view === "recordings") {
       if (!recUi) recUi = mountRecordings($("rec-host"), { getToken: () => token });
       recUi.open();
@@ -820,12 +878,12 @@ async function loadLine() {
   if (!r.account) { $("line-sum").textContent = "LINE のアカウントがまだつながっていません"; $("line-friends").innerHTML = ""; return; }
   lineAccount = r.account;
   const q = r.quota ? `今月の送信 ${r.quota.used == null ? "？" : r.quota.used} 通${r.quota.limit ? ` ／ 上限 ${r.quota.limit} 通` : ""}` : "今月の送信数は読めませんでした";
-  $("line-sum").innerHTML = `${esc(q)}・7 日に受けた知らせ ${r.received_7d} 件・UTAGE への転送の失敗 ${r.forward_failed_7d > 0 ? `<span class="pill warn">${r.forward_failed_7d} 件</span>` : "0 件"}`;
-  $("line-count").textContent = `友だち ${r.count} 人（メールを登録して結ばれた人 ${r.linked} 人）` + (r.all_followers ? "" : "・B が知らせを受けた人だけ（10/10 13:44 から）");
+  $("line-sum").innerHTML = `${esc(q)}・7 日に受けた通知 ${r.received_7d} 件・UTAGE への転送の失敗 ${r.forward_failed_7d > 0 ? `<span class="pill warn">${r.forward_failed_7d} 件</span>` : "0 件"}`;
+  $("line-count").textContent = `友だち ${r.count} 人（メール登録で LINE 連携した人 ${r.linked} 人）` + (r.all_followers ? "" : "・Webhook を受けた人だけ（10/10 13:44 から）");
   $("line-friends").innerHTML = r.friends.map((x) => `
     <li data-user="${esc(x.user)}" ${x.user === lineUser ? 'aria-current="true"' : ""}>
       <div style="min-width:0"><div>${esc(x.name || "（名前を読めない）")}</div><div class="sub ellip">${x.last_from === "me" ? "送った：" : ""}${esc(x.last_text || "")}</div></div>
-      <div style="text-align:right;flex-shrink:0">${x.blocked ? pill("ブロック", "gray") : x.excluded ? pill("除外", "gray") : x.linked ? pill("結ばれた") : pill("メールなし", "gray")}<div class="sub">${x.last_at ? fmtTime(x.last_at) : ""}</div></div>
+      <div style="text-align:right;flex-shrink:0">${x.blocked ? pill("ブロック", "gray") : x.excluded ? pill("除外", "gray") : x.linked ? pill("LINE 連携済み") : pill("メールなし", "gray")}<div class="sub">${x.last_at ? fmtTime(x.last_at) : ""}</div></div>
     </li>`).join("") || '<li class="note">まだいません。友だち追加かメッセージがあると出ます</li>';
   document.querySelectorAll("#line-friends li[data-user]").forEach((li) => li.addEventListener("click", () => openLine(li.dataset.user)));
 }
@@ -842,7 +900,7 @@ async function openLine(user) {
       : `<div class="msg-me"><div class="bubble chat mine"><div class="pre">${esc(m.text)}</div></div><div class="meta"><time>${fmtTime(m.at)}</time>${m.ok === false ? '<span class="pill warn">送れなかった</span>' : ""}${m.by === "AI" ? '<span class="pill gray">AI から</span>' : ""}</div></div>`;
   $("line-detail").innerHTML = `
     <h2 style="margin-bottom:2px">${esc(r.name || "（名前を読めない）")}</h2>
-    <div class="note" style="margin-bottom:12px">${r.person ? `${esc(r.person.email)}・<button class="link" type="button" id="line-person">顧客管理で開く</button>` : "メールの登録はまだ（LINE だけの人）"}${r.blocked ? "・ブロックされている" : ""}</div>
+    <div class="note" style="margin-bottom:12px">${r.person ? `${esc(r.person.email)}・<button class="link" type="button" id="line-person">顧客一覧で開く</button>・<a href="#chat/${esc(r.person.id)}/line">チャットで開く</a>` : "メールの登録はまだ（LINE だけの人）。チャットの「LINE」から手で結べます"}${r.blocked ? "・ブロックされている" : ""}</div>
     <div class="room">${r.messages.map(item).join("") || '<p class="note">B が受けたやりとりはまだありません。</p>'}</div>
     ${r.blocked ? '<p class="note">ブロックされているので送れません。</p>' : `<form id="line-reply" class="stack reply-form">
       <label for="lr-text" class="sr">返す文</label><textarea id="lr-text" rows="3" maxlength="2000" placeholder="LINE で返す文（文字だけ・今月の送信数を 1 通使う）"></textarea>
@@ -869,7 +927,120 @@ function lineBcBody(dry) {
   return { account: lineAccount, mode, filter, text: $("line-bc-text").value, dry };
 }
 const lineCountText = (r) => `送る相手 ${r.targets} 人（ブロック ${r.blocked}・除外 ${r.excluded}${r.not_linked ? `・メール未登録で LINE に送れない ${r.not_linked}` : ""}）`;
+// ---------- 便 L2：キーワードの自動応答 ----------
+let arAccount = null, arRows = [];
+const arJoin = (msgs) => (msgs || []).map((m) => m.type === "image" ? "画像 " + m.url : m.text).join("\n---\n");
+const arSplit = (t) => String(t || "").split(/\n-{3,}\n/).map((x) => x.trim()).filter(Boolean).map((x) => /^画像 https:[/][/]\S+$/.test(x) ? { type: "image", url: x.slice(3) } : { type: "text", text: x });
+async function loadReplies() {
+  const q = arAccount ? `?account=${encodeURIComponent(arAccount)}` : "";
+  const r = await api("/api/admin/line/replies" + q, { token });
+  if (!r.ok) { $("line-ar-sum").textContent = "読めませんでした（" + (r.error || r.status) + "）"; return; }
+  arAccount = r.account;
+  if (r.accounts) $("line-ar-account").innerHTML = r.accounts.map((a) => `<option value="${esc(a)}" ${a === arAccount ? "selected" : ""}>${esc(a)}</option>`).join("");
+  arRows = r.replies || [];
+  $("line-ar-sum").textContent = `${r.count} 件（有効 ${r.active} 件）`;
+  $("line-ar-rows").innerHTML = arRows.map((x) => `<tr>
+    <td>${x.active ? pill("有効") : pill("下書き", "gray")}</td>
+    <td>${esc(x.name)}${x.source ? `<div class="sub">${esc(x.source.startsWith("utage:") ? "UTAGE からコピーした" : x.source)}</div>` : ""}</td>
+    <td>${x.keywords.map((k) => esc(k)).join("・")}<div class="sub">${x.match === "part" ? "文に入っている" : "同じ文"}</div></td>
+    <td class="ellip" style="max-width:260px">${x.template_name ? "テンプレート「" + esc(x.template_name) + "」" : esc(arJoin(x.messages).slice(0, 80))}</td>
+    <td>${x.hits} 回${x.last_hit_at ? `<div class="sub">${fmtTime(x.last_hit_at)}</div>` : ""}</td>
+    <td style="white-space:nowrap"><button class="btn ghost small" type="button" data-ar-edit="${esc(x.id)}" aria-label="「${esc(x.name)}」を編集">編集</button>
+      <button class="btn ${x.active ? "ghost " : ""}small" type="button" data-ar-toggle="${esc(x.id)}" aria-label="「${esc(x.name)}」を${x.active ? "停止" : "有効にする"}">${x.active ? "停止" : "有効にする"}</button></td>
+  </tr>`).join("") || '<tr><td colspan="6" class="note">まだありません。「新規作成」から作れます</td></tr>';
+  document.querySelectorAll("[data-ar-edit]").forEach((b) => b.addEventListener("click", () => arEdit(b.dataset.arEdit, b)));
+  document.querySelectorAll("[data-ar-toggle]").forEach((b) => b.addEventListener("click", async () => {
+    const x = arRows.find((y) => y.id === b.dataset.arToggle); if (!x) return;
+    b.disabled = true;
+    const res = await api("/api/admin/line/replies/active", { method: "POST", token, body: { account: arAccount, ids: [x.id], active: !x.active } });
+    b.disabled = false;
+    $("line-ar-sum").textContent = res.ok ? `「${x.name}」を${x.active ? "停止しました" : "有効にしました"}` : "変えられませんでした（" + (res.error || res.status) + "）";
+    if (res.ok) await loadReplies();
+    const again = document.querySelector(`[data-ar-toggle="${CSS.escape(x.id)}"]`); if (again) again.focus();
+  }));
+}
+// M2b：LINE の画像の確かめ（サーバーの lineImageProblem と同じ名前）
+const AR_IMG_ERR = {
+  need_preview: (r) => `「${r.name}」は 1MB を超えるので、LINE 用のプレビューが要ります。「メディアから画像を選ぶ」で選び直してください`,
+  line_image_type: (r) => `「${r.name}」は LINE で送れない形式です（png か jpg だけ）`,
+  line_image_too_big: (r) => `「${r.name}」は 10MB を超えていて LINE で送れません`,
+  line_image_link_closed: () => "画像の共有リンクが止まっているか期限切れです。メディアの画面で戻すか、選び直してください",
+  line_image_no_file: () => "画像のファイルがまだ写し終わっていないか、消されています",
+  line_image_unknown: () => "画像の住所がメディアの棚の共有リンクとして見つかりません。選び直してください",
+  bad_image_url: () => "画像の住所は https:// から入れてください",
+};
+let arOpener = null;
+function arEdit(id, opener) {
+  arOpener = opener || null;
+  const x = arRows.find((y) => y.id === id) || null;
+  $("ar-id").value = x ? x.id : "";
+  $("ar-name").value = x ? x.name : "";
+  $("ar-keywords").value = x ? x.keywords.join("\n") : "";
+  $("ar-match").value = x ? x.match : "all";
+  $("ar-messages").value = x ? arJoin(x.messages) : "";
+  $("ar-sort").value = x ? x.sort : 100;
+  const tpl = x && x.template_name;
+  $("ar-msg-wrap").classList.toggle("hidden", !!tpl);
+  $("ar-tpl-note").classList.toggle("hidden", !tpl);
+  $("ar-tpl-note").textContent = tpl ? `返す中身はテンプレート「${x.template_name}」です（AI の道具 save_line_template で編集できます）` : "";
+  $("ar-remove").classList.toggle("hidden", !x);
+  $("ar-status").textContent = "";
+  $("line-ar-form").classList.remove("hidden");
+  $("ar-name").focus();
+}
+function arClose() { $("line-ar-form").classList.add("hidden"); if (arOpener && document.body.contains(arOpener)) arOpener.focus(); }
+function setupReplies() {
+  $("line-ar-open").addEventListener("click", () => {
+    const open = $("line-ar").classList.toggle("hidden") === false;
+    $("line-ar-open").setAttribute("aria-expanded", String(open));
+    $("line-ar-open").textContent = open ? "キーワードの自動応答 ▲" : "キーワードの自動応答 ▼";
+    if (open) loadReplies();
+  });
+  $("line-ar-account").addEventListener("change", () => { arAccount = $("line-ar-account").value; arClose(); loadReplies(); });
+  $("line-ar-new").addEventListener("click", (e) => arEdit(null, e.currentTarget));
+  $("ar-cancel").addEventListener("click", arClose);
+  // メディアの便 M2b：棚から画像を選んで「画像 住所」の吹き出しを足す（1MB を超える画像はプレビューを作る）
+  $("ar-pick").addEventListener("click", async (e) => {
+    const box = $("ar-messages");
+    const n = arSplit(box.value).length;
+    if (n >= 5) { $("ar-status").textContent = "吹き出しは 5 つまでです。どれかを削除してから追加してください"; box.focus(); return; }
+    const got = await pickMedia({ getToken: () => token, mode: "line", label: "LINE 自動応答：" + ($("ar-name").value.trim() || "名前なし"), opener: e.currentTarget });
+    if (!got) return;
+    box.value = (box.value.trim() ? box.value.replace(/\s+$/, "") + "\n---\n" : "") + "画像 " + got.url;
+    $("ar-status").textContent = `「${got.name}」の画像を追加しました。保存すると反映されます`;
+    box.focus();
+  });
+  $("line-ar-form").addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); arClose(); } });
+  $("ar-remove").addEventListener("click", async () => {
+    const id = $("ar-id").value; if (!id) return;
+    const x = arRows.find((y) => y.id === id);
+    if (x && x.active) { $("ar-status").textContent = "有効のままは削除できません。先に「停止」を押してください"; return; }
+    if (!confirm(`「${x ? x.name : ""}」を削除します。よろしいですか？`)) return;
+    const res = await api("/api/admin/line/replies", { method: "POST", token, body: { account: arAccount, id, remove: true } });
+    if (!res.ok) { $("ar-status").textContent = "削除できませんでした（" + (res.error || res.status) + "）"; return; }
+    arClose(); await loadReplies(); $("line-ar-sum").textContent = "削除しました";
+  });
+  $("line-ar-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const id = $("ar-id").value;
+    const keywords = $("ar-keywords").value.split(/\n+/).map((k) => k.trim()).filter(Boolean);
+    if (!keywords.length) { $("ar-status").textContent = "キーワードを 1 つ以上入れてください"; $("ar-keywords").focus(); return; }
+    const x = arRows.find((y) => y.id === id);
+    const body = { account: arAccount, id: id || undefined, name: $("ar-name").value, keywords, match: $("ar-match").value, sort: Number($("ar-sort").value) };
+    if (!(x && x.template_id)) {
+      body.messages = arSplit($("ar-messages").value);
+      if (!body.messages.length) { $("ar-status").textContent = "返す文を入れてください"; $("ar-messages").focus(); return; }
+    }
+    $("ar-save").disabled = true; $("ar-status").textContent = "保存しています…";
+    const res = await api("/api/admin/line/replies", { method: "POST", token, body });
+    $("ar-save").disabled = false;
+    if (!res.ok) { $("ar-status").textContent = AR_IMG_ERR[res.error] ? AR_IMG_ERR[res.error](res) : "保存できませんでした（" + (res.error || res.status) + (res.max ? `・${res.max} まで` : "") + "）"; return; }
+    arClose(); await loadReplies();
+    $("line-ar-sum").textContent = `「${body.name || keywords[0]}」を保存しました` + (res.overlap ? `（有効な「${res.overlap.join("・")}」とキーワードが重なっています）` : "");
+  });
+}
 function setupLine() {
+  setupReplies();
   $("line-bc-open").addEventListener("click", () => $("line-bc").classList.toggle("hidden"));
   document.querySelectorAll('input[name="line-mode"]').forEach((x) => x.addEventListener("change", () => $("line-bc-filter").classList.toggle("hidden", x.value !== "filter" || !x.checked)));
   $("line-bc-count").addEventListener("click", async () => {
@@ -966,10 +1137,10 @@ async function openRoom(id, focusId, pane) {
       <div><label for="r-orig">原文</label><textarea id="r-orig" rows="4">${esc(target.text)}</textarea></div>
       <div><label for="r-corr">添削後</label><textarea id="r-corr" rows="5">${esc(target.text)}</textarea></div>
       <div><label for="r-com">コメント</label><textarea id="r-com" rows="3" placeholder="どこを、なぜ直したか"></textarea></div>
-      <details class="notes-edit" id="r-notes-box"><summary class="note">長文の指摘を足す（原文の範囲に番号を付けて、生徒の画面で左右に並べる）</summary>
-        <p class="note">原文の欄で範囲を選んでから「選んだ部分を引用にする」を押すか、引用の欄に原文の一部をそのまま写してください。</p>
+      <details class="notes-edit" id="r-notes-box"><summary class="note">長文の指摘を追加（原文の範囲に番号を付けて、生徒の画面で左右に並べる）</summary>
+        <p class="note">原文の欄で範囲を選んでから「選んだ部分を引用にする」を押すか、引用の欄に原文の一部をそのままコピーしてください。</p>
         <div id="r-notes"></div>
-        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><button class="btn ghost small" type="button" id="r-quote">選んだ部分を引用にする</button><button class="btn ghost small" type="button" id="r-addnote">指摘を 1 つ足す</button></div>
+        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><button class="btn ghost small" type="button" id="r-quote">選んだ部分を引用にする</button><button class="btn ghost small" type="button" id="r-addnote">指摘を 1 つ追加</button></div>
       </details>
       <div style="display:flex;gap:8px;align-items:center"><button class="btn" type="submit" id="r-send">返す</button><span class="note" id="r-status"></span></div>
     </form>` : '<p class="note" style="margin-top:12px">この部屋に添削の未返信はありません。</p>'}` : `
@@ -1010,7 +1181,7 @@ async function openRoom(id, focusId, pane) {
     const addNote = (quote = "") => {
       const row = document.createElement("div");
       row.className = "nrow";
-      row.innerHTML = `<textarea class="n-q" placeholder="引用（原文の一部）"></textarea><textarea class="n-t" placeholder="指摘"></textarea><button class="btn ghost small" type="button" aria-label="この指摘を外す">×</button>`;
+      row.innerHTML = `<textarea class="n-q" placeholder="引用（原文の一部）"></textarea><textarea class="n-t" placeholder="指摘"></textarea><button class="btn ghost small" type="button" aria-label="この指摘を削除">×</button>`;
       row.querySelector(".n-q").value = quote;
       row.querySelector("button").addEventListener("click", () => row.remove());
       $("r-notes").appendChild(row);
@@ -1047,7 +1218,7 @@ async function loadDeals(focusId, msg) {
   const c = await api("/api/admin/consults", { token });
   if (!c.ok) { $("consults-count").textContent = "読めませんでした（" + (c.error || c.status) + "）"; }
   else {
-    $("consults-count").textContent = c.count === 0 ? "これからの予約は 0 件です。予約が入ると、ここに日時の順で並びます" : `これからの予約 ${c.count} 件。行を押すと顧客管理でその人の詳細が開きます`;
+    $("consults-count").textContent = c.count === 0 ? "これからの予約は 0 件です。予約が入ると、ここに日時の順で並びます" : `これからの予約 ${c.count} 件。行を押すと顧客一覧でその人の詳細が開きます`;
     table("consults", [
       { key: "slot", label: "日時", html: (x) => esc(x.label) },
       { key: "name", label: "名前", sortVal: (x) => x.name || x.email, html: (x) => `<div class="c-name">${esc(x.name || x.email)}</div>` },
@@ -1070,7 +1241,7 @@ async function loadDeals(focusId, msg) {
     { key: "registrants", label: "申込", html: (x) => `${x.registrants} 人` + (x.capacity ? `<div class="sub">定員 ${x.capacity}</div>` : "") },
     campCol("seminar", (x) => x.id),
     { key: "past", label: "状態", sortVal: (x) => (x.past ? 1 : 0), html: (x) => x.past ? pill("終了", "gray") : pill("これから") },
-  ], smRows, (x) => openSeminar(x.id), s.seminars.length ? "ここに当たるセミナーはありません" : "まだありません。「新しく作る」から回を作ります");
+  ], smRows, (x) => openSeminar(x.id), s.seminars.length ? "ここに当たるセミナーはありません" : "まだありません。「新規作成」から回を作ります");
   if (focusId) openSeminar(focusId, { msg });
 }
 
@@ -1467,7 +1638,7 @@ async function loadStaff() {
   $("staff-count").textContent = `${btStaff.length} 人・つながっている ${btStaff.filter((x) => x.set).length}`;
   box.innerHTML = btStaff.map((x) => `<div class="st-card" data-sid="${x.id}"><div class="st-h"><b>${esc(x.name)}</b><span class="note">${esc(x.email || "メール未設定")}</span><span class="st-${x.set ? "ok" : "ng"}">${x.set ? "● カレンダーとつながっています" : "○ カレンダー未接続"}</span></div>
     <p class="note" style="margin:6px 0 10px">${x.used.length ? "担当中：" + esc(x.used.join("・")) : "担当中の予約メニューはありません"}</p>
-    <div class="st-a"><button type="button" class="btn small${x.set ? " ghost" : ""}" data-sconn="${x.id}">${x.set ? "つなぎ直す" : "カレンダーをつなぐ"}</button>${x.set ? `<button type="button" class="btn ghost small" data-sping="${x.id}">確認</button>` : ""}<button type="button" class="btn ghost small" data-sedit="${x.id}">編集</button><button type="button" class="btn ghost small" data-sdel="${x.id}">削除</button><span class="note" data-smsg="${x.id}" role="status"></span></div>
+    <div class="st-a"><button type="button" class="btn small${x.set ? " ghost" : ""}" data-sconn="${x.id}">${x.set ? "再接続" : "カレンダーをつなぐ"}</button>${x.set ? `<button type="button" class="btn ghost small" data-sping="${x.id}">確認</button>` : ""}<button type="button" class="btn ghost small" data-sedit="${x.id}">編集</button><button type="button" class="btn ghost small" data-sdel="${x.id}">削除</button><span class="note" data-smsg="${x.id}" role="status"></span></div>
     <div class="st-steps hidden" data-ssteps="${x.id}"></div></div>`).join("") || '<p class="note">担当者はまだいません。</p>';
 }
 function staffSteps(id) {
@@ -1503,7 +1674,7 @@ function wireStaff() {
     if (b.dataset.sgo) { const id = b.dataset.sgo; msg(id, "つないでいます…"); const r = await api("/api/admin/staff/connect", { method: "POST", token, body: { id, url: document.querySelector(`[data-surl="${id}"]`).value } });
       if (r.ok) { await loadStaff(); btUndo(`Google カレンダー「${r.calendar}」とつながりました`); return; }
       msg(id, { bad_url: "「https://script.google.com/macros/s/…/exec」の形の URL を貼ってください", no_secret: "先に「コードをコピー」を押してください", bad_secret: "コードが古いようです。「コードをコピー」から貼り直して、デプロイし直してください", ping_failed: "つながりませんでした。アクセスできるユーザーが「全員」になっているか確かめてください" }[r.error] || "つながりませんでした（" + r.error + "）"); }
-    if (b.dataset.sping) { msg(b.dataset.sping, "確認しています…"); const r = await api("/api/admin/staff/ping", { method: "POST", token, body: { id: b.dataset.sping } }); msg(b.dataset.sping, r.ok ? `つながっています（${r.calendar}）` : "つながりませんでした。「つなぎ直す」から貼り直してください"); }
+    if (b.dataset.sping) { msg(b.dataset.sping, "確認しています…"); const r = await api("/api/admin/staff/ping", { method: "POST", token, body: { id: b.dataset.sping } }); msg(b.dataset.sping, r.ok ? `つながっています（${r.calendar}）` : "つながりませんでした。「再接続」から貼り直してください"); }
     if (b.dataset.sedit) form(btStaff.find((y) => y.id === b.dataset.sedit));
     if (b.dataset.sdel) { const x = btStaff.find((y) => y.id === b.dataset.sdel); const r = await api("/api/admin/staff", { method: "POST", token, body: { id: x.id, archived: true } });
       if (!r.ok) { msg(x.id, r.error === "staff_in_use" ? `担当中のため削除できません（${(r.used || []).join("・")}）。先に予約メニューの担当者を変えてください` : "削除できませんでした"); return; }
@@ -1726,7 +1897,7 @@ const SEM_WHY = {
   bad_title: "題名を入れてください（80 字まで）", bad_starts_at: "日時は「2026-11-01 21:00」の形で入れてください", bad_minutes: "長さは 10〜600 分",
   bad_capacity: "定員は 1 以上の数（空なら無制限）", bad_zoom_url: "Zoom の住所は https:// から", bad_archive_url: "アーカイブの住所は https:// から",
   form_not_found: "そのフォームが見つかりません", form_used_by_another_seminar: "そのフォームは別の回に結んであります", thanks_page_not_found: "そのページが見つかりません",
-  bad_key: "知らせの名前は英小文字・数字・ハイフン（例 three-days-before）", bad_offset_minutes: "いつ送るかの数を確かめてください", bad_subject: "件名を入れてください", bad_body: "本文を入れてください",
+  bad_key: "通知の名前は英小文字・数字・ハイフン（例 three-days-before）", bad_offset_minutes: "いつ送るかの数を確かめてください", bad_subject: "件名を入れてください", bad_body: "本文を入れてください",
 };
 // 日本時間の「2026-11-01T21:00」（日時の欄に入れる形）
 const jstInput = (iso) => { const d = new Date(new Date(iso).getTime() + 9 * 3600e3); return d.toISOString().slice(0, 16); };
@@ -1763,13 +1934,13 @@ function renderSeminar(r, { tab = "notices", msg } = {}) {
     pills: [x.past ? pill("終了", "gray") : pill("これから"), pill(`申込 ${x.registrants} 人` + (x.capacity ? ` / 定員 ${x.capacity}` : ""), "gray"), x.form_slug ? pill("申込のフォームあり", "gray") : pill("申込のフォームが無い", "warn")],
     foot: campPicker("seminar", x.id),
   }) + `${msg ? `<p class="msg ok" style="margin:12px 0 0">${esc(msg)}</p>` : ""}`
-    + tabsHtml([["notices", `知らせ ${r.notices.length}`], ["people", `申込者 ${r.registrants.length}`], ["edit", "中身"]], tab)
+    + tabsHtml([["notices", `通知 ${r.notices.length}`], ["people", `申込者 ${r.registrants.length}`], ["edit", "中身"]], tab)
     + `<section class="card" data-pane="notices">
-      <p class="note" style="margin-top:0">申込者に届く順に並びます。名前を押すと直せます。定時の処理（毎時 7 分）で送るので、送る時刻から最大 1 時間遅れます。送る時刻より後に申し込んだ人には、その知らせは送りません。</p>
+      <p class="note" style="margin-top:0">申込者に届く順に並びます。名前を押すと編集できます。定時の処理（毎時 7 分）で送るので、送る時刻から最大 1 時間遅れます。送る時刻より後に申し込んだ人には、その通知は送りません。</p>
       <div id="sn-table" class="table-wrap"></div>
-      <div style="margin-top:12px"><button class="btn small" type="button" id="sn-new">知らせを足す</button></div>
+      <div style="margin-top:12px"><button class="btn small" type="button" id="sn-new">通知を追加</button></div>
       <div id="sn-edit"></div>
-      <p class="note" style="margin:12px 0 0">この回の申込者には自動のラベル「${esc(x.label_name)}」が付きます。一斉配信やステップ配信の宛先でこのラベルを選ぶと、あとからこの回の申込者だけに送れます。</p>
+      <p class="note" style="margin:12px 0 0">この回の申込者には自動のラベル「${esc(x.label_name)}」が付きます。一斉配信やステップ配信の配信対象でこのラベルを選ぶと、あとからこの回の申込者だけに送れます。</p>
     </section>
     <section class="card" data-pane="people"><div id="sp-table" class="table-wrap"></div></section>
     <section class="card" data-pane="edit">${seminarForm(x)}</section>`;
@@ -1780,9 +1951,9 @@ function renderSeminar(r, { tab = "notices", msg } = {}) {
   table("sn-table", [
     { key: "when", label: "いつ", sortVal: (n) => n.send_at || "0", html: (n) => esc(n.when) + (n.send_at ? `<div class="sub">${esc(fmtTime(n.send_at))}</div>` : "") },
     { key: "subject", label: "件名", html: (n) => `<div class="c-name">${esc(n.subject)}</div>` },
-    { key: "active", label: "状態", cls: "c-src", sortVal: (n) => (n.active ? 1 : 0), html: (n) => n.active ? pill("使う") : pill("止めている", "gray") },
+    { key: "active", label: "状態", cls: "c-src", sortVal: (n) => (n.active ? 1 : 0), html: (n) => n.active ? pill("使う") : pill("停止中", "gray") },
     { key: "sent", label: "送った", html: (n) => `${n.sent} 人` },
-  ], sorted, (n) => noticeEditor(x, n, r.placeholders), "まだありません。「知らせを足す」から足します");
+  ], sorted, (n) => noticeEditor(x, n, r.placeholders), "まだありません。「通知を追加」から追加します");
   $("sn-new").addEventListener("click", () => noticeEditor(x, null, r.placeholders));
   table("sp-table", [
     { key: "name", label: "名前", sortVal: (p) => p.name || p.email, html: (p) => `<div class="c-name">${esc(p.name || p.email)}</div><div class="sub">${esc(p.email)}</div>` },
@@ -1802,10 +1973,10 @@ function seminarForm(x) {
       <div><label for="se-zoom">参加の URL（Zoom）</label><input id="se-zoom" type="url" inputmode="url" maxlength="500" placeholder="https://zoom.us/j/..." value="${esc(x ? x.zoom_url : "")}"></div>
       <div><label for="se-form">申込のフォーム（答えた人がこの回の申込者になる）</label><select id="se-form" class="inline"><option value="">（まだ結ばない）</option>${formOpts}</select></div>
       <div><label for="se-thanks">サンクスページ（答えたあとに移るページ。公開中のときだけ移る）</label><select id="se-thanks" class="inline"><option value="">（移さない・フォームの「送ったあとに出す文」を出す）</option>${thanksOpts}</select></div>
-      <div><label for="se-arc">アーカイブの URL（開催のあとの知らせで使う）</label><input id="se-arc" type="url" inputmode="url" maxlength="500" placeholder="https://www.youtube.com/watch?v=..." value="${esc(x ? x.archive_url : "")}"></div>
+      <div><label for="se-arc">アーカイブの URL（開催後の通知で使う）</label><input id="se-arc" type="url" inputmode="url" maxlength="500" placeholder="https://www.youtube.com/watch?v=..." value="${esc(x ? x.archive_url : "")}"></div>
       ${x ? "" : `<div><label for="se-camp">シナリオ</label><select id="se-camp" class="inline"><option value="">（あとで決める）</option>${liveCamps().map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select></div>`}
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn small" type="submit">${x ? "保存" : "作る"}</button>${x ? `<button class="btn ghost small" type="button" id="se-arch">${x.archived ? "戻す" : "しまう"}</button>` : ""}<span class="note" id="se-status"></span></div>
-      ${x ? "" : '<p class="note" style="margin:0">作ると、知らせ 3 本（申込の直後・前日・1 時間前）が入ります。あとで直す・足すことができます。</p>'}
+      ${x ? "" : '<p class="note" style="margin:0">作ると、リマインド 3 本（申込の直後・前日・1 時間前）が入ります。あとで編集・追加できます。</p>'}
     </form>`;
 }
 function wireSeminarForm(x) {
@@ -1821,13 +1992,13 @@ function wireSeminarForm(x) {
     const r = await api("/api/admin/seminars", { method: "POST", token, body });
     if (!r.ok) { $("se-status").textContent = SEM_WHY[r.error] || "保存できませんでした（" + (r.error || r.status) + "）"; return; }
     await loadDeals();
-    openSeminar(r.seminar.id, { tab: x ? "edit" : "notices", msg: x ? "保存しました" : "作りました。知らせ 3 本が入っています" });
+    openSeminar(r.seminar.id, { tab: x ? "edit" : "notices", msg: x ? "保存しました" : "作りました。リマインド 3 本が入っています" });
   });
   if ($("se-arch")) $("se-arch").addEventListener("click", async () => {
     const r = await api("/api/admin/seminars", { method: "POST", token, body: { id: x.id, archived: !x.archived } });
     if (!r.ok) { $("se-status").textContent = "変えられませんでした（" + (r.error || r.status) + "）"; return; }
     await loadDeals();
-    openSeminar(x.id, { tab: "edit", msg: r.seminar.archived ? "しまいました。知らせは送りません" : "戻しました" });
+    openSeminar(x.id, { tab: "edit", msg: r.seminar.archived ? "しまいました。通知は送りません" : "戻しました" });
   });
 }
 // 新しく作る（一覧の上のボタン）
@@ -1848,7 +2019,7 @@ async function loadPagesCache() {
 function noticeEditor(x, n, placeholders) {
   const o = offsetParts(n ? n.offset_minutes : 1440);
   $("sn-edit").innerHTML = `<div class="card" style="margin-top:12px"><form id="sn" class="stack">
-      <b>${n ? "知らせを直す" : "知らせを足す"}</b>
+      <b>${n ? "通知を編集" : "通知を追加"}</b>
       <div class="note" style="margin:0">いつ送るか</div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><label for="sn-unit" class="sr">いつ</label>
         <input id="sn-n" type="number" min="1" style="width:90px" value="${esc(o.n)}" aria-label="数">
@@ -1857,8 +2028,8 @@ function noticeEditor(x, n, placeholders) {
       <div><label for="sn-sub">件名</label><input id="sn-sub" type="text" maxlength="200" value="${esc(n ? n.subject : "")}"></div>
       <div><label for="sn-body">本文</label><textarea id="sn-body" rows="8" maxlength="8000">${esc(n ? n.body : "")}</textarea></div>
       <p class="note" style="margin:0">差し込み：${esc((placeholders || []).join("　"))}（名前・題名・日時・長さ・参加の URL・アーカイブの URL）</p>
-      <label class="check"><input type="checkbox" id="sn-active" ${!n || n.active ? "checked" : ""}> <span>使う（外すと送らない）</span></label>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn small" type="submit">${n ? "保存" : "足す"}</button>${n ? `<button class="btn ghost small" type="button" id="sn-send">まだ受け取っていない申込者へいま送る</button>` : ""}<span class="note" id="sn-status"></span></div>
+      <label class="check"><input type="checkbox" id="sn-active" ${!n || n.active ? "checked" : ""}> <span>使う（チェックを外すと送らない）</span></label>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn small" type="submit">${n ? "保存" : "追加"}</button>${n ? `<button class="btn ghost small" type="button" id="sn-send">まだ受け取っていない申込者へいま送る</button>` : ""}<span class="note" id="sn-status"></span></div>
     </form></div>`;
   const sync = () => { const now = $("sn-unit").value === "now"; $("sn-n").classList.toggle("hidden", now); $("sn-dir").classList.toggle("hidden", now); };
   $("sn-unit").addEventListener("change", sync); sync();
@@ -1870,7 +2041,7 @@ function noticeEditor(x, n, placeholders) {
     const body = { key: n ? n.key : "n-" + Date.now().toString(36), offset_minutes: offsetFrom($("sn-n").value, unit, $("sn-dir").value), subject: $("sn-sub").value.trim(), body: $("sn-body").value, active: $("sn-active").checked };
     const r = await api(`/api/admin/seminars/${x.id}/notices`, { method: "POST", token, body });
     if (!r.ok) { $("sn-status").textContent = SEM_WHY[r.error] || "保存できませんでした（" + (r.error || r.status) + "）"; return; }
-    openSeminar(x.id, { tab: "notices", msg: (r.created ? "足しました" : "保存しました") + (r.warnings && r.warnings.length ? "。" + r.warnings.join("。") : "") });
+    openSeminar(x.id, { tab: "notices", msg: (r.created ? "追加しました" : "保存しました") + (r.warnings && r.warnings.length ? "。" + r.warnings.join("。") : "") });
   });
   if ($("sn-send")) $("sn-send").addEventListener("click", async () => {
     if (!confirm(`「${n.subject}」を、まだ受け取っていない申込者へいま送ります。よいですか`)) return;
@@ -1898,13 +2069,19 @@ function approvalBody(x) {
   const args = x.args || {};
   if (Array.isArray(args._preview)) {
     const rest = Object.fromEntries(Object.entries(args).filter(([k]) => !["_preview", "step_ids"].includes(k)));
-    return `<div class="note" style="margin:0 0 4px">${esc(args.campaign_name || "")}・ブロック「${esc(args.block_name || "")}」の下書き ${args._preview.length} 個を動かします（承認した時点でこの番号のものだけが動く）</div>
-      <div class="bp-table-wrap"><table class="bp-table" style="min-width:0"><thead><tr><th>種類</th><th>名前</th><th>きっかけ → する</th><th class="r">宛先の人数</th></tr></thead>
+    return `<div class="note" style="margin:0 0 4px">${esc(args.campaign_name || "")}・ブロック「${esc(args.block_name || "")}」の下書き ${args._preview.length} 個を配信開始します（承認した時点のものだけが対象）</div>
+      <div class="bp-table-wrap"><table class="bp-table" style="min-width:0"><thead><tr><th>種類</th><th>名前</th><th>トリガー → アクション</th><th class="r">配信対象の人数</th></tr></thead>
       <tbody>${args._preview.map((p) => `<tr><td>${esc(p.type)}</td><td>${esc(p.name)}</td><td>${esc(p.trigger)} → ${esc(p.action)}</td><td class="r num">${p.audience == null ? "—" : p.audience}</td></tr>`).join("")}</tbody></table></div>
-      <p class="note" style="margin:4px 0 0">宛先の人数は、いまセレクタに当たる人の数。動かした時刻より後のきっかけだけが対象。</p>
+      <p class="note" style="margin:4px 0 0">配信対象の人数は、いま配信対象の条件に当たる人の数。配信開始より後のトリガーだけが対象。</p>
       <details style="margin-top:4px"><summary class="note">中身（そのまま）</summary><pre class="note" style="white-space:pre-wrap;margin:0">${esc(JSON.stringify(rest, null, 2))}</pre></details>`;
   }
   return `<details><summary class="note">中身（そのまま）</summary><pre class="note" style="white-space:pre-wrap;margin:0">${esc(JSON.stringify(args, null, 2))}</pre></details>`;
+}
+
+// 便 T4：配信タイミング（時間の数 → 「2日後」「1日 6時間後」「3時間後」）。一般的なツールの言い方にそろえる
+function delayText(h) {
+  const n = Number(h) || 0, d = Math.floor(n / 24), r = n % 24;
+  return d && r ? `${d}日 ${r}時間後` : d ? `${d}日後` : `${r}時間後`;
 }
 
 // 便 9：承認の中身を読める言葉で並べる（誰に・件名・宛先・本文など）。番号のままの中身は下の「中身（そのまま）」に残す
@@ -1915,16 +2092,16 @@ function approvalRef(x) {
   else if (a.person_id) rows.push(["誰に", "（この人は見つかりませんでした）"]);
   if (ref.broadcast) {
     rows.push(["件名", ref.broadcast.subject]);
-    rows.push(["宛先", filterText(ref.broadcast.filter || {}) + (ref.broadcast.target_count != null ? `・${ref.broadcast.target_count} 人` : "")]);
+    rows.push(["配信対象", filterText(ref.broadcast.filter || {}) + (ref.broadcast.target_count != null ? `・${ref.broadcast.target_count} 人` : "")]);
   }
   if (a.subject && !ref.broadcast) rows.push(["件名", a.subject]);
-  if (a.filter) rows.push(["宛先", filterText(a.filter)]);
+  if (a.filter) rows.push(["配信対象", filterText(a.filter)]);
   if (a.label) rows.push(["ラベル", a.label]);
   if (a.text) rows.push(["本文", a.text]);
   if (a.body) rows.push(["本文", a.body]);
   if (a.corrected) rows.push(["添削後", a.corrected]);
   if (a.comment) rows.push(["コメント", a.comment]);
-  if (a.url !== undefined) rows.push(["住所", a.url === "" ? "（外す）" : "入れる（住所は画面に出しません）"]);
+  if (a.url !== undefined) rows.push(["住所", a.url === "" ? "（削除）" : "入れる（住所は画面に出しません）"]);
   if (a.amount !== undefined) rows.push(["金額", Number(a.amount).toLocaleString("ja-JP") + " 円"]);
   if (a.decision) rows.push(["決めること", a.decision]);
   // 便 13：セミナーの回と知らせ
@@ -1933,7 +2110,7 @@ function approvalRef(x) {
   if (a.zoom_url !== undefined) rows.push(["参加の URL", a.zoom_url || "（空）"]);
   if (a.form_slug !== undefined) rows.push(["申込のフォーム", a.form_slug || "（結ばない）"]);
   if (a.thanks_page_slug !== undefined) rows.push(["サンクスページ", a.thanks_page_slug || "（移さない）"]);
-  if (a.key && a.seminar_id) rows.push(["知らせ", a.key + (a.offset_minutes === undefined ? "" : a.offset_minutes === null ? "・申込の直後" : a.offset_minutes >= 0 ? `・開催の ${a.offset_minutes} 分前` : `・開催の ${-a.offset_minutes} 分あと`)]);
+  if (a.key && a.seminar_id) rows.push(["通知", a.key + (a.offset_minutes === undefined ? "" : a.offset_minutes === null ? "・申込の直後" : a.offset_minutes >= 0 ? `・開催の ${a.offset_minutes} 分前` : `・開催の ${-a.offset_minutes} 分あと`)]);
   // 目標達成くん 6 便目：生徒の設計の下書き（生徒の名前と週の並びは頼んだ時点で足してある）
   if (a.draft && typeof a.draft === "object") {
     const d = a.draft, n = (v) => Number(v || 0).toLocaleString("ja-JP");
@@ -2010,7 +2187,7 @@ async function loadAi() {
 }
 
 // ---------- 配信（B の便 5） ----------
-const BC_LABEL = { draft: "下書き", queued: "送る列", sending: "送っている", done: "送り終えた", canceled: "止めた" };
+const BC_LABEL = { draft: "下書き", queued: "送る列", sending: "送っている", done: "送り終えた", canceled: "停止中" };
 let stepsCache = [];
 function bfFilter() {
   const f = {};
@@ -2060,12 +2237,12 @@ function showConnectorFields() {
 }
 function connectorText(s) {
   const ta = s.trigger_args || {};
-  const when = (triggerNames[s.trigger] || s.trigger) + (s.product_id ? "（" + s.product_id + "）" : "") + (ta.label ? "「" + ta.label + "」" : "") + (ta.url ? "（" + String(ta.url).slice(0, 30) + "）" : "") + (ta.form ? "「" + (formNames[ta.form] || ta.form) + "」" : "") + (ta.page ? "「" + (pageNames[ta.page] || ta.page) + "」" : "") + (ta.button ? "のボタン " + ta.button : "") + (s.delay_hours ? `・${s.delay_hours} 時間後` : "");
+  const when = (triggerNames[s.trigger] || s.trigger) + (s.product_id ? "（" + s.product_id + "）" : "") + (ta.label ? "「" + ta.label + "」" : "") + (ta.url ? "（" + String(ta.url).slice(0, 30) + "）" : "") + (ta.form ? "「" + (formNames[ta.form] || ta.form) + "」" : "") + (ta.page ? "「" + (pageNames[ta.page] || ta.page) + "」" : "") + (ta.button ? "のボタン " + ta.button : "") + (ta.account ? "（LINE " + ta.account + "）" : "") + (s.delay_hours ? `から ${delayText(s.delay_hours)}` : "の直後");
   const who = filterText(s.selector || {});
   const aa = s.action_args || {};
   const target = s.action === "move_to" && aa.step_id ? (stepsCache.find((x) => x.id === aa.step_id) || {}).name || "番号 " + aa.step_id : "";
   const what = (actionNames[s.action] || s.action) + (s.action === "add_label" && aa.label ? "「" + aa.label + "」" : "")
-    + (target ? "「" + target + "」" : "") + (s.action === "set_field" && aa.field ? "「" + (fieldNames[aa.field] || aa.field) + " ＝ " + (aa.value || "（空）") + "」" : "");
+    + (target ? "「" + target + "」" : "") + (s.action === "set_field" && aa.field ? "「" + (fieldNames[aa.field] || aa.field) + " ＝ " + (aa.value || "（空）") + "」" : "") + (s.action === "send_line" && aa.account ? "（" + aa.account + "）" : "");
   return { when, who, what };
 }
 function filterText(f) {
@@ -2091,7 +2268,7 @@ async function loadDeliver() {
     sfTabs = wireTabs($("sf"), "tr");
     $("bf-count").addEventListener("click", async () => {
       const r = await api("/api/admin/audience", { method: "POST", token, body: { filter: bfFilter() } });
-      $("bf-status").textContent = r.ok ? `宛先 ${r.count} 人（配信を止めている人 ${r.unsubscribed}）${r.open_to_all ? "" : "・いまはテスト宛てにだけ届く"}` : "数えられませんでした（" + (r.error || r.status) + "）";
+      $("bf-status").textContent = r.ok ? `配信対象 ${r.count} 人（配信停止中の人 ${r.unsubscribed}）${r.open_to_all ? "" : "・いまはテスト宛てにだけ届く"}` : "数えられませんでした（" + (r.error || r.status) + "）";
     });
     $("bf").addEventListener("submit", async (ev) => {
       ev.preventDefault();
@@ -2099,7 +2276,7 @@ async function loadDeliver() {
       if (!r.ok) { $("bf-status").textContent = "保存できませんでした（" + (r.error || r.status) + "）"; return; }
       await loadDeliver();
       const b = (deliverData.broadcasts || []).find((x) => x.id === (r.broadcast && r.broadcast.id)) || deliverData.broadcasts[0];
-      if (b) openBroadcast(b, `下書きにしました（宛先 ${r.audience.count} 人）。送るときは上の「送る」を押します`);
+      if (b) openBroadcast(b, `下書きにしました（配信対象 ${r.audience.count} 人）。送るときは上の「送る」を押します`);
     });
     $("bc-new").addEventListener("click", () => {
       $("bf").reset(); $("bf-status").textContent = ""; bfTabs("body");
@@ -2111,7 +2288,7 @@ async function loadDeliver() {
       const r = await api("/api/admin/deliver/run", { method: "POST", token });
       $("dv-run").disabled = false;
       $("dv-run-status").classList.remove("hidden");
-      $("dv-run-status").textContent = r.ok ? `コネクタ：送った ${r.steps.sent}・知らせた ${r.steps.notified || 0}・ラベル ${r.steps.labeled || 0}・条件外 ${r.steps.skipped || 0}・送らなかった ${r.steps.blocked}・失敗 ${r.steps.failed}／一斉：送った ${r.broadcasts.sent}・送らなかった ${r.broadcasts.blocked}・失敗 ${r.broadcasts.failed}` : "動かせませんでした（" + (r.error || r.status) + "）";
+      $("dv-run-status").textContent = r.ok ? `ステップ配信：配信済み ${r.steps.sent}・通知した ${r.steps.notified || 0}・ラベル ${r.steps.labeled || 0}・条件外 ${r.steps.skipped || 0}・送らなかった ${r.steps.blocked}・失敗 ${r.steps.failed}／一斉：送った ${r.broadcasts.sent}・送らなかった ${r.broadcasts.blocked}・失敗 ${r.broadcasts.failed}` : "動かせませんでした（" + (r.error || r.status) + "）";
       loadDeliver();
     });
     $("sf").addEventListener("submit", async (ev) => {
@@ -2125,11 +2302,13 @@ async function loadDeliver() {
       const body = {
         name: $("sf-name").value, trigger: tr, product_id: tr === "purchase" ? ($("sf-product").value.trim() || null) : null,
         trigger_args: tr === "label_added" ? { label: $("sf-tlabel").value.trim() } : tr === "clicked" && $("sf-turl").value.trim() ? { url: $("sf-turl").value.trim() } : tr === "form_submitted" && $("sf-tform").value ? { form: $("sf-tform").value }
+          : tr === "line_linked" && $("sf-taccount").value ? { account: $("sf-taccount").value }
           : tr === "page_viewed" || tr === "page_clicked" ? { ...($("sf-tpage").value ? { page: $("sf-tpage").value } : {}), ...(tr === "page_clicked" && $("sf-tbutton").value.trim() ? { button: $("sf-tbutton").value.trim() } : {}) } : {},
-        delay_hours: Number($("sf-delay").value.replace(/[^0-9]/g, "") || 0), selector,
+        delay_hours: Number($("sf-delay-d").value.replace(/[^0-9]/g, "") || 0) * 24 + Number($("sf-delay").value.replace(/[^0-9]/g, "") || 0), selector,
         action: ac, action_args: ac === "add_label" ? { label: $("sf-alabel").value.trim() }
           : ac === "move_to" ? { step_id: Number($("sf-astep").value) || null }
-          : ac === "set_field" ? { field: $("sf-afield").value, value: $("sf-avalue").value.trim() } : {},
+          : ac === "set_field" ? { field: $("sf-afield").value, value: $("sf-avalue").value.trim() }
+          : ac === "send_line" ? { account: $("sf-aaccount").value } : {},
         subject: $("sf-subject").value, body: $("sf-body").value,
         active: $("sf-active").checked,
       };
@@ -2165,7 +2344,7 @@ async function loadDeliver() {
     { key: "clicked_people", label: "押した人", cls: "c-src", sortVal: (b) => b.clicked_people || 0, html: (b) => String(b.clicked_people || 0) },
     campCol("broadcast", (b) => b.id),
     { key: "created_at", label: "作った日", cls: "c-reg", html: (b) => esc(dayOf(b.created_at)) },
-  ], bcRows, (b) => openBroadcast(b), r.broadcasts.length ? "ここに当たるメールはありません" : "まだありません。「新しく作る」から作ります");
+  ], bcRows, (b) => openBroadcast(b), r.broadcasts.length ? "ここに当たるメールはありません" : "まだありません。「新規作成」から作ります");
   stepsCache = r.steps;
   fillActionOptions(r);
   if (r.triggers && !$("sf-trigger").options.length) {
@@ -2177,17 +2356,17 @@ async function loadDeliver() {
   loadLabelNames();
   table("mail-steps", [
     { key: "subject", label: "件名", html: (s) => { const c = connectorText(s); return `<div class="c-name">${esc(s.subject || s.name)}</div><div class="sub">${esc(c.when)} → ${esc(c.who)}</div>`; } },
-    { key: "active", label: "状態", sortVal: (s) => (s.active ? 1 : 0), html: (s) => s.active ? pill("動いている") : pill("止めている", "gray") },
-    { key: "delay_hours", label: "何時間後", cls: "c-src", sortVal: (s) => s.delay_hours || 0, html: (s) => String(s.delay_hours || 0) },
+    { key: "active", label: "状態", sortVal: (s) => (s.active ? 1 : 0), html: (s) => s.active ? pill("配信中") : pill("停止中", "gray") },
+    { key: "delay_hours", label: "配信タイミング", cls: "c-src", sortVal: (s) => s.delay_hours || 0, html: (s) => esc(s.delay_hours ? delayText(s.delay_hours) : "直後") },
     { key: "sent", label: "送った", sortVal: (s) => s.sent || 0, html: (s) => `${s.sent || 0} <span class="sub">開いた ${s.opened_people || 0}・押した ${s.clicks || 0}</span>` },
     campCol("step", (s) => s.id),
-  ], msRows, (s) => openConnector(s), mailSteps.length ? "ここに当たるステップ配信はありません" : "まだありません。「新しく作る」から作ります");
+  ], msRows, (s) => openConnector(s), mailSteps.length ? "ここに当たるステップ配信はありません" : "まだありません。「新規作成」から作ります");
   table("steps", [
     { key: "name", label: "名前", html: (s) => { const c = connectorText(s); return `<div class="c-name">${esc(s.name)}</div><div class="sub">${esc(c.when)} → ${esc(c.who)} → ${esc(c.what)}</div>`; } },
-    { key: "active", label: "状態", sortVal: (s) => (s.active ? 1 : 0), html: (s) => s.active ? pill("動いている") : pill("止めている", "gray") },
+    { key: "active", label: "状態", sortVal: (s) => (s.active ? 1 : 0), html: (s) => s.active ? pill("配信中") : pill("停止中", "gray") },
     campCol("step", (s) => s.id),
     { key: "result", label: "結果", nosort: true, cls: "c-reg", html: (s) => esc(stepResult(s)) },
-  ], stRows, (s) => openConnector(s), autoSteps.length ? "ここに当たる自動の動きはありません" : "まだありません。「新しく作る」から作ります");
+  ], stRows, (s) => openConnector(s), autoSteps.length ? "該当するステップ配信はありません" : "まだありません。「新規作成」から作ります");
 }
 const isMailStep = (s) => !s.action || s.action === "send_email";
 async function openStepById(id) {
@@ -2195,8 +2374,9 @@ async function openStepById(id) {
   const s = stepsCache.find((x) => String(x.id) === String(id));
   if (s) openConnector(s);
 }
-const stepResult = (s) => (s.action === "notify_admin" ? `知らせた ${s.notified || 0}` : s.action === "add_label" ? `付けた ${s.labeled || 0}`
+const stepResult = (s) => (s.action === "notify_admin" ? `通知した ${s.notified || 0}` : s.action === "add_label" ? `付けた ${s.labeled || 0}`
   : s.action === "move_to" ? `移した ${s.moved || 0}` : s.action === "set_field" ? `書いた ${s.fields_set || 0}`
+  : s.action === "send_line" ? `LINE 送った ${s.line_sent || 0}` + (s.line_failed ? `・失敗 ${s.line_failed}` : "")
   : `送った ${s.sent}・開いた ${s.opened_people || 0} 人・押した ${s.clicks} 回`) + (s.skipped ? `・条件外 ${s.skipped}` : "");
 
 function openBroadcast(b, msg) {
@@ -2207,12 +2387,12 @@ function openBroadcast(b, msg) {
     title: b.subject,
     sub: `作った日 ${esc(dayOf(b.created_at))}`,
     pills: [pill(BC_LABEL[b.status] || b.status, b.status === "draft" || b.status === "canceled" ? "gray" : b.status === "done" ? "" : "warn"), r.open_to_all ? pill("誰にでも届く", "warn") : pill("いまはテスト宛てにだけ届く", "gray")],
-    actions: `${b.status === "draft" ? `<button class="btn small" type="button" id="bc-queue">送る</button>` : ""}${["draft", "queued", "sending"].includes(b.status) ? `<button class="btn ghost small" type="button" id="bc-cancel">止める</button>` : ""}`,
+    actions: `${b.status === "draft" ? `<button class="btn small" type="button" id="bc-queue">送る</button>` : ""}${["draft", "queued", "sending"].includes(b.status) ? `<button class="btn ghost small" type="button" id="bc-cancel">停止</button>` : ""}`,
     foot: campPicker("broadcast", b.id),
   }) + `${msg ? `<p class="msg ok" style="margin:12px 0 0">${esc(msg)}</p>` : ""}`
-    + tabsHtml([["result", "結果"], ["body", "中身"], ["who", "宛先"]], "result")
+    + tabsHtml([["result", "結果"], ["body", "中身"], ["who", "配信対象"]], "result")
     + `<section class="card" data-pane="result"><dl class="kv">
-        <dt>宛先</dt><dd>${b.target_count ?? "送る列に入れたときに数える"}${b.target_count != null ? " 人" : ""}</dd>
+        <dt>配信対象</dt><dd>${b.target_count ?? "送る列に入れたときに数える"}${b.target_count != null ? " 人" : ""}</dd>
         <dt>送った</dt><dd>${b.sent}・送らなかった ${b.blocked}・失敗 ${b.failed}</dd>
         <dt>開いた（目安）</dt><dd>${b.opened_people || 0} 人<span class="note">　iPhone のメールは受け取っただけで開いたことになる場合があります</span></dd>
         <dt>リンクを押した</dt><dd>${b.clicked_people} 人（${b.clicks} 回）</dd>
@@ -2223,7 +2403,7 @@ function openBroadcast(b, msg) {
   wireCampPicker($("bc-detail"), () => loadDeliver());
   if ($("bc-queue")) $("bc-queue").addEventListener("click", async () => {
     // 便 9：確認の文に、件名・宛先・いま誰に届くかを出す（「使い方」の送る前に見ることと同じ中身）
-    if (!confirm(`この一斉配信を送る列に入れます。\n\n件名：${b.subject || ""}\n宛先：${filterText(b.filter || {})}\n${r.open_to_all ? "いまは誰にでも届きます" : "いまはテスト宛てにだけ届きます"}\n\n毎時の定時の処理で、今日の上限の中から送ります。`)) return;
+    if (!confirm(`この一斉配信を送る列に入れます。\n\n件名：${b.subject || ""}\n配信対象：${filterText(b.filter || {})}\n${r.open_to_all ? "いまは誰にでも届きます" : "いまはテスト宛てにだけ届きます"}\n\n毎時の定時の処理で、今日の上限の中から送ります。`)) return;
     const q = await api(`/api/admin/broadcasts/${b.id}/queue`, { method: "POST", token });
     if (!q.ok) return fail("送る列に入れられませんでした（" + (q.error || q.status) + "）");
     await loadDeliver();
@@ -2231,9 +2411,9 @@ function openBroadcast(b, msg) {
   });
   if ($("bc-cancel")) $("bc-cancel").addEventListener("click", async () => {
     const q = await api(`/api/admin/broadcasts/${b.id}/cancel`, { method: "POST", token });
-    if (!q.ok) return fail("止められませんでした（" + (q.error || q.status) + "）");
+    if (!q.ok) return fail("停止できませんでした（" + (q.error || q.status) + "）");
     await loadDeliver();
-    const nb = deliverData.broadcasts.find((x) => x.id === b.id); if (nb) openBroadcast(nb, "止めました");
+    const nb = deliverData.broadcasts.find((x) => x.id === b.id); if (nb) openBroadcast(nb, "停止しました");
   });
 }
 
@@ -2247,23 +2427,23 @@ function openConnector(s, keepStatus, kind) {
   $(home + "-detail").appendChild($("sf-wrap"));
   $("sf-wrap").classList.remove("hidden");
   if (mail) { $("bc-detail").innerHTML = ""; $("bf-wrap").classList.add("hidden"); }
-  const what = mail ? "ステップ配信" : "自動の動き";
+  const what = mail ? "ステップ配信" : "ステップ配信";
   showPane(home, "detail", s ? (mail ? s.subject || s.name : s.name) : "新しい" + what, what + "の一覧へ");
   if (!s) {
     $("sf").reset(); $("sf-id").value = "";
     const ac = mail ? "send_email" : ([...$("sf-action").options].find((o) => o.value !== "send_email") || {}).value;
     if (ac) $("sf-action").value = ac;
-    $("sf-head").innerHTML = headHtml({ title: "新しい" + what, sub: mail ? "① 何をした人に → ② 誰に → ③ 何時間後にこのメールを送る、の順に決めて保存します。「動かす」に印を付けると、その時刻より後のきっかけから動きます" : "① 〜したら → ② 誰に → ③ 〜する の順に決めて保存します。「動かす」に印を付けると、その時刻より後のきっかけから動きます" });
+    $("sf-head").innerHTML = headHtml({ title: "新しい" + what, sub: mail ? "① 何をした人に → ② 誰に → ③ トリガーから何日・何時間後にこのメールを送る、の順に決めて保存します。「配信開始」に印を付けると、その時刻より後のトリガーから配信されます" : "① 〜したら → ② 誰に → ③ 〜する の順に決めて保存します。「配信開始」に印を付けると、その時刻より後のトリガーから配信されます" });
   } else {
     const ta = s.trigger_args || {}, sel = s.selector || {}, c = connectorText(s);
     $("sf-id").value = s.id; $("sf-name").value = s.name; $("sf-trigger").value = s.trigger; $("sf-product").value = s.product_id || "";
-    $("sf-tlabel").value = ta.label || ""; $("sf-turl").value = ta.url || ""; $("sf-tform").value = ta.form || ""; $("sf-tpage").value = ta.page || ""; $("sf-tbutton").value = ta.button || "";
+    $("sf-tlabel").value = ta.label || ""; $("sf-turl").value = ta.url || ""; $("sf-tform").value = ta.form || ""; $("sf-tpage").value = ta.page || ""; $("sf-tbutton").value = ta.button || ""; $("sf-taccount").value = ta.account || "";
     $("sf-labels").value = (sel.labels || []).join(","); $("sf-nolabels").value = (sel.not_labels || []).join(",");
     $("sf-action").value = s.action || "send_email"; $("sf-alabel").value = (s.action_args || {}).label || "";
-    $("sf-astep").value = (s.action_args || {}).step_id || ""; $("sf-afield").value = (s.action_args || {}).field || ""; $("sf-avalue").value = (s.action_args || {}).value || "";
+    $("sf-astep").value = (s.action_args || {}).step_id || ""; $("sf-afield").value = (s.action_args || {}).field || ""; $("sf-avalue").value = (s.action_args || {}).value || ""; $("sf-aaccount").value = (s.action_args || {}).account || "shianin";
     $("sf-open").value = openValue(sel);
-    $("sf-delay").value = s.delay_hours; $("sf-subject").value = s.subject; $("sf-body").value = s.body; $("sf-active").checked = s.active;
-    $("sf-head").innerHTML = headHtml({ title: s.name, sub: `${esc(c.when)} → ${esc(c.who)} → ${esc(c.what)}`, pills: [s.active ? pill("動いている") : pill("止めている", "gray"), pill(stepResult(s), "gray")], foot: campPicker("step", s.id) });
+    $("sf-delay-d").value = Math.floor((s.delay_hours || 0) / 24); $("sf-delay").value = (s.delay_hours || 0) % 24; $("sf-subject").value = s.subject; $("sf-body").value = s.body; $("sf-active").checked = s.active;
+    $("sf-head").innerHTML = headHtml({ title: s.name, sub: `${esc(c.when)} → ${esc(c.who)} → ${esc(c.what)}`, pills: [s.active ? pill("配信中") : pill("停止中", "gray"), pill(stepResult(s), "gray")], foot: campPicker("step", s.id) });
     wireCampPicker($("sf-head"), () => loadDeliver());
   }
   if (!keepStatus) $("sf-status").textContent = "";
@@ -2333,16 +2513,16 @@ async function loadForms() {
   const fmRows = campRows("forms", "form", fo.forms, (f) => f.id, () => loadForms());
   table("forms-table", [
     { key: "title", label: "題名", html: (f) => `<div class="c-name">${esc(f.title)}</div><div class="sub">/form?f=${esc(f.slug)}</div>` },
-    { key: "active", label: "状態", sortVal: (f) => (f.active ? 1 : 0), html: (f) => f.active ? pill("公開中") : pill("止めている", "gray") },
+    { key: "active", label: "状態", sortVal: (f) => (f.active ? 1 : 0), html: (f) => f.active ? pill("公開中") : pill("停止中", "gray") },
     { key: "answers", label: "回答", html: (f) => String(f.answers) },
     campCol("form", (f) => f.id),
     { key: "last_answer_at", label: "最後の回答", cls: "c-reg", html: (f) => esc(f.last_answer_at ? ago(f.last_answer_at) : "—") },
-  ], fmRows, (f) => formEditor(f), fo.forms.length ? "ここに当たるフォームはありません" : "まだありません。「新しく作る」から作ります");
+  ], fmRows, (f) => formEditor(f), fo.forms.length ? "ここに当たるフォームはありません" : "まだありません。「新規作成」から作ります");
   table("fields-table", [
     { key: "label", label: "項目の名前", html: (f) => `<div class="c-name">${esc(f.label)}</div>${f.type === "select" ? `<div class="sub">${esc((f.options || []).join("・"))}</div>` : ""}` },
     { key: "type", label: "型", html: (f) => esc(TYPE_LABEL[f.type] || f.type) },
     { key: "archived_at", label: "状態", sortVal: (f) => (f.archived_at ? 1 : 0), html: (f) => f.archived_at ? pill("しまった", "gray") : pill("使っている") },
-  ], fr.fields, (f) => fieldEditor(f), "まだありません。「新しく作る」から足します");
+  ], fr.fields, (f) => fieldEditor(f), "まだありません。「新規作成」から追加します");
 }
 
 // 人の項目の詳細（足す・名前や選択肢を直す・しまう）。中の名前は自動で付ける（画面に英字を出さないため）
@@ -2358,7 +2538,7 @@ function fieldEditor(f, msg) {
       <div><label for="fd-label">項目の名前</label><input id="fd-label" type="text" maxlength="40" placeholder="例 X アカウント名" value="${esc(f ? f.label : "")}"></div>
       <div><label for="fd-type">型</label><select id="fd-type" class="inline" ${f ? "disabled" : ""}>${Object.entries(TYPE_LABEL).map(([k, v]) => `<option value="${k}" ${f && f.type === k ? "selected" : ""}>${v}</option>`).join("")}</select></div>
       <div id="fd-opts-wrap" class="${f && f.type === "select" ? "" : "hidden"}"><label for="fd-opts">選択肢（カンマ区切り）</label><input id="fd-opts" type="text" placeholder="例 はい,いいえ" value="${esc(f ? (f.options || []).join(",") : "")}"></div>
-      <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="submit">${f ? "保存" : "足す"}</button><span class="note" id="fd-status"></span></div>
+      <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="submit">${f ? "保存" : "追加"}</button><span class="note" id="fd-status"></span></div>
     </form></section>`;
   $("fd-type").addEventListener("change", () => $("fd-opts-wrap").classList.toggle("hidden", $("fd-type").value !== "select"));
   $("fd").addEventListener("submit", async (ev) => {
@@ -2371,7 +2551,7 @@ function fieldEditor(f, msg) {
     const why = { bad_label: "項目の名前を入れてください（40 字まで）", need_options: "選択肢を入れてください", bad_options: "選択肢は 30 個・各 60 字まで" };
     if (!r.ok) { $("fd-status").textContent = why[r.error] || "保存できませんでした（" + (r.error || r.status) + "）"; return; }
     await loadForms();
-    fieldEditor(r.field, r.created ? "足しました。フォームの詳細の「聞く項目」に出ます" : "保存しました");
+    fieldEditor(r.field, r.created ? "追加しました。フォームの詳細の「聞く項目」に出ます" : "保存しました");
   });
   if ($("fd-arch")) $("fd-arch").addEventListener("click", async () => {
     const r = await api("/api/admin/fields", { method: "POST", token, body: { key: f.key, archived: !f.archived_at } });
@@ -2389,8 +2569,8 @@ function formEditor(f, msg) {
   $("form-detail").innerHTML = headHtml({
     title: f ? f.title : "新しいフォーム",
     sub: f ? `/form?f=${esc(f.slug)}` : "題名と聞く項目を決めて保存します。「公開する」に印を付けると住所が開きます",
-    pills: f ? [f.active ? pill("公開中") : pill("止めている", "gray"), pill(`回答 ${f.answers}`, "gray")] : [],
-    actions: f && f.active ? `<a class="btn ghost small" href="${esc(url)}" target="_blank" rel="noopener">公開のページを開く</a><button class="btn ghost small" type="button" id="fe-copy">住所を写す</button>` : "",
+    pills: f ? [f.active ? pill("公開中") : pill("停止中", "gray"), pill(`回答 ${f.answers}`, "gray")] : [],
+    actions: f && f.active ? `<a class="btn ghost small" href="${esc(url)}" target="_blank" rel="noopener">公開のページを開く</a><button class="btn ghost small" type="button" id="fe-copy">住所をコピー</button>` : "",
     foot: f ? campPicker("form", f.id) : "",
   }) + `${msg ? `<p class="msg ok" style="margin:12px 0 0">${esc(msg)}</p>` : ""}`
     + (f ? tabsHtml([["edit", "中身"], ["answers", `回答 ${f.answers}`]], "edit") : `<div style="height:16px"></div>`)
@@ -2404,13 +2584,13 @@ function formEditor(f, msg) {
         <label class="check"><input type="checkbox" data-item="${esc(x.key)}" ${items.has(x.key) ? "checked" : ""}> <span>${esc(x.label)} <span class="note">${esc(TYPE_LABEL[x.type] || x.type)}</span></span></label>
         <label class="check"><input type="checkbox" data-req="${esc(x.key)}" ${items.get(x.key) && items.get(x.key).required ? "checked" : ""}> <span class="note">必須</span></label></div>`).join("") || '<p class="note">人の項目がまだありません。一覧の「人の項目」のタブで先に足します</p>'}</div>
       <label class="check"><input type="checkbox" id="fe-askname" ${!f || f.ask_name ? "checked" : ""}> <span>お名前も聞く</span></label>
-      <label class="check"><input type="checkbox" id="fe-active" ${f && f.active ? "checked" : ""}> <span>公開する（外すと住所を開いても「開いていません」と出る）</span></label>
+      <label class="check"><input type="checkbox" id="fe-active" ${f && f.active ? "checked" : ""}> <span>公開する（チェックを外すと URL を開いても「公開されていません」と出る）</span></label>
       <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="submit">保存</button><span class="note" id="fe-status"></span></div>
     </form></section>`
     + (f ? `<section class="card" data-pane="answers"><div id="fe-answers" class="note">読んでいます…</div></section>` : "");
   if (f) wireTabs($("form-detail"), "edit");
   wireCampPicker($("form-detail"), () => loadForms());
-  if ($("fe-copy")) $("fe-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText(url); $("fe-copy").textContent = "写しました"; } catch { $("fe-copy").textContent = "写せませんでした"; } });
+  if ($("fe-copy")) $("fe-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText(url); $("fe-copy").textContent = "コピーしました"; } catch { $("fe-copy").textContent = "コピーできませんでした"; } });
   $("fe").addEventListener("submit", async (ev) => {
     ev.preventDefault();
     const order = fieldsCache.map((x) => x.key);
@@ -2443,7 +2623,7 @@ async function loadFormAnswers(id) {
 
 // ---------- 便 12a：ページ。中身は Claude が書く。ここでは依頼文を出す・見る・公開する・数を見る ----------
 const PAGE_PURPOSE = { signup: "無料登録", seminar: "セミナーの申込", sale: "販売", news: "お知らせ", thanks: "サンクス（申込のあとに出す）" };
-const PAGE_STATE = { draft: ["下書き", "gray"], published: ["公開中", ""], stopped: ["止めている", "gray"] };
+const PAGE_STATE = { draft: ["下書き", "gray"], published: ["公開中", ""], stopped: ["停止中", "gray"] };
 const ROUTE_NAME_RE = /^[\p{L}\p{N}][\p{L}\p{N}_\-ー・]{0,39}$/u;
 const pageState = (p) => { const [t, k] = PAGE_STATE[p.status] || [p.status, "gray"]; return pill(t, k); };
 const madeBy = (by) => (by === "mcp" ? "Claude" : String(by || "").includes("@") ? "Naoki" : by || "—");
@@ -2451,7 +2631,7 @@ let pagesReady = false, pagesCache = [], pagesOrigin = "", currentPage = null;
 // 依頼文の箱（コピーのボタンつき）
 function promptBox(prompt, id) {
   return `<section class="card stack" style="margin-top:16px">
-    <div style="display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap"><b>依頼文</b><button class="btn small" type="button" id="${id}-copy">写す</button></div>
+    <div style="display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap"><b>依頼文</b><button class="btn small" type="button" id="${id}-copy">コピー</button></div>
     <textarea id="${id}" rows="12" readonly style="font-size:13px">${esc(prompt)}</textarea>
     <p class="note" style="margin:0">Claude のチャット（claude.ai）に貼ります。下書きが届くと、このページの「版」に出ます</p></section>`;
 }
@@ -2459,8 +2639,8 @@ function wirePromptBox(id) {
   const b = $(id + "-copy");
   if (!b) return;
   b.addEventListener("click", async () => {
-    try { await navigator.clipboard.writeText($(id).value); b.textContent = "写しました"; }
-    catch { $(id).select(); b.textContent = "選びました（⌘C で写す）"; }
+    try { await navigator.clipboard.writeText($(id).value); b.textContent = "コピーしました"; }
+    catch { $(id).select(); b.textContent = "選びました（⌘C でコピー）"; }
   });
 }
 async function loadPages() {
@@ -2468,7 +2648,7 @@ async function loadPages() {
     pagesReady = true;
     $("pg-new").addEventListener("click", () => newPageRequest());
     $("rt-make").addEventListener("submit", (ev) => { ev.preventDefault(); makeRouteUrl("rt"); });
-    $("rt-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText($("rt-url").textContent); $("rt-copy").textContent = "写しました"; } catch { $("rt-copy").textContent = "写せませんでした"; } });
+    $("rt-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText($("rt-url").textContent); $("rt-copy").textContent = "コピーしました"; } catch { $("rt-copy").textContent = "コピーできませんでした"; } });
   }
   const r = await getList("/api/admin/pages");
   if (!r.ok) { $("pg-count").textContent = "読めませんでした（" + (r.error || r.status) + "）"; return; }
@@ -2478,11 +2658,11 @@ async function loadPages() {
   const rows = campRows("pages", "page", r.pages, (p) => p.id, () => loadPages());
   table("pages-table", [
     { key: "title", label: "ページ", html: (p) => `<div class="c-name">${esc(p.title)}</div><div class="sub">${esc(p.purpose_label)}・/${esc(p.slug)}</div>` },
-    { key: "status", label: "状態", html: (p) => pageState(p) + (p.open_requests ? " " + pill(`依頼 ${p.open_requests}`, "gray") : "") },
+    { key: "status", label: "状態", html: (p) => pageState(p) + (p.open_requests ? " " + pill(`依頼 ${p.open_requests}`, "gray") : "") + (p.closes_label ? `<div class="sub">${p.closed_now ? "期限切れ" : "期限"} ${esc(String(p.closes_label).replace("（日本時間）", ""))}${p.closed_to ? " → /" + esc(p.closed_to) : ""}</div>` : "") },
     { key: "week_viewers", label: "先週見た人", html: (p) => String(p.week_viewers) },
     { key: "latest_version", label: "版", html: (p) => `最新 ${p.latest_version}${p.published_version ? `<div class="sub">公開 ${p.published_version}</div>` : ""}` },
     campCol("page", (p) => p.id),
-  ], rows, (p) => openPage(p.id), r.pages.length ? "ここに当たるページはありません" : "まだありません。「新しく作る」から依頼文を出します");
+  ], rows, (p) => openPage(p.id), r.pages.length ? "ここに当たるページはありません" : "まだありません。「新規作成」から依頼文を出します");
   $("rt-page").innerHTML = r.pages.map((p) => `<option value="${esc(p.slug)}">${esc(p.title)}</option>`).join("") || '<option value="">（ページがまだありません）</option>';
   loadRoutes();
 }
@@ -2494,7 +2674,7 @@ function makeRouteUrl(prefix, slugFixed) {
   if (!ROUTE_NAME_RE.test(name)) { $(prefix + "-msg").textContent = "経路の名前は 1〜40 字（空白・記号は使えません。例 x-固定ポスト）"; return; }
   $(prefix + "-url").textContent = `${pagesOrigin}/${slug}?r=${encodeURIComponent(name)}`;
   $(prefix + "-out").classList.remove("hidden");
-  $(prefix + "-copy").textContent = "写す";
+  $(prefix + "-copy").textContent = "コピー";
 }
 async function loadRoutes() {
   const r = await api("/api/admin/pages/routes?days=30", { token });
@@ -2517,7 +2697,7 @@ function newPageRequest() {
       <div><label for="pr-camp">シナリオ</label><select id="pr-camp" class="inline"><option value="">（あとで決める）</option>${liveCamps().map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select></div>
       <div><label for="pr-ref">参考にする構成（ページの住所や、どのページの作りを真似るか）</label><textarea id="pr-ref" rows="2" placeholder="例 UTAGE の「シアラボ4~2ヶ月LPファネル」のページ"></textarea></div>
       <div><label for="pr-mat">材料（Google ドライブのファイル名・フォルダ名・中身のメモ）</label><textarea id="pr-mat" rows="3" placeholder="例 ドライブの「図解セミナー 構成メモ」と「受講者の声 2026」"></textarea></div>
-      <div><label for="pr-com">ほかに伝えたいこと</label><textarea id="pr-com" rows="3" placeholder="例 申込の枠は図解セミナーのフォームを使う。ボタンを押したら知らせてほしい"></textarea></div>
+      <div><label for="pr-com">ほかに伝えたいこと</label><textarea id="pr-com" rows="3" placeholder="例 申込の枠は図解セミナーのフォームを使う。ボタンを押したら通知してほしい"></textarea></div>
       <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="submit">依頼文を出す</button><span class="note" id="pr-status"></span></div>
     </form></section><div id="pr-out"></div>`;
   $("pr").addEventListener("submit", async (ev) => {
@@ -2554,7 +2734,7 @@ function renderPage(r, { tab = "view", version: wantV, msg } = {}) {
     sub: `${esc(p.purpose_label)}・<a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.url.replace(/^https:[/][/]/, ""))}</a>`,
     pills: [pageState(p), p.latest_version ? pill(`最新 版 ${p.latest_version}`, "gray") : pill("下書きはまだ", "gray"), live ? pill(`公開中 版 ${p.published_version}`) : ""],
     actions: (curV ? `<button class="btn small" type="button" id="pd-pub">版 ${curV} を公開する</button>` : "")
-      + (live ? `<a class="btn ghost small" href="${esc(p.url)}" target="_blank" rel="noopener">公開のページを開く</a><button class="btn ghost small" type="button" id="pd-stop">公開を止める</button>` : ""),
+      + (live ? `<a class="btn ghost small" href="${esc(p.url)}" target="_blank" rel="noopener">公開のページを開く</a><button class="btn ghost small" type="button" id="pd-stop">公開を停止</button>` : ""),
     foot: campPicker("page", p.id),
   }) + (msg ? `<p class="msg ok" style="margin:12px 0 0">${esc(msg)}</p>` : "")
     + tabsHtml([["view", "見た目"], ["versions", `版 ${vers.length}`], ["requests", "依頼とコメント"], ["numbers", "数と経路"]], tab)
@@ -2570,7 +2750,7 @@ function renderPage(r, { tab = "view", version: wantV, msg } = {}) {
       : `<p class="note">まだ下書きが届いていません。「依頼とコメント」の依頼文を Claude に貼ると、ここに出ます</p>`}</section>
       <section class="card" data-pane="versions"><div id="pd-versions" class="table-wrap"></div></section>
       <section class="card stack" data-pane="requests">
-        <div><label for="pd-com">直してほしいところ</label><textarea id="pd-com" rows="4" placeholder="例 1 つ目のボタンの文を「無料で申し込む」に。実績の段を上へ"></textarea></div>
+        <div><label for="pd-com">編集してほしいところ</label><textarea id="pd-com" rows="4" placeholder="例 1 つ目のボタンの文を「無料で申し込む」に。実績の段を上へ"></textarea></div>
         <div style="display:flex;gap:8px;align-items:center"><button class="btn small" type="button" id="pd-fix" ${curV ? "" : "disabled"}>直しの依頼文を出す</button><span class="note" id="pd-fix-status"></span></div>
         <div id="pd-prompt-out"></div>
         <div id="pd-requests" class="table-wrap"></div>
@@ -2583,7 +2763,7 @@ function renderPage(r, { tab = "view", version: wantV, msg } = {}) {
         <div><b>経路（先週の見た人）</b><div id="pd-routes" class="table-wrap"></div></div>
         <form id="pd-rt" class="stack" style="margin:0">
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end"><div style="flex:1 1 200px"><label for="pd-name">経路の名前</label><input id="pd-name" type="text" maxlength="40" placeholder="例 x-固定ポスト"></div><button class="btn small" type="submit">このページの住所を作る</button></div>
-          <div id="pd-out" class="hidden" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><code id="pd-url" style="word-break:break-all"></code><button class="btn ghost small" type="button" id="pd-copy">写す</button></div>
+          <div id="pd-out" class="hidden" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><code id="pd-url" style="word-break:break-all"></code><button class="btn ghost small" type="button" id="pd-copy">コピー</button></div>
           <p class="note" id="pd-msg" style="margin:0"></p>
         </form>
       </section>`;
@@ -2617,7 +2797,7 @@ function renderPage(r, { tab = "view", version: wantV, msg } = {}) {
     { key: "note", label: "メモ", html: (v) => `<span class="sub">${esc(v.note || "—")}</span>` },
   ], vers, (v) => { showTab("view"); if ($("pd-ver")) { $("pd-ver").value = String(v.version); setV(v.version); } }, "まだありません");
   table("pd-requests", [
-    { key: "id", label: "依頼", html: (q) => `${q.kind === "fix" ? "直す" : "新しく作る"}<div class="sub">番号 ${q.id}${q.base_version ? `・版 ${q.base_version} から` : ""}</div>` },
+    { key: "id", label: "依頼", html: (q) => `${q.kind === "fix" ? "編集" : "新規作成"}<div class="sub">番号 ${q.id}${q.base_version ? `・版 ${q.base_version} から` : ""}</div>` },
     { key: "created_at", label: "いつ", cls: "c-reg", html: (q) => esc(fmtTime(q.created_at)) },
     { key: "comment", label: "中身", html: (q) => `<span class="sub">${esc(String(q.comment || "—").slice(0, 80))}</span>` },
     { key: "done_version", label: "状態", sortVal: (q) => q.done_version || 0, html: (q) => q.done_version ? pill(`版 ${q.done_version} ができた`) : pill("下書き待ち", "gray") },
@@ -2631,10 +2811,10 @@ function renderPage(r, { tab = "view", version: wantV, msg } = {}) {
     { key: "viewers", label: "見た人", html: (x) => String(x.viewers) },
   ], r.stats.routes || [], null, "先週はまだ見られていません");
   $("pd-rt").addEventListener("submit", (ev) => { ev.preventDefault(); makeRouteUrl("pd", p.slug); });
-  $("pd-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText($("pd-url").textContent); $("pd-copy").textContent = "写しました"; } catch { $("pd-copy").textContent = "写せませんでした"; } });
+  $("pd-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText($("pd-url").textContent); $("pd-copy").textContent = "コピーしました"; } catch { $("pd-copy").textContent = "コピーできませんでした"; } });
   $("pd-fix").addEventListener("click", async () => {
     const comment = $("pd-com").value.trim();
-    if (!comment) { $("pd-fix-status").textContent = "直してほしいところを書いてください"; return; }
+    if (!comment) { $("pd-fix-status").textContent = "編集してほしいところを書いてください"; return; }
     const q = await api("/api/admin/pages/requests", { method: "POST", token, body: { page_id: p.id, comment, base_version: curV } });
     if (!q.ok) { $("pd-fix-status").textContent = "出せませんでした（" + (q.error || q.status) + "）"; return; }
     $("pd-fix-status").textContent = `依頼番号 ${q.request.id} で残しました`;
@@ -2649,11 +2829,11 @@ function renderPage(r, { tab = "view", version: wantV, msg } = {}) {
     openPage(p.id, { version: curV, msg: `版 ${curV} を公開しました。住所 ${p.url}` });
   });
   if ($("pd-stop")) $("pd-stop").addEventListener("click", async () => {
-    if (!confirm("公開を止めますか？　住所を開くと「ページが見つかりません」と出ます")) return;
+    if (!confirm("公開を停止しますか？　住所を開くと「ページが見つかりません」と出ます")) return;
     const q = await api(`/api/admin/pages/${p.id}/publish`, { method: "POST", token, body: { stop: true } });
-    if (!q.ok) return fail("止められませんでした（" + (q.error || q.status) + "）");
+    if (!q.ok) return fail("停止できませんでした（" + (q.error || q.status) + "）");
     await loadPages();
-    openPage(p.id, { msg: "公開を止めました" });
+    openPage(p.id, { msg: "公開を停止しました" });
   });
 }
 
@@ -2692,7 +2872,7 @@ function referrerDetail(id, msg) {
     title: x.name || x.email,
     sub: `${esc(x.email)}・紹介の番号 ${esc(x.code)}`,
     pills: [pill(`報酬 ${yen(x.reward_total)}`, "gray"), pill(`払った ${yen(x.paid_total)}`, "gray"), x.unpaid ? pill(`まだ払っていない ${yen(x.unpaid)}`, "warn") : ""],
-    actions: `<button class="btn ghost small" type="button" id="rf-copy">紹介のリンクを写す</button>`,
+    actions: `<button class="btn ghost small" type="button" id="rf-copy">紹介のリンクをコピー</button>`,
   }) + `${msg ? `<p class="msg ok" style="margin:12px 0 0">${esc(msg)}</p>` : ""}`
     + tabsHtml([["people", `紹介で来た人 ${x.people.length}`], ["pay", "払った記録"]], "people")
     + `<section class="card" data-pane="people">
@@ -2714,7 +2894,7 @@ function referrerDetail(id, msg) {
     { key: "bought", label: "購入", html: (q) => `${q.bought} 件` },
     { key: "reward", label: "報酬", html: (q) => esc(q.reward ? yen(q.reward) : "—") },
   ], x.people, (q) => { if (q.id) { openView("people"); detail(q.id); } }, "まだいません");
-  $("rf-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText(x.link); $("rf-copy").textContent = "写しました"; } catch { $("rf-copy").textContent = "写せませんでした"; } });
+  $("rf-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText(x.link); $("rf-copy").textContent = "コピーしました"; } catch { $("rf-copy").textContent = "コピーできませんでした"; } });
   if (!x.unpaid) return;
   $("rf-pay").addEventListener("submit", async (ev) => {
     ev.preventDefault();
@@ -2772,13 +2952,13 @@ async function loadSubscriptions() {
   const r = await api("/api/admin/subscriptions" + (st ? "?status=" + st : ""), { token });
   if (!r.ok) { $("sub-count").textContent = "読めませんでした（" + (r.error || r.status) + "）"; return; }
   const c = r.counts || {};
-  $("sub-count").textContent = `${r.count} 件・続いている ${c.active || 0}・失敗 ${c.failed || 0}・解約 ${c.canceled || 0}${c.ending ? `・止めた（期限まで） ${c.ending}` : ""}`;
+  $("sub-count").textContent = `${r.count} 件・続いている ${c.active || 0}・失敗 ${c.failed || 0}・解約 ${c.canceled || 0}${c.ending ? `・停止中（期限まで） ${c.ending}` : ""}`;
   const tone = { active: "", completed: "", failed: "warn", canceled: "gray", suspended: "gray", ending: "warn" };
   table("subs", [
     { key: "name", label: "名前", sortVal: (s) => s.name || s.email, html: (s) => `<div class="c-name">${esc(s.name || s.email)}</div><div class="sub">${esc(s.email)}</div>` },
     { key: "product_name", label: "商品", cls: "c-src", html: (s) => `${esc(s.product_name)}${s.mode === "test" ? ' <span class="sub">（試し）</span>' : ""}` },
     { key: "payments", label: "入金", sortVal: (s) => s.payments, html: (s) => s.installments ? `${s.payments} / ${s.installments} 回` : `${s.payments} 回${s.failures ? `・失敗 ${s.failures}` : ""}` },
-    { key: "last_at", label: "最後の動き", html: (s) => esc(fmtTime(s.last_at)) },
+    { key: "last_at", label: "最後のアクション", html: (s) => esc(fmtTime(s.last_at)) },
     { key: "status", label: "状態", sortVal: (s) => s.status, html: (s) => pill(s.status_label, tone[s.status] || "") + (s.status === "ending" && s.keep_until ? ` <span class="sub">${esc(fmtTime(s.keep_until).slice(0, 10))} まで</span>` : "") + (["active", "failed", "suspended"].includes(s.status) ? ` <button class="btn ghost small" type="button" data-cancel="${esc(s.subscription_id)}">解約</button>` : "") },
   ], r.subscriptions, null, st ? "この状態の継続課金はありません" : "まだありません");
   $("subs").querySelectorAll("[data-cancel]").forEach((b) => b.addEventListener("click", async (ev) => {
@@ -2801,7 +2981,7 @@ function productDetail(id, msg) {
     title: p.name,
     sub: `${esc(KIND_LABEL[p.kind] || p.kind)}・${esc(priceOf(p))}・売れた ${p.sold}${p.list_price_of ? "・紹介用（元：" + esc(p.list_price_of) + "）" : ""}`,
     pills: [p.active ? pill("売る") : pill("売らない", "gray"), p.public ? pill("サイトに出す") : pill("サイトに出さない", "gray")],
-    actions: `<button class="btn ghost small" id="pf-copy" type="button">申し込みのリンクを写す</button>`,
+    actions: `<button class="btn ghost small" id="pf-copy" type="button">申し込みのリンクをコピー</button>`,
     foot: campPicker("product", p.id),
   }) + `${msg ? `<p class="msg ok" style="margin:12px 0 0">${esc(msg)}</p>` : ""}`
     + tabsHtml([["edit", "設定"], ["link", "申し込みのリンク"]], "edit")
@@ -2838,7 +3018,7 @@ function productDetail(id, msg) {
     if (!sel) return;
     sel.innerHTML = '<option value="">（移さない・登録の画面に受付の文を出す）</option>' + pagesCache.map((g) => `<option value="${esc(g.slug)}" ${g.slug === p.thanks_page_slug ? "selected" : ""}>${esc(g.title)}${g.status === "published" ? "" : "（公開していない）"}</option>`).join("");
   }).catch(() => {});
-  $("pf-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText(link); $("pf-copy").textContent = "写しました"; } catch (_) { $("pf-copy").textContent = "写せませんでした"; } });
+  $("pf-copy").addEventListener("click", async () => { try { await navigator.clipboard.writeText(link); $("pf-copy").textContent = "コピーしました"; } catch (_) { $("pf-copy").textContent = "コピーできませんでした"; } });
   $("pf").addEventListener("submit", async (ev) => {
     ev.preventDefault();
     const num = (v) => { const t = String(v || "").replace(/[^0-9]/g, ""); return t ? Number(t) : null; };
@@ -2914,7 +3094,7 @@ async function loadHome() {
       + row(t.approvals.count, "承認待ち", "ai", t.approvals.items.length ? `<span class="sub">${t.approvals.items.map((x) => esc(sayOf(x.tool))).join("・")}</span>` : "")
       + row(t.rooms.count, "未返信の添削", "rooms", t.rooms.items.length ? `<span class="sub">${t.rooms.items.map((x) => esc(x.name)).join("・")}</span>` : "")
       + row(t.consults.count, "今日の個別相談", "deals", t.consults.items.length ? `<span class="sub">${t.consults.items.map((x) => esc(fmtHm(x.slot)) + " " + esc(x.name)).join("・")}</span>` : "")
-      + row(t.notices.count, "今日の知らせ", "connect", t.notices.items.length ? `<span class="sub">${t.notices.items.map((x) => esc(x.connector) + "：" + esc(x.name)).join("・")}</span>` : "")
+      + row(t.notices.count, "今日の通知", "connect", t.notices.items.length ? `<span class="sub">${t.notices.items.map((x) => esc(x.connector) + "：" + esc(x.name)).join("・")}</span>` : "")
       + `</ul>`;
     document.querySelectorAll("#hm-todo [data-open]").forEach((x) => x.addEventListener("click", () => openView(x.dataset.open)));
   }
@@ -3020,7 +3200,7 @@ async function loadPush() {
     const on = sub && r.devices.some((d) => sub.endpoint.endsWith(d.endpoint_tail));
     here = !ps ? "この端末では通知の準備ができませんでした（画面を開き直すと直ることがあります）" : on ? "この端末は受け取っています" : Notification.permission === "denied" ? "この端末は通知を止めています（端末の設定 → 通知 → マーケくんで許可にすると押せます）" : "この端末はまだ受け取っていません";
   } else if (/iphone|ipad|ipod/i.test(navigator.userAgent) && !navigator.standalone) {
-    here = "iPhone は、共有ボタン →「ホーム画面に追加」でマーケくんを足し、そこから開くと押せます";
+    here = "iPhone は、共有ボタン →「ホーム画面に追加」でマーケくんを追加し、そこから開くと押せます";
   }
   st.innerHTML = `${esc(here)}<br>受け取る端末 ${r.count} 台${r.devices.length ? "：" + r.devices.map((d) => esc(d.device || d.service)).join("・") : ""}`;
   return r;
@@ -3080,6 +3260,7 @@ async function loadSetup() {
 
 function detailText(e) {
   const p = e.payload || {};
+  if (e.type === "chat_note" || e.type === "chat_saved") return p.text ? `<span class="note">（${esc(String(p.text).slice(0, 30))}）</span>` : "";
   if (e.type === "consult_booked" || e.type === "consult_canceled") return `<span class="note">（${p.slot ? esc(fmtTime(p.slot)) : ""}${p.topic ? "・" + esc(String(p.topic).slice(0, 30)) : ""}）</span>`;
   if (e.type === "consult_done" || e.type === "deal_won" || e.type === "deal_lost") return `<span class="note">（${p.amount != null ? Number(p.amount).toLocaleString() + " 円・" : ""}${esc(String(p.memo || "").slice(0, 30))}）</span>`;
   if (e.type.startsWith("seminar_")) return `<span class="note">（${esc(p.title || p.seminar_id || "")}${p.key ? "・" + esc(p.key) : ""}${p.mail ? "・メール " + esc(p.mail) : ""}）</span>`;
@@ -3096,8 +3277,8 @@ function detailText(e) {
   if (e.type === "referral_paid") return `<span class="note">（${Number(p.amount || 0).toLocaleString()} 円${p.note ? "・" + esc(p.note) : ""}）</span>`;
   if (e.type === "room_read") return `<span class="note">（${p.by === "admin" ? "シアニン" : "生徒"}）</span>`;
   if (e.type === "entitlement_granted" || e.type === "entitlement_revoked") return `<span class="note">（${esc(p.key || "")}・${esc(String(p.reason || "").slice(0, 40))}${p.expires_at && e.type === "entitlement_granted" ? "・" + esc(fmtTime(p.expires_at).slice(0, 10)) + " まで" : ""}）</span>`;
-  if (e.type === "label_added" || e.type === "label_removed") return `<span class="note">（${esc(p.label || "")}${p.step_id != null ? "・コネクタ " + esc(p.step_id) : ""}）</span>`;
-  if (e.type === "admin_notified" || e.type === "admin_notify_failed" || e.type === "connector_skipped") return `<span class="note">（コネクタ ${esc(p.step_id)}${p.reason ? "・" + esc(p.reason) : ""}${p.error ? "・" + esc(p.error) : ""}）</span>`;
+  if (e.type === "label_added" || e.type === "label_removed") return `<span class="note">（${esc(p.label || "")}${p.step_id != null ? "・ステップ配信 " + esc(p.step_id) : ""}）</span>`;
+  if (e.type === "admin_notified" || e.type === "admin_notify_failed" || e.type === "connector_skipped") return `<span class="note">（ステップ配信 ${esc(p.step_id)}${p.reason ? "・" + esc(p.reason) : ""}${p.error ? "・" + esc(p.error) : ""}）</span>`;
   if (p.lesson_id) return `<span class="note">（${esc(p.lesson_id)}）</span>`;
   if (p.source) return `<span class="note">（${esc(SOURCE_LABEL[p.source] || p.source)}）</span>`;
   if ("value" in p) return `<span class="note">（${p.value ? "付けた" : "外した"}）</span>`;
@@ -3149,7 +3330,7 @@ async function loadGuide() {
   const order = [...document.querySelectorAll(".side [data-view]")].map((b) => b.dataset.view).filter((v) => v !== "guide");
   const title = (v) => v === "ai_only" ? "AI に頼むときだけ（画面には無い）" : (document.querySelector(`.side [data-view="${v}"]`)?.firstChild.textContent.trim() || "（どこにも無い画面）");
   const groups = [...order, "ai_only"].map((v) => [v, g.rows.filter((x) => x.screen === v)]).filter(([, rows]) => rows.length);
-  $("gd-list").innerHTML = (g.missing ? `<p class="msg err">説明がまだ無い操作が ${g.missing} つあります。開発部に知らせてください</p>` : "")
+  $("gd-list").innerHTML = (g.missing ? `<p class="msg err">説明がまだ無い操作が ${g.missing} つあります。開発部に連絡してください</p>` : "")
     + groups.map(([v, rows]) => `
     <details class="gd-group">
       <summary class="gd-head"><span class="guide-h3">${esc(title(v))}</span><span class="note">${rows.length} 件${rows.some((x) => x.ai === "approve") ? `・AI に頼むと承認が要るもの ${rows.filter((x) => x.ai === "approve").length}` : ""}</span></summary>
@@ -3218,7 +3399,7 @@ async function loadAccess() {
 // ---------- 招待リンク（2026-10-30） ----------
 // 作る（権利・権利の期限・人数・リンクの期限）・リンクを写す・メールで送る・止める・使った人を見る
 let invData = null, invOpen = false, invAsk = null, invSend = null, wsUndo = null;
-const INV_STATE = { ok: "使える", stopped: "止めた", expired: "期限切れ", used_up: "人数を使い切った" };
+const INV_STATE = { ok: "使える", stopped: "停止中", expired: "期限切れ", used_up: "人数を使い切った" };
 const INV_ERR = {
   name_required: "名前を入れてください", name_too_long: "名前は 40 字までです", key_not_allowed: "その権利はリンクでは付けられません",
   bad_max_uses: "人数は 1〜100 で入れてください", link_until_required: "リンクの期限を入れてください", link_until_past: "リンクの期限が過ぎた日になっています",
@@ -3226,8 +3407,8 @@ const INV_ERR = {
   emails_required: "メールアドレスを入れてください", too_many: "一度に送れるのは 20 人までです", bad_email: "読めないメールアドレスがあります",
   mail_not_configured: "メールの送り元が決まっていません（決済・メール・オプチャ）",
   bad_workspace: "場所の選び方が正しくありません", workspace_not_found: "その場所が見つかりません", workspace_name_too_long: "場所の名前は 40 字までです",
-  is_owner: "持ち主は外せません", not_member: "もうこの場所にいません", bad_uid: "外す人の選び方が正しくありません", create_failed: "作れませんでした。もう一度お試しください",
-  owner_not_bound: "あなたの Google のログインがまだ結ばれていないため、場所を作れません（一度 X攻略くんなどへ Google で入ってから）", stopped: "このリンクは止めてあります", expired: "このリンクは期限切れです", used_up: "このリンクは人数を使い切っています",
+  is_owner: "持ち主は外せません", not_member: "もうこの場所にいません", bad_uid: "除外する人の選び方が正しくありません", create_failed: "作れませんでした。もう一度お試しください",
+  owner_not_bound: "あなたの Google のログインがまだ連携していないため、場所を作れません（一度 X攻略くんなどへ Google で入ってから）", stopped: "このリンクは停止中です", expired: "このリンクは期限切れです", used_up: "このリンクは人数を使い切っています",
 };
 const invErr = (r) => INV_ERR[r && r.error] || "時間をおいてもう一度お試しください";
 const invDay = (iso) => iso ? new Date(iso).toLocaleDateString("ja-JP", { timeZone: "Asia/Tokyo" }) : "";
@@ -3241,11 +3422,11 @@ function invRow(i) {
     <span class="acc-state${i.state === "ok" ? " on" : ""}">${esc(INV_STATE[i.state] || i.state)}</span>
     <div class="why">${uses}</div>
     <div class="er-act">
-      <button class="btn ghost small" type="button" data-invcopy="${esc(i.id)}" aria-label="『${esc(i.name)}』のリンクを写す">リンクを写す</button>
+      <button class="btn ghost small" type="button" data-invcopy="${esc(i.id)}" aria-label="『${esc(i.name)}』のリンクをコピー">リンクをコピー</button>
       ${i.state === "ok" ? `<button class="btn ghost small" type="button" data-invsend="${esc(i.id)}" aria-label="『${esc(i.name)}』をメールで送る">メールで送る</button>
-      ${asking ? "" : `<button class="btn ghost small" type="button" data-invask="${esc(i.id)}" aria-label="『${esc(i.name)}』を止める">止める</button>`}` : ""}
+      ${asking ? "" : `<button class="btn ghost small" type="button" data-invask="${esc(i.id)}" aria-label="『${esc(i.name)}』を停止">停止</button>`}` : ""}
     </div>
-    ${asking ? `<div class="conf"><span>止めると、このリンクからはもう登録できません（付いた権利はそのまま）。よいですか</span><button class="btn ghost small" type="button" data-invcancel>やめる</button><button class="btn small danger" type="button" data-invstop="${esc(i.id)}" aria-label="『${esc(i.name)}』を止める（確定）">止める</button></div>` : ""}
+    ${asking ? `<div class="conf"><span>停止すると、このリンクからは登録できなくなります（付いた権利はそのまま）。よいですか</span><button class="btn ghost small" type="button" data-invcancel>やめる</button><button class="btn small danger" type="button" data-invstop="${esc(i.id)}" aria-label="『${esc(i.name)}』を停止（確定）">停止</button></div>` : ""}
     ${sending ? `<div class="conf" style="flex-direction:column;align-items:stretch"><label for="inv-to" style="font-size:12px;font-weight:700">送る相手のメール（改行かカンマで区切る・20 人まで）</label><textarea id="inv-to" rows="2" placeholder="例 a@example.com"></textarea>
       <label for="inv-note" style="font-size:12px;font-weight:700">ひとこと（なくてよい）</label><input id="inv-note" type="text" maxlength="500" placeholder="例 11/4 の定例でお話しした件です">
       <div class="er-act"><button class="btn ghost small" type="button" data-invsendcancel>やめる</button><button class="btn small" type="button" data-invsendgo="${esc(i.id)}">送る</button></div></div>` : ""}
@@ -3269,7 +3450,7 @@ function drawInvites(focusSel) {
   if (!invData) return;
   // 場所ごとに入っている人。参加者には「外す」（持ち主は外せない）。外したら「元に戻す」の帯を出す（確かめの窓は増やさない）
   const wsWho = (m) => m.name || m.email || "（名前なし）";
-  const wsMember = (w, m) => `<li class="ws-m"><span>${esc(wsWho(m))}${m.role === "owner" ? "（持ち主）" : ""}</span>${m.role === "owner" ? "" : `<button class="btn ghost small" type="button" data-wsrm="${esc(w.id)}" data-wsuid="${esc(m.uid)}" aria-label="『${esc(wsWho(m))}』を『${esc(w.name)}』から外す">外す</button>`}</li>`;
+  const wsMember = (w, m) => `<li class="ws-m"><span>${esc(wsWho(m))}${m.role === "owner" ? "（持ち主）" : ""}</span>${m.role === "owner" ? "" : `<button class="btn ghost small" type="button" data-wsrm="${esc(w.id)}" data-wsuid="${esc(m.uid)}" aria-label="『${esc(wsWho(m))}』を『${esc(w.name)}』から削除">削除</button>`}</li>`;
   const undoBar = wsUndo ? `<div class="conf" role="group" aria-label="元に戻す"><span>『${esc(wsUndo.who)}』を『${esc(wsUndo.wsName)}』から外しました（権利と場所のデータはそのまま）</span><button class="btn small" type="button" data-wsundo>元に戻す</button></div>` : "";
   const wsBox = (invData.workspaces || []).length ? `<div class="card" style="margin:0 0 12px"><h3 class="home-h" style="margin:0 0 6px">みんなの場所</h3>${undoBar}${invData.workspaces.map((w) => `<div class="er"><div style="min-width:0"><div class="k">${esc(w.name)}</div>${w.members.length ? `<ul class="ws-ms">${w.members.map((m) => wsMember(w, m)).join("")}</ul>` : '<div class="d">まだ誰もいません</div>'}</div></div>`).join("")}</div>` : "";
   box.innerHTML = wsBox + invAddBox(invData.keys) + (invData.invites.length ? invData.invites.map(invRow).join("") : '<p class="note">まだ招待リンクはありません</p>');
@@ -3288,7 +3469,7 @@ function drawInvites(focusSel) {
     e.target.disabled = false;
     if (!r.ok) return invSay("作れませんでした（" + invErr(r) + "）");
     invOpen = false;
-    try { await navigator.clipboard.writeText(r.invite.url); invSay(`『${r.invite.name}』を作り、リンクを写しました`); } catch { invSay(`『${r.invite.name}』を作りました`); }
+    try { await navigator.clipboard.writeText(r.invite.url); invSay(`『${r.invite.name}』を作り、リンクをコピーしました`); } catch { invSay(`『${r.invite.name}』を作りました`); }
     await loadInvites(`[data-invcopy="${r.invite.id}"]`);
   });
   box.querySelectorAll("[data-wsrm]").forEach((b) => b.addEventListener("click", async () => {
@@ -3311,15 +3492,15 @@ function drawInvites(focusSel) {
   });
   box.querySelectorAll("[data-invcopy]").forEach((b) => b.addEventListener("click", async () => {
     const i = invData.invites.find((x) => x.id === b.dataset.invcopy);
-    try { await navigator.clipboard.writeText(i.url); invSay(`『${i.name}』のリンクを写しました`); } catch { invSay("写せませんでした。リンク：" + i.url); }
+    try { await navigator.clipboard.writeText(i.url); invSay(`『${i.name}』のリンクをコピーしました`); } catch { invSay("コピーできませんでした。リンク：" + i.url); }
   }));
   box.querySelectorAll("[data-invask]").forEach((b) => b.addEventListener("click", () => { invAsk = b.dataset.invask; invSend = null; redraw(`[data-invstop="${invAsk}"]`); }));
   box.querySelectorAll("[data-invcancel]").forEach((b) => b.addEventListener("click", () => { const id = invAsk; invAsk = null; redraw(`[data-invask="${id}"]`); }));
   box.querySelectorAll("[data-invstop]").forEach((b) => b.addEventListener("click", async () => {
-    b.disabled = true; invSay("止めています…");
+    b.disabled = true; invSay("停止しています…");
     const r = await api(`/api/admin/invites/${b.dataset.invstop}/stop`, { method: "POST", token, body: {} });
-    if (!r.ok) { b.disabled = false; return invSay("止められませんでした（" + invErr(r) + "）"); }
-    const id = invAsk; invAsk = null; invSay("止めました"); await loadInvites(`[data-invcopy="${id}"]`);
+    if (!r.ok) { b.disabled = false; return invSay("停止できませんでした（" + invErr(r) + "）"); }
+    const id = invAsk; invAsk = null; invSay("停止しました"); await loadInvites(`[data-invcopy="${id}"]`);
   }));
   box.querySelectorAll("[data-invsend]").forEach((b) => b.addEventListener("click", () => { invSend = b.dataset.invsend; invAsk = null; redraw("#inv-to"); }));
   box.querySelectorAll("[data-invsendcancel]").forEach((b) => b.addEventListener("click", () => { const id = invSend; invSend = null; redraw(`[data-invsend="${id}"]`); }));
