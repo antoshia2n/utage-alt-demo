@@ -38,7 +38,7 @@
   </nav>
   <div class="main">
   <div class="topnav">
-    <span class="crumb" id="crumb">ホーム</span>
+    <span class="crumb" id="crumb">ホーム</span><button type="button" id="crumb-q" class="s2-qh" data-t="ホーム" data-d="" aria-expanded="false" hidden>?</button>
     <span class="grow"></span>
     <button type="button" class="ib" id="news-btn" aria-label="お知らせ"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20.5h4"/></svg><span class="dot hidden" id="news-dot"></span></button>
     <span class="note" id="who-line">こんにちは、<b id="who"></b> さん</span>
@@ -57,7 +57,7 @@
     <section id="tab-mypage" class="hidden"><iframe id="mypage-frame" title="マイページ" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation" style="width:100%;border:0;min-height:480px;display:block;background:transparent"></iframe></section>
     <section id="tab-goals" class="hidden">
       <!-- 目標達成くん（2026-11-05）：8 段の帯。1 便目は ①〜③（設計）、2 便目は ④（戦術）、3 便目は ⑤⑥（記録）と ⑦⑧（振り返り・週報）。4 便目は成長レポート -->
-      <header class="gk-head"><h1>目標達成くん</h1><p>理想から今週の 1 本まで、1 本の線でつなげて回します。文字はさわれば、そのまま直せます。</p></header>
+      <header class="gk-head"><h1>目標達成くん</h1><p>理想から今週の 1 本まで、1 本の線でつなげて回します。文字はさわれば、そのまま編集できます。</p></header>
       <nav class="gk-chain" id="gk-chain" aria-label="8 つの段"></nav>
       <div id="gk-draft"></div>
       <div class="gk-seg" role="tablist" aria-label="目標達成くんの画面">
@@ -119,14 +119,17 @@
       <div class="rtabs" role="tablist" aria-label="部屋の枠">
         <button type="button" role="tab" data-pane="corr" aria-selected="true">添削<span class="badge hidden" data-pane-n="corr"></span></button>
         <button type="button" role="tab" data-pane="chat" aria-selected="false">やり取り<span class="badge hidden" data-pane-n="chat"></span></button>
+        <!-- チャットの便 C2b：入っているグループ -->
+        <button type="button" role="tab" data-pane="group" aria-selected="false" class="hidden" id="pane-group">グループ<span class="badge hidden" data-pane-n="group"></span></button>
       </div>
+      <div id="group-box" class="hidden" aria-live="polite"></div>
       <div id="room-list" class="room" aria-live="polite"></div>
       <form id="composer" class="composer card">
         <label for="c-text" class="sr">出す文章</label>
         <textarea id="c-text" rows="5" placeholder="添削してほしい文章を貼ってください" maxlength="8000"></textarea>
         <div id="c-thumbs" class="thumbs"></div>
         <div class="composer-row">
-          <label class="btn ghost small" id="c-pick-label">画像を足す<input id="c-pick" type="file" accept="image/*" multiple hidden></label>
+          <label class="btn ghost small" id="c-pick-label">画像を追加<input id="c-pick" type="file" accept="image/*" multiple hidden></label>
           <span class="note" id="c-status"></span>
           <button class="btn" id="c-send" type="submit">出す</button>
         </div>
