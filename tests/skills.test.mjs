@@ -45,3 +45,7 @@ test("棚の画面：@最新 は基本スキルだけ選べ、正本へのリン
   assert.ok(ui.includes("https://github.com/antoshia2n/shia2n-skills"));
   assert.ok(!ui.includes("/stable/"), "管理画面の部品で、生徒の版には入れない");
 });
+test("棚の便 2：表示名・ジャンル・カテゴリ・媒体で見せ、参照と Claude で直すがある", () => {
+  const ui = readFileSync(new URL("../public/js/skillshelf.js", import.meta.url), "utf8");
+  for (const s of ['data-f="${key}"', "参照している", "参照されている", "Claude で直す ↗", "https://claude.ai/new?q=", 'data-view="card"', "optgroup"]) assert.ok(ui.includes(s), s);
+});
