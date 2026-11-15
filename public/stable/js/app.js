@@ -103,6 +103,11 @@ async function main() {
     $("tab-contract").insertAdjacentHTML("afterbegin", r.member_waiting
       ? '<div class="card"><h3>マイページは準備中です</h3><p class="note" style="margin:0">教材は今までどおり <a href="https://manabu.shia2n.jp/" target="_blank" rel="noopener">学ぶくん ↗</a> で見られます。ご契約の内容と、定期の停止はここからできます。</p></div>'
       : '<div class="card"><h3>この画面はご契約の確認用です</h3><p class="note" style="margin:0">教材・添削ルーム・マイページは、しあらぼの会員向けです。ご契約の内容と、定期の停止はここからできます。</p></div>');
+    // スキルズの管理 3便目（2026-11-15）：会員（マイページの準備中の人）には、生徒に出しているスキルを受け取るカードを出す
+    if (r.member_waiting) {
+      $("tab-contract").firstElementChild.insertAdjacentHTML("afterend", '<div id="skills-slot" class="stack"></div>');
+      import("/stable/js/skills.js").then((m) => m.mountSkills($("skills-slot"), session.access_token)).catch((e) => console.warn("skills", e));
+    }
     $("crumb").textContent = "ご契約";
     document.querySelector('.side [data-tab="contract"]').setAttribute("aria-selected", "true");
     document.querySelector('.side [data-tab="contract"]').addEventListener("click", () => loadContract(session.access_token));

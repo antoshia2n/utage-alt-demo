@@ -1022,6 +1022,15 @@ async function openAppTargets(env, ent) {
   return [...new Set(rows.map((r) => r.target))];
 }
 const NOT_MEMBER = { ok: false, error: "not_member", note: "この画面はしあらぼの会員向けです" };
+// スキルを見せる権利のキー。false＝見せない／null＝シアニン（全部）／配列＝その人の門番のキー（会員は shiarabo_basic として数える）
+export function skillKeys(sa) {
+  if (sa.admin) return null;
+  const waiting = memberWaiting(sa.ent);
+  if (sa.access !== "full" && !waiting) return false;
+  const keys = [...((sa.ent && sa.ent.gate_keys) || [])];
+  if (waiting && !keys.includes("shiarabo_basic")) keys.push("shiarabo_basic");
+  return keys;
+}
 
 async function customerByEmail(env, email) {
   const [c] = await db(env, "GET", `customers?select=id,name,email&email=eq.${encodeURIComponent(email)}`);
@@ -1226,6 +1235,27 @@ async function handleApi(request, env, url) {
     if (!d || !d.ok) return json({ ok: false, error: "not_found" }, 404);
     const t = await makeRecToken(env.MCP_SECRET, { lesson: mr[1], key: d.video_key });
     return json({ ok: true, video: "/learn/rec/video?t=" + encodeURIComponent(t), date: d.date || null, summary: d.summary || "", chapters: d.chapters || [], cues: d.cues || [] }, 200, { "cache-control": "no-store" });
+  }
+  // スキルズの管理 3便目（2026-11-15 Naoki OK 15:45）：生徒に出しているスキル（正本 shia2n-skills の public の枝）の並びと zip。
+  // 開けるのは会員（マイページの準備中の人も）と、マイページの全部が開く人。読むのは shia2n-mcp の SkillsReader（GitHub の鍵はあちらだけ）
+  if ((path === "/api/me/skills" || /^[/]api[/]me[/]skills[/][A-Za-z0-9_-]{2,80}[.]zip$/.test(path)) && method === "GET") {
+    const v = await verifyUser(request, env);
+    if (v.error) return json({ ok: false, error: v.error }, 401);
+    const customer = await customerByEmail(env, v.email);
+    if (!customer) return json({ ok: false, error: "not_registered" }, 404);
+    const sa = await studentAccess(env, customer, v.email);
+    const keys = skillKeys(sa);
+    if (keys === false) return json(NOT_MEMBER, 403);
+    if (!env.SKILLS) return json({ ok: false, error: "no_binding" }, 503);
+    if (path === "/api/me/skills") {
+      const r = await env.SKILLS.list(keys);
+      if (!r || !r.ok) return json({ ok: false, error: "skills_unavailable" }, 502);
+      return json({ ok: true, skills: r.skills }, 200, { "cache-control": "no-store" });
+    }
+    const name = path.slice("/api/me/skills/".length, -".zip".length);
+    const z = await env.SKILLS.zip(name, keys);
+    if (!z || !z.ok) return json({ ok: false, error: z && z.error === "not_found" ? "not_found" : "skills_unavailable" }, z && z.error === "not_found" ? 404 : 502);
+    return new Response(z.bytes, { headers: { "content-type": "application/zip", "content-disposition": `attachment; filename="${String(z.filename).replace(/[^A-Za-z0-9._-]/g, "")}"`, "cache-control": "no-store", "x-content-type-options": "nosniff" } });
   }
   // 生徒：自分の情報・教材・お知らせ
   if (path === "/api/me" && method === "GET") {
