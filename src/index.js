@@ -73,6 +73,7 @@ import { makeSalesMark } from "./salesmark.js";
 import { makeFolders } from "./folders.js";
 import { makeStudents, applyNames } from "./students.js";
 import { makeSite } from "./site.js";
+import { makeGenres } from "./genres.js";
 import { makeMypage, APP_URLS } from "./mypage.js";
 import { makeInvite } from "./invite.js";
 import { makeGoals } from "./goals.js";
@@ -160,6 +161,9 @@ export default {
         try { await xkMail.run(env); } catch (e) { await logInbound(env, "xk_mail", {}, { ok: false, error: String(e.message).slice(0, 200) }, 500); }
         try { await nkMail.run(env); } catch (e) { await logInbound(env, "nk_mail", {}, { ok: false, error: String(e.message).slice(0, 200) }, 500); }
         if (rt.put || rt.already || rt.failed || rt.ok === false) await logInbound(env, "recording_route", { cron: event.cron }, rt, rt.ok === false ? 500 : 200);
+        // ジャンルの仕分け（2026-11-15）：会員サイトに入った新しいセミナーに、毎時 AI がジャンルの案を付ける（承認は Naoki）
+        try { const gs = await genres.suggest(env, 6); if (gs.made || gs.failed) await logInbound(env, "site_genres", { cron: event.cron }, gs, 200); }
+        catch (e) { await logInbound(env, "site_genres", {}, { ok: false, error: String(e.message).slice(0, 200) }, 500); }
         // 毎週の確認（2026-11-15）：日曜の 20 時台に、録画が 2 か所にそろったかを Naoki へメールで 1 通
         try { const wk = await recordings.weeklyMail(env, connect.notifyAdmins); if (!wk.skipped) await logInbound(env, "recording_week", { cron: event.cron }, wk, wk.ok === false ? 500 : 200); }
         catch (e) { await logInbound(env, "recording_week", {}, { ok: false, error: String(e.message).slice(0, 200) }, 500); }
@@ -281,6 +285,7 @@ const folders = makeFolders({ db, logInbound });
 const students = makeStudents({ db });
 // 会員サイトの管理（中身は src/site.js・表の正本は supabase/b21_site_shape.sql と b22_site_publish.sql）
 const site = makeSite({ db });
+const genres = makeGenres({ db });
 const plan = makePlan({ db, logInbound, communityLink, changes, pages, seminars, booking, folders });
 // B の便 8g-4：ブロックとテンプレ。中身は src/blocks.js（draftFlow は下の関数）
 const blocks = makeBlocks({ db, logInbound, plan, deliver, draftFlow: (env, a, actor) => draftFlow(env, a, actor) });
@@ -1770,6 +1775,10 @@ async function handleApi(request, env, url) {
       else if (method === "PUT" && sub === "content") r = await site.saveContent(env, body, by);
       else if (method === "PUT" && sub === "content-status") r = await site.setStatus(env, body, by);
       else if (method === "PUT" && sub === "content-from-videos") r = await site.fromVideos(env, body, by);
+      // ジャンルの仕分け（2026-11-15）：仕分け前の一覧・AI の案・承認
+      else if (sub === "genres" && method === "GET") r = await genres.list(env);
+      else if (method === "POST" && sub === "genres-suggest") r = await genres.suggest(env, body.limit);
+      else if (method === "POST" && sub === "genres-approve") r = await genres.approve(env, body.items);
       else return json({ ok: false, error: "not_found" }, 404);
       return json(r, r.ok === false ? 400 : 200);
     }
@@ -3311,6 +3320,9 @@ const TOOLS = [
   { name: "recording_route_settings", screen: "recordings", say: "録画を会員サイトに入れる決まりのコースを見る", description: "会の種類（セミナー・打ち合わせ・個別相談・Zoom添削・その他）ごとに、録画を会員サイトへ入れる決まりのコース（courses）と、選べるコースの一覧（course_list：id・名前の道筋・見られる権利）を返す。from はスイッチの最初の値を会の種類で決め始めた収録日。", inputSchema: { type: "object", properties: {} } },
   { name: "set_recording_route_settings", screen: "recordings", say: "録画を会員サイトに入れる決まりのコースを変える", description: "会の種類ごとの決まりのコースを変える。courses：{ \"セミナー\": \"コースの id\" }（空文字か null で外す）。コースの id は recording_route_settings の course_list の id。", inputSchema: { type: "object", properties: { courses: { type: "object" } }, required: ["courses"] } },
   { name: "set_recording_thumb", screen: "recordings", say: "録画のサムネの言葉を編集する", description: "録画 1 本のサムネ（型 A「帯」）に載せる言葉を編集する。big：大きな一言（16 文字まで）・sub：補足（24 文字まで）。big を空にすると AI が文字起こしから作り直す（5 分ごとの処理）。今の言葉は list_recordings の行の thumb（by：ai／hand／title）。会員サイトの教材のカードにも同じ絵が出る。id は list_recordings の id。", inputSchema: { type: "object", properties: { id: { type: "string" }, big: { type: "string" }, sub: { type: "string" } }, required: ["id"] } },
+  { name: "site_genres", screen: "site", say: "会員サイトのジャンルの仕分け前を見る", description: "会員サイトで、セミナーアーカイブにしか入っていない（どのジャンル＝「○○力」のプログラムにも入っていない）コンテンツの一覧と、AI のジャンルの案（suggest：program_id・title・why）を返す。genres は選べるジャンル。読むだけ。", inputSchema: { type: "object", properties: {} } },
+  { name: "suggest_site_genres", screen: "site", say: "会員サイトのジャンルの案を AI に出させる", description: "仕分け前で案の無いコンテンツに、Workers AI がジャンルの案を付ける（1 回に limit 本・既定 8・最大 20）。案は手元に置くだけで、生徒の画面は変わらない。", inputSchema: { type: "object", properties: { limit: { type: "number" } } } },
+  { name: "approve_site_genres", screen: "site", say: "会員サイトのジャンルの仕分けを承認する", description: "items=[{id: コンテンツ, program_id: ジャンル}] を、そのジャンルの最初のコースへ入れる（並びは収録日 YYYYMMDD＝生徒の画面では「関連するセミナー」）。セミナーアーカイブからは外さない。生徒の教材が変わる。", inputSchema: { type: "object", properties: { items: { type: "array", items: { type: "object", properties: { id: { type: "string" }, program_id: { type: "string" } }, required: ["id", "program_id"] } } }, required: ["items"] } },
   { name: "recording_week_check", screen: "recordings", say: "録画の今週の確認を見る", description: "直近 days 日（既定 7・最大 31）に録った録画ごとに、R2（原本）・ドライブ（写し）・YouTube（スイッチがオンの録画だけ）にそろったかを返す。読むだけ。state：ok そろった／wait 録って 1 日以内で運んでいる途中／missing 欠け（missing に足りない置き場、error に理由）。zoom_trashed は Zoom のゴミ箱へ移したか（30 日は戻せる）。毎週日曜 20 時台に同じ中身が Naoki へメールで届く。", inputSchema: { type: "object", properties: { days: { type: "number" } } } },
   { name: "run_recording_route", screen: "recordings", say: "会員サイトに入れる録画を今すぐ通す", description: "「会員サイトに入れる」がオンでまだ入っていない録画を、今すぐ会員サイトに下書きで入れ、Naoki にメールで知らせる（1 時間ごとの処理と同じ）。返す数：put 入れた・already すでに入っていた・waiting_youtube YouTube に上がるのを待っている・no_course 入れ先のコースが決まっていない・failed。", inputSchema: { type: "object", properties: {} } },
   { name: "get_site", screen: "site", say: "会員サイトの中身を見る", description: "会員サイト（サイト › カリキュラム › プログラム › コース › コンテンツ）を読む。what：tree（全体の木）／content（id のコンテンツ 1 つ）／home（ホームの並び）／students（生徒と見られる範囲）。", inputSchema: { type: "object", properties: { what: { type: "string", enum: ["tree", "content", "home", "students"] }, id: { type: "string" } }, required: ["what"] } },
@@ -3524,6 +3536,9 @@ async function runTool(env, name, args, ctx) {
   if (name === "recording_route_settings") return await recordings.routeConfig(env, site);
   if (name === "set_recording_route_settings") return await recordings.routeConfigSet(env, args.courses);
   if (name === "set_recording_thumb") return await recordings.thumbSet(env, args.id, args);
+  if (name === "site_genres") return await genres.list(env);
+  if (name === "suggest_site_genres") return await genres.suggest(env, args.limit);
+  if (name === "approve_site_genres") return await genres.approve(env, args.items);
   if (name === "recording_week_check") return await recordings.weekly(env, args.days);
   if (name === "run_recording_route") {
     // 棚を読むのに 20 秒近くかかることがあり、AI の窓口（20 秒で打ち切る）を超えるため、裏で進めて結果はメールで知らせる（2026-11-12）
