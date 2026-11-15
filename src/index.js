@@ -1598,7 +1598,7 @@ async function handleApi(request, env, url) {
     // スキルの棚の便 1（2026-11-16 Naoki OK 00:36）：スキル・レシピ・仮説。正本は GitHub の shia2n-skills、読む・書くのは shia2n-mcp の SkillsReader（鍵はあちらだけ）
     if (path === "/api/admin/skills" || path.startsWith("/api/admin/skills/")) {
       if (!env.SKILLS || typeof env.SKILLS.shelf !== "function") return json({ ok: false, error: "no_binding" }, 503);
-      if (path === "/api/admin/skills" && method === "GET") { const r = await env.SKILLS.shelf(); return json(r, r && r.ok ? 200 : 502, { "cache-control": "no-store" }); }
+      if (path === "/api/admin/skills" && method === "GET") { const r = await env.SKILLS.shelf(url.searchParams.get("at") || null); return json(r, r && r.ok ? 200 : 502, { "cache-control": "no-store" }); }
       if (path === "/api/admin/skills/recipe" && method === "POST") {
         const b = await request.json().catch(() => ({}));
         const uses = Array.isArray(b.uses) ? b.uses.slice(0, 12).map((u) => ({ skill: String(u && u.skill || ""), pin: ["keep", "now", "latest"].includes(u && u.pin) ? u.pin : "keep", strength: u && u.strength ? String(u.strength).slice(0, 10) : null })) : [];

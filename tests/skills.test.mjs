@@ -37,7 +37,7 @@ test("棚の口は管理者の門の内側で、生徒の口（/api/me/skills）
   const gate = src.indexOf('if (path.startsWith("/api/admin/")) {');
   const shelf = src.indexOf('path === "/api/admin/skills"');
   assert.ok(gate > 0 && shelf > gate, "管理者の門の後ろにある");
-  assert.ok(src.includes("env.SKILLS.shelf()") && src.includes("env.SKILLS.saveRecipe(") && src.includes("env.SKILLS.addHypothesis(") && src.includes("env.SKILLS.updateHypothesis("));
+  assert.ok(src.includes("env.SKILLS.shelf(") && src.includes("env.SKILLS.saveRecipe(") && src.includes("env.SKILLS.addHypothesis(") && src.includes("env.SKILLS.updateHypothesis("));
 });
 test("棚の画面：@最新 は基本スキルだけ選べ、正本へのリンクを出す", () => {
   const ui = readFileSync(new URL("../public/js/skillshelf.js", import.meta.url), "utf8");
