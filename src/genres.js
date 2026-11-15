@@ -17,6 +17,10 @@ export function dateSeq(c) {
   let m = t.match(/(20\d\d)[-/.年](\d{1,2})[-/.月](\d{1,2})/);
   if (!m) { const y = t.match(/(\d\d)年(\d{1,2})月(\d{1,2})日/); if (y) m = [null, "20" + y[1], y[2], y[3]]; }
   if (m) return Number(m[1]) * 10000 + Number(m[2]) * 100 + Number(m[3]);
+  const base = String(c.publish_at || c.created_at || c.updated_at || "").slice(0, 10).replace(/-/g, "");
+  // 年の無い「10月28日」「11/1」は、作った日の年で読む（作った日より先の日付なら前の年）
+  const md = String(c.title || "").match(/(?:^|[^\d])(\d{1,2})(?:月|\/)(\d{1,2})日?/);
+  if (md && /^\d{8}$/.test(base)) { let y = Number(base.slice(0, 4)); const v = Number(md[1]) * 100 + Number(md[2]); if (v > Number(base.slice(4))) y--; if (Number(md[1]) >= 1 && Number(md[1]) <= 12) return y * 10000 + v; }
   const d = String(c.publish_at || c.created_at || c.updated_at || "").slice(0, 10).replace(/-/g, "");
   return /^\d{8}$/.test(d) ? Number(d) : 20000101;
 }
