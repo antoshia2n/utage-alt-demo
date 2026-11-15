@@ -5,6 +5,7 @@
 //  ・出し先のスイッチ（2026-11-12 Naoki OK）：詳細の「出し先」で YouTube・会員サイトを入り切り。上の帯の「出し先の決まり」で会の種類ごとの入れ先
 //  ・便 C（2026-11-06 Naoki OK 19:47）：上の帯の「アップロード」から Zoom 以外の動画・音声を入れる。16MB ずつ送り、切れたら続きから
 import { api } from "/js/common.js";
+import { thumbA } from "/js/thumb.js";
 
 const KAI = { "セミナー": "#2563eb", "打ち合わせ": "#7c3aed", "個別相談": "#0d9488", "Zoom添削": "#db2777", "その他": "#a39a90" };
 const ISSUE_ORDER = ["名前の日付と収録日が合わない", "ほぼ空（1 分未満か 10MB 未満）", "見る画面で流せる動画が無い（音声だけなど）", "同じ名前の録画がほかにもある"];
@@ -281,6 +282,13 @@ export function mountRecordings(host, { getToken }) {
     const s = r.share;
     $("#drawer").innerHTML = `<div class="dh"><h2 id="d-title">${esc(r.title)}</h2><button class="x" type="button" id="d-close" aria-label="閉じる">✕</button></div>
     <div class="db">
+      <div class="sec"><h3>サムネ</h3>
+        <div style="position:relative;aspect-ratio:16/9;border-radius:10px;overflow:hidden;border:1px solid var(--line)">${thumbA({ big: r.thumb?.big || "", sub: r.thumb?.sub || "", kai: r.kai, date: r.date })}</div>
+        <p class="hint">${!r.thumb ? "言葉はまだありません。5 分ほどで AI が文字起こしから作ります。" : r.thumb.by === "ai" ? "AI が文字起こしから作った言葉です。" : r.thumb.by === "hand" ? "手で編集した言葉です（自動では変わりません）。" : "文字起こしが無いので、名前から作った言葉です。"}会員サイトの教材のカードにも、この絵が出ます。</p>
+        <div class="f"><label for="d-tbig">大きな一言（16 文字まで）</label><input id="d-tbig" maxlength="16" value="${esc(r.thumb?.big || "")}"></div>
+        <div class="f"><label for="d-tsub">補足（24 文字まで）</label><input id="d-tsub" maxlength="24" value="${esc(r.thumb?.sub || "")}"></div>
+        <div class="row2"><button class="btn" type="button" id="d-tsave">サムネを保存</button><span class="why">大きな一言を空にして保存すると、AI が作り直します</span></div>
+      </div>
       ${routeSec(r)}
       <div class="sec"><h3>共有リンク</h3>
       ${s ? `<div class="link"><code>${esc(s.link)}</code><button class="btn sm" type="button" data-copy="${esc(r.id)}">コピー</button></div>
@@ -616,6 +624,15 @@ export function mountRecordings(host, { getToken }) {
     }
     if (t.id === "bulk-add") return addBulk();
     if (t.id === "d-lab-add") return addOne();
+    if (t.id === "d-tsave") {
+      if (busy || !sel) return; busy = true;
+      const r = await call("/thumb", "POST", { id: sel, big: $("#d-tbig").value, sub: $("#d-tsub").value });
+      busy = false;
+      if (!r.ok) { undo(errText(r), null); return; }
+      await load();
+      undo(r.thumb ? "サムネの言葉を編集で保存しました" : "サムネの言葉を AI に作り直してもらいます（5 分ほど）", null);
+      return;
+    }
     const rl = t.closest("[data-rmlab]"); if (rl) { const l = rl.dataset.rmlab; return setMeta([{ id: sel, labels_remove: [l] }], `ラベル「${l}」を外しました`, [{ id: sel, labels_add: [l] }]); }
     if (t.id === "manage-l") { e.stopPropagation(); return manage(); }
     const mr = t.closest("[data-mlren]"); if (mr) { const from = mr.dataset.mlren, to = root.getElementById("ren-" + mr.dataset.i).value.trim(); if (!to || to === from) return; return editLabel({ action: "rename", from, to }, `「${from}」の名前を変えました`, { action: "rename", from: to, to: from }); }

@@ -47,6 +47,21 @@ export function groupLessons(rows) {
   return { programs, lesson_count: ids.size, row_count: rows.length };
 }
 
+// 録画のサムネ（型 A・2026-11-15 Naoki OK）：録画を入れた教材に、録画の保管（ZOOM）が持つサムネの言葉を付ける。
+// 渡すのは言葉・会の種類・収録日だけ（録画の番号は生徒に渡さない）。読めなくても教材の一覧はそのまま返す
+export async function attachThumbs(env, rows, programs) {
+  try {
+    const byLesson = new Map(rows.filter((r) => r.rec_id).map((r) => [r.lesson_id, r.rec_id]));
+    if (!byLesson.size || !env.ZOOM || typeof env.ZOOM.thumbs !== "function") return;
+    const r = await env.ZOOM.thumbs([...new Set(byLesson.values())]);
+    const map = (r && r.thumbs) || {};
+    for (const p of programs) for (const c of p.courses) for (const l of c.lessons) {
+      const t = map[byLesson.get(l.id)];
+      if (t && t.big) l.thumb = { big: String(t.big), sub: String(t.sub || ""), kai: String(t.kai || ""), date: String(t.date || "") };
+    }
+  } catch { /* サムネが無くても教材は見られる */ }
+}
+
 // http(s) の住所だけを通す（本文の中の住所をそのまま画面のリンクにするため）
 export function safeUrl(u) {
   const s = String(u || "").trim();
@@ -100,6 +115,7 @@ export function makeLearn(h) {
       rows = rows.filter((r) => dripOpen(r, opened.get(r.curriculum_id)));
     }
     const g = groupLessons(rows);
+    await attachThumbs(env, rows, g.programs);
     return { source: "manabu", member: true, admin, programs: g.programs, lesson_count: g.lesson_count, flat: [] };
   }
 

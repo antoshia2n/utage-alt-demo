@@ -3,6 +3,7 @@
 // 種類のラベル：会員サイトのコンテンツにまだ種類の欄が無いので、今はプログラムとコースから決める（管理画面で選べるようにするのは 3 本目）。
 // テーマ：入っているプログラムがそのままテーマ。今日のおすすめは、テーマの中からまだ見ていないものを日付で決めた 4 本。
 import { esc } from "/js/common.js";
+import { thumbA } from "/js/thumb.js";
 
 // 版ごとの段の並び（器）。3 本目で管理画面から並べ替えられるようにする
 export const HOME_ROWS = {
@@ -104,7 +105,10 @@ export function freshList(flat, max = 4) {
 export function card(x, seen) {
   const rd = READ.has(x.kind) || !x.youtube_id;
   const done = seen && seen.has(x.id);
-  const th = rd
+  // 録画のサムネ（型 A・2026-11-15）：会員サイトに入れた録画は、言葉のサムネを先に出す（種類の札は型の中にあるので重ねない）
+  const th = x.thumb
+    ? `<span class="th">${thumbA(x.thumb)}${x.minutes ? `<span class="du">${x.minutes} 分</span>` : ""}${done ? '<span class="pg"><i style="width:100%"></i></span>' : ""}</span>`
+    : rd
     ? `<span class="th paper"><span class="lb">${esc(x.kind)}</span><span class="pt">${esc(x.course)}</span></span>`
     : `<span class="th"><img alt="" loading="lazy" src="https://i.ytimg.com/vi/${encodeURIComponent(x.youtube_id)}/mqdefault.jpg" onerror="this.remove()"><span class="lb">${esc(x.kind)}</span>${x.minutes ? `<span class="du">${x.minutes} 分</span>` : ""}${done ? '<span class="pg"><i style="width:100%"></i></span>' : ""}</span>`;
   return `<a class="v" href="#lesson/${encodeURIComponent(x.id)}" data-id="${esc(x.id)}">${th}<span class="vt">${esc(x.title)}</span><span class="vm">${esc(x.course)}${done ? "・見た" : ""}</span></a>`;
