@@ -19,6 +19,8 @@ export const DEFAULT_MODES = {
   // 実績の便 3（2026-11-13）：実績の棚は Naoki の手元の整理で、人へは届かない（外へ出すのは Naoki）
   find_results: "auto", get_result: "auto", add_result_link: "auto",
   list_recordings: "auto", issue_recording_link: "auto", set_recording_link: "auto", set_recording_meta: "auto", edit_recording_label: "auto", suggest_recording_kai: "auto", recording_site_places: "auto", put_recording_in_site: "auto", set_recording_route: "auto", recording_route_settings: "auto", set_recording_route_settings: "auto", run_recording_route: "auto", recording_week_check: "auto", set_recording_thumb: "auto",
+  // ジャンルの仕分け（2026-11-15）：一覧と AI の案は手元だけ。承認は生徒の教材が変わるので「承認」
+  site_genres: "auto", suggest_site_genres: "auto", approve_site_genres: "approve",
   send_email: "approve", return_correction: "approve", set_deal_stage: "approve",
   set_note_member: "approve", send_seminar_archive: "approve",
   list_products: "auto", set_product: "approve",

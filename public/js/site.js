@@ -139,7 +139,7 @@ export function mountSite(host, { getToken, openPerson }) {
     ${S.sites.map((st) => st === cur ? "" : `<button class="site-now site-pick" ${goAttr({ kind: "curricula", sid: st.id })}>${esc(st.name)}</button>`).join("")}
     ${cur ? `<button class="site-now site-pick" ${goAttr({ kind: "curricula", sid: cur.id })} aria-expanded="true">${esc(cur.name)}</button>${item("curricula", "カリキュラム")}
       <div class="tn"><button class="sub" style="flex:1" ${goAttr({ kind: "programs", sid: cur.id })} ${k === "programs" && V.kind === "programs" ? 'aria-current="page"' : ""}>プログラム</button><button class="tgl" data-sopen="programs" aria-expanded="${sideOpen.programs}" aria-label="プログラムの一覧を${sideOpen.programs ? "たたむ" : "開く"}">${sideOpen.programs ? "▾" : "▸"}</button></div>${tree}
-      ${item("contents", "コンテンツ")}${item("students", "受講生")}${item("home", "生徒のホーム")}${item("news", "お知らせ")}${item("siteset", "サイトの設定")}` : ""}`;
+      ${item("contents", "コンテンツ")}${item("genres", `ジャンルの仕分け${GEN && GEN.pending.length ? `（${GEN.pending.length}）` : ""}`)}${item("students", "受講生")}${item("home", "生徒のホーム")}${item("news", "お知らせ")}${item("siteset", "サイトの設定")}` : ""}`;
     $$("[data-sopen]").forEach((b) => (b.onclick = () => { const key = b.dataset.sopen; sideOpen[key] = !sideOpen[key]; renderSide(); $$("#side [data-go]").forEach((x) => (x.onclick = () => go(JSON.parse(x.dataset.go)))); $(`[data-sopen="${key}"]`).focus(); }));
   }
   function render() {
@@ -147,7 +147,7 @@ export function mountSite(host, { getToken, openPerson }) {
     if (V.sid && !site()) V = { kind: "sites" };
     renderSide();
     const m = $("#main");
-    ({ sites: renderSites, curricula: renderCurricula, curriculum: renderCurriculum, programs: renderPrograms, contents: renderContents, course: renderCourse, lesson: renderLesson, mypage: renderMypage, home: renderHome, news: renderNews, students: renderStudents, siteset: renderSiteSet })[V.kind](m);
+    ({ sites: renderSites, curricula: renderCurricula, curriculum: renderCurriculum, programs: renderPrograms, contents: renderContents, course: renderCourse, lesson: renderLesson, mypage: renderMypage, home: renderHome, news: renderNews, genres: renderGenres, students: renderStudents, siteset: renderSiteSet })[V.kind](m);
     $$(".st-t").forEach((t) => { const hs = [...t.querySelectorAll("thead th")].map((x) => x.textContent); t.querySelectorAll("tbody tr").forEach((r) => [...r.children].forEach((td, i) => { if (!td.hasAttribute("colspan")) td.dataset.l = i === 0 ? "" : hs[i] || ""; })); });
     $$("[data-go]").forEach((b) => (b.onclick = () => go(JSON.parse(b.dataset.go))));
     try { const sd = $("#side"), cb = sd.querySelector("[aria-current]"); if (cb && sd.scrollWidth > sd.clientWidth) sd.scrollLeft = cb.offsetLeft - sd.clientWidth / 2 + cb.clientWidth / 2; } catch { /* 横に並ばない幅では何もしない */ }
@@ -642,6 +642,33 @@ export function mountSite(host, { getToken, openPerson }) {
 
 
   // ---------- お知らせ（2026-10-29 13:06）：書く・日時を決めて出す・下書き・取り下げ ----------
+  // ---------- ジャンルの仕分け（2026-11-15）：アーカイブにしか無いセミナーへ AI がジャンルの案 → Naoki が承認 ----------
+  let GEN = null, genPick = {};
+  async function loadGenres() { const r = await call("genres"); GEN = r.ok ? r : { genres: [], pending: [], error: errText(r) }; return GEN; }
+  function renderGenres(m) {
+    if (!GEN) { m.innerHTML = `${crumbs()}<h1>ジャンルの仕分け</h1><p class="hint">読み込んでいます…</p>`; loadGenres().then(() => V.kind === "genres" && render()); return; }
+    const gs = GEN.genres, ps = GEN.pending;
+    const sel = (r) => genPick[r.id] ?? r.suggest?.program_id ?? "";
+    const ready = ps.filter((r) => sel(r));
+    m.innerHTML = `${crumbs()}<div class="hrow"><h1>ジャンルの仕分け</h1><span class="grow"></span>
+      ${GEN.waiting ? `<button class="btn" id="gsug">AI に案を出させる（残り ${GEN.waiting}）</button>` : ""}
+      <button class="btn pri" id="gok" ${ready.length ? "" : "disabled"}>選んだ ${ready.length} 本を入れる</button></div>
+    <p class="lead">セミナーアーカイブにしか入っていない動画です。入れると、生徒の「ジャンルから探す」の「関連するセミナー」に収録日の順で並びます（アーカイブからは外しません）。新しく入ったセミナーには毎時 AI が案を付けます。</p>
+    ${GEN.error ? `<p class="err">${esc(GEN.error)}</p>` : ""}
+    ${ps.length ? `<div style="overflow-x:auto"><table class="st-t"><thead><tr><th>動画</th><th>収録日</th><th>AI の案</th><th>入れるジャンル</th></tr></thead><tbody>
+    ${ps.map((r) => `<tr><td><b>${esc(r.title)}</b>${r.status !== "published" ? ' <span class="st draft">下書き</span>' : ""}</td><td style="white-space:nowrap">${esc(r.date)}</td>
+      <td>${r.suggest ? `${esc(r.suggest.title)}<div class="hint">${esc(r.suggest.why)}</div>` : '<span class="hint">まだ</span>'}</td>
+      <td><select data-gp="${r.id}" aria-label="『${esc(r.title)}』を入れるジャンル"><option value="">入れない</option>${gs.map((g) => `<option value="${g.program_id}" ${sel(r) === g.program_id ? "selected" : ""}>${esc(g.title)}</option>`).join("")}</select></td></tr>`).join("")}</tbody></table></div>`
+      : '<div class="empty">仕分け前の動画はありません。どのセミナーもジャンルに入っています</div>'}`;
+    $$("[data-gp]").forEach((x) => (x.onchange = () => { genPick[x.dataset.gp] = x.value; const n = ps.filter((r) => sel(r)).length; const b = $("#gok"); b.textContent = `選んだ ${n} 本を入れる`; b.disabled = !n; }));
+    if ($("#gsug")) $("#gsug").onclick = async () => { const r = await call("genres-suggest", "POST", { limit: 20 }); if (!r.ok) { toast(errText(r)); return; } await loadGenres(); render(); toast(`AI が ${r.made} 本に案を付けました${r.remaining ? `（残り ${r.remaining}）` : ""}`); };
+    $("#gok").onclick = async () => {
+      const items = ps.filter((r) => sel(r)).map((r) => ({ id: r.id, program_id: sel(r) }));
+      if (!items.length) return;
+      const r = await call("genres-approve", "POST", { items }); if (!r.ok) { toast(errText(r)); return; }
+      genPick = {}; await Promise.all([loadGenres(), reload()]); render(); toast(`${r.done} 本をジャンルに入れました（生徒の画面に出ます）`);
+    };
+  }
   let NEWS = null, newsEdit = null;
   const NST = { live: ["pub", "● 公開中"], scheduled: ["sch", "⏱ 予約"], draft: ["draft", "○ 下書き"], withdrawn: ["draft", "取り下げ"] };
   async function loadNews() { const r = await call("/api/admin/news"); if (!r.ok) { toast(errText(r)); NEWS = []; return; } NEWS = r.news; }
