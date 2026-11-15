@@ -60,6 +60,20 @@ export function mountSkillShelf(host, { getToken }) {
     .hy .acts{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
     .hy select{border:1px solid var(--field);background:var(--panel);border-radius:8px;padding:4px 8px;min-height:34px}
     form[hidden],.hide{display:none!important}
+    .gsec{margin:0 0 18px}.gsec h2{font-size:15px;margin:0 0 8px}.gsec h2 small{color:var(--muted);font-weight:400;font-size:12px}
+    .sks{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
+    .sk{display:flex;flex-direction:column;gap:4px;text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer;font:inherit;color:inherit;min-height:44px}
+    .sk:hover{border-color:var(--field)}.sk:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
+    .sk-t{font-size:15px;font-weight:700}.sk-id{font-size:12px;color:var(--muted);font-family:ui-monospace,monospace}
+    .sk-p{font-size:13px;color:var(--fg);line-height:1.5}
+    .sk .uses{margin-top:4px}.use.md{border-style:dashed}.use.ver{background:none}.use.stu{border-color:var(--ink);color:var(--ink)}
+    .seg{display:inline-flex;gap:0}.seg .btn{border-radius:0}.seg .btn:first-child{border-radius:8px 0 0 8px}.seg .btn:last-child{border-radius:0 8px 8px 0;margin-left:-1px}
+    .seg .btn[aria-pressed="true"]{background:var(--soft);font-weight:700}
+    .fpop{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin:0 0 12px;display:flex;gap:18px;flex-wrap:wrap}
+    .fpop[hidden]{display:none}
+    .fg{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:13px}.fg legend{font-weight:700;margin-bottom:4px}
+    .fg label{display:flex;gap:6px;align-items:center;min-height:28px}
+    .chipx{cursor:pointer;font:inherit;font-size:12px}
   </style>
   <div class="top" role="tablist" aria-label="スキルの棚">${TABS.map(([k, l]) => `<button class="tab" type="button" role="tab" data-tab="${k}" aria-selected="false">${l}</button>`).join("")}
     <span class="grow"></span><span class="note-top" id="note-top"></span><a class="btn sm" id="repo" href="https://github.com/antoshia2n/shia2n-skills" target="_blank" rel="noopener">正本を別タブで開く ↗</a>
@@ -105,37 +119,89 @@ export function mountSkillShelf(host, { getToken }) {
   const wireRows = (fn) => $("#main").querySelectorAll("tr.rw").forEach((tr) => { tr.addEventListener("click", () => fn(tr.dataset.id)); tr.addEventListener("keydown", (e) => { if (e.key === "Enter") fn(tr.dataset.id); }); });
 
   // ---------- スキル ----------
+  // 便 2（2026-11-16 Naoki OK 08:16）：表示名を主役に、ジャンルでまとめ、ジャンル・カテゴリ・媒体で絞る。カードと表を切り替える
+  const F = { genre: new Set(), category: new Set(), media: new Set() };
+  let view = (() => { try { return localStorage.getItem("skills_view") || "card"; } catch (_) { return "card"; } })();
+  const title = (n) => { const x = S.skills.find((k) => k.name === n); return (x && x.title) || n; };
+  const refBy = (n) => S.skills.filter((k) => (k.refs || []).includes(n)).map((k) => k.name);
+  const chips = (arr, cls) => (arr || []).map((v) => `<span class="use ${cls || ""}">${esc(v)}</span>`).join("");
+  const fixPrompt = (k) => `開発部よろしく。シアニンのスキル「${k.title || k.name}」（${k.name}・版 ${k.version || ""}）を、シアニン式スキル規格（正本の STANDARD.md）にそろえて直したい。正本：${S.repo}/tree/main/skills/${k.name}\n直したいこと：`;
   function drawSkills() {
-    const rows = S.skills.filter((s) => hit(s.name, s.purpose, s.owner, s.audience.join(" "), s.where.join(" ")));
-    const stu = S.skills.filter((s) => s.student_version).length;
+    const pass = (k) => (!F.genre.size || F.genre.has(k.genre)) && (!F.category.size || (k.category || []).some((c) => F.category.has(c))) && (!F.media.size || (k.media || []).some((c) => F.media.has(c)));
+    const rows = S.skills.filter((k) => pass(k) && hit(k.title, k.name, k.purpose, k.genre, (k.category || []).join(" "), (k.media || []).join(" "), k.owner));
+    const stu = S.skills.filter((k) => k.student_version).length;
+    const genres = [...(S.genres || []), ...new Set(S.skills.map((k) => k.genre).filter((g) => g && !(S.genres || []).includes(g)))];
+    const medias = [...new Set(S.skills.flatMap((k) => k.media || []))];
+    const nf = F.genre.size + F.category.size + F.media.size;
+    const fset = (key, label, vals) => `<fieldset class="fg"><legend>${label}</legend>${vals.map((v) => `<label><input type="checkbox" data-f="${key}" value="${esc(v)}" ${F[key].has(v) ? "checked" : ""}> ${esc(v)}</label>`).join("")}</fieldset>`;
+    const card = (k) => `<button class="sk" type="button" data-sk="${esc(k.name)}" aria-label="${esc(k.title || k.name)} の詳細を開く">
+        <span class="sk-t">${esc(k.title || k.name)}</span><span class="sk-id">${esc(k.name)}</span>
+        <span class="sk-p">${esc(k.purpose || "")}</span>
+        <span class="uses">${chips(k.category)}${chips(k.media, "md")}<span class="use ver">版 ${esc(k.version || "")}</span>${k.student_version ? `<span class="use stu">生徒 ${esc(k.student_version)}</span>` : ""}</span></button>`;
+    const byGenre = genres.map((g) => [g, rows.filter((k) => k.genre === g)]).filter(([, a]) => a.length);
+    const none = rows.filter((k) => !k.genre);
     $("#main").innerHTML = `<h1>スキル</h1>${howLine}
-      <p class="lead">${S.skills.length} 本・生徒に出しているのは ${stu} 本。「生徒の版」が空のスキルは生徒に出していません。最新の版と生徒の版が違うものは色で示します。</p>
-      ${searchBar(rows.length, "名前・何に使うか・担当・見せる相手")}
-      <div class="tbl list"><table><thead><tr><th>スキル</th><th>最新の版</th><th>生徒の版</th><th>使う場所</th><th>見せる相手</th><th>担当</th><th>更新</th></tr></thead><tbody>
-      ${rows.map((s) => `<tr class="rw" data-id="${esc(s.name)}" tabindex="0" aria-label="${esc(s.name)} の詳細を開く">
-        <td class="nm">${esc(s.name)}<small>${esc(s.purpose || "")}</small></td>
-        <td class="ver">${esc(s.version || "")}</td>
-        <td class="ver ${s.student_version && s.student_version !== s.version ? "diff" : ""}">${s.student_version ? esc(s.student_version) + (s.student_version !== s.version ? "（古い）" : "") : ""}</td>
-        <td>${esc(s.where.join("・"))}</td><td>${esc(s.audience.join("・"))}</td><td>${esc(s.owner || "")}</td><td class="date">${esc(s.updated || "")}</td></tr>`).join("")}
-      </tbody></table></div>${S.broken ? `<p class="hint">読めなかったもの：${esc(S.broken.join("、"))}</p>` : ""}`;
+      <p class="lead">${S.skills.length} 本・生徒に出しているのは ${stu} 本。書き方の決まりは<a href="${esc(S.repo)}/blob/main/STANDARD.md" target="_blank" rel="noopener">シアニン式スキル規格を別タブで開く ↗</a></p>
+      <div class="bar">
+        <div class="search"><label for="q">探す</label><input type="search" id="q" value="${esc(q)}" placeholder="表示名・ID・何に使うか・ジャンル・カテゴリ・媒体"></div>
+        <button class="btn sm" type="button" id="f-open" aria-expanded="false" aria-controls="f-pop">絞り込み${nf ? `（${nf}）` : ""} ▾</button>
+        <span class="seg" role="group" aria-label="見せ方"><button type="button" class="btn sm" data-view="card" aria-pressed="${view === "card"}">カード</button><button type="button" class="btn sm" data-view="table" aria-pressed="${view === "table"}">表</button></span>
+        <span class="lead" style="margin:0">${rows.length} 件</span>
+      </div>
+      <div class="fpop" id="f-pop" hidden>${fset("genre", "ジャンル", genres)}${fset("category", "カテゴリ", S.categories || [])}${medias.length ? fset("media", "媒体", medias) : ""}</div>
+      ${nf ? `<div class="uses" style="margin:0 0 12px">${["genre", "category", "media"].flatMap((key) => [...F[key]].map((v) => `<button type="button" class="use chipx" data-x="${key}" data-v="${esc(v)}" aria-label="${esc(v)} の絞り込みを外す">${esc(v)} ✕</button>`)).join("")}<button type="button" class="use chipx" id="f-clear">すべて外す</button></div>` : ""}
+      ${view === "card"
+        ? byGenre.map(([g, a]) => `<section class="gsec"><h2>${esc(g)} <small>${a.length}</small></h2><div class="sks">${a.map(card).join("")}</div></section>`).join("") + (none.length ? `<section class="gsec"><h2>ジャンル未設定</h2><div class="sks">${none.map(card).join("")}</div></section>` : "")
+        : `<div class="tbl list"><table><thead><tr><th>スキル</th><th>ジャンル</th><th>カテゴリ</th><th>媒体</th><th>最新の版</th><th>生徒の版</th><th>担当</th><th>更新</th></tr></thead><tbody>
+      ${rows.map((k) => `<tr class="rw" data-id="${esc(k.name)}" tabindex="0" aria-label="${esc(k.title || k.name)} の詳細を開く">
+        <td class="nm">${esc(k.title || k.name)}<small>${esc(k.name)}</small></td><td>${esc(k.genre || "")}</td><td>${esc((k.category || []).join("・"))}</td><td>${esc((k.media || []).join("・"))}</td>
+        <td class="ver">${esc(k.version || "")}</td>
+        <td class="ver ${k.student_version && k.student_version !== k.version ? "diff" : ""}">${k.student_version ? esc(k.student_version) + (k.student_version !== k.version ? "（古い）" : "") : ""}</td>
+        <td>${esc(k.owner || "")}</td><td class="date">${esc(k.updated || "")}</td></tr>`).join("")}
+      </tbody></table></div>`}
+      ${rows.length ? "" : '<p class="lead">当てはまるスキルがありません。絞り込みを外してください。</p>'}
+      ${S.broken ? `<p class="hint">読めなかったもの：${esc(S.broken.join("、"))}</p>` : ""}`;
     wireSearch(); wireRows(openSkill);
+    $("#main").querySelectorAll("[data-sk]").forEach((b) => b.addEventListener("click", () => openSkill(b.dataset.sk)));
+    $("#main").querySelectorAll("[data-view]").forEach((b) => b.addEventListener("click", () => { view = b.dataset.view; try { localStorage.setItem("skills_view", view); } catch (_) {} draw(); const n = $(`[data-view="${view}"]`); if (n) n.focus(); }));
+    const pop = $("#f-pop"), ob = $("#f-open");
+    const closePop = (focus) => { pop.hidden = true; ob.setAttribute("aria-expanded", "false"); if (focus) ob.focus(); };
+    ob.addEventListener("click", (e) => { e.stopPropagation(); const open = pop.hidden; pop.hidden = !open; ob.setAttribute("aria-expanded", String(open)); if (open) { const f = pop.querySelector("input"); if (f) f.focus(); } });
+    pop.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); closePop(true); } });
+    pop.querySelectorAll("input[data-f]").forEach((c) => c.addEventListener("change", () => {
+      const set = F[c.dataset.f]; c.checked ? set.add(c.value) : set.delete(c.value);
+      draw(); const p2 = $("#f-pop"); p2.hidden = false; $("#f-open").setAttribute("aria-expanded", "true");
+      const back2 = p2.querySelector(`input[data-f="${c.dataset.f}"][value="${CSS.escape(c.value)}"]`); if (back2) back2.focus();
+    }));
+    $("#main").querySelectorAll("[data-x]").forEach((b) => b.addEventListener("click", () => { F[b.dataset.x].delete(b.dataset.v); draw(); $("#f-open").focus(); }));
+    const fc = $("#f-clear"); if (fc) fc.addEventListener("click", () => { F.genre.clear(); F.category.clear(); F.media.clear(); draw(); $("#f-open").focus(); });
   }
   function openSkill(name) {
-    const s = S.skills.find((x) => x.name === name); if (!s) return;
+    const k = S.skills.find((x) => x.name === name); if (!k) return;
     back = name;
-    const used = usedBy(name);
-    openDrawer(`<div class="dh"><h2 id="d-title">${esc(s.name)}</h2><button class="x" type="button" id="d-close" aria-label="閉じる">✕</button></div>
+    const used = usedBy(name), by = refBy(name);
+    const linkSkill = (n) => S.skills.some((x) => x.name === n) ? `<button class="btn sm" type="button" data-go-skill="${esc(n)}">${esc(title(n))} →</button>` : S.recipes.some((r) => r.name === n) ? `<button class="btn sm" type="button" data-go-recipe="${esc(n)}">レシピ ${esc(n)} →</button>` : `<span class="use">${esc(n)}（正本に無い）</span>`;
+    const ask = `https://claude.ai/new?q=${encodeURIComponent(fixPrompt(k))}`;
+    openDrawer(`<div class="dh"><h2 id="d-title">${esc(k.title || k.name)}</h2><button class="x" type="button" id="d-close" aria-label="閉じる">✕</button></div>
       <div class="db">
-        <p>${esc(s.purpose || "")}</p>
-        <dl class="meta"><dt>最新の版</dt><dd>${esc(s.version || "")}</dd><dt>生徒の版</dt><dd>${esc(s.student_version || "出していない")}</dd>
-          <dt>使う場所</dt><dd>${esc(s.where.join("・"))}</dd><dt>見せる相手</dt><dd>${esc(s.audience.join("・"))}</dd><dt>担当</dt><dd>${esc(s.owner || "")}</dd>
-          <dt>更新</dt><dd>${esc(s.updated || "")}</dd><dt>ファイル</dt><dd>${s.files} 個</dd><dt>レシピで最新</dt><dd>${s.latest_ok ? "できる（基本スキル）" : "できない（版で固定）"}</dd></dl>
-        <div class="sec" style="margin-top:14px"><h3>説明（AI が使う場面を決める文）</h3><p style="font-size:13px;margin:0">${esc(s.description)}</p></div>
-        <div class="sec"><h3>使っているレシピ</h3>${used.length ? used.map((r) => `<button class="btn sm" type="button" data-go-recipe="${esc(r)}">${esc(r)} へ移動 →</button>`).join(" ") : '<p class="hint" style="margin:0">まだどのレシピにも入っていません</p>'}</div>
-        ${s.missing.length ? `<p class="hint" style="color:var(--warn)">頭の欄が欠けています：${esc(s.missing.join("・"))}</p>` : ""}
-        <p class="hint">中身を直すのは正本で（この棚では書き換えません）。<a href="${esc(S.repo)}/tree/main/skills/${encodeURIComponent(s.name)}" target="_blank" rel="noopener">このスキルを正本で別タブで開く ↗</a></p>
+        <p style="margin-top:0"><span class="use">${esc(k.genre || "ジャンル未設定")}</span> ${chips(k.category)} ${chips(k.media, "md")}</p>
+        <p>${esc(k.purpose || "")}</p>
+        <div class="bar"><a class="btn pri sm" href="${ask}" target="_blank" rel="noopener">Claude で直す ↗</a><button class="btn sm" type="button" id="copy-ask">依頼文をコピー</button></div>
+        <p class="hint" style="margin-top:0">Claude が開き、依頼文が入った状態になります。直したいことを書き足して送ります。開発部のチャットに貼るときは「依頼文をコピー」。</p>
+        <dl class="meta"><dt>ID（AI が呼ぶ名前）</dt><dd>${esc(k.name)}</dd><dt>最新の版</dt><dd>${esc(k.version || "")}</dd><dt>生徒の版</dt><dd>${esc(k.student_version || "出していない")}</dd>
+          <dt>使う場所</dt><dd>${esc(k.where.join("・"))}</dd><dt>見せる相手</dt><dd>${esc(k.audience.join("・"))}</dd><dt>担当</dt><dd>${esc(k.owner || "")}</dd>
+          <dt>更新</dt><dd>${esc(k.updated || "")}</dd><dt>レシピでの扱い</dt><dd>${esc(k.kind || (k.latest_ok ? "基本スキル" : "選択スキル"))}・${k.latest_ok ? "最新にできる" : "版で固定"}</dd><dt>ファイル</dt><dd>${k.files} 個</dd></dl>
+        <div class="sec" style="margin-top:14px"><h3>参照している</h3>${(k.refs || []).length ? k.refs.map(linkSkill).join(" ") : '<p class="hint" style="margin:0">なし</p>'}</div>
+        <div class="sec"><h3>参照されている</h3>${by.length || used.length ? [...by.map(linkSkill), ...used.map((r) => `<button class="btn sm" type="button" data-go-recipe="${esc(r)}">レシピ ${esc(r)} →</button>`)].join(" ") : '<p class="hint" style="margin:0">まだどこからも使われていません</p>'}</div>
+        ${(k.conflicts || []).length ? `<div class="sec"><h3>一緒に使えない</h3>${k.conflicts.map(linkSkill).join(" ")}</div>` : ""}
+        <div class="sec"><h3>説明（AI が使う場面を決める文）</h3><p style="font-size:13px;margin:0">${esc(k.description)}</p></div>
+        ${k.missing.length ? `<p class="hint" style="color:var(--warn)">頭の欄が欠けています：${esc(k.missing.join("・"))}</p>` : ""}
+        <p class="hint"><a href="${esc(S.repo)}/tree/main/skills/${encodeURIComponent(k.name)}" target="_blank" rel="noopener">このスキルを正本で別タブで開く ↗</a></p>
       </div>`);
-    $("#drawer").querySelectorAll("[data-go-recipe]").forEach((b) => b.addEventListener("click", () => { tab = "recipes"; closeDrawer(true); draw(); openRecipe(b.dataset.goRecipe); }));
+    const d = $("#drawer");
+    d.querySelectorAll("[data-go-recipe]").forEach((b) => b.addEventListener("click", () => { tab = "recipes"; closeDrawer(true); draw(); openRecipe(b.dataset.goRecipe); }));
+    d.querySelectorAll("[data-go-skill]").forEach((b) => b.addEventListener("click", () => openSkill(b.dataset.goSkill)));
+    $("#copy-ask").addEventListener("click", async () => { try { await navigator.clipboard.writeText(fixPrompt(k)); say("依頼文をコピーしました"); } catch (_) { say("コピーできませんでした。Claude で直す ↗ を使ってください"); } });
   }
 
   // ---------- レシピ ----------
@@ -148,7 +214,7 @@ export function mountSkillShelf(host, { getToken }) {
       <div class="tbl list"><table><thead><tr><th>レシピ</th><th>版</th><th>入っているスキル（上から優先）</th><th>更新</th></tr></thead><tbody>
       ${rows.map((r) => r.broken ? `<tr><td class="nm">${esc(r.name)}<small>頭が読めませんでした</small></td><td></td><td></td><td></td></tr>` : `<tr class="rw" data-id="${esc(r.name)}" tabindex="0" aria-label="${esc(r.name)} を編集">
         <td class="nm">${esc(r.name)}<small>${esc(r.purpose || "")}</small></td><td class="ver">${esc(r.version || "")}</td>
-        <td><div class="uses">${r.uses.map((u) => `<span class="use ${u.pinned ? "" : "latest"}">${esc(u.skill)} ${u.pinned ? esc(u.version) : "最新"}${u.strength && u.strength !== "標準" ? `・${esc(u.strength)}` : ""}</span>`).join("")}</div></td>
+        <td><div class="uses">${r.uses.map((u) => `<span class="use ${u.pinned ? "" : "latest"}" title="${esc(u.skill)}">${esc(title(u.skill))} ${u.pinned ? esc(u.version) : "最新"}${u.strength && u.strength !== "標準" ? `・${esc(u.strength)}` : ""}</span>`).join("")}</div></td>
         <td class="date">${esc(r.updated || "")}</td></tr>`).join("")}
       </tbody></table></div>`;
     wireSearch(); wireRows(openRecipe);
@@ -165,6 +231,11 @@ export function mountSkillShelf(host, { getToken }) {
     dirty = false;
     drawRecipeDrawer(r);
   }
+  const catOf = (n) => ((S.skills.find((x) => x.name === n) || {}).category || []).join("・");
+  const groupLeft = (left) => {
+    const gs = [...new Set([...(S.genres || []), ...left.map((x) => x.genre || "ジャンル未設定")])];
+    return gs.map((g) => { const a = left.filter((x) => (x.genre || "ジャンル未設定") === g); return a.length ? `<optgroup label="${esc(g)}">${a.map((x) => `<option value="${esc(x.name)}">${esc(x.title || x.name)}（${esc((x.category || []).join("・"))}・${esc(x.version || "")}）</option>`).join("")}</optgroup>` : ""; }).join("");
+  };
   const skillVer = (n) => (S.skills.find((s) => s.name === n) || {}).version || "";
   const isBase = (n) => (S.base_latest || []).includes(n);
   function pinOptions(u) {
@@ -182,12 +253,12 @@ export function mountSkillShelf(host, { getToken }) {
         <div class="f"><label for="r-purpose">何に使うか（1 行）</label><input id="r-purpose" maxlength="120" value="${esc(E.purpose)}"></div>
         <div class="sec"><h3>スキル（上から優先・左のつまみで並べ替え）</h3><div id="ul">${E.uses.map((u, i) => `<div class="ur" data-i="${i}">
             <button class="grip" type="button" aria-label="${esc(u.skill)} の並びを変える（Alt＋↑↓）">⋮⋮</button>
-            <span class="nm">${esc(u.skill)}<small>${isBase(u.skill) ? "基本スキル" : "選択スキル"}</small></span>
+            <span class="nm">${esc(title(u.skill))}<small>${esc(u.skill)}・${isBase(u.skill) ? "基本スキル" : "選択スキル"}${catOf(u.skill) ? `・${esc(catOf(u.skill))}` : ""}</small></span>
             <select data-pin="${i}" aria-label="${esc(u.skill)} の版">${pinOptions(u)}</select>
             <select data-st="${i}" aria-label="${esc(u.skill)} の強さ">${(S.strengths || ["標準", "強", "弱", "無"]).map((k) => `<option ${u.strength === k ? "selected" : ""}>${esc(k)}</option>`).join("")}</select>
             <span class="ud"><button type="button" data-up="${i}" aria-label="上へ">▲</button><button type="button" data-dn="${i}" aria-label="下へ">▼</button></span>
             <button class="del" type="button" data-del="${i}" aria-label="${esc(u.skill)} を削除">✕</button></div>`).join("") || '<p class="hint">まだスキルがありません。下で追加します。</p>'}</div>
-          <div class="bar" style="margin-top:8px"><select id="add-skill" aria-label="追加するスキル" style="flex:1;border:1px solid var(--field);border-radius:8px;padding:6px 8px;min-height:36px;background:var(--panel)"><option value="">スキルを選ぶ</option>${left.map((s) => `<option value="${esc(s.name)}">${esc(s.name)}（${esc(s.version || "")}）</option>`).join("")}</select><button class="btn sm" type="button" id="add-btn">追加</button></div>
+          <div class="bar" style="margin-top:8px"><select id="add-skill" aria-label="追加するスキル" style="flex:1;border:1px solid var(--field);border-radius:8px;padding:6px 8px;min-height:36px;background:var(--panel)"><option value="">スキルを選ぶ（ジャンルごと）</option>${groupLeft(left)}</select><button class="btn sm" type="button" id="add-btn">追加</button></div>
           <p class="hint">選択スキルは版で固定（スキルを直してもレシピは変わらない）。最新にできるのは基本スキルだけ（いまはレビュー）。強さはスキルごとの効かせ方です。</p></div>
         ${!E.create ? `<p class="hint">流れ・ぶつかったときの本文は残ります。本文を直すのは正本で。<a href="${esc(S.repo)}/blob/main/recipes/${encodeURIComponent(E.name)}/RECIPE.md" target="_blank" rel="noopener">このレシピを正本で別タブで開く ↗</a></p>` : ""}
         <p class="err hide" id="r-err" role="alert"></p>
@@ -302,6 +373,13 @@ export function mountSkillShelf(host, { getToken }) {
       const n = $(`[data-note="${CSS.escape(id)}"]`); if (n) n.focus();
     }));
   }
+
+  // 絞り込みの窓は、外を押すと閉じる（Esc・別の物を開くでも閉じる。app-design-rules 4）
+  root.host.ownerDocument.addEventListener("click", (e) => {
+    const pop = $("#f-pop"), ob = $("#f-open"); if (!pop || pop.hidden) return;
+    const path = e.composedPath(); if (path.includes(pop) || path.includes(ob)) return;
+    pop.hidden = true; ob.setAttribute("aria-expanded", "false");
+  });
 
   // ---------- 詳細の窓 ----------
   function openDrawer(html, wide) {
