@@ -139,6 +139,7 @@ export const COVERAGE = {
   "ANY /api/admin/skills": H("スキルの棚の受け口のまとめ（つながりが無いときに 503 を返すだけ）"),
   "GET /api/admin/skills": H("棚の画面の一覧。AI は shia2n-mcp の skills__list・recipes__list で同じ正本を読む"),
   "POST /api/admin/skills/recipe": H("レシピの組み合わせを画面で保存する。AI は正本を recipes__get で読む（書くのは Naoki の画面）"),
+  "GET /api/admin/skills/slug": H("レシピを新規作成するときに、表示名から ID の案を出すだけ（画面の補助）。AI は ID を自分で決める"),
   "POST /api/admin/skills/hypothesis": H("仮説を画面で足す・状態を変える。AI は shia2n-mcp の hypotheses__add・hypotheses__update で同じ正本に書く"),
   "GET /api/admin/results": ["find_results", "get_result"],
   "POST /api/admin/results/upload": H("手元の画像を選んで上げる（ファイルは Naoki のパソコンにある。ドライブの受け箱は実績の便 2）"),

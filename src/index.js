@@ -94,7 +94,7 @@ import { clientIp } from "./shield.js";
 import { makeChat } from "./chat.js";
 import { makeGroups } from "./groups.js";
 import { makeNames } from "./names.js";
-import { makeChatAi } from "./chatai.js";
+import { makeChatAi, AI_MODEL } from "./chatai.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
 const VERSION = "0.80.0-bgate2";
@@ -1602,8 +1602,27 @@ async function handleApi(request, env, url) {
       if (path === "/api/admin/skills/recipe" && method === "POST") {
         const b = await request.json().catch(() => ({}));
         const uses = Array.isArray(b.uses) ? b.uses.slice(0, 12).map((u) => ({ skill: String(u && u.skill || ""), pin: ["keep", "now", "latest"].includes(u && u.pin) ? u.pin : "keep", strength: u && u.strength ? String(u.strength).slice(0, 10) : null })) : [];
-        const r = await env.SKILLS.saveRecipe({ name: String(b.name || ""), create: !!b.create, purpose: b.purpose == null ? null : String(b.purpose), uses }, a.email);
+        // 便 3（2026-11-16）：表示名 title と流れ flow（手順：題・説明・スキル・確認・プロンプト）も渡す。形の確かめは shia2n-mcp の renderFlow
+        const flow = Array.isArray(b.flow) ? b.flow.slice(0, 20).map((x) => ({ title: String(x && x.title || "").slice(0, 80), detail: x && x.detail ? String(x.detail).slice(0, 1000) : null, skill: x && x.skill ? String(x.skill).slice(0, 80) : null, check: x && x.check ? String(x.check).slice(0, 200) : null, prompt: x && x.prompt ? String(x.prompt).slice(0, 4000) : null })) : null;
+        const r = await env.SKILLS.saveRecipe({ name: String(b.name || ""), create: !!b.create, purpose: b.purpose == null ? null : String(b.purpose), title: b.title == null ? null : String(b.title), uses, flow }, a.email);
         return json(r, r && r.ok ? 200 : 400);
+      }
+      // 便 3：レシピの表示名から ID の案（英小文字とハイフン）。Workers AI に英語の短い名前にしてもらい、だめなら英数字だけ拾う
+      if (path === "/api/admin/skills/slug" && method === "GET") {
+        const title = String(url.searchParams.get("title") || "").slice(0, 60).trim();
+        const pick = (s) => { const t = String(s || "").toLowerCase().normalize("NFKC").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").replace(/-{2,}/g, "-").slice(0, 40); return t.length >= 2 ? t : null; };
+        let slug = null, by = "none";
+        if (title && env.AI && typeof env.AI.run === "function") {
+          try {
+            const r = await env.AI.run(AI_MODEL, { temperature: 0, max_tokens: 30, messages: [
+              { role: "system", content: "Translate the Japanese title into a short English identifier: 2 to 4 lowercase words joined by hyphens, letters and digits only. Answer with the identifier only." },
+              { role: "user", content: title },
+            ] });
+            slug = pick(typeof r?.response === "string" ? r.response.split("\n")[0] : ""); if (slug) by = "ai";
+          } catch (_) { /* 下へ */ }
+        }
+        if (!slug) { slug = pick(title); if (slug) by = "letters"; }
+        return json({ ok: true, slug: slug ? (slug.startsWith("shia2n-") ? slug : `shia2n-${slug}`) : null, by }, 200, { "cache-control": "no-store" });
       }
       if (path === "/api/admin/skills/hypothesis" && method === "POST") {
         const b = await request.json().catch(() => ({}));
