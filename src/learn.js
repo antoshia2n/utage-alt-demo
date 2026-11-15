@@ -32,6 +32,7 @@ export function groupLessons(rows) {
     }
     cIndex.get(ckey).lessons.push({
       id: r.lesson_id, title: r.title,
+      seq: Number.isFinite(r.sort) ? r.sort : 0, // ジャンルの画面（2026-11-15）：並びの番号。小さい番号＝講座の順番・日付の番号（8 桁）＝セミナー
       summary: String(r.summary || "").slice(0, SUMMARY_MAX),
       youtube_id: r.youtube_id || null, mindmap_url: safeUrl(r.mindmap_url),
       rec: !!r.rec_id, // 便B：録画の棚から流す（id そのものは生徒に渡さない）

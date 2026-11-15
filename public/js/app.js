@@ -115,7 +115,7 @@ async function main() {
 
   const viewed = new Set(r.viewed);
   const views = Array.isArray(r.views) ? r.views : r.viewed.map((id) => ({ id, at: "1970-01-01T00:00:00Z" }));
-  let flat = [], libKind = "すべて";
+  let flat = [], libKind = "ジャンル";
   const lib = r.library || { source: "demo", member: true, programs: [] };
   // 便 6a：学ぶくんの本物の教材（プログラム → コース → 教材）
   const lessons = {};
@@ -134,8 +134,8 @@ async function main() {
     flat = flatten(lib.programs);
     flat.forEach((x) => { lessons[x.id] = x; });
     const drawLib = (kind) => {
-      libKind = kind || "すべて";
-      $("tab-lessons").innerHTML = libraryHtml(flat, views, libKind);
+      libKind = kind || "ジャンル";
+      $("tab-lessons").innerHTML = libraryHtml(flat, views, libKind, lib.programs); // ジャンルから探す（2026-11-15）
       $("tab-lessons").querySelectorAll("[data-kind]").forEach((b) => b.addEventListener("click", () => { drawLib(b.dataset.kind); $("tab-lessons").scrollIntoView({ block: "start" }); }));
       $("lib-q").addEventListener("input", (e) => {
         const q = e.target.value;
@@ -144,7 +144,7 @@ async function main() {
         if (q.trim()) $("lib-found").innerHTML = searchHtml(flat, views, q, libKind);
       });
     };
-    drawLib("すべて");
+    drawLib("ジャンル");
   } else {
     $("tab-lessons").innerHTML = r.lessons.map(lessonRow).join("") || '<p class="note">教材はまだありません。</p>';
   }
