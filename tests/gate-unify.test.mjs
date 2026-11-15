@@ -34,3 +34,27 @@ test("ゲストだけの人は会員にしない", () => {
   assert.equal(v.member, false);
   assert.equal(v.status, "none");
 });
+
+// 権利の一本化 2：会員扱いのキーは member_access の target=member の行から読む
+import { MEMBER_KEYS, loadMemberKeys, resetMemberKeysForTest } from "../src/bridge.js";
+
+test("member_access の target=member の行で会員扱いのキーが決まる", async () => {
+  resetMemberKeysForTest();
+  const db = async () => [{ entitlement_key: "shiarabo_basic" }, { entitlement_key: "note_membership" }];
+  await loadMemberKeys({}, db, 1e13);
+  assert.deepEqual([...MEMBER_KEYS], ["note_membership", "shiarabo_basic"]);
+  assert.equal(gateView({}, ["note_membership"]).member, true);
+  assert.equal(gateView({}, ["shiarabo_monitor"]).member, false);
+  resetMemberKeysForTest();
+});
+
+test("表が 0 行か読めないときは、前の 4 つのまま（会員が 0 人にならない）", async () => {
+  resetMemberKeysForTest();
+  await loadMemberKeys({}, async () => [], 1e13);
+  assert.equal(MEMBER_KEYS.length, 4);
+  resetMemberKeysForTest();
+  await loadMemberKeys({}, async () => { throw new Error("down"); }, 1e13);
+  assert.equal(MEMBER_KEYS.length, 4);
+  assert.equal(gateView({}, ["shiarabo_basic"]).member, true);
+  resetMemberKeysForTest();
+});

@@ -9,7 +9,30 @@
 //  ・表の目録を読む道具（list_tables）：決めた頭の名前の表だけ、欄の名前と行数を返す（中身は返さない）。
 
 // 2026-10-29 Naoki「OK」：NEXT の 2 つとモニターも、しあらぼの会員と同じ扱い（ゲストは会員扱いにしない）
-export const MEMBER_KEYS = ["shiarabo_basic", "shiarabo_next_premium", "shiarabo_next_standard", "shiarabo_monitor"];
+// 2026-11-15 権利の一本化 2：どの権利を会員扱いにするかの正本は、権利 × 開くものの表（member_access）の target=member の行。
+// 下の 4 つは表が読めないときの戻り先。中身は loadMemberKeys が表の値に入れ替える（同じ配列を使う側はそのまま新しい値を見る）
+export const MEMBER_TARGET = "member";
+const MEMBER_KEYS_FALLBACK = ["shiarabo_basic", "shiarabo_next_premium", "shiarabo_next_standard", "shiarabo_monitor"];
+export const MEMBER_KEYS = [...MEMBER_KEYS_FALLBACK];
+const MEMBER_KEYS_TTL = 5 * 60 * 1000;
+let memberKeysAt = 0;
+export function setMemberKeys(keys) {
+  const k = [...new Set((keys || []).filter((x) => KEY_RE_MEMBER.test(String(x))))];
+  if (!k.length) return false; // 0 行なら戻り先のまま（会員が急に 0 人にならないように）
+  MEMBER_KEYS.splice(0, MEMBER_KEYS.length, ...k.sort());
+  return true;
+}
+const KEY_RE_MEMBER = /^[a-z0-9_]{2,60}$/;
+export async function loadMemberKeys(env, db, now = Date.now()) {
+  if (now - memberKeysAt < MEMBER_KEYS_TTL) return MEMBER_KEYS;
+  try {
+    const rows = await db(env, "GET", `member_access?select=entitlement_key&target=eq.${MEMBER_TARGET}&limit=100`);
+    setMemberKeys((rows || []).map((r) => r.entitlement_key));
+    memberKeysAt = now;
+  } catch { /* 読めなければ前の値のまま。次の呼び出しでまた読む */ }
+  return MEMBER_KEYS;
+}
+export function resetMemberKeysForTest() { memberKeysAt = 0; MEMBER_KEYS.splice(0, MEMBER_KEYS.length, ...MEMBER_KEYS_FALLBACK); }
 export const B_REASON = "B で購入";
 const TABLE_PREFIXES = ["ic_", "mn_tensaku_", "member", "shr_billing_logs", "b_"];
 const MEETING_PREFIX = "ic_";
@@ -160,18 +183,21 @@ export function makeBridge(h) {
   // 門番の表の権利を、B の返りに重ねる。2026-11-15 権利の一本化（Naoki OK）：
   // 会員かどうかと権利は門番の表だけで決める。B の決済の記録は「買ったもの」（items）と、門番の表へ書く元（syncGrants）にだけ使う
   async function withGate(env, customerId, ent) {
+    await loadMemberKeys(env, db);
     const rows = (await gateRows(env, customerId)).filter((r) => live(r));
     return gateView(ent, rows.map((r) => r.key));
   }
 
   // 一覧用：門番の表で会員の人の番号の集まり
   async function gateMembers(env) {
+    await loadMemberKeys(env, db);
     const rows = await db(env, "GET", `member_entitlement?select=member_id,expires_at&key=in.(${MEMBER_KEYS.join(",")})&limit=10000`);
     return new Set(rows.filter((r) => live(r)).map((r) => r.member_id));
   }
 
   // 一覧用：人ごとの生きている権利のキー（門番の表の全部）
   async function gateKeysAll(env) {
+    await loadMemberKeys(env, db);
     const rows = await db(env, "GET", `member_entitlement?select=member_id,key,expires_at&limit=10000`);
     const out = new Map();
     for (const r of rows) if (live(r)) { if (!out.has(r.member_id)) out.set(r.member_id, new Set()); out.get(r.member_id).add(r.key); }
