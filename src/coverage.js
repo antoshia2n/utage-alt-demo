@@ -52,6 +52,8 @@ export const COVERAGE = {
   "GET /api/admin/recordings/route-config": ["recording_route_settings"],
   "POST /api/admin/recordings/route-config": ["set_recording_route_settings"],
   "POST /api/admin/recordings/route-run": ["run_recording_route"],
+  "GET /api/admin/recordings/week": ["recording_week_check"],
+  "POST /api/admin/recordings/week-mail": H("今週の確認のメールを今すぐ送る試し（日曜 20 時台の定時の処理が送る。中身は recording_week_check で読める）"),
   "POST /api/admin/recordings/publish": ["save_site"],
   "GET /api/admin/access": ["list_app_access"],
   "POST /api/admin/access": ["set_app_access"],
