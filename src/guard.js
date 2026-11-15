@@ -155,7 +155,8 @@ export function makeGuard(h) {
       ok: true,
       pending_approval: true,
       approval_id: row.id,
-      approval_url: `${origin}/admin#approval/${row.id}`,
+      // 承認の画面は Naoki がログインしている住所（lab.shia2n.jp）で開く。呼ばれた住所（workers.dev）だとログイン画面になり押せない（2026-11-15）
+      approval_url: `${env.PUBLIC_ORIGIN || origin}/admin#approval/${row.id}`,
       expires_at: row.expires_at,
       note: "この道具は承認が要る。Naoki が画面で「承認して実行」を押すまで実行されない。approval_url を Naoki に渡して待つこと",
     };
