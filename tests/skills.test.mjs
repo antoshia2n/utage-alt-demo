@@ -49,3 +49,9 @@ test("棚の便 2：表示名・ジャンル・カテゴリ・媒体で見せ、
   const ui = readFileSync(new URL("../public/js/skillshelf.js", import.meta.url), "utf8");
   for (const s of ['data-f="${key}"', "参照している", "参照されている", "Claude で直す ↗", "https://claude.ai/new?q=", 'data-view="card"', "optgroup"]) assert.ok(ui.includes(s), s);
 });
+test("棚の便 3：レシピの流れ（手順・プロンプト・確認）と表示名・ID の案", () => {
+  const ui = readFileSync(new URL("../public/js/skillshelf.js", import.meta.url), "utf8");
+  for (const s of ['data-sub="flow"', 'data-ff="prompt"', 'data-ff="check"', "/api/admin/skills/slug", "flowTouched"]) assert.ok(ui.includes(s), s);
+  const src = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
+  assert.ok(src.includes('path === "/api/admin/skills/slug"') && src.includes("title: b.title == null ? null"));
+});

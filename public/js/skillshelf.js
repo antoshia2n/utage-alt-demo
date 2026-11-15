@@ -22,6 +22,10 @@ const errText = (e) => {
   const k = s.split(":")[0];
   if (k === "latest_not_allowed") return `「${s.split(":")[1]}」は最新にできません（最新にできるのは基本スキルだけ）`;
   if (k === "dup_skill") return `「${s.split(":")[1]}」が 2 回入っています`;
+  if (k === "step_no_title") return `手順 ${s.split(":")[1]} の題を入れてください`;
+  if (k === "step_skill_not_in_recipe") return `流れで使うスキル（${s.split(":")[1]}）がレシピに入っていません`;
+  if (k === "prompt_has_fence") return `手順 ${s.split(":")[1]} のプロンプトに \`\`\` は使えません`;
+  if (k === "too_many_steps") return "手順は 20 個までです";
   if (k === "no_skill") return `「${s.split(":")[1]}」は正本にありません`;
   return ERR[k] || `うまくいきませんでした（${s}）`;
 };
@@ -71,6 +75,13 @@ export function mountSkillShelf(host, { getToken }) {
     .seg .btn[aria-pressed="true"]{background:var(--soft);font-weight:700}
     .fpop{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin:0 0 12px;display:flex;gap:18px;flex-wrap:wrap}
     .fpop[hidden]{display:none}
+    .fs{border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:10px;background:var(--panel)}
+    .fs.drag{opacity:.5}.fs.over{border-color:var(--ink)}
+    .fs-h{display:flex;align-items:center;gap:6px;margin-bottom:6px}.fs-h .grow{flex:1}
+    .fs-2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .fs select,.fs input{width:100%}
+    .fs select{border:1px solid var(--field);background:var(--panel);border-radius:8px;padding:4px 6px;min-height:36px;font-size:13px}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px}
     .fg{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:13px}.fg legend{font-weight:700;margin-bottom:4px}
     .fg label{display:flex;gap:6px;align-items:center;min-height:28px}
     .chipx{cursor:pointer;font:inherit;font-size:12px}
@@ -213,7 +224,7 @@ export function mountSkillShelf(host, { getToken }) {
       ${searchBar(rows.length, "名前・何に使うか・入っているスキル")}
       <div class="tbl list"><table><thead><tr><th>レシピ</th><th>版</th><th>入っているスキル（上から優先）</th><th>更新</th></tr></thead><tbody>
       ${rows.map((r) => r.broken ? `<tr><td class="nm">${esc(r.name)}<small>頭が読めませんでした</small></td><td></td><td></td><td></td></tr>` : `<tr class="rw" data-id="${esc(r.name)}" tabindex="0" aria-label="${esc(r.name)} を編集">
-        <td class="nm">${esc(r.name)}<small>${esc(r.purpose || "")}</small></td><td class="ver">${esc(r.version || "")}</td>
+        <td class="nm">${esc(r.title || r.name)}<small>${esc(r.title ? r.name + "・" : "")}${esc(r.purpose || "")}</small></td><td class="ver">${esc(r.version || "")}</td>
         <td><div class="uses">${r.uses.map((u) => `<span class="use ${u.pinned ? "" : "latest"}" title="${esc(u.skill)}">${esc(title(u.skill))} ${u.pinned ? esc(u.version) : "最新"}${u.strength && u.strength !== "標準" ? `・${esc(u.strength)}` : ""}</span>`).join("")}</div></td>
         <td class="date">${esc(r.updated || "")}</td></tr>`).join("")}
       </tbody></table></div>`;
@@ -223,11 +234,14 @@ export function mountSkillShelf(host, { getToken }) {
 
   // 編集中の並び：{ skill, pin: keep|now|latest, strength, cur: { version, pinned } | null }
   let E = null;
-  function openRecipe(name) {
+  function openRecipe(name, sub) {
     const r = name ? S.recipes.find((x) => x.name === name) : null;
     if (name && !r) return;
     back = name;
-    E = { create: !r, name: r ? r.name : "", purpose: r ? r.purpose || "" : "", uses: r ? r.uses.map((u) => ({ skill: u.skill, pin: "keep", strength: u.strength || "標準", cur: { version: u.version, pinned: u.pinned } })) : [] };
+    E = { create: !r, name: r ? r.name : "", title: r ? r.title || "" : "", purpose: r ? r.purpose || "" : "", idManual: false, sub: sub || "skills",
+      uses: r ? r.uses.map((u) => ({ skill: u.skill, pin: "keep", strength: u.strength || "標準", cur: { version: u.version, pinned: u.pinned } })) : [],
+      flow: r && Array.isArray(r.flow) ? r.flow.map((f) => ({ title: f.title || "", detail: f.detail || "", skill: f.skill || "", check: f.check || "", prompt: f.prompt || "" })) : [],
+      flowTouched: false };
     dirty = false;
     drawRecipeDrawer(r);
   }
@@ -247,11 +261,14 @@ export function mountSkillShelf(host, { getToken }) {
   }
   function drawRecipeDrawer(r) {
     const left = S.skills.filter((s) => !E.uses.some((u) => u.skill === s.name));
-    openDrawer(`<div class="dh"><h2 id="d-title">${E.create ? "レシピを新規作成" : esc(E.name)}</h2><button class="x" type="button" id="d-close" aria-label="閉じる">✕</button></div>
+    openDrawer(`<div class="dh"><h2 id="d-title">${E.create ? "レシピを新規作成" : esc(E.title || E.name)}</h2><button class="x" type="button" id="d-close" aria-label="閉じる">✕</button></div>
       <div class="db">
-        ${E.create ? `<div class="f"><label for="r-name">名前（英小文字・数字・ハイフン）</label><input id="r-name" maxlength="80" value="${esc(E.name)}" placeholder="例 shia2n-kozo-light"></div>` : `<p class="hint" style="margin-top:0">いまの版 ${esc(r.version || "")}・保存すると ${esc(nextVer(r.version))} になります</p>`}
+        ${E.create ? "" : `<p class="hint" style="margin-top:0">ID ${esc(E.name)}・いまの版 ${esc(r.version || "")}・保存すると ${esc(nextVer(r.version))} になります</p>`}
+        <div class="f"><label for="r-title">表示名</label><input id="r-title" maxlength="60" value="${esc(E.title)}" placeholder="例 10選×小ボケ（強）"></div>
+        ${E.create ? `<div class="f"><label for="r-name">ID（AI が呼ぶ名前・表示名から自動。変えてもよい）</label><input id="r-name" maxlength="80" value="${esc(E.name)}" placeholder="表示名を入れると案が入ります" spellcheck="false"></div>` : ""}
         <div class="f"><label for="r-purpose">何に使うか（1 行）</label><input id="r-purpose" maxlength="120" value="${esc(E.purpose)}"></div>
-        <div class="sec"><h3>スキル（上から優先・左のつまみで並べ替え）</h3><div id="ul">${E.uses.map((u, i) => `<div class="ur" data-i="${i}">
+        <div class="top" role="tablist" aria-label="レシピの中身" style="margin:6px 0 10px;padding:0;border:0;background:none"><button class="tab" type="button" role="tab" data-sub="skills" aria-selected="${E.sub === "skills"}">スキル（${E.uses.length}）</button><button class="tab" type="button" role="tab" data-sub="flow" aria-selected="${E.sub === "flow"}">流れ（${E.flow.length}）</button></div>
+        ${E.sub === "flow" ? flowEditor() : `<div class="sec"><h3>スキル（上から優先・左のつまみで並べ替え）</h3><div id="ul">${E.uses.map((u, i) => `<div class="ur" data-i="${i}">
             <button class="grip" type="button" aria-label="${esc(u.skill)} の並びを変える（Alt＋↑↓）">⋮⋮</button>
             <span class="nm">${esc(title(u.skill))}<small>${esc(u.skill)}・${isBase(u.skill) ? "基本スキル" : "選択スキル"}${catOf(u.skill) ? `・${esc(catOf(u.skill))}` : ""}</small></span>
             <select data-pin="${i}" aria-label="${esc(u.skill)} の版">${pinOptions(u)}</select>
@@ -259,15 +276,18 @@ export function mountSkillShelf(host, { getToken }) {
             <span class="ud"><button type="button" data-up="${i}" aria-label="上へ">▲</button><button type="button" data-dn="${i}" aria-label="下へ">▼</button></span>
             <button class="del" type="button" data-del="${i}" aria-label="${esc(u.skill)} を削除">✕</button></div>`).join("") || '<p class="hint">まだスキルがありません。下で追加します。</p>'}</div>
           <div class="bar" style="margin-top:8px"><select id="add-skill" aria-label="追加するスキル" style="flex:1;border:1px solid var(--field);border-radius:8px;padding:6px 8px;min-height:36px;background:var(--panel)"><option value="">スキルを選ぶ（ジャンルごと）</option>${groupLeft(left)}</select><button class="btn sm" type="button" id="add-btn">追加</button></div>
-          <p class="hint">選択スキルは版で固定（スキルを直してもレシピは変わらない）。最新にできるのは基本スキルだけ（いまはレビュー）。強さはスキルごとの効かせ方です。</p></div>
-        ${!E.create ? `<p class="hint">流れ・ぶつかったときの本文は残ります。本文を直すのは正本で。<a href="${esc(S.repo)}/blob/main/recipes/${encodeURIComponent(E.name)}/RECIPE.md" target="_blank" rel="noopener">このレシピを正本で別タブで開く ↗</a></p>` : ""}
+          <p class="hint">選択スキルは版で固定（スキルを直してもレシピは変わらない）。最新にできるのは基本スキルだけ（いまはレビュー）。強さはスキルごとの効かせ方です。</p></div>`}
+        ${!E.create ? `<p class="hint">「ぶつかったとき」などほかの本文は残ります。直すのは正本で。<a href="${esc(S.repo)}/blob/main/recipes/${encodeURIComponent(E.name)}/RECIPE.md" target="_blank" rel="noopener">このレシピを正本で別タブで開く ↗</a></p>` : ""}
         <p class="err hide" id="r-err" role="alert"></p>
       </div>
       <div class="bar" style="padding:12px 16px;border-top:1px solid var(--line);margin:0"><button class="btn pri" type="button" id="r-save">${E.create ? "作成" : "保存"}</button><button class="btn" type="button" id="r-cancel">キャンセル</button></div>`, true);
     const d = $("#drawer");
     const mark = () => { dirty = true; };
-    const nameIn = $("#r-name"); if (nameIn) nameIn.addEventListener("input", (e) => { E.name = e.target.value.trim(); mark(); });
+    const nameIn = $("#r-name"); if (nameIn) nameIn.addEventListener("input", (e) => { E.name = e.target.value.trim(); E.idManual = !!E.name; mark(); });
+    $("#r-title").addEventListener("input", (e) => { E.title = e.target.value; mark(); if (E.create && !E.idManual) suggestId(); });
     $("#r-purpose").addEventListener("input", (e) => { E.purpose = e.target.value; mark(); });
+    d.querySelectorAll("[data-sub]").forEach((b) => b.addEventListener("click", () => { E.sub = b.dataset.sub; redraw(r, `[data-sub="${E.sub}"]`); }));
+    if (E.sub === "flow") { wireFlow(r); return; }
     d.querySelectorAll("[data-pin]").forEach((s) => s.addEventListener("change", () => { E.uses[+s.dataset.pin].pin = s.value; mark(); }));
     d.querySelectorAll("[data-st]").forEach((s) => s.addEventListener("change", () => { E.uses[+s.dataset.st].strength = s.value; mark(); }));
     d.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", () => { E.uses.splice(+b.dataset.del, 1); mark(); redraw(r, "#add-skill"); }));
@@ -287,23 +307,70 @@ export function mountSkillShelf(host, { getToken }) {
     $("#r-save").addEventListener("click", () => saveRecipe());
     $("#r-cancel").addEventListener("click", () => { if (dirty && !confirmLeave()) return; closeDrawer(); });
   }
+  // 便 3（2026-11-16）：流れ＝ワークフロー。手順ごとに 題・説明・使うスキル・人の確認・プロンプト
+  function flowEditor() {
+    const opts = (cur) => `<option value="">使わない</option>${E.uses.map((u) => `<option value="${esc(u.skill)}" ${cur === u.skill ? "selected" : ""}>${esc(title(u.skill))}</option>`).join("")}`;
+    return `<div class="sec"><h3>流れ（上から順に進める・左のつまみで並べ替え）</h3>
+      <p class="hint" style="margin-top:0">AI はこの順に進みます。プロンプトがある手順はその文で作り、「人の確認」がある手順で止まって見せます。</p>
+      <div id="fl">${E.flow.map((f, i) => `<div class="fs" data-i="${i}">
+        <div class="fs-h"><button class="grip" type="button" aria-label="手順 ${i + 1} の並びを変える（Alt＋↑↓）">⋮⋮</button><b>手順 ${i + 1}</b><span class="grow"></span><span class="ud"><button type="button" data-fup="${i}" aria-label="上へ">▲</button><button type="button" data-fdn="${i}" aria-label="下へ">▼</button></span><button class="del" type="button" data-fdel="${i}" aria-label="手順 ${i + 1} を削除">✕</button></div>
+        <div class="f"><label for="f-t-${i}">題</label><input id="f-t-${i}" data-ff="title" data-i="${i}" maxlength="80" value="${esc(f.title)}" placeholder="例 項目と見出しを決める"></div>
+        <div class="f"><label for="f-d-${i}">説明（任意）</label><textarea class="q" id="f-d-${i}" data-ff="detail" data-i="${i}" maxlength="1000" style="min-height:48px">${esc(f.detail)}</textarea></div>
+        <div class="fs-2"><div class="f"><label for="f-s-${i}">使うスキル</label><select id="f-s-${i}" data-ff="skill" data-i="${i}">${opts(f.skill)}</select></div>
+          <div class="f"><label for="f-c-${i}">人の確認（任意）</label><input id="f-c-${i}" data-ff="check" data-i="${i}" maxlength="200" value="${esc(f.check)}" placeholder="例 シアニンが 3 案から選ぶ"></div></div>
+        <div class="f"><label for="f-p-${i}">プロンプト（任意・AI にそのまま渡す文）</label><textarea class="q mono" id="f-p-${i}" data-ff="prompt" data-i="${i}" maxlength="4000" style="min-height:96px">${esc(f.prompt)}</textarea></div>
+      </div>`).join("") || '<p class="hint">まだ手順がありません。下で追加します。</p>'}</div>
+      <div class="bar" style="margin-top:8px"><button class="btn sm" type="button" id="f-add">＋ 手順を追加</button><span class="hint" style="margin:0">${E.flow.length} / 20</span></div></div>`;
+  }
+  function wireFlow(r) {
+    const d = $("#drawer");
+    const touch = () => { dirty = true; E.flowTouched = true; };
+    d.querySelectorAll("[data-ff]").forEach((el) => el.addEventListener(el.tagName === "SELECT" ? "change" : "input", () => { E.flow[+el.dataset.i][el.dataset.ff] = el.value; touch(); }));
+    const move = (i, to) => { if (to < 0 || to >= E.flow.length) return; const [x] = E.flow.splice(i, 1); E.flow.splice(to, 0, x); touch(); redraw(r, `.fs[data-i="${to}"] .grip`); };
+    d.querySelectorAll("[data-fup]").forEach((b) => b.addEventListener("click", () => move(+b.dataset.fup, +b.dataset.fup - 1)));
+    d.querySelectorAll("[data-fdn]").forEach((b) => b.addEventListener("click", () => move(+b.dataset.fdn, +b.dataset.fdn + 1)));
+    d.querySelectorAll("[data-fdel]").forEach((b) => b.addEventListener("click", () => { E.flow.splice(+b.dataset.fdel, 1); touch(); redraw(r, "#f-add"); }));
+    d.querySelectorAll(".fs .grip").forEach((g) => {
+      const i = +g.closest(".fs").dataset.i;
+      g.addEventListener("keydown", (e) => { if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) { e.preventDefault(); move(i, i + (e.key === "ArrowUp" ? -1 : 1)); } });
+      g.addEventListener("pointerdown", (e) => startDrag(e, i, move, "#fl", ".fs"));
+    });
+    $("#f-add").addEventListener("click", () => {
+      if (E.flow.length >= 20) { showErr("手順は 20 個までです"); return; }
+      E.flow.push({ title: "", detail: "", skill: "", check: "", prompt: "" }); touch(); redraw(r, `#f-t-${E.flow.length - 1}`);
+    });
+    $("#r-save").addEventListener("click", () => saveRecipe());
+    $("#r-cancel").addEventListener("click", () => { if (dirty && !confirmLeave()) return; closeDrawer(); });
+  }
+  let idTimer = 0;
+  function suggestId() {
+    clearTimeout(idTimer);
+    idTimer = setTimeout(async () => {
+      const t = E.title.trim(); if (!t || E.idManual) return;
+      const r = await call(`/api/admin/skills/slug?title=${encodeURIComponent(t)}`);
+      if (!r.ok || !r.slug || E.idManual) return;
+      let id = r.slug, n = 2;
+      while (S.recipes.some((x) => x.name === id)) id = `${r.slug}-${n++}`;
+      E.name = id; const el = $("#r-name"); if (el && root.activeElement !== el) el.value = id;
+    }, 600);
+  }
   function redraw(r, focusSel) {
     const scroll = $("#drawer .db") ? $("#drawer .db").scrollTop : 0;
     drawRecipeDrawer(r);
     $("#drawer .db").scrollTop = scroll;
     const f = focusSel && $("#drawer").querySelector(focusSel); if (f) f.focus();
   }
-  function startDrag(e, from, move) {
-    const row = e.target.closest(".ur"); const list = $("#ul"); if (!row || !list) return;
+  function startDrag(e, from, move, listSel = "#ul", rowSel = ".ur") {
+    const row = e.target.closest(rowSel); const list = $(listSel); if (!row || !list) return;
     e.preventDefault(); row.classList.add("drag");
     let to = from;
     const onMove = (ev) => {
-      const rows = [...list.querySelectorAll(".ur")];
+      const rows = [...list.querySelectorAll(rowSel)];
       rows.forEach((x) => x.classList.remove("over"));
       const t = rows.find((x) => { const b = x.getBoundingClientRect(); return ev.clientY >= b.top && ev.clientY <= b.bottom; });
       if (t) { to = +t.dataset.i; t.classList.add("over"); }
     };
-    const onUp = () => { root.host.ownerDocument.removeEventListener("pointermove", onMove); root.host.ownerDocument.removeEventListener("pointerup", onUp); row.classList.remove("drag"); if (to !== from) move(from, to); else list.querySelectorAll(".ur").forEach((x) => x.classList.remove("over")); };
+    const onUp = () => { root.host.ownerDocument.removeEventListener("pointermove", onMove); root.host.ownerDocument.removeEventListener("pointerup", onUp); row.classList.remove("drag"); if (to !== from) move(from, to); else list.querySelectorAll(rowSel).forEach((x) => x.classList.remove("over")); };
     root.host.ownerDocument.addEventListener("pointermove", onMove);
     root.host.ownerDocument.addEventListener("pointerup", onUp);
   }
@@ -312,16 +379,21 @@ export function mountSkillShelf(host, { getToken }) {
   async function saveRecipe() {
     if (E.create && !/^[a-z0-9][a-z0-9_-]{1,79}$/i.test(E.name)) { showErr(ERR.bad_name); $("#r-name").focus(); return; }
     if (E.create && !E.purpose.trim()) { showErr(ERR.need_purpose); $("#r-purpose").focus(); return; }
-    if (!E.uses.length) { showErr(ERR.no_skills); $("#add-skill").focus(); return; }
+    if (!E.uses.length) { E.sub = "skills"; redraw(E.create ? null : S.recipes.find((x) => x.name === E.name) || null, "#add-skill"); showErr(ERR.no_skills); return; }
+    const noTitle = E.flow.findIndex((f) => !String(f.title || "").trim());
+    if (E.flowTouched && noTitle >= 0) { E.sub = "flow"; redraw(S.recipes.find((x) => x.name === E.name) || null, `#f-t-${noTitle}`); showErr(`手順 ${noTitle + 1} の題を入れてください`); return; }
+    const lost = E.flow.find((f) => f.skill && !E.uses.some((u) => u.skill === f.skill));
+    if (E.flowTouched && lost) { E.sub = "flow"; redraw(S.recipes.find((x) => x.name === E.name) || null, "#f-add"); showErr(`流れの「${lost.title}」が、レシピから外したスキル（${title(lost.skill)}）を使っています`); return; }
     const btn = $("#r-save"); btn.disabled = true; btn.textContent = "正本に書いています…";
-    const r = await call("/api/admin/skills/recipe", { name: E.name, create: E.create, purpose: E.purpose, uses: E.uses.map((u) => ({ skill: u.skill, pin: u.pin, strength: u.strength })) });
+    const r = await call("/api/admin/skills/recipe", { name: E.name, create: E.create, purpose: E.purpose, title: E.title.trim() || null, uses: E.uses.map((u) => ({ skill: u.skill, pin: u.pin, strength: u.strength })),
+      ...(E.flowTouched && (E.flow.length || !E.create) ? { flow: E.flow.map((f) => ({ title: f.title, detail: f.detail || null, skill: f.skill || null, check: f.check || null, prompt: f.prompt || null })) } : {}) });
     btn.disabled = false; btn.textContent = E.create ? "作成" : "保存";
     if (!r.ok) { showErr(errText(r.error)); return; }
     dirty = false;
     const nm = E.name;
     await load(r.at);
     say(`レシピ「${nm}」を ${r.version} で保存しました（正本 ${r.commit}）`);
-    openRecipe(nm);
+    openRecipe(nm, E.sub);
   }
 
   // ---------- 仮説 ----------
