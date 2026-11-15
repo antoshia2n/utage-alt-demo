@@ -206,7 +206,7 @@ export const recordings = {
           contentId = p.content_id;
           res.put++;
         } else res.already++;
-        const video = r.route.youtube && r.youtube_url ? `YouTube（限定公開）を埋め込み\n${r.youtube_url}` : "録画の棚（R2）から流す";
+        const video = r.route.youtube && r.youtube_url ? `録画の棚（R2）から流す（YouTube（限定公開）にも切り替えられる）\n${r.youtube_url}` : "録画の棚（R2）から流す";
         const text = [
           had ? "録画は、すでに会員サイトに入っていました（入れ直していません）。" : "録画を会員サイトに下書きで入れました。生徒にはまだ見えません。",
           "",
