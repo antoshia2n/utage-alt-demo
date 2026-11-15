@@ -160,6 +160,9 @@ export default {
         try { await xkMail.run(env); } catch (e) { await logInbound(env, "xk_mail", {}, { ok: false, error: String(e.message).slice(0, 200) }, 500); }
         try { await nkMail.run(env); } catch (e) { await logInbound(env, "nk_mail", {}, { ok: false, error: String(e.message).slice(0, 200) }, 500); }
         if (rt.put || rt.already || rt.failed || rt.ok === false) await logInbound(env, "recording_route", { cron: event.cron }, rt, rt.ok === false ? 500 : 200);
+        // 毎週の確認（2026-11-15）：日曜の 20 時台に、録画が 2 か所にそろったかを Naoki へメールで 1 通
+        try { const wk = await recordings.weeklyMail(env, connect.notifyAdmins); if (!wk.skipped) await logInbound(env, "recording_week", { cron: event.cron }, wk, wk.ok === false ? 500 : 200); }
+        catch (e) { await logInbound(env, "recording_week", {}, { ok: false, error: String(e.message).slice(0, 200) }, 500); }
       } catch (e) {
         await logInbound(env, "cron", { cron: event.cron }, { ok: false, error: String(e.message).slice(0, 200) }, 500);
       }
@@ -1601,6 +1604,8 @@ async function handleApi(request, env, url) {
     if (path === "/api/admin/utage-copy/search" && method === "GET") { const r = await utageCopy.search(env, url.searchParams.get("q"), url.searchParams.get("kind")); return json(r, r.ok ? 200 : 400); }
     if (path === "/api/admin/utage-copy/item" && method === "GET") { const r = await utageCopy.item(env, url.searchParams.get("ref")); return json(r, r.ok ? 200 : 400); }
     if (path === "/api/admin/recordings" && method === "GET") { const r = await recordings.list(env); return json(r, r.ok ? 200 : 502); }
+    if (path === "/api/admin/recordings/week" && method === "GET") { const r = await recordings.weekly(env, url.searchParams.get("days")); return json(r, r.ok ? 200 : 502); }
+    if (path === "/api/admin/recordings/week-mail" && method === "POST") { const r = await recordings.weeklyMail(env, connect.notifyAdmins, { force: true }); return json(r, r.ok ? 200 : 502); }
     if (path === "/api/admin/recordings/search" && method === "GET") { const r = await recordings.search(env, url.searchParams.get("q")); return json(r, r.ok ? 200 : 400); }
     if (path === "/api/admin/recordings/link" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await recordings.issue(env, b.id); return json(r, r.ok ? 200 : 400); }
     if (path === "/api/admin/recordings/share" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await recordings.setLink(env, b.id, b); return json(r, r.ok ? 200 : 400); }
@@ -3291,6 +3296,7 @@ const TOOLS = [
   { name: "set_recording_route", screen: "recordings", say: "録画の出し先のスイッチ（YouTube・会員サイト）を変える", description: "録画 1 本の出し先のスイッチを変える。youtube（true で R2 の原本から YouTube に限定公開で上げる。11/02 以降に Zoom で録った録画だけ・5 分ごとの処理が上げる）・site（true で会員サイトのコースに下書きで入れる。1 時間ごとの処理が入れ、Naoki にメールで知らせる。YouTube もオンなら上がるのを待ち、YouTube の埋め込みを先に出す）・course_id（入れるコース。省くと会の種類ごとの決まりのコース。null で決まりに戻す）・reset（true で手の値を外し、会の種類からの値に戻す。2026-11-12 以降に録ったセミナーは両方オン・ほかはオフ）。id は list_recordings の id。行の route に今の値が出る。", inputSchema: { type: "object", properties: { id: { type: "string" }, youtube: { type: "boolean" }, site: { type: "boolean" }, course_id: { type: ["string", "null"] }, reset: { type: "boolean" } }, required: ["id"] } },
   { name: "recording_route_settings", screen: "recordings", say: "録画を会員サイトに入れる決まりのコースを見る", description: "会の種類（セミナー・打ち合わせ・個別相談・Zoom添削・その他）ごとに、録画を会員サイトへ入れる決まりのコース（courses）と、選べるコースの一覧（course_list：id・名前の道筋・見られる権利）を返す。from はスイッチの最初の値を会の種類で決め始めた収録日。", inputSchema: { type: "object", properties: {} } },
   { name: "set_recording_route_settings", screen: "recordings", say: "録画を会員サイトに入れる決まりのコースを変える", description: "会の種類ごとの決まりのコースを変える。courses：{ \"セミナー\": \"コースの id\" }（空文字か null で外す）。コースの id は recording_route_settings の course_list の id。", inputSchema: { type: "object", properties: { courses: { type: "object" } }, required: ["courses"] } },
+  { name: "recording_week_check", screen: "recordings", say: "録画の今週の確認を見る", description: "直近 days 日（既定 7・最大 31）に録った録画ごとに、R2（原本）・ドライブ（写し）・YouTube（スイッチがオンの録画だけ）にそろったかを返す。読むだけ。state：ok そろった／wait 録って 1 日以内で運んでいる途中／missing 欠け（missing に足りない置き場、error に理由）。zoom_trashed は Zoom のゴミ箱へ移したか（30 日は戻せる）。毎週日曜 20 時台に同じ中身が Naoki へメールで届く。", inputSchema: { type: "object", properties: { days: { type: "number" } } } },
   { name: "run_recording_route", screen: "recordings", say: "会員サイトに入れる録画を今すぐ通す", description: "「会員サイトに入れる」がオンでまだ入っていない録画を、今すぐ会員サイトに下書きで入れ、Naoki にメールで知らせる（1 時間ごとの処理と同じ）。返す数：put 入れた・already すでに入っていた・waiting_youtube YouTube に上がるのを待っている・no_course 入れ先のコースが決まっていない・failed。", inputSchema: { type: "object", properties: {} } },
   { name: "get_site", screen: "site", say: "会員サイトの中身を見る", description: "会員サイト（サイト › カリキュラム › プログラム › コース › コンテンツ）を読む。what：tree（全体の木）／content（id のコンテンツ 1 つ）／home（ホームの並び）／students（生徒と見られる範囲）。", inputSchema: { type: "object", properties: { what: { type: "string", enum: ["tree", "content", "home", "students"] }, id: { type: "string" } }, required: ["what"] } },
   { name: "save_site", screen: "site", say: "会員サイトの中身を作る・直す・公開する", description: "会員サイトを作る・直す・並べ替える・公開する。承認が要る道具（生徒の画面が変わる）。kind：site／curriculum／program／course／content（各 id なしで作る・ありで直す。中身は画面と同じ欄。content の rec_id は録画の棚の id で、あれば生徒の画面は R2 から流す）／home（rows）／course_order（program_id・course_ids）／course_contents（course_id・content_ids）／content_status（ids・status published／draft）／from_videos（course_id・urls：YouTube の URL からコンテンツを作る）。data に欄を入れる。", inputSchema: { type: "object", properties: { kind: { type: "string", enum: ["site", "curriculum", "program", "course", "content", "home", "course_order", "course_contents", "content_status", "from_videos"] }, data: { type: "object" } }, required: ["kind", "data"] } },
@@ -3502,6 +3508,7 @@ async function runTool(env, name, args, ctx) {
   if (name === "set_recording_route") return await recordings.routeSet(env, args.id, args);
   if (name === "recording_route_settings") return await recordings.routeConfig(env, site);
   if (name === "set_recording_route_settings") return await recordings.routeConfigSet(env, args.courses);
+  if (name === "recording_week_check") return await recordings.weekly(env, args.days);
   if (name === "run_recording_route") {
     // 棚を読むのに 20 秒近くかかることがあり、AI の窓口（20 秒で打ち切る）を超えるため、裏で進めて結果はメールで知らせる（2026-11-12）
     if (ctx && ctx.waitUntil) {

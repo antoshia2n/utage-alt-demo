@@ -224,4 +224,44 @@ export const recordings = {
     }),
 
   suggest: (env, limit) => safe(() => zoom(env).suggest_kai(Math.max(1, Math.min(20, Number(limit) || 8)))),
+
+  /**
+   * 毎週の確認（2026-11-15 Naoki OK 10:23）：直近 7 日の録画が R2（原本）・ドライブ（写し）・
+   * スイッチがオンなら YouTube にそろったか。数えるのは zoom-to-youtube（weekly_check）で、ここは読むだけ。
+   */
+  weekly: (env, days) => safe(() => zoom(env).weekly_check(Math.max(1, Math.min(31, Number(days) || 7)))),
+
+  /** 毎週日曜の 20 時台（日本時間）に、確認の結果を Naoki へメールで 1 通（毎時の処理から呼ぶ。ほかの時間は何もしない） */
+  weeklyMail: (env, notify, { now = Date.now(), force = false } = {}) =>
+    safe(async () => {
+      const d = new Date(now + 9 * 3600e3);
+      if (!force && !(d.getUTCDay() === 0 && d.getUTCHours() === 20)) return { ok: true, skipped: true };
+      const r = await zoom(env).weekly_check(7);
+      if (!r.ok) return r;
+      const { subject, text } = weeklyText(r, env.PUBLIC_ORIGIN || "https://lab.shia2n.jp");
+      const sent = notify ? await notify(env, { subject, text }) : { sent: 0 };
+      return { ok: true, counts: r.counts, total: r.total, sent: sent.sent || 0, failed: sent.failed || 0 };
+    }),
 };
+
+/** 確認のメールの中身（欠けがあるときは、その録画と足りない置き場を先に並べる） */
+export function weeklyText(r, origin) {
+  const md = (s) => { const [, m, dd] = String(s).split("-").map(Number); return m && dd ? `${m}/${dd}` : s; };
+  const c = r.counts || { ok: 0, wait: 0, missing: 0 };
+  const lines = [];
+  if (!r.total) lines.push(`${md(r.since)}〜${md(r.until)} に録った録画はありませんでした。`);
+  else if (!c.missing) lines.push(`${md(r.since)}〜${md(r.until)} の録画 ${r.total} 本は、全部${c.wait ? "（待ちの " + c.wait + " 本を除いて）" : ""} 2 か所にそろっています。見に行く必要はありません。`);
+  else lines.push(`${md(r.since)}〜${md(r.until)} の録画 ${r.total} 本のうち、${c.missing} 本が欠けています。下の録画を見てください。`);
+  const miss = (r.rows || []).filter((x) => x.state === "missing");
+  if (miss.length) {
+    lines.push("", "欠けている録画");
+    miss.forEach((x) => { lines.push(`・${md(x.date)}　${x.title}`, `　足りない置き場：${x.missing.join("・")}${x.error ? `　理由：${x.error}` : ""}`); });
+    lines.push("", "Zoom のゴミ箱に入った録画は、消えてから 30 日は戻せます。");
+  }
+  const wait = (r.rows || []).filter((x) => x.state === "wait");
+  if (wait.length) { lines.push("", "まだ運んでいる途中の録画（録って 1 日以内）"); wait.forEach((x) => lines.push(`・${md(x.date)}　${x.title}（${x.missing.join("・")}を待っている）`)); }
+  lines.push("", "今週の確認を開く：", `${origin}/admin#recordings-week`);
+  const subject = !r.total ? "【マーケくん】録画の今週の確認：今週の録画はありません"
+    : c.missing ? `【マーケくん】録画の今週の確認：${c.missing} 本が欠けています` : `【マーケくん】録画の今週の確認：${r.total} 本そろいました`;
+  return { subject, text: lines.join("\n") };
+}

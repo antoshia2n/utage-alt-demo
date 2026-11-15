@@ -34,6 +34,7 @@ export function mountRecordings(host, { getToken }) {
     <button class="tab" role="tab" type="button" data-tab="list" aria-selected="true">棚</button>
     <button class="tab" role="tab" type="button" data-tab="tidy" aria-selected="false">整理<span class="badge" id="b-tidy" hidden></span></button>
     <button class="tab" role="tab" type="button" data-tab="check" aria-selected="false">点検<span class="badge" id="b-check" hidden></span></button>
+    <button class="tab" role="tab" type="button" data-tab="week" aria-selected="false">今週の確認<span class="badge" id="b-week" hidden></span></button>
     <span class="grow"></span><span class="note-top" id="note-top"></span>
     <button class="btn sm" type="button" id="rt-open">出し先の決まり</button>
     <button class="btn sm pri up-btn" type="button" id="up-open">アップロード</button>
@@ -59,6 +60,8 @@ export function mountRecordings(host, { getToken }) {
   let placed = [], smFrom = null, smData = null;
   // 出し先のスイッチ（2026-11-12）：会の種類ごとの入れ先と、選べるコース
   let RC = { courses: {}, course_list: [], from: "" }, rtFrom = null;
+  // 毎週の確認（2026-11-15）：直近 7 日の録画が 2 か所にそろったか
+  let W = null;
   const courseName = (id) => { const c = RC.course_list.find((x) => x.id === id); return c ? c.path : ""; };
   const placedOf = (id) => placed.filter((p) => p.rec_id === id);
   // 便 A：ラベルの一覧（多い順）
@@ -66,8 +69,9 @@ export function mountRecordings(host, { getToken }) {
   const labDatalist = (id) => `<datalist id="${id}">${allLabels().map(([l]) => `<option value="${esc(l)}">`).join("")}</datalist>`;
 
   async function load() {
-    const [r, m, rc] = await Promise.all([call(""), call("/member"), call("/route-config")]);
+    const [r, m, rc, wk] = await Promise.all([call(""), call("/member"), call("/route-config"), call("/week")]);
     if (m && m.ok) placed = m.placed || [];
+    W = wk && wk.ok ? wk : { error: wk };
     if (rc && rc.ok) RC = rc;
     if (!r.ok) { $("#main").innerHTML = `<div class="err">録画の一覧を読めませんでした：${esc(errText(r))}</div>`; return; }
     D = r;
@@ -201,6 +205,25 @@ export function mountRecordings(host, { getToken }) {
     ${tiny.length ? `<div class="bar"><button class="btn" type="button" id="to-ai">削除候補を AI に渡す文をコピー</button></div>` : ""}`;
   }
 
+  // ---------- 毎週の確認（2026-11-15 Naoki OK 10:23） ----------
+  function weekView() {
+    const head = `<h1>今週の確認</h1><p class="lead">直近 7 日に録った録画が、R2（原本）とドライブ（写し）、YouTube のスイッチがオンなら YouTube にもそろったかを見ます。毎週日曜の 20 時にメールでも届きます。ここでは何も消しません。</p>`;
+    if (!W || W.error) return head + `<div class="err">確認を読めませんでした：${esc(errText(W?.error || {}))}</div>`;
+    const md = (s) => { const [, m, d] = String(s).split("-").map(Number); return m && d ? `${m}/${d}` : s; };
+    const c = W.counts;
+    const sum = !W.total ? `${md(W.since)}〜${md(W.until)} に録った録画はありません。`
+      : c.missing ? `${W.total} 本のうち ${c.missing} 本が欠けています。欠けている録画が上に並びます。Zoom のゴミ箱に入った録画は、消えてから 30 日は戻せます。`
+      : `${W.total} 本、全部そろっています${c.wait ? `（運んでいる途中が ${c.wait} 本）` : ""}。見に行く必要はありません。`;
+    const yes = '<span class="st on">✓ あり</span>', no = '<span class="st stop">✕ なし</span>', off = '<span class="st off">― 対象外</span>';
+    const STATE = { ok: '<span class="st on">✓ そろった</span>', wait: '<span class="st off">… 運んでいる途中</span>', missing: '<span class="st stop">✕ 欠け</span>' };
+    const order = { missing: 0, wait: 1, ok: 2 };
+    const rows = [...W.rows].sort((a, b) => order[a.state] - order[b.state] || (a.date < b.date ? 1 : -1));
+    return head + `<div class="card"><h2>${esc(md(W.since))}〜${esc(md(W.until))}</h2><p>${esc(sum)}</p></div>` +
+      (rows.length ? `<div class="tbl list wk"><table><thead><tr><th>収録日</th><th>名前</th><th>会</th><th>R2</th><th>ドライブ</th><th>YouTube</th><th>状態</th></tr></thead><tbody>
+      ${rows.map((r) => `<tr class="rw" data-id="${esc(r.id)}" tabindex="0" aria-label="${esc(r.date)} ${esc(r.title)} の詳細を開く"><td class="date">${esc(r.date)}</td><td class="nm">${esc(r.title)}${r.error ? `<div class="hint">理由：${esc(r.error)}</div>` : ""}</td><td class="hide-sp">${kaiTag(r.kai)}</td><td><span class="sp-l">R2</span>${r.r2 ? yes : no}</td><td><span class="sp-l">ドライブ</span>${r.drive ? yes : no}</td><td><span class="sp-l">YouTube</span>${r.youtube_wanted ? (r.youtube ? yes : no) : off}</td><td>${STATE[r.state]}</td></tr>`).join("")}
+      </tbody></table></div>` : "");
+  }
+
   // ---------- 出し先のスイッチ（2026-11-12） ----------
   function pending(r) {
     const rt = r.route; if (!rt) return "";
@@ -307,13 +330,15 @@ export function mountRecordings(host, { getToken }) {
     const nt = D.rows.filter((r) => r.suggest_kai || r.suggest_name).length, nc = D.counts.issues;
     $("#b-tidy").hidden = !nt; $("#b-tidy").textContent = nt;
     $("#b-check").hidden = !nc; $("#b-check").textContent = nc;
+    const nw = W && W.counts ? W.counts.missing : 0;
+    $("#b-week").hidden = !nw; $("#b-week").textContent = nw;
     $("#note-top").textContent = `R2 の録画 ${D.total} 本`;
     side();
     // 描き直しても、押したボタン・書いていた欄に戻る（5b）
     const ae = root.activeElement;
     const keepId = ae?.id || null, keepSel = ae?.id === "q" ? ae.selectionStart : null;
     const keepData = !keepId && ae ? ["data-issue", "data-copy", "data-tab", "data-shelf"].map((k) => ae.hasAttribute?.(k) ? `[${k}="${CSS.escape(ae.getAttribute(k))}"]` : "").find(Boolean) : "";
-    $("#main").innerHTML = tab === "list" ? listView() : tab === "tidy" ? tidyView() : checkView();
+    $("#main").innerHTML = tab === "list" ? listView() : tab === "tidy" ? tidyView() : tab === "week" ? weekView() : checkView();
     drawer();
     const back = keepId ? root.getElementById(keepId) : keepData ? root.querySelector(keepData) : null;
     if (back) { back.focus(); if (keepSel !== null) back.setSelectionRange(keepSel, keepSel); }
@@ -691,5 +716,7 @@ export function mountRecordings(host, { getToken }) {
     open: () => { if (!D) load(); else render(); },
     // 出し先のスイッチ：メールの住所（/admin#recording/<id>）から、その録画の詳細を開く
     openRec: async (id) => { if (!D) await load(); if (D && D.rows.some((x) => x.id === id)) openDetail(id); },
+    // 毎週の確認：日曜のメールの住所（/admin#recordings-week）から開く
+    openWeek: async () => { if (!D) await load(); setTab("week"); },
   };
 }
