@@ -101,7 +101,11 @@ function fake() {
   return { t, ev, log, inv, tokens };
 }
 const TOK = "AbCdEfGhIjKlMnOpQrStUvWx";
-const guestInvite = (over = {}) => ({ id: "i1", token: TOK, name: "おかぜりさん・るりさん", key: "guest", grant_until: "2026-12-31T14:59:59.000Z", max_uses: 2, used: 0, link_until: "2026-11-15T14:59:59.000Z", active: true, ...over });
+// 2026-11-16：今の時刻で判定する試験は、固定の日付だと期限が過ぎた日から落ちる（11/16 に 4 件落ちた）。遠い先か、今から数えた日付にする
+const FAR_LINK = "2099-11-15T14:59:59.000Z", FAR_GRANT = "2099-12-31T14:59:59.000Z";
+const ymd = (d) => new Date(Date.now() + d * 86400000).toISOString().slice(0, 10);
+const SOON = ymd(30), LATER = ymd(90);
+const guestInvite = (over = {}) => ({ id: "i1", token: TOK, name: "おかぜりさん・るりさん", key: "guest", grant_until: FAR_GRANT, max_uses: 2, used: 0, link_until: FAR_LINK, active: true, ...over });
 
 test("受け取り：新しい人は会員の行ができ、Google の番号が結ばれ、ゲストが期限つきで付く", async () => {
   const { t, ev, inv, tokens } = fake();
@@ -113,7 +117,7 @@ test("受け取り：新しい人は会員の行ができ、Google の番号が�
   assert.deepEqual(r.apps.map((a) => a.name), ["X攻略くん", "思考整理くん"]);
   const m = t.member.find((x) => x.email === "okazeri@example.com");
   assert.equal(m.auth_uid, "uid-oka");
-  assert.deepEqual(t.member_entitlement.map((e) => [e.member_id, e.key, e.expires_at]), [[m.id, "guest", "2026-12-31T14:59:59.000Z"]]);
+  assert.deepEqual(t.member_entitlement.map((e) => [e.member_id, e.key, e.expires_at]), [[m.id, "guest", FAR_GRANT]]);
   assert.equal(t.b_invites[0].used, 1);
   assert.ok(ev.some((e) => e.type === "invite_accepted"));
 });
@@ -145,7 +149,7 @@ test("受け取り：同じ Google の番号を持つ人を先に使う・埋ま
   assert.equal(r.ok, true);
   assert.equal(t.member.find((m) => m.id === "m-old").auth_uid, null, "メールが同じ別の行には結ばない");
   assert.equal(t.member_entitlement.length, 1);
-  assert.equal(t.member_entitlement[0].expires_at, "2026-12-31T14:59:59.000Z");
+  assert.equal(t.member_entitlement[0].expires_at, FAR_GRANT);
 });
 
 test("受け取り：止めた・期限切れ・印が偽物・知らないリンク", async () => {
@@ -174,7 +178,7 @@ test("場所：作るときの確かめ（番号の形・名前の長さ・ど�
 test("場所：新しい場所を作ると、作った管理者が持ち主になる・Google の番号が無い管理者は作れない", async () => {
   const { t, inv } = fake();
   t.member.push({ id: "m-naoki", email: "naoki@example.com", auth_uid: "uid-naoki" });
-  const r = await inv.create({}, { name: "おかぜり案件のゲスト", key: "guest", max_uses: 2, link_until: "2026-11-15", grant_until: "2026-12-31", workspace_name: "おかぜり案件" }, "Naoki@Example.com");
+  const r = await inv.create({}, { name: "おかぜり案件のゲスト", key: "guest", max_uses: 2, link_until: SOON, grant_until: LATER, workspace_name: "おかぜり案件" }, "Naoki@Example.com");
   assert.equal(r.ok, true);
   assert.equal(t.ws_workspaces.length, 1);
   assert.deepEqual(t.ws_members.map((m) => [m.firebase_uid, m.role]), [["uid-naoki", "owner"]]);
@@ -182,13 +186,13 @@ test("場所：新しい場所を作ると、作った管理者が持ち主に�
   assert.equal(r.invite.url, `https://lab.shia2n.jp/invite?t=${t.b_invites[0].token}`);
   // 途中で失敗したら 3 つとも書かない（関数 1 本の中で取引になる）
   t.failCreate = true;
-  await assert.rejects(inv.create({}, { name: "z", key: "guest", max_uses: 1, link_until: "2026-11-15", grant_until: "2026-12-31", workspace_name: "z" }, "naoki@example.com"));
+  await assert.rejects(inv.create({}, { name: "z", key: "guest", max_uses: 1, link_until: SOON, grant_until: LATER, workspace_name: "z" }, "naoki@example.com"));
   assert.deepEqual([t.ws_workspaces.length, t.ws_members.length, t.b_invites.length], [1, 1, 1]);
   t.failCreate = false;
-  const bad = await inv.create({}, { name: "x", key: "guest", max_uses: 1, link_until: "2026-11-15", grant_until: "2026-12-31", workspace_name: "y" }, "nobody@example.com");
+  const bad = await inv.create({}, { name: "x", key: "guest", max_uses: 1, link_until: SOON, grant_until: LATER, workspace_name: "y" }, "nobody@example.com");
   assert.equal(bad.error, "owner_not_bound");
   assert.equal(t.ws_workspaces.length, 1, "持ち主がいない場所は作らない");
-  const missing = await inv.create({}, { name: "x", key: "guest", max_uses: 1, link_until: "2026-11-15", grant_until: "2026-12-31", workspace_id: WSID }, "naoki@example.com");
+  const missing = await inv.create({}, { name: "x", key: "guest", max_uses: 1, link_until: SOON, grant_until: LATER, workspace_id: WSID }, "naoki@example.com");
   assert.equal(missing.error, "workspace_not_found");
 });
 
