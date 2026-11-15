@@ -100,9 +100,10 @@
     <div class="grp-box" data-grp="assets">
       <button class="grp" type="button" aria-expanded="true">素材</button>
       <div class="grp-items">
-        <!-- 録画（R2 の Zoom の録画）・実績（自分と生徒・お客さんの実績）・メディア（画像・PDF・スライド・動画）・UTAGE の写し（読むだけ） -->
+        <!-- 録画（R2 の Zoom の録画）・実績（自分と生徒・お客さんの実績）・スキル（スキル・レシピ・仮説）・メディア（画像・PDF・スライド・動画）・UTAGE の写し（読むだけ） -->
         <button class="it" type="button" data-view="recordings" aria-selected="false">録画</button>
         <button class="it" type="button" data-view="results" aria-selected="false">実績</button>
+        <button class="it" type="button" data-view="skills" aria-selected="false">スキル</button>
         <button class="it" type="button" data-view="media" aria-selected="false">メディア</button>
         <button class="it" type="button" data-view="utagecopy" aria-selected="false">UTAGE のバックアップ</button>
       </div>
@@ -373,6 +374,8 @@
       <div id="view-recordings" style="display:none"><div id="rec-host"></div></div>
       <div id="view-media" style="display:none"><div id="media-host"></div></div>
       <div id="view-results" style="display:none"><div id="results-host"></div></div>
+      <!-- スキルの棚の便 1（2026-11-16）：スキル・レシピ・仮説（public/js/skillshelf.js・正本は GitHub の shia2n-skills） -->
+      <div id="view-skills" style="display:none"><div id="skills-host"></div></div>
       <!-- 契約の便 1（2026-11-12・ShiaSign）：契約の台帳と書類（public/js/contracts.js） -->
       <div id="view-contracts" style="display:none"><div id="contracts-host"></div></div>
       <div id="view-web" style="display:none"><div id="web-host"></div></div>
