@@ -43,6 +43,22 @@ export function appAccess(ent, admin = false) {
   if (admin) return "full";
   return ((ent && ent.gate_keys) || []).some((k) => APP_ACCESS_KEYS.includes(k)) ? "full" : "contract";
 }
+// 権利の一本化（2026-11-15）：B で計算した返り（own）に、門番の表のキーを重ねた形を作る。会員・権利は keys だけで決まる
+export function gateView(own, keys) {
+  const ent = own || { items: [], grants: [] };
+  const k = [...new Set(keys || [])];
+  const member = k.some((x) => MEMBER_KEYS.includes(x));
+  return {
+    ...ent,
+    gate_keys: k,
+    grants: k,
+    member,
+    status: member ? "active" : (ent.member ? "purchased" : (ent.status || "none")),
+    plan: member ? (ent.member && ent.plan ? ent.plan : "しあらぼ会員") : null,
+    via_gate: true,
+    b_member: !!ent.member, // B の決済の記録だけで見たときの会員（食い違いの点検用・判定には使わない）
+  };
+}
 export function memberWaiting(ent) {
   return !!(ent && (ent.member || ((ent.gate_keys) || []).some((k) => MEMBER_KEYS.includes(k))));
 }
@@ -141,26 +157,25 @@ export function makeBridge(h) {
     return await db(env, "GET", `member_entitlement?select=id,key,source,reason,expires_at&member_id=eq.${memberId}`);
   }
 
-  // 門番の表の権利を、B の権利の返りに足す（会員かどうかはここで決まる）
+  // 門番の表の権利を、B の返りに重ねる。2026-11-15 権利の一本化（Naoki OK）：
+  // 会員かどうかと権利は門番の表だけで決める。B の決済の記録は「買ったもの」（items）と、門番の表へ書く元（syncGrants）にだけ使う
   async function withGate(env, customerId, ent) {
     const rows = (await gateRows(env, customerId)).filter((r) => live(r));
-    const keys = [...new Set(rows.map((r) => r.key))];
-    const gateMember = keys.some((k) => MEMBER_KEYS.includes(k));
-    const out = { ...ent, gate_keys: keys };
-    if (gateMember && !ent.member) {
-      out.member = true;
-      out.status = "active";
-      out.plan = out.plan || "しあらぼ会員";
-      out.via_gate = true;
-    }
-    out.grants = [...new Set([...(ent.grants || []), ...keys])];
-    return out;
+    return gateView(ent, rows.map((r) => r.key));
   }
 
   // 一覧用：門番の表で会員の人の番号の集まり
   async function gateMembers(env) {
     const rows = await db(env, "GET", `member_entitlement?select=member_id,expires_at&key=in.(${MEMBER_KEYS.join(",")})&limit=10000`);
     return new Set(rows.filter((r) => live(r)).map((r) => r.member_id));
+  }
+
+  // 一覧用：人ごとの生きている権利のキー（門番の表の全部）
+  async function gateKeysAll(env) {
+    const rows = await db(env, "GET", `member_entitlement?select=member_id,key,expires_at&limit=10000`);
+    const out = new Map();
+    for (const r of rows) if (live(r)) { if (!out.has(r.member_id)) out.set(r.member_id, new Set()); out.get(r.member_id).add(r.key); }
+    return out;
   }
 
   // B で買った権利の印を門番の表へ合わせる。何度呼んでも同じ結果。失敗しても決済の記録は止めない
@@ -314,5 +329,5 @@ export function makeBridge(h) {
     return { ok: true, changed: !!have !== on, ...(await accessList(env, { key: k })) };
   }
 
-  return { withGate, gateMembers, syncGrants, listTables, meetings, entitlementKeys, gateAll, gateFull, grantManual, revokeManual, accessList, setAccess };
+  return { withGate, gateMembers, gateKeysAll, syncGrants, listTables, meetings, entitlementKeys, gateAll, gateFull, grantManual, revokeManual, accessList, setAccess };
 }

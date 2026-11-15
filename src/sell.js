@@ -46,6 +46,7 @@ const keepsUntil = (last, keep, now = Date.now()) => !!(last && last.type === "s
 const keepOf = (e) => (e && e.type === "subscription_canceled" && e.payload && e.payload.keep_until) || null;
 
 import { isTestPurchase } from "./purchase.js";
+import { gateView } from "./bridge.js";
 
 export function makeSell(h) {
   const { db, addEvent, bin3 } = h;
@@ -254,12 +255,11 @@ export function makeSell(h) {
     for (const e of evs) { if (!by.has(e.customer_id)) by.set(e.customer_id, []); by.get(e.customer_id).push(e); }
     const out = {};
     for (const [id, list] of by) out[id] = entitlementOf(list, products);
-    // 便 6b：門番の表で会員の人（B で何も買っていない本番の会員を含む）
-    if (h.bridge) {
-      for (const id of await h.bridge.gateMembers(env)) {
-        out[id] = out[id] && out[id].member ? out[id]
-          : { ...(out[id] || { items: [], grants: [] }), member: true, status: "active", plan: "しあらぼ会員", via_gate: true };
-      }
+    // 2026-11-15 権利の一本化：会員と権利は門番の表だけで決める（B で何も買っていない本番の会員を含む）
+    if (h.bridge && h.bridge.gateKeysAll) {
+      const keys = await h.bridge.gateKeysAll(env);
+      const ids = new Set([...Object.keys(out), ...keys.keys()]);
+      for (const id of ids) out[id] = gateView(out[id], [...(keys.get(id) || [])]);
     }
     return out;
   }
