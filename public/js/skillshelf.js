@@ -57,6 +57,8 @@ export function mountSkillShelf(host, { getToken }) {
     .use.latest{border-color:var(--ink);color:var(--ink)}
     td small{display:block;color:var(--muted);font-size:12px;font-weight:400}
     .drawer.wide{width:640px}
+    .btn:disabled{opacity:.4;cursor:not-allowed}
+    h1{display:inline-block;margin-right:4px}
     h1+.qa,.qa{display:inline-block;vertical-align:middle;margin:0 0 8px 8px}
     .qa>summary{list-style:none;cursor:pointer;width:24px;height:24px;border-radius:50%;border:1px solid var(--line);display:inline-flex;align-items:center;justify-content:center;font-size:13px;color:var(--muted)}
     .qa>summary::-webkit-details-marker{display:none}
