@@ -67,7 +67,7 @@ export function mountSkillShelf(host, { getToken }) {
     .gsec{margin:0 0 18px}.gsec h2{font-size:15px;margin:0 0 8px}.gsec h2 small{color:var(--muted);font-weight:400;font-size:12px}
     .gh{display:flex;align-items:center;gap:8px;width:100%;background:none;border:0;padding:6px 0;font:inherit;font-size:15px;font-weight:700;color:inherit;cursor:pointer;text-align:left;min-height:44px}
     .gh small{color:var(--muted);font-weight:400;font-size:12px}.gh .cv{display:inline-block;width:14px;transition:transform .15s}.gh[aria-expanded="false"] .cv{transform:rotate(-90deg)}
-    .gtools{display:flex;gap:8px;margin:0 0 8px}
+    .gtools{display:flex;gap:8px;margin:0 0 8px}.nmw{display:flex;align-items:center;gap:10px}.nmw .ic.sm{margin:0}.gsec:has(>div[hidden]){margin-bottom:4px}
     .sks{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
     .sk{display:flex;flex-direction:column;gap:4px;text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer;font:inherit;color:inherit;min-height:44px}
     .sk:hover{border-color:var(--field)}.sk:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
@@ -160,7 +160,7 @@ export function mountSkillShelf(host, { getToken }) {
         <span class="sk-p">${esc(k.purpose || "")}</span>
         <span class="uses">${chips(k.category)}${chips(k.media, "md")}<span class="use ver">版 ${esc(k.version || "")}</span>${k.student_version ? `<span class="use stu">生徒 ${esc(k.student_version)}</span>` : ""}</span></button>`;
     const line = (k) => `<tr class="rw" data-id="${esc(k.name)}" tabindex="0" aria-label="${esc(k.title || k.name)} の詳細を開く">
-        <td class="nm">${icon(k, "sm")}${esc(k.title || k.name)}<small>${esc(k.name)}</small></td><td>${esc((k.category || []).join("・"))}</td><td>${esc((k.media || []).join("・"))}</td>
+        <td class="nm"><span class="nmw">${icon(k, "sm")}<span>${esc(k.title || k.name)}<small>${esc(k.name)}</small></span></span></td><td>${esc((k.category || []).join("・"))}</td><td>${esc((k.media || []).join("・"))}</td>
         <td class="ver">${esc(k.version || "")}</td>
         <td class="ver ${k.student_version && k.student_version !== k.version ? "diff" : ""}">${k.student_version ? esc(k.student_version) + (k.student_version !== k.version ? "（古い）" : "") : ""}</td>
         <td>${esc(k.owner || "")}</td><td class="date">${esc(k.updated || "")}</td></tr>`;
