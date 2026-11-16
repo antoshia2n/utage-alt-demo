@@ -57,6 +57,13 @@ export function mountSkillShelf(host, { getToken }) {
     .use.latest{border-color:var(--ink);color:var(--ink)}
     td small{display:block;color:var(--muted);font-size:12px;font-weight:400}
     .drawer.wide{width:640px}
+    h1+.qa,.qa{display:inline-block;vertical-align:middle;margin:0 0 8px 8px}
+    .qa>summary{list-style:none;cursor:pointer;width:24px;height:24px;border-radius:50%;border:1px solid var(--line);display:inline-flex;align-items:center;justify-content:center;font-size:13px;color:var(--muted)}
+    .qa>summary::-webkit-details-marker{display:none}
+    .qa[open]{display:block;margin-left:0}.qa[open]>summary{margin-bottom:4px}
+    .vline{font-size:13px;margin:4px 0 12px;color:var(--muted)}.vline b{color:var(--fg);font-variant-numeric:tabular-nums}
+    details.more{border-top:1px solid var(--line);margin-top:14px;padding-top:8px}
+    details.more>summary{cursor:pointer;font-size:13px;color:var(--muted);min-height:32px;display:flex;align-items:center}
     .plans{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 8px}
     .pl{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:10px;padding:6px 10px;font-size:13px;background:var(--panel);cursor:pointer;min-height:36px}
     .pl small{color:var(--muted);font-size:11px;margin-left:2px}
@@ -122,7 +129,7 @@ export function mountSkillShelf(host, { getToken }) {
   const say = (t) => { $("#note-top").textContent = t; $("#live").textContent = ""; setTimeout(() => ($("#live").textContent = t), 30); };
   const call = (path, body) => api(path, body ? { method: "POST", token: getToken(), body } : { token: getToken() });
 
-  let S = null, tab = "skills", q = "", back = null, dirty = false;
+  let S = null, tab = "skills", q = "", back = null, dirty = false, loadingFirst = null;
 
   // at：保存の直後に返ったコミット。GitHub は main を 1 分ほど前の形で返すことがあるので、保存の直後はそのコミットで読む
   async function load(at) {
@@ -138,7 +145,8 @@ export function mountSkillShelf(host, { getToken }) {
   const confirmLeave = () => { const ok = window.confirm("保存していない変更があります。破棄して移りますか？"); if (ok) dirty = false; return ok; };
 
   const usedBy = (skill) => S.recipes.filter((r) => (r.uses || []).some((u) => u.skill === skill)).map((r) => r.name);
-  const howLine = `<p class="how"><b>スキル</b>（部品）→ <b>レシピ</b>（組み合わせ・版を固定）→ Claude・GPT が読む。<b>仮説</b>はレビューが毎回読む。中身の正本は GitHub の shia2n-skills で、ここで書いたものもそこに入ります。</p>`;
+  // 2026-11-16 Naoki「ごちゃごちゃしてる」：説明の文は「？」の中へ。開いたままにしない
+  const howLine = () => `<details class="qa"><summary aria-label="この画面の説明">？</summary><p class="how"><b>スキル</b>（部品）→ <b>レシピ</b>（組み合わせ・版を固定）→ Claude・GPT が読む。<b>仮説</b>はレビューが毎回読む。中身の正本は GitHub の shia2n-skills で、ここで書いたものもそこに入ります。書き方の決まりは<a href="${esc((S && S.repo) || "")}/blob/main/STANDARD.md" target="_blank" rel="noopener">シアニン式スキル規格 ↗</a></p></details>`;
 
   function draw() {
     root.querySelectorAll("[data-tab]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === tab)));
@@ -184,8 +192,8 @@ export function mountSkillShelf(host, { getToken }) {
         <td class="ver ${k.student_version && k.student_version !== k.version ? "diff" : ""}">${k.student_version ? esc(k.student_version) + (k.student_version !== k.version ? "（古い）" : "") : ""}</td>
         <td>${esc(k.owner || "")}</td><td class="date">${esc(k.updated || "")}</td></tr>`;
     const groups = [...genres.map((g) => [g, rows.filter((k) => k.genre === g)]), ["ジャンル未設定", rows.filter((k) => !k.genre)]].filter(([, a]) => a.length);
-    $("#main").innerHTML = `<h1>スキル</h1>${howLine}
-      <p class="lead">${S.skills.length} 本・生徒に出しているのは ${stu} 本。書き方の決まりは<a href="${esc(S.repo)}/blob/main/STANDARD.md" target="_blank" rel="noopener">シアニン式スキル規格を別タブで開く ↗</a></p>
+    $("#main").innerHTML = `<h1>スキル</h1>${howLine()}
+      <p class="lead">${S.skills.length} 本・生徒に出しているのは ${stu} 本</p>
       <div class="bar">
         <div class="search"><label for="q">探す</label><input type="search" id="q" value="${esc(q)}" placeholder="表示名・ID・何に使うか・ジャンル・カテゴリ・媒体"></div>
         <button class="btn sm" type="button" id="f-open" aria-expanded="false" aria-controls="f-pop">絞り込み${nf ? `（${nf}）` : ""} ▾</button>
@@ -230,27 +238,29 @@ export function mountSkillShelf(host, { getToken }) {
     const used = usedBy(name), by = refBy(name);
     const linkSkill = (n) => S.skills.some((x) => x.name === n) ? `<button class="btn sm" type="button" data-go-skill="${esc(n)}">${esc(title(n))} →</button>` : S.recipes.some((r) => r.name === n) ? `<button class="btn sm" type="button" data-go-recipe="${esc(n)}">レシピ ${esc(n)} →</button>` : `<span class="use">${esc(n)}（正本に無い）</span>`;
     const ask = `https://claude.ai/new?q=${encodeURIComponent(fixPrompt(k))}`;
+    // 2026-11-16 Naoki「ごちゃごちゃしてる」：3 段にした。①頭（何のスキルか・版・生徒に出しているか）②よく押すもの（Claude で直す・生徒に出す）③畳んだ「くわしく」
+    const pubTo = k.audience.filter((a) => PLANS.some(([p]) => p === a)).map(planName).join("・");
     openDrawer(`<div class="dh"><h2 id="d-title">${icon(k, "lg")}${esc(k.title || k.name)}</h2><button class="x" type="button" id="d-close" aria-label="閉じる">✕</button></div>
       <div class="db">
-        <p style="margin-top:0"><span class="use">${esc(k.genre || "ジャンル未設定")}</span> ${chips(k.category)} ${chips(k.media, "md")}</p>
-        <p>${esc(k.purpose || "")}</p>
-        <div class="bar"><a class="btn pri sm" href="${ask}" target="_blank" rel="noopener">Claude で直す ↗</a><button class="btn sm" type="button" id="copy-ask">依頼文をコピー</button></div>
-        <p class="hint" style="margin-top:0">Claude が開き、依頼文が入った状態になります。直したいことを書き足して送ります。開発部のチャットに貼るときは「依頼文をコピー」。</p>
-        <dl class="meta"><dt>ID（AI が呼ぶ名前）</dt><dd>${esc(k.name)}</dd><dt>最新の版</dt><dd>${esc(k.version || "")}</dd><dt>生徒の版</dt><dd>${esc(k.student_version || "出していない")}</dd>
-          <dt>使う場所</dt><dd>${esc(k.where.join("・"))}</dd><dt>見せる相手</dt><dd>${esc(k.audience.join("・"))}</dd><dt>担当</dt><dd>${esc(k.owner || "")}</dd>
-          <dt>更新</dt><dd>${esc(k.updated || "")}</dd><dt>レシピでの扱い</dt><dd>${esc(k.kind || (k.latest_ok ? "基本スキル" : "選択スキル"))}・${k.latest_ok ? "最新にできる" : "版で固定"}</dd><dt>ファイル</dt><dd>${k.files} 個</dd></dl>
+        <p style="margin:0 0 4px">${esc(k.purpose || "")}</p>
+        <p class="vline">最新の版 <b>${esc(k.version || "")}</b>　／　${k.student_version ? `生徒の版 <b>${esc(k.student_version)}</b>（${esc(pubTo || "相手なし")}）` : "生徒には出していない"}</p>
+        <div class="bar"><a class="btn pri sm" href="${ask}" target="_blank" rel="noopener" title="Claude が開き、依頼文が入った状態になります。直したいことを書き足して送ります">Claude で直す ↗</a><button class="btn sm" type="button" id="copy-ask" title="開発部のチャットに貼るとき">依頼文をコピー</button></div>
         <div class="sec pub" style="margin-top:14px"><h3>生徒に出す</h3>
-          <p class="hint" style="margin-top:0">${k.student_version ? `いま生徒に出している版：<b>${esc(k.student_version)}</b>（相手：${esc(k.audience.filter((a) => PLANS.some(([p]) => p === a)).map(planName).join("・") || "なし")}）` : "まだ生徒に出していません"}。出すのは最新の版 ${esc(k.version || "")} です。</p>
-          <div class="plans">${PLANS.map(([key, label, sub]) => `<label class="pl"><input type="checkbox" data-plan="${key}" ${k.audience.includes(key) ? "checked" : ""}> ${esc(label)}${sub ? `<small>${esc(sub)}</small>` : ""}</label>`).join("")}</div>
+          <div class="plans">${PLANS.map(([key, label, sub]) => `<label class="pl"${sub ? ` title="${esc(sub)}"` : ""}><input type="checkbox" data-plan="${key}" ${k.audience.includes(key) ? "checked" : ""}> ${esc(label)}</label>`).join("")}</div>
           <div class="bar"><button class="btn sm" type="button" id="pub-check">確かめる</button><button class="btn pri sm" type="button" id="pub-go" disabled>生徒に出す</button>${k.student_version ? '<button class="btn sm" type="button" id="pub-off">引っ込める</button>' : ""}</div>
           <div id="pub-out" class="hint" aria-live="polite"></div>
         </div>
-        <div class="sec" style="margin-top:14px"><h3>参照している</h3>${(k.refs || []).length ? k.refs.map(linkSkill).join(" ") : '<p class="hint" style="margin:0">なし</p>'}</div>
-        <div class="sec"><h3>参照されている</h3>${by.length || used.length ? [...by.map(linkSkill), ...used.map((r) => `<button class="btn sm" type="button" data-go-recipe="${esc(r)}">レシピ ${esc(r)} →</button>`)].join(" ") : '<p class="hint" style="margin:0">まだどこからも使われていません</p>'}</div>
-        ${(k.conflicts || []).length ? `<div class="sec"><h3>一緒に使えない</h3>${k.conflicts.map(linkSkill).join(" ")}</div>` : ""}
-        <div class="sec"><h3>説明（AI が使う場面を決める文）</h3><p style="font-size:13px;margin:0">${esc(k.description)}</p></div>
+        <details class="more"><summary>くわしく（ID・使う場所・参照・説明）</summary>
+          <p style="margin:6px 0"><span class="use">${esc(k.genre || "ジャンル未設定")}</span> ${chips(k.category)} ${chips(k.media, "md")}</p>
+          <dl class="meta"><dt>ID（AI が呼ぶ名前）</dt><dd>${esc(k.name)}</dd><dt>使う場所</dt><dd>${esc(k.where.join("・"))}</dd><dt>担当</dt><dd>${esc(k.owner || "")}</dd>
+            <dt>更新</dt><dd>${esc(k.updated || "")}</dd><dt>レシピでの扱い</dt><dd>${esc(k.kind || (k.latest_ok ? "基本スキル" : "選択スキル"))}・${k.latest_ok ? "最新にできる" : "版で固定"}</dd><dt>ファイル</dt><dd>${k.files} 個</dd></dl>
+          <div class="sec" style="margin-top:14px"><h3>参照している</h3>${(k.refs || []).length ? k.refs.map(linkSkill).join(" ") : '<p class="hint" style="margin:0">なし</p>'}</div>
+          <div class="sec"><h3>参照されている</h3>${by.length || used.length ? [...by.map(linkSkill), ...used.map((r) => `<button class="btn sm" type="button" data-go-recipe="${esc(r)}">レシピ ${esc(r)} →</button>`)].join(" ") : '<p class="hint" style="margin:0">まだどこからも使われていません</p>'}</div>
+          ${(k.conflicts || []).length ? `<div class="sec"><h3>一緒に使えない</h3>${k.conflicts.map(linkSkill).join(" ")}</div>` : ""}
+          <div class="sec"><h3>説明（AI が使う場面を決める文）</h3><p style="font-size:13px;margin:0">${esc(k.description)}</p></div>
+          <p class="hint"><a href="${esc(S.repo)}/tree/main/skills/${encodeURIComponent(k.name)}" target="_blank" rel="noopener">このスキルを正本で別タブで開く ↗</a></p>
+        </details>
         ${k.missing.length ? `<p class="hint" style="color:var(--warn)">頭の欄が欠けています：${esc(k.missing.join("・"))}</p>` : ""}
-        <p class="hint"><a href="${esc(S.repo)}/tree/main/skills/${encodeURIComponent(k.name)}" target="_blank" rel="noopener">このスキルを正本で別タブで開く ↗</a></p>
       </div>`);
     const d = $("#drawer");
     d.querySelectorAll("[data-go-recipe]").forEach((b) => b.addEventListener("click", () => { tab = "recipes"; closeDrawer(true); draw(); openRecipe(b.dataset.goRecipe); }));
@@ -328,7 +338,7 @@ export function mountSkillShelf(host, { getToken }) {
         <span class="sk-p">${esc(r.purpose || "")}</span>
         <span class="uses">${r.uses.map((u) => `<span class="use ${u.pinned ? "" : "latest"}">${esc(title(u.skill))} ${u.pinned ? esc(u.version) : "最新"}${u.strength && u.strength !== "標準" ? `・${esc(u.strength)}` : ""}</span>`).join("")}</span>
         <span class="uses"><span class="use ver">流れ ${nflow(r)} 手順</span><span class="use ver">版 ${esc(r.version || "")}</span><span class="use ver">${esc(r.updated || "")}</span></span></button>`;
-    $("#main").innerHTML = `<h1>レシピ</h1>${howLine}
+    $("#main").innerHTML = `<h1>レシピ</h1>${howLine()}
       <p class="lead">スキルの組み合わせです。上の行ほど優先（ルールがぶつかったら勝つ）。保存すると版が 1 つ上がり、Claude・GPT は次に読むときからその版を使います（recipes__get）。</p>
       <div class="bar"><button class="btn pri sm" type="button" id="new-recipe">＋ レシピを新規作成</button>
         <span class="seg" role="group" aria-label="見せ方"><button type="button" class="btn sm" data-rview="card" aria-pressed="${rview === "card"}">カード</button><button type="button" class="btn sm" data-rview="list" aria-pressed="${rview === "list"}">リスト</button></span></div>
@@ -513,7 +523,7 @@ export function mountSkillShelf(host, { getToken }) {
   // ---------- 仮説 ----------
   function drawHypotheses() {
     const rows = S.hypotheses.filter((h) => hit(h.id, h.title, h.status, h.body));
-    $("#main").innerHTML = `<h1>仮説</h1>${howLine}
+    $("#main").innerHTML = `<h1>仮説</h1>${howLine()}
       <p class="lead">シアニンの仮説は言葉のまま入れます（言い換えない）。レビュー（${esc(S.hypotheses_skill)}）が毎回読みます。中身は書き換えず、状態と追記で育てます。</p>
       <div class="bar"><button class="btn pri sm" type="button" id="h-new">＋ 仮説を追加</button></div>
       <form id="h-form" class="hy" hidden>
@@ -591,7 +601,8 @@ export function mountSkillShelf(host, { getToken }) {
   });
 
   return {
-    open(sub) { if (sub && TABS.some(([k]) => k === sub)) tab = sub; if (!S) load(); else draw(); },
+    // 2026-11-16 マーケくんの重さ：画面を開くときに open が 2 回呼ばれ、一覧（4〜8 秒）を 2 回読んでいた。読んでいる間は 2 回目を読まない
+    open(sub) { if (sub && TABS.some(([k]) => k === sub)) tab = sub; if (S) { draw(); return; } if (!loadingFirst) loadingFirst = load().finally(() => { loadingFirst = null; }); },
     reload: load,
   };
 }
