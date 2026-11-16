@@ -616,10 +616,31 @@ function decodeJwtPayload(token) {
 }
 
 // ブラウザから来たログインの印を Supabase に確かめてもらう
+// 2026-11-16 マーケくんの重さ：どの受け口も、毎回 Supabase にログインの確かめ（/auth/v1/user）と管理者の表を聞きに行っていて、
+// 1 回の読み込みごとに 0.2〜1 秒かかっていた。同じ券（token）の確かめは 60 秒（券の期限より前まで）同じ Worker の手元で使い回す。
+// ログアウトや管理者から外したときは、最大 60 秒だけ前の答えが残る（券そのものの期限は今までどおり Supabase が決める）
+const USER_TTL = 60e3;
+const userSeen = new Map();
+const adminSeen = new Map();
+function seen(m, k, now) { const v = m.get(k); if (!v) return null; if (v.until <= now) { m.delete(k); return null; } return v.value; }
+function keep(m, k, value, until) { if (m.size > 500) m.delete(m.keys().next().value); m.set(k, { value, until }); }
+
 async function verifyUser(request, env) {
   const auth = request.headers.get("authorization") || "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
   if (!token) return { error: "no_token" };
+  const now = Date.now();
+  const hit = seen(userSeen, token, now);
+  if (hit) return hit;
+  const r = await verifyUserFresh(token, env);
+  if (!r.error) {
+    const exp = Number(r.claims && r.claims.exp) * 1000;
+    const until = Math.min(now + USER_TTL, Number.isFinite(exp) && exp > 0 ? exp : now + USER_TTL);
+    if (until > now) keep(userSeen, token, r, until);
+  }
+  return r;
+}
+async function verifyUserFresh(token, env) {
   const res = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
     headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, authorization: `Bearer ${token}` },
   });
@@ -660,8 +681,13 @@ async function communityFor(env, ent, email) {
 async function requireAdmin(request, env) {
   const v = await verifyUser(request, env);
   if (v.error) return { error: v.error, status: 401 };
-  const rows = await db(env, "GET", `admins?select=email&email=eq.${encodeURIComponent(v.email)}`);
-  if (rows.length === 0) return { error: "not_admin", status: 403 };
+  let isAdmin = seen(adminSeen, v.email, Date.now());
+  if (isAdmin === null) {
+    const rows = await db(env, "GET", `admins?select=email&email=eq.${encodeURIComponent(v.email)}`);
+    isAdmin = rows.length > 0;
+    if (isAdmin) keep(adminSeen, v.email, true, Date.now() + USER_TTL);
+  }
+  if (!isAdmin) return { error: "not_admin", status: 403 };
   // 2026-10-08 Naoki の指示で認証アプリの 6 桁（aal2）を外した。入れるのは b_admins に載ったメールでリンクを受け取った人だけ
   return { ok: true, email: v.email };
 }
@@ -2136,7 +2162,7 @@ async function handleApi(request, env, url) {
       const p = await guard.listPermissions(env);
       return json(buildGuide(TOOLS, p.permissions || []));
     }
-    if (path === "/api/admin/today" && method === "GET") { const r = await today.today(env); return json(r, r.ok === false ? 400 : 200); }
+    if (path === "/api/admin/today" && method === "GET") { const r = await today.today(env, Date.now(), { home: url.searchParams.get("for") === "home" }); return json(r, r.ok === false ? 400 : 200); }
     if (path === "/api/admin/board" && method === "GET") return json(await today.board(env));
     // シアニンパネルの細い画面（/panel・2026-11-02）：今日の動き。名前とメールは返さない
     if (path === "/api/admin/moves" && method === "GET") { const r = await today.moves(env); return json(r, r.ok === false ? 400 : 200); }

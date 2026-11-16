@@ -40,6 +40,7 @@ const errBox = () => ($("console").classList.contains("hidden") ? $("err") : $("
 const fail = (t) => { const b = errBox(); b.textContent = t; b.classList.remove("hidden"); };
 const clearErr = () => { $("err").classList.add("hidden"); $("err2").classList.add("hidden"); };
 let sb, token;
+let homePre = null; // 2026-11-16：ホームの 2 つを whoami と同時に読み始めた分
 
 async function start() {
   try { sb = await getClient(); } catch (e) { return fail(e.message); }
@@ -81,6 +82,9 @@ async function verify(factorId, code) {
 async function openConsole() {
   const { data } = await sb.auth.getSession();
   token = data.session.access_token;
+  // 2026-11-16 マーケくんの重さ：管理者の確かめ（whoami）を待ってからホームを読むと、その分だけ遅れていた。
+  // ホームで開くときは、確かめと同時にホームの 2 つを読み始める（受け口の側で管理者かを必ず確かめるので、先に読んでも漏れない）
+  homePre = location.hash ? null : Promise.all([api("/api/admin/today?for=home", { token }), api("/api/admin/board", { token })]);
   const who = await api("/api/admin/whoami", { token });
   if (!who.ok) {
     // 2026-10-11：同じ住所の生徒の画面（/app）でログインしたままだと、ここで止まってログインの欄が出なかった。
@@ -3080,7 +3084,8 @@ function setupCommunity() {
 // ---------- 便 8f-1：ホームの今日の 1 枚と段階のボード ----------
 const fmtHm = (iso) => new Date(iso).toLocaleTimeString("ja-JP", { timeZone: "Asia/Tokyo", hour: "2-digit", minute: "2-digit" });
 async function loadHome() {
-  const [r, b] = await Promise.all([api("/api/admin/today", { token }), api("/api/admin/board", { token }), ensureSay()]);
+  const pre = homePre; homePre = null;
+  const [[r, b]] = await Promise.all([pre || Promise.all([api("/api/admin/today?for=home", { token }), api("/api/admin/board", { token })]), ensureSay()]);
   if (!r.ok) { $("hm-cal").textContent = "読めませんでした（" + (r.error || r.status) + "）"; $("hm-todo").textContent = ""; }
   else {
     $("hm-day").textContent = r.day;

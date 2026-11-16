@@ -257,8 +257,8 @@ export function makeToday(h) {
   }
 
   // 2 つの読み元を 1 つの並びにまとめる。state は「どれか 1 つでも入っていれば ok か error」、全部無ければ unset
-  async function calendarToday(env, day) {
-    const parts = await Promise.all(CALENDARS.map((c) => readCalendar(env, c, day)));
+  async function calendarToday(env, day, only = null) {
+    const parts = await Promise.all(CALENDARS.filter((c) => !only || only.includes(c.which)).map((c) => readCalendar(env, c, day)));
     const events = parts.flatMap((p) => p.events);
     events.sort((a, b) => Number(b.all_day) - Number(a.all_day) || a.start.localeCompare(b.start));
     const anySet = parts.some((p) => p.state !== "unset");
@@ -303,17 +303,21 @@ export function makeToday(h) {
       note: "集客（まだリストインしていない人）は記録が無いので 0。段階は上から 紹介（その人のリンクから誰かが登録した）→ 受講（会員か教材を見た）→ オファー（買った）→ 個別相談 → アプローチ（リンクを押した・セミナー・ログイン）→ リストイン" };
   }
 
-  async function today(env, now = Date.now()) {
+  // home：シアニン用の画面のホームから呼ぶとき（2026-11-16 マーケくんの重さ・ホームが 5.5 秒）。
+  // ホームが見せるのは UTAGE のカレンダーとやることだけ（Google カレンダーと TaskMaster は haAku で見る・2026-11-04）、段階は /api/admin/board で別に読む。
+  // 使わないもの（Google カレンダー・TaskMaster・段階の計算）を読まない。AI の get_today は今までどおり全部
+  async function today(env, now = Date.now(), { home = false } = {}) {
     const day = jstDay(now);
     const from = new Date(jstMidnightUtc(day)).toISOString();
+    const SKIP = { state: "skipped", due_count: 0, overdue_count: 0, due: [], overdue: [] };
     const [cal, tasks, approvals, rooms, consults, notices, b] = await Promise.all([
-      calendarToday(env, day),
-      tasksToday(env, day),
+      calendarToday(env, day, home ? ["utage"] : null),
+      home ? SKIP : tasksToday(env, day),
       guard.listApprovals(env, { status: "pending" }),
       listRooms(env, { only_unreplied: true }),
       bin4.listConsults(env, {}),
       db(env, "GET", `events?select=customer_id,payload,occurred_at&type=eq.admin_notified&occurred_at=gte.${encodeURIComponent(from)}&order=occurred_at.desc&limit=50`),
-      board(env),
+      home ? { lanes: [] } : board(env),
     ]);
     const todayConsults = (consults.consults || []).filter((c) => jstDay(Date.parse(c.slot)) === day);
     const ids = [...new Set(notices.map((n) => n.customer_id))];
