@@ -67,7 +67,11 @@ export function mountSkillShelf(host, { getToken }) {
     .gsec{margin:0 0 18px}.gsec h2{font-size:15px;margin:0 0 8px}.gsec h2 small{color:var(--muted);font-weight:400;font-size:12px}
     .gh{display:flex;align-items:center;gap:8px;width:100%;background:none;border:0;padding:6px 0;font:inherit;font-size:15px;font-weight:700;color:inherit;cursor:pointer;text-align:left;min-height:44px}
     .gh small{color:var(--muted);font-weight:400;font-size:12px}.gh .cv{display:inline-block;width:14px;transition:transform .15s}.gh[aria-expanded="false"] .cv{transform:rotate(-90deg)}
-    .gtools{display:flex;gap:8px;margin:0 0 8px}.nmw{display:flex;align-items:center;gap:10px}.nmw .ic.sm{margin:0}.gsec:has(>div[hidden]){margin-bottom:4px}
+    .gtools{display:flex;gap:8px;margin:0 0 8px}
+    .stk{display:flex;align-items:center}.stk .sti{position:relative;display:block}.stk .sti+.sti{margin-left:-10px}.stk.big .sti+.sti{margin-left:-14px}
+    .stk .ic{border-radius:10px;background:var(--panel);box-shadow:0 0 0 2px var(--panel)}.stk .noic{display:block;background:var(--line)}
+    .stk .lt{position:absolute;right:-4px;bottom:-6px;font-size:10px;line-height:1;padding:2px 4px;border-radius:6px;background:var(--panel);border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+    .sk .stk.big{margin-bottom:6px}.nmw{display:flex;align-items:center;gap:10px}.nmw .ic.sm{margin:0}.gsec:has(>div[hidden]){margin-bottom:4px}
     .sks{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
     .sk{display:flex;flex-direction:column;gap:4px;text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer;font:inherit;color:inherit;min-height:44px}
     .sk:hover{border-color:var(--field)}.sk:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
@@ -234,19 +238,36 @@ export function mountSkillShelf(host, { getToken }) {
   }
 
   // ---------- レシピ ----------
+  // 2026-11-16 Naoki OK 10:44：レシピの見た目をスキルの棚とそろえる。レシピ専用のアイコンは作らず、入っているスキルのアイコンを優先の順に重ねて顔にする
+  let rview = (() => { try { return localStorage.getItem("recipes_view") === "list" ? "list" : "card"; } catch (_) { return "card"; } })();
+  const skillOf = (n) => S.skills.find((k) => k.name === n) || null;
+  const stack = (r, big) => `<span class="stk ${big ? "big" : ""}" aria-hidden="true">${r.uses.map((u) => { const k = skillOf(u.skill); const im = k && k.icon ? icon(k, big ? "" : "sm") : `<span class="ic ${big ? "" : "sm"} noic"></span>`; return `<span class="sti">${im}${u.pinned ? "" : '<span class="lt">最新</span>'}</span>`; }).join("")}</span>`;
+  const usesText = (r) => r.uses.map((u) => `${title(u.skill)} ${u.pinned ? u.version : "最新"}`).join("、");
+  const nflow = (r) => (Array.isArray(r.flow) ? r.flow.length : 0);
   function drawRecipes() {
-    const rows = S.recipes.filter((r) => hit(r.name, r.purpose, (r.uses || []).map((u) => u.skill).join(" ")));
+    const rows = S.recipes.filter((r) => hit(r.name, r.title, r.purpose, (r.uses || []).map((u) => `${u.skill} ${title(u.skill)}`).join(" ")));
+    const rcard = (r) => r.broken ? `<div class="sk"><span class="sk-t">${esc(r.name)}</span><span class="sk-p">頭が読めませんでした</span></div>`
+      : `<button class="sk" type="button" data-rc="${esc(r.name)}" aria-label="${esc(r.title || r.name)} を編集。入っているスキル：${esc(usesText(r))}">
+        ${stack(r, true)}
+        <span class="sk-t">${esc(r.title || r.name)}</span><span class="sk-id">${esc(r.name)}</span>
+        <span class="sk-p">${esc(r.purpose || "")}</span>
+        <span class="uses">${r.uses.map((u) => `<span class="use ${u.pinned ? "" : "latest"}">${esc(title(u.skill))} ${u.pinned ? esc(u.version) : "最新"}${u.strength && u.strength !== "標準" ? `・${esc(u.strength)}` : ""}</span>`).join("")}</span>
+        <span class="uses"><span class="use ver">流れ ${nflow(r)} 手順</span><span class="use ver">版 ${esc(r.version || "")}</span><span class="use ver">${esc(r.updated || "")}</span></span></button>`;
     $("#main").innerHTML = `<h1>レシピ</h1>${howLine}
       <p class="lead">スキルの組み合わせです。上の行ほど優先（ルールがぶつかったら勝つ）。保存すると版が 1 つ上がり、Claude・GPT は次に読むときからその版を使います（recipes__get）。</p>
-      <div class="bar"><button class="btn pri sm" type="button" id="new-recipe">＋ レシピを新規作成</button></div>
-      ${searchBar(rows.length, "名前・何に使うか・入っているスキル")}
-      <div class="tbl list"><table><thead><tr><th>レシピ</th><th>版</th><th>入っているスキル（上から優先）</th><th>更新</th></tr></thead><tbody>
-      ${rows.map((r) => r.broken ? `<tr><td class="nm">${esc(r.name)}<small>頭が読めませんでした</small></td><td></td><td></td><td></td></tr>` : `<tr class="rw" data-id="${esc(r.name)}" tabindex="0" aria-label="${esc(r.name)} を編集">
-        <td class="nm">${esc(r.title || r.name)}<small>${esc(r.title ? r.name + "・" : "")}${esc(r.purpose || "")}</small></td><td class="ver">${esc(r.version || "")}</td>
-        <td><div class="uses">${r.uses.map((u) => `<span class="use ${u.pinned ? "" : "latest"}" title="${esc(u.skill)}">${esc(title(u.skill))} ${u.pinned ? esc(u.version) : "最新"}${u.strength && u.strength !== "標準" ? `・${esc(u.strength)}` : ""}</span>`).join("")}</div></td>
+      <div class="bar"><button class="btn pri sm" type="button" id="new-recipe">＋ レシピを新規作成</button>
+        <span class="seg" role="group" aria-label="見せ方"><button type="button" class="btn sm" data-rview="card" aria-pressed="${rview === "card"}">カード</button><button type="button" class="btn sm" data-rview="list" aria-pressed="${rview === "list"}">リスト</button></span></div>
+      ${searchBar(rows.length, "表示名・何に使うか・入っているスキル")}
+      ${rview === "card" ? `<div class="sks">${rows.map(rcard).join("")}</div>` : `<div class="tbl list"><table><thead><tr><th>レシピ</th><th>入っているスキル（上から優先）</th><th>流れ</th><th>版</th><th>更新</th></tr></thead><tbody>
+      ${rows.map((r) => r.broken ? `<tr><td class="nm">${esc(r.name)}<small>頭が読めませんでした</small></td><td></td><td></td><td></td><td></td></tr>` : `<tr class="rw" data-id="${esc(r.name)}" tabindex="0" aria-label="${esc(r.title || r.name)} を編集">
+        <td class="nm">${esc(r.title || r.name)}<small>${esc(r.title ? r.name + "・" : "")}${esc(r.purpose || "")}</small></td>
+        <td><div class="nmw">${stack(r)}<div class="uses">${r.uses.map((u) => `<span class="use ${u.pinned ? "" : "latest"}" title="${esc(u.skill)}">${esc(title(u.skill))} ${u.pinned ? esc(u.version) : "最新"}${u.strength && u.strength !== "標準" ? `・${esc(u.strength)}` : ""}</span>`).join("")}</div></div></td>
+        <td class="ver">${nflow(r)} 手順</td><td class="ver">${esc(r.version || "")}</td>
         <td class="date">${esc(r.updated || "")}</td></tr>`).join("")}
-      </tbody></table></div>`;
+      </tbody></table></div>`}`;
     wireSearch(); wireRows(openRecipe);
+    $("#main").querySelectorAll("[data-rc]").forEach((b) => b.addEventListener("click", () => openRecipe(b.dataset.rc)));
+    $("#main").querySelectorAll("[data-rview]").forEach((b) => b.addEventListener("click", () => { rview = b.dataset.rview; try { localStorage.setItem("recipes_view", rview); } catch (_) {} draw(); const n = $(`[data-rview="${rview}"]`); if (n) n.focus(); }));
     $("#new-recipe").addEventListener("click", () => openRecipe(null));
   }
 
