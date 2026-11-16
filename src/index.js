@@ -1624,6 +1624,16 @@ async function handleApi(request, env, url) {
         if (!slug) { slug = pick(title); if (slug) by = "letters"; }
         return json({ ok: true, slug: slug ? (slug.startsWith("shia2n-") ? slug : `shia2n-${slug}`) : null, by }, 200, { "cache-control": "no-store" });
       }
+      // 2026-11-16 Naoki OK 15:40：棚から生徒に出す・引っ込める。点検（入れてはいけないファイル・内部の言葉・呼ぶスキル・相手のキー）は shia2n-mcp の側で必ず通る
+      if ((path === "/api/admin/skills/publish" || path === "/api/admin/skills/unpublish") && method === "POST") {
+        if (typeof env.SKILLS.publish !== "function") return json({ ok: false, error: "no_binding" }, 503);
+        const b = await request.json().catch(() => ({}));
+        const names = Array.isArray(b.names) ? b.names.slice(0, 10).map((n) => String(n || "")) : [];
+        const r = path.endsWith("/publish")
+          ? await env.SKILLS.publish({ names, keys: Array.isArray(b.keys) ? b.keys.slice(0, 10).map((k) => String(k || "")) : [], accept_hits: b.accept_hits === true, check_only: b.check_only === true })
+          : await env.SKILLS.unpublish({ names, check_only: b.check_only === true });
+        return json(r, 200);
+      }
       if (path === "/api/admin/skills/hypothesis" && method === "POST") {
         const b = await request.json().catch(() => ({}));
         const r = b.action === "add" ? await env.SKILLS.addHypothesis({ title: String(b.title || ""), words: String(b.words || ""), target: b.target ? String(b.target) : undefined })

@@ -63,3 +63,11 @@ test("棚のアイコンは img の data: で見せ、SVG をそのまま差し�
   assert.ok(/\/\^<svg\[\\\\s>\]\//.test(js) || js.includes("/^<svg[\\s>]/"));
   assert.ok(!/\$\{k\.icon\}/.test(js));
 });
+
+test("棚から生徒に出す（2026-11-16 Naoki OK 15:40）：プランの名前で選び、確かめてから出す。点検は shia2n-mcp の側", () => {
+  const ui = readFileSync(new URL("../public/js/skillshelf.js", import.meta.url), "utf8");
+  for (const s of ["/api/admin/skills/publish", "/api/admin/skills/unpublish", "check_only: true", "accept_hits", "シアラボ会員（全員）", "data-plan=", "もう一度押すと引っ込めます"]) assert.ok(ui.includes(s), s);
+  assert.ok(!ui.includes('"note_membership"') && !ui.includes('"shiarabo_paused"'), "マイページの無い相手は選ばせない");
+  const src = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
+  assert.ok(src.includes('path === "/api/admin/skills/publish"') && src.includes("env.SKILLS.publish(") && src.includes("env.SKILLS.unpublish("));
+});

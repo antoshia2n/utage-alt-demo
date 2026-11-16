@@ -29,6 +29,17 @@ const errText = (e) => {
   if (k === "no_skill") return `「${s.split(":")[1]}」は正本にありません`;
   return ERR[k] || `うまくいきませんでした（${s}）`;
 };
+// 生徒に出す相手（2026-11-16 Naoki「プランで呼ぶ方がわかりやすい」）。権利は商品と 1 対 1（2026-10-29）。
+// 会員（基本・NEXT・モニター）は全員「シアラボ会員」としても数える（src/index.js の skillKeys）。体験・メンシプ・休止はマイページが無いので出せない
+const PLANS = [
+  ["shiarabo_basic", "シアラボ会員（全員）", "基本・NEXT・モニターの全員に届く"],
+  ["shiarabo_next_premium", "NEXT プレミアム", ""],
+  ["shiarabo_next_standard", "NEXT スタンダード", ""],
+  ["shiarabo_monitor", "モニター", ""],
+  ["shiarabo_pilot", "先行で試す", "アプリを先に開く生徒"],
+  ["guest", "ゲスト", "期限つきの試用"],
+];
+const planName = (key) => (PLANS.find(([k]) => k === key) || [key, key])[1];
 const STATUS_KIND = { 仮説: "off", 確かめ中: "stop", 確定: "on", やめた: "off" };
 // 状態の欄は「仮説（2026-11-16・前は …）」や「仮説。次の版で…」の形。札には頭の語だけ出す
 const statusWord = (s) => String(s || "").split(/[（。(]/)[0].trim();
@@ -46,6 +57,10 @@ export function mountSkillShelf(host, { getToken }) {
     .use.latest{border-color:var(--ink);color:var(--ink)}
     td small{display:block;color:var(--muted);font-size:12px;font-weight:400}
     .drawer.wide{width:640px}
+    .plans{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 8px}
+    .pl{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:10px;padding:6px 10px;font-size:13px;background:var(--panel);cursor:pointer;min-height:36px}
+    .pl small{color:var(--muted);font-size:11px;margin-left:2px}
+    .pl input{margin:0}
     .ur{display:grid;grid-template-columns:28px minmax(0,1fr) 172px 84px 32px;gap:6px;align-items:center;border:1px solid var(--line);border-radius:10px;padding:6px 8px;margin-bottom:6px;background:var(--panel)}
     .ur.drag{opacity:.5}.ur.over{border-color:var(--ink)}
     .ur select{border:1px solid var(--field);background:var(--panel);border-radius:8px;padding:4px 6px;min-height:34px;font-size:13px;width:100%}
@@ -224,6 +239,12 @@ export function mountSkillShelf(host, { getToken }) {
         <dl class="meta"><dt>ID（AI が呼ぶ名前）</dt><dd>${esc(k.name)}</dd><dt>最新の版</dt><dd>${esc(k.version || "")}</dd><dt>生徒の版</dt><dd>${esc(k.student_version || "出していない")}</dd>
           <dt>使う場所</dt><dd>${esc(k.where.join("・"))}</dd><dt>見せる相手</dt><dd>${esc(k.audience.join("・"))}</dd><dt>担当</dt><dd>${esc(k.owner || "")}</dd>
           <dt>更新</dt><dd>${esc(k.updated || "")}</dd><dt>レシピでの扱い</dt><dd>${esc(k.kind || (k.latest_ok ? "基本スキル" : "選択スキル"))}・${k.latest_ok ? "最新にできる" : "版で固定"}</dd><dt>ファイル</dt><dd>${k.files} 個</dd></dl>
+        <div class="sec pub" style="margin-top:14px"><h3>生徒に出す</h3>
+          <p class="hint" style="margin-top:0">${k.student_version ? `いま生徒に出している版：<b>${esc(k.student_version)}</b>（相手：${esc(k.audience.filter((a) => PLANS.some(([p]) => p === a)).map(planName).join("・") || "なし")}）` : "まだ生徒に出していません"}。出すのは最新の版 ${esc(k.version || "")} です。</p>
+          <div class="plans">${PLANS.map(([key, label, sub]) => `<label class="pl"><input type="checkbox" data-plan="${key}" ${k.audience.includes(key) ? "checked" : ""}> ${esc(label)}${sub ? `<small>${esc(sub)}</small>` : ""}</label>`).join("")}</div>
+          <div class="bar"><button class="btn sm" type="button" id="pub-check">確かめる</button><button class="btn pri sm" type="button" id="pub-go" disabled>生徒に出す</button>${k.student_version ? '<button class="btn sm" type="button" id="pub-off">引っ込める</button>' : ""}</div>
+          <div id="pub-out" class="hint" aria-live="polite"></div>
+        </div>
         <div class="sec" style="margin-top:14px"><h3>参照している</h3>${(k.refs || []).length ? k.refs.map(linkSkill).join(" ") : '<p class="hint" style="margin:0">なし</p>'}</div>
         <div class="sec"><h3>参照されている</h3>${by.length || used.length ? [...by.map(linkSkill), ...used.map((r) => `<button class="btn sm" type="button" data-go-recipe="${esc(r)}">レシピ ${esc(r)} →</button>`)].join(" ") : '<p class="hint" style="margin:0">まだどこからも使われていません</p>'}</div>
         ${(k.conflicts || []).length ? `<div class="sec"><h3>一緒に使えない</h3>${k.conflicts.map(linkSkill).join(" ")}</div>` : ""}
@@ -234,7 +255,61 @@ export function mountSkillShelf(host, { getToken }) {
     const d = $("#drawer");
     d.querySelectorAll("[data-go-recipe]").forEach((b) => b.addEventListener("click", () => { tab = "recipes"; closeDrawer(true); draw(); openRecipe(b.dataset.goRecipe); }));
     d.querySelectorAll("[data-go-skill]").forEach((b) => b.addEventListener("click", () => openSkill(b.dataset.goSkill)));
+    wirePublish(k);
     $("#copy-ask").addEventListener("click", async () => { try { await navigator.clipboard.writeText(fixPrompt(k)); say("依頼文をコピーしました"); } catch (_) { say("コピーできませんでした。Claude で直す ↗ を使ってください"); } });
+  }
+
+
+  // ---------- 生徒に出す（2026-11-16 Naoki OK 15:40）----------
+  // 確かめる → 差分と引っかかった行を見る → 出す。引っかかった行があるときは「このまま出す」を押すまで出ない
+  function wirePublish(k) {
+    const out = $("#pub-out"), go = $("#pub-go");
+    let accept = false, checkedKeys = "";
+    const picked = () => [...$("#drawer").querySelectorAll("[data-plan]")].filter((c) => c.checked).map((c) => c.dataset.plan);
+    const lines = (r) => (r["見つかった行"] || []).map((h) => `<li><b>${esc(h.why)}</b>：${esc(h.file)} ${h.line} 行目「${esc(h.text)}」</li>`).join("");
+    const diffText = (r) => (r["差分"] || []).map((d) => `生徒の版 ${esc(d["生徒の版"])}・相手 ${esc((d["出す相手"] || []).map(planName).join("・"))}・写すファイル ${d["写すファイル"]} 個${(d["消すファイル"] || []).length ? `・消すファイル ${d["消すファイル"].length} 個` : ""}`).join("<br>");
+    const fail = (r) => `<span style="color:var(--warn)">${(r["直すこと"] || [errText(r.error || r.message)]).map(esc).join("<br>")}</span>`;
+    $("#drawer").querySelectorAll("[data-plan]").forEach((c) => c.addEventListener("change", () => { go.disabled = true; accept = false; out.innerHTML = ""; }));
+    $("#pub-check").addEventListener("click", async () => {
+      const keys = picked();
+      if (!keys.length) { out.innerHTML = k.student_version ? "相手を全部外すときは「引っ込める」を押します" : "出す相手を 1 つ以上選んでください"; return; }
+      out.textContent = "確かめています…"; go.disabled = true; accept = false;
+      const r = await call("/api/admin/skills/publish", { names: [k.name], keys, check_only: true });
+      checkedKeys = keys.join(",");
+      if (r.ok) { out.innerHTML = `${diffText(r)}<br>このまま「生徒に出す」を押すと届きます。`; go.disabled = false; return; }
+      if ((r["見つかった行"] || []).length && !(r["直すこと"] || []).some((t) => !/^内部の言葉/.test(t))) {
+        out.innerHTML = `${diffText(r)}<br><span style="color:var(--warn)">内部の言葉が見つかりました。生徒に見せてよいかを確かめてください。</span><ul style="margin:4px 0 0;padding-left:18px">${lines(r)}</ul><button class="btn sm" type="button" id="pub-accept" style="margin-top:6px">見たうえで、このまま出せるようにする</button>`;
+        $("#pub-accept").addEventListener("click", () => { accept = true; go.disabled = false; $("#pub-accept").remove(); say("「生徒に出す」を押すと、見つかった行を含めて届きます"); });
+        return;
+      }
+      out.innerHTML = fail(r) + (lines(r) ? `<ul style="margin:4px 0 0;padding-left:18px">${lines(r)}</ul>` : "");
+    });
+    go.addEventListener("click", async () => {
+      const keys = picked();
+      if (keys.join(",") !== checkedKeys) { go.disabled = true; out.textContent = "相手が変わりました。もう一度「確かめる」を押してください"; return; }
+      go.disabled = true; go.textContent = "出しています…";
+      const r = await call("/api/admin/skills/publish", { names: [k.name], keys, accept_hits: accept });
+      go.textContent = "生徒に出す";
+      if (!r.ok) { out.innerHTML = fail(r); return; }
+      const nm = k.name;
+      await load(r.at);
+      say(`「${k.title || nm}」の ${k.version} を生徒に出しました（相手：${keys.map(planName).join("・")}）`);
+      openSkill(nm);
+    });
+    const off = $("#pub-off");
+    if (off) {
+      let armed = false;
+      off.addEventListener("click", async () => {
+        if (!armed) { armed = true; off.textContent = "もう一度押すと引っ込めます"; out.textContent = "生徒のカードから消えます。消したあとも、いつでも出し直せます"; return; }
+        off.disabled = true; off.textContent = "引っ込めています…";
+        const r = await call("/api/admin/skills/unpublish", { names: [k.name] });
+        if (!r.ok) { off.disabled = false; off.textContent = "引っ込める"; armed = false; out.innerHTML = fail(r); return; }
+        const nm = k.name;
+        await load(r.at);
+        say(`「${k.title || nm}」を生徒から引っ込めました`);
+        openSkill(nm);
+      });
+    }
   }
 
   // ---------- レシピ ----------
