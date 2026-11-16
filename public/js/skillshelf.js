@@ -68,9 +68,9 @@ export function mountSkillShelf(host, { getToken }) {
     .gh{display:flex;align-items:center;gap:8px;width:100%;background:none;border:0;padding:6px 0;font:inherit;font-size:15px;font-weight:700;color:inherit;cursor:pointer;text-align:left;min-height:44px}
     .gh small{color:var(--muted);font-weight:400;font-size:12px}.gh .cv{display:inline-block;width:14px;transition:transform .15s}.gh[aria-expanded="false"] .cv{transform:rotate(-90deg)}
     .gtools{display:flex;gap:8px;margin:0 0 8px}
-    .stk{display:flex;align-items:center}.stk .sti{position:relative;display:block}.stk .sti+.sti{margin-left:-10px}.stk.big .sti+.sti{margin-left:-14px}
-    .stk .ic{border-radius:10px;background:var(--panel);box-shadow:0 0 0 2px var(--panel)}.stk .noic{display:block;background:var(--line)}
-    .stk .lt{position:absolute;right:-4px;bottom:-6px;font-size:10px;line-height:1;padding:2px 4px;border-radius:6px;background:var(--panel);border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+    .stk{display:flex;align-items:center;gap:4px;flex-wrap:wrap}.stk .sti{position:relative;display:block}.stk:not(.big) .sti .ic.sm{margin:0}
+    .stk .ic{border-radius:10px}.stk .noic{display:block;background:var(--line)}
+    .stk .lt{position:absolute;right:-6px;bottom:-8px;font-size:10px;line-height:1;padding:2px 4px;border-radius:6px;background:var(--panel);border:1px solid var(--line);color:var(--muted);white-space:nowrap}
     .sk .stk.big{margin-bottom:6px}.nmw{display:flex;align-items:center;gap:10px}.nmw .ic.sm{margin:0}.gsec:has(>div[hidden]){margin-bottom:4px}
     .sks{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
     .sk{display:flex;flex-direction:column;gap:4px;text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer;font:inherit;color:inherit;min-height:44px}
