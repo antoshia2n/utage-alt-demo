@@ -55,3 +55,11 @@ test("棚の便 3：レシピの流れ（手順・プロンプト・確認）と
   const src = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
   assert.ok(src.includes('path === "/api/admin/skills/slug"') && src.includes("title: b.title == null ? null"));
 });
+
+test("棚のアイコンは img の data: で見せ、SVG をそのまま差し込まない（2026-11-16 スキルのアイコン）", async () => {
+  const { readFileSync } = await import("node:fs");
+  const js = readFileSync(new URL("../public/js/skillshelf.js", import.meta.url), "utf8");
+  assert.ok(js.includes('src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(k.icon)}"'));
+  assert.ok(/\/\^<svg\[\\\\s>\]\//.test(js) || js.includes("/^<svg[\\s>]/"));
+  assert.ok(!/\$\{k\.icon\}/.test(js));
+});

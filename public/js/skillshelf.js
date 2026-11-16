@@ -68,6 +68,8 @@ export function mountSkillShelf(host, { getToken }) {
     .sks{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
     .sk{display:flex;flex-direction:column;gap:4px;text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer;font:inherit;color:inherit;min-height:44px}
     .sk:hover{border-color:var(--field)}.sk:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
+    .sk-h{display:flex;align-items:center;gap:10px}.sk-h>span{display:flex;flex-direction:column;gap:2px;min-width:0}
+    .ic{width:40px;height:40px;flex:none;display:block}.ic.sm{width:24px;height:24px;vertical-align:middle;margin-right:8px}.ic.lg{width:48px;height:48px}.dh h2{display:flex;align-items:center;gap:12px}
     .sk-t{font-size:15px;font-weight:700}.sk-id{font-size:12px;color:var(--muted);font-family:ui-monospace,monospace}
     .sk-p{font-size:13px;color:var(--fg);line-height:1.5}
     .sk .uses{margin-top:4px}.use.md{border-style:dashed}.use.ver{background:none}.use.stu{border-color:var(--ink);color:var(--ink)}
@@ -133,6 +135,8 @@ export function mountSkillShelf(host, { getToken }) {
   // 便 2（2026-11-16 Naoki OK 08:16）：表示名を主役に、ジャンルでまとめ、ジャンル・カテゴリ・媒体で絞る。カードと表を切り替える
   const F = { genre: new Set(), category: new Set(), media: new Set() };
   let view = (() => { try { return localStorage.getItem("skills_view") || "card"; } catch (_) { return "card"; } })();
+  // スキルのアイコン（正本の assets/icon.svg・STANDARD.md 7 節）。img の data: で見せる（同じ id の SVG を並べてもぶつからないため）。読むだけの飾りなので alt は空
+  const icon = (k, size = "") => k && k.icon && /^<svg[\s>]/.test(k.icon) ? `<img class="ic ${size}" alt="" src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(k.icon)}">` : "";
   const title = (n) => { const x = S.skills.find((k) => k.name === n); return (x && x.title) || n; };
   const refBy = (n) => S.skills.filter((k) => (k.refs || []).includes(n)).map((k) => k.name);
   const chips = (arr, cls) => (arr || []).map((v) => `<span class="use ${cls || ""}">${esc(v)}</span>`).join("");
@@ -146,7 +150,7 @@ export function mountSkillShelf(host, { getToken }) {
     const nf = F.genre.size + F.category.size + F.media.size;
     const fset = (key, label, vals) => `<fieldset class="fg"><legend>${label}</legend>${vals.map((v) => `<label><input type="checkbox" data-f="${key}" value="${esc(v)}" ${F[key].has(v) ? "checked" : ""}> ${esc(v)}</label>`).join("")}</fieldset>`;
     const card = (k) => `<button class="sk" type="button" data-sk="${esc(k.name)}" aria-label="${esc(k.title || k.name)} の詳細を開く">
-        <span class="sk-t">${esc(k.title || k.name)}</span><span class="sk-id">${esc(k.name)}</span>
+        <span class="sk-h">${icon(k)}<span><span class="sk-t">${esc(k.title || k.name)}</span><span class="sk-id">${esc(k.name)}</span></span></span>
         <span class="sk-p">${esc(k.purpose || "")}</span>
         <span class="uses">${chips(k.category)}${chips(k.media, "md")}<span class="use ver">版 ${esc(k.version || "")}</span>${k.student_version ? `<span class="use stu">生徒 ${esc(k.student_version)}</span>` : ""}</span></button>`;
     const byGenre = genres.map((g) => [g, rows.filter((k) => k.genre === g)]).filter(([, a]) => a.length);
@@ -165,7 +169,7 @@ export function mountSkillShelf(host, { getToken }) {
         ? byGenre.map(([g, a]) => `<section class="gsec"><h2>${esc(g)} <small>${a.length}</small></h2><div class="sks">${a.map(card).join("")}</div></section>`).join("") + (none.length ? `<section class="gsec"><h2>ジャンル未設定</h2><div class="sks">${none.map(card).join("")}</div></section>` : "")
         : `<div class="tbl list"><table><thead><tr><th>スキル</th><th>ジャンル</th><th>カテゴリ</th><th>媒体</th><th>最新の版</th><th>生徒の版</th><th>担当</th><th>更新</th></tr></thead><tbody>
       ${rows.map((k) => `<tr class="rw" data-id="${esc(k.name)}" tabindex="0" aria-label="${esc(k.title || k.name)} の詳細を開く">
-        <td class="nm">${esc(k.title || k.name)}<small>${esc(k.name)}</small></td><td>${esc(k.genre || "")}</td><td>${esc((k.category || []).join("・"))}</td><td>${esc((k.media || []).join("・"))}</td>
+        <td class="nm">${icon(k, "sm")}${esc(k.title || k.name)}<small>${esc(k.name)}</small></td><td>${esc(k.genre || "")}</td><td>${esc((k.category || []).join("・"))}</td><td>${esc((k.media || []).join("・"))}</td>
         <td class="ver">${esc(k.version || "")}</td>
         <td class="ver ${k.student_version && k.student_version !== k.version ? "diff" : ""}">${k.student_version ? esc(k.student_version) + (k.student_version !== k.version ? "（古い）" : "") : ""}</td>
         <td>${esc(k.owner || "")}</td><td class="date">${esc(k.updated || "")}</td></tr>`).join("")}
@@ -193,7 +197,7 @@ export function mountSkillShelf(host, { getToken }) {
     const used = usedBy(name), by = refBy(name);
     const linkSkill = (n) => S.skills.some((x) => x.name === n) ? `<button class="btn sm" type="button" data-go-skill="${esc(n)}">${esc(title(n))} →</button>` : S.recipes.some((r) => r.name === n) ? `<button class="btn sm" type="button" data-go-recipe="${esc(n)}">レシピ ${esc(n)} →</button>` : `<span class="use">${esc(n)}（正本に無い）</span>`;
     const ask = `https://claude.ai/new?q=${encodeURIComponent(fixPrompt(k))}`;
-    openDrawer(`<div class="dh"><h2 id="d-title">${esc(k.title || k.name)}</h2><button class="x" type="button" id="d-close" aria-label="閉じる">✕</button></div>
+    openDrawer(`<div class="dh"><h2 id="d-title">${icon(k, "lg")}${esc(k.title || k.name)}</h2><button class="x" type="button" id="d-close" aria-label="閉じる">✕</button></div>
       <div class="db">
         <p style="margin-top:0"><span class="use">${esc(k.genre || "ジャンル未設定")}</span> ${chips(k.category)} ${chips(k.media, "md")}</p>
         <p>${esc(k.purpose || "")}</p>
