@@ -623,7 +623,7 @@ export const EMBED_JS = `(() => {
   const look = document.createElement("link"); look.rel = "stylesheet"; look.href = "/_lab/look.css";
   document.head.insertBefore(look, document.head.firstChild);
   const css = document.createElement("style");
-  css.textContent = ".lab-form,.lab-checkout{max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:12px;text-align:left;box-sizing:border-box}.lab-form label{display:block;font-size:14px;margin:0 0 4px}.lab-input{width:100%;box-sizing:border-box;min-height:44px;padding:10px 12px;font-size:16px;border:1px solid #c9c9c9;border-radius:8px;background:#fff;color:#111}.lab-btn{display:inline-block;box-sizing:border-box;width:100%;min-height:52px;border:0;border-radius:10px;background:#1f6f5c;color:#fff;font-size:17px;font-weight:700;cursor:pointer;text-align:center;text-decoration:none;line-height:52px;padding:0 16px}.lab-btn[disabled]{opacity:.6}.lab-note{font-size:13px;opacity:.8}.lab-err{color:#b3261e;font-size:13px}.lab-check{display:flex;gap:8px;align-items:flex-start;font-size:14px}.lab-days{display:flex;flex-direction:column;gap:10px}.lab-day-h{font-size:13px;font-weight:700;margin-bottom:4px}.lab-slots{display:flex;flex-wrap:wrap;gap:6px}.lab-slot{min-height:40px;padding:0 12px;border:1px solid #c9c9c9;border-radius:8px;background:#fff;color:#111;font-size:15px;cursor:pointer}.lab-slot.on{background:#1f6f5c;border-color:#1f6f5c;color:#fff}";
+  css.textContent = ".lab-form,.lab-checkout{max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:12px;text-align:left;box-sizing:border-box}.lab-form label{display:block;font-size:14px;margin:0 0 4px}.lab-input{width:100%;box-sizing:border-box;min-height:44px;padding:10px 12px;font-size:16px;border:1px solid #c9c9c9;border-radius:8px;background:#fff;color:#111}.lab-btn{display:inline-block;box-sizing:border-box;width:100%;min-height:52px;border:0;border-radius:10px;background:#1f6f5c;color:#fff;font-size:17px;font-weight:700;cursor:pointer;text-align:center;text-decoration:none;line-height:52px;padding:0 16px}.lab-btn[disabled]{opacity:.6}.lab-note{font-size:13px;opacity:.8}.lab-err{color:#b3261e;font-size:13px}.lab-check{display:flex;gap:8px;align-items:flex-start;font-size:14px}.lab-bk{--bk:var(--lab-c,#1f6f5c);max-width:640px;margin:0 auto;text-align:left;box-sizing:border-box;container-type:inline-size;font-size:15px;line-height:1.6}.lab-bk *{box-sizing:border-box}.lab-bk [hidden]{display:none!important}.lab-bk-top{margin-top:14px}.lab-bk-title{font-weight:700;font-size:17px}.lab-bk-steps{display:flex;gap:6px;flex-wrap:wrap;list-style:none;margin:8px 0 14px;padding:0;font-size:13px}.lab-bk-steps li{padding:4px 12px;border-radius:99px;background:#efefef;color:#666}.lab-bk-steps li.on{background:var(--bk);color:#fff;font-weight:700}.lab-bk-pick{display:grid;gap:18px}@container (min-width:560px){.lab-bk-pick{grid-template-columns:minmax(0,1fr) 190px;align-items:start}.lab-bk-tlist{grid-template-columns:1fr!important;max-height:372px;overflow:auto;padding-right:2px}.lab-bk-pick .lab-err{grid-column:1/-1}}.lab-bk-cal-h{display:flex;align-items:center;gap:8px;margin-bottom:8px}.lab-bk-cal-h b{flex:1;text-align:center;font-size:17px}.lab-bk-nav{width:44px;height:44px;border-radius:99px;border:1px solid #ddd;background:#fff;color:#111;font-size:22px;line-height:1;cursor:pointer;padding:0}.lab-bk-nav:disabled{opacity:.3;cursor:default}.lab-bk-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}.lab-bk-wd{text-align:center;font-size:12px;color:#888;padding:2px 0 4px}.lab-bk-wd.sun{color:#c0392b}.lab-bk-wd.sat{color:#2563eb}.lab-bk-d{position:relative;aspect-ratio:1/1;min-height:44px;border:0;border-radius:99px;background:transparent;display:grid;place-items:center;font:inherit;font-size:15px;color:#b5b5b5;padding:0}.lab-bk-d.on{background:#e6f0ed;background:color-mix(in srgb,var(--bk) 14%,#fff);color:var(--bk);font-weight:700;cursor:pointer}.lab-bk-d[aria-pressed=true]{background:var(--bk);color:#fff}.lab-bk-d.today::after{content:'';position:absolute;bottom:5px;width:4px;height:4px;border-radius:99px;background:currentColor}.lab-bk-tz{margin-top:8px}.lab-bk-th{font-weight:700;margin:0 0 8px}.lab-bk-tlist{display:grid;grid-template-columns:1fr 1fr;gap:8px}.lab-bk-t{min-height:48px;border-radius:10px;border:1px solid var(--bk);background:#fff;color:var(--bk);font:inherit;font-weight:700;font-size:16px;cursor:pointer;padding:0 8px}.lab-bk-t small{font-weight:400;font-size:13px}.lab-bk-t:active,.lab-bk-t:hover{background:#f1f7f5;background:color-mix(in srgb,var(--bk) 8%,#fff)}.lab-bk .lab-form{max-width:none}.lab-bk .lab-check{display:flex}.lab-bk-sum{display:flex;align-items:center;gap:4px 10px;flex-wrap:wrap;border:1px solid var(--bk);border-radius:12px;padding:10px 14px;background:#f4f9f7;background:color-mix(in srgb,var(--bk) 6%,#fff)}.lab-bk-sum b{flex:1;min-width:170px;font-size:16px}.lab-bk-back{border:0;background:none;color:var(--bk);font:inherit;font-weight:700;min-height:44px;cursor:pointer;padding:0 4px;text-decoration:underline}.lab-bk-done{text-align:center;padding:16px 0;outline:none}.lab-bk-done b{display:block;font-size:19px}.lab-bk-ok{width:52px;height:52px;border-radius:99px;background:var(--bk);color:#fff;display:grid;place-items:center;font-size:26px;margin:0 auto 10px}.lab-bk-when{font-size:16px;font-weight:700;margin:6px 0 8px}";
   // ページの CSS で上書きできるよう、差し込む見た目は head のいちばん前に置く
   document.head.insertBefore(css, document.head.firstChild);
   async function mountForm(el, slug, onOk) {
@@ -671,18 +671,39 @@ export const EMBED_JS = `(() => {
     el.innerHTML = '<div style="font-weight:700">' + esc(p.name) + '</div><div style="font-size:22px;font-weight:700">' + esc(price) + "</div>"
       + '<a class="lab-btn" href="' + (PREVIEW ? "#" : esc(href)) + '" data-lab-button="checkout:' + esc(p.id) + '">申し込む</a>';
   }
-  // 便 13b：予約の枠。空き時間を日ごとに並べ、押した枠で予約する
+  // 2026-11-21：予約の枠を「月のカレンダーで日を選ぶ → その日の時間を選ぶ → 質問に答えて申し込む」の 3 段にした。
+  // 前は空き時間を日付順に 1 列で並べていて、60 日・60 分の種類だと 320 件になり選べなかった（Naoki「死ぬほど使いづらい」）。
+  // 生徒の画面（public/js/app.js の startPick・drawCal・drawTimes）と同じ流れ。印 data-lab-part="booking:slug" と予約の種類の設定は変えていない
+  const BK_WD = ["日", "月", "火", "水", "木", "金", "土"];
+  const jstKey = (iso) => new Date(Date.parse(iso) + 9 * 3600e3).toISOString().slice(0, 10);
+  const jstTime = (iso) => new Date(Date.parse(iso) + 9 * 3600e3).toISOString().slice(11, 16);
+  const dayLabel = (k) => { const p = k.split("-").map(Number); return p[1] + "月" + p[2] + "日（" + BK_WD[new Date(Date.UTC(p[0], p[1] - 1, p[2])).getUTCDay()] + "）"; };
+  const shiftYm = (ym, n) => { const p = ym.split("-").map(Number); return new Date(Date.UTC(p[0], p[1] - 1 + n, 1)).toISOString().slice(0, 7); };
+  const narrow = () => !!(window.matchMedia && matchMedia("(max-width: 640px)").matches);
   async function mountBooking(el, slug) {
-    el.classList.add("lab-form");
+    el.classList.add("lab-bk");
+    el.innerHTML = '<p class="lab-note">空き時間を読み込んでいます…</p>';
     const r = await fetch("/api/p/booking/" + encodeURIComponent(slug)).then((x) => x.json()).catch(() => ({}));
     if (!r.ok) { el.innerHTML = '<p class="lab-note">この予約はいま受け付けていません</p>'; return; }
     if (!r.slots.length) { el.innerHTML = '<p class="lab-note">いま予約できる空き時間がありません。少し時間をおいてもう一度ご覧ください</p>'; return; }
-    const days = [];
-    for (const s of r.slots) { let d = days.find((x) => x.day === s.day); if (!d) days.push(d = { day: s.day, items: [] }); d.items.push(s); }
-    let picked = "";
-    el.innerHTML = '<div style="font-weight:700">' + esc(r.type.title) + (/分/.test(r.type.title) ? '' : '（' + esc(r.type.minutes) + ' 分）') + '</div><div class="lab-note">ご都合のよい時間を 1 つ選んでください</div>'
-      + '<div class="lab-days">' + days.map((d) => '<div class="lab-day"><div class="lab-day-h">' + esc(d.day) + '</div><div class="lab-slots">' + d.items.map((s) => '<button type="button" class="lab-slot" data-slot="' + esc(s.slot) + '">' + esc(s.label.split("）")[1] || s.label) + "</button>").join("") + "</div></div>").join("") + "</div>"
-      + '<div class="lab-picked lab-note" data-picked>まだ選んでいません</div>'
+    const minutes = Number(r.type.minutes) || 30;
+    const endOf = (s) => s.end || jstTime(new Date(Date.parse(s.slot) + minutes * 6e4).toISOString());
+    const span = (s) => jstTime(s.slot) + "〜" + endOf(s);
+    const open = new Map();
+    for (const s of [...r.slots].sort((a, b) => Date.parse(a.slot) - Date.parse(b.slot))) { const k = jstKey(s.slot); if (!open.has(k)) open.set(k, []); open.get(k).push(s); }
+    const firstDay = () => [...open.keys()].sort()[0] || "";
+    const months = () => [...new Set([...open.keys()].map((k) => k.slice(0, 7)))].sort();
+    const st = { day: firstDay(), ym: "", slot: "" };
+    st.ym = (st.day || jstKey(new Date().toISOString())).slice(0, 7);
+    el.innerHTML = '<div class="lab-bk-top"><div class="lab-bk-title">' + esc(r.type.title) + (/分/.test(r.type.title) ? "" : "（" + esc(minutes) + " 分）") + "</div>"
+      + '<ol class="lab-bk-steps"><li data-s="1">1 日時を選ぶ</li><li data-s="2">2 入力して申し込む</li></ol></div>'
+      + '<div class="lab-bk-pick" data-pick>'
+      + '<div class="lab-bk-cal"><div class="lab-bk-cal-h"><button type="button" class="lab-bk-nav" data-prev aria-label="前の月">‹</button><b data-ym aria-live="polite"></b><button type="button" class="lab-bk-nav" data-next aria-label="次の月">›</button></div>'
+      + '<div class="lab-bk-grid" data-grid></div><div class="lab-note lab-bk-tz">色のついた日に空きがあります・日本時間</div></div>'
+      + '<div class="lab-bk-times" data-times><div class="lab-bk-th" data-th></div><div class="lab-bk-tlist" data-tl></div></div>'
+      + '<div class="lab-err" data-pmsg aria-live="polite"></div></div>'
+      + '<div class="lab-form lab-bk-form" data-form hidden>'
+      + '<div class="lab-bk-sum"><span class="lab-note">選んだ日時</span><b data-sum></b><button type="button" class="lab-bk-back" data-back>日時を変える</button></div>'
       + '<div><label>お名前</label><input class="lab-input" data-k="name" type="text" maxlength="60" autocomplete="name"></div>'
       + '<div><label>メールアドレス<span class="lab-note">（必須）</span></label><input class="lab-input" data-k="email" type="email" required autocomplete="email"></div>'
       + ((r.questions && r.questions.length) ? r.questions.map((qq) => '<div><label>' + esc(qq.label) + (qq.required ? '<span class="lab-note">（必須）</span>' : '') + '</label>'
@@ -691,38 +712,85 @@ export const EMBED_JS = `(() => {
             : '<textarea class="lab-input" data-q="' + esc(qq.key) + '" rows="3" maxlength="4000">' + esc(qq.hint || "") + '</textarea>') + '</div>').join("")
         : '<div><label>相談したいこと</label><textarea class="lab-input" data-k="topic" rows="3" maxlength="1000"></textarea></div>')
       + '<label class="lab-check"><input type="checkbox" data-k="consent"><span><a href="' + LAB + '/legal/privacy" target="_blank" rel="noopener">プライバシーポリシー</a>と<a href="' + LAB + '/legal/tokushoho" target="_blank" rel="noopener">特定商取引法に基づく表記</a>を確かめました</span></label>'
-      + '<button type="button" class="lab-btn" data-go>' + (PREVIEW ? "（見本なので予約できません）" : "この時間で予約する") + '</button><div class="lab-err" data-msg></div>';
-    const q = (s) => el.querySelector(s), msg = q("[data-msg]"), go = q("[data-go]");
+      + '<button type="button" class="lab-btn" data-go>' + (PREVIEW ? "（見本なので予約できません）" : "この日時で予約する") + '</button><div class="lab-err" data-msg aria-live="polite"></div></div>';
+    const q = (s) => el.querySelector(s), msg = q("[data-msg]"), go = q("[data-go]"), pick = q("[data-pick]"), form = q("[data-form]");
+    const stepOn = (n) => el.querySelectorAll("[data-s]").forEach((x) => x.classList.toggle("on", x.dataset.s === String(n)));
+    const toTop = () => { const top = el.getBoundingClientRect().top; if (top < 0 || top > innerHeight * 0.6) el.scrollIntoView({ block: "start", behavior: "smooth" }); };
+    function drawCal() {
+      const p = st.ym.split("-").map(Number), ms = months();
+      q("[data-ym]").textContent = p[0] + "年" + p[1] + "月";
+      q("[data-prev]").disabled = !ms.length || st.ym <= ms[0];
+      q("[data-next]").disabled = !ms.length || st.ym >= ms[ms.length - 1];
+      const first = new Date(Date.UTC(p[0], p[1] - 1, 1)).getUTCDay(), n = new Date(Date.UTC(p[0], p[1], 0)).getUTCDate(), today = jstKey(new Date().toISOString());
+      let h = BK_WD.map((w, i) => '<div class="lab-bk-wd' + (i === 0 ? " sun" : i === 6 ? " sat" : "") + '">' + w + "</div>").join("") + "<div></div>".repeat(first);
+      for (let d = 1; d <= n; d++) {
+        const k = st.ym + "-" + String(d).padStart(2, "0"), c = (open.get(k) || []).length, cls = k === today ? " today" : "";
+        h += c ? '<button type="button" class="lab-bk-d on' + cls + '" data-day="' + k + '" aria-pressed="' + (k === st.day) + '" aria-label="' + dayLabel(k) + "・空き " + c + ' 枠">' + d + "</button>"
+          : '<div class="lab-bk-d' + cls + '" aria-hidden="true">' + d + "</div>";
+      }
+      q("[data-grid]").innerHTML = h;
+      q("[data-grid]").querySelectorAll("[data-day]").forEach((x) => x.addEventListener("click", () => {
+        st.day = x.dataset.day; drawCal(); drawTimes(); q("[data-pmsg]").textContent = "";
+        if (narrow()) q("[data-times]").scrollIntoView({ block: "start", behavior: "smooth" });
+      }));
+    }
+    function drawTimes() {
+      const list = open.get(st.day) || [];
+      q("[data-th]").textContent = st.day && list.length ? dayLabel(st.day) + " の空き時間" : "日にちを選んでください";
+      q("[data-tl]").innerHTML = list.map((s) => '<button type="button" class="lab-bk-t" data-slot="' + esc(s.slot) + '" aria-label="' + esc(dayLabel(st.day) + " " + span(s)) + '">' + esc(jstTime(s.slot)) + "<small> – " + esc(endOf(s)) + "</small></button>").join("");
+      q("[data-tl]").querySelectorAll("[data-slot]").forEach((b) => b.addEventListener("click", () => showForm(b.dataset.slot)));
+    }
+    function showPick() {
+      pick.hidden = false; form.hidden = true; stepOn(1);
+      if (st.day && !open.has(st.day)) st.day = firstDay();
+      if (st.day) st.ym = st.day.slice(0, 7);
+      drawCal(); drawTimes(); toTop();
+    }
+    function showForm(slot) {
+      const s = (open.get(jstKey(slot)) || []).find((x) => x.slot === slot); if (!s) return;
+      st.slot = slot; pick.hidden = true; form.hidden = false; stepOn(2); msg.textContent = "";
+      q("[data-sum]").textContent = dayLabel(jstKey(slot)) + " " + span(s);
+      toTop();
+      const f = q('[data-k="name"]'); if (f && !narrow()) f.focus({ preventScroll: true });
+    }
+    q("[data-prev]").addEventListener("click", () => { st.ym = shiftYm(st.ym, -1); drawCal(); });
+    q("[data-next]").addEventListener("click", () => { st.ym = shiftYm(st.ym, 1); drawCal(); });
+    q("[data-back]").addEventListener("click", showPick);
+    showPick();
     const answersOf = () => { const a = Object.fromEntries([...el.querySelectorAll("[data-q]")].map((x) => [x.dataset.q, x.value]));
       for (const x of el.querySelectorAll("[data-qc]")) { const k = x.dataset.qc; if (x.dataset.kind === "check") { a[k] = a[k] || []; if (x.checked) a[k].push(x.value); } else if (x.checked) a[k] = x.value; else if (!(k in a)) a[k] = ""; }
       return a; };
-    el.querySelectorAll("[data-slot]").forEach((b) => b.addEventListener("click", () => {
-      el.querySelectorAll("[data-slot]").forEach((x) => x.classList.toggle("on", x === b));
-      picked = b.dataset.slot;
-      const s = r.slots.find((x) => x.slot === picked);
-      q("[data-picked]").textContent = "選んだ時間：" + (s ? s.label : "");
-    }));
     if (PREVIEW) { go.disabled = true; return; }
-    const bot = await mountBot(el, r.bot_site_key, go);
+    const bot = await mountBot(form, r.bot_site_key, go);
     go.addEventListener("click", async () => {
       const email = q('[data-k="email"]').value.trim();
-      if (!picked) { msg.textContent = "時間を 1 つ選んでください"; return; }
+      if (!st.slot) { showPick(); return; }
       if (bot && !bot.get()) { msg.textContent = bot.broken ? "確認のチェックを読み込めませんでした。ページを開き直してください" : "確認のチェックが終わるまでお待ちください"; return; }
       if (!/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(email)) { msg.textContent = "メールアドレスを確かめてください"; return; }
       if (!q('[data-k="consent"]').checked) { msg.textContent = "プライバシーポリシーと表記を確かめて、チェックを入れてください"; return; }
       go.disabled = true; msg.textContent = "予約しています…";
       const res = await fetch("/api/p/booking/" + encodeURIComponent(slug), { method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email, name: q('[data-k="name"]').value.trim(), topic: q('[data-k="topic"]') ? q('[data-k="topic"]').value : "", answers: answersOf(), consent: true, slot: picked, page: PAGE, r: route, vid, source: store.get("lab_src") || "direct", turnstile: bot ? bot.get() : "" }) })
+        body: JSON.stringify({ email, name: q('[data-k="name"]').value.trim(), topic: q('[data-k="topic"]') ? q('[data-k="topic"]').value : "", answers: answersOf(), consent: true, slot: st.slot, page: PAGE, r: route, vid, source: store.get("lab_src") || "direct", turnstile: bot ? bot.get() : "" }) })
         .then((x) => x.json()).catch(() => ({ ok: false, error: "network" }));
       go.disabled = false;
       if (!res.ok && bot) bot.reset();
       if (BOT_MSG[res.error]) { msg.textContent = BOT_MSG[res.error]; return; }
       if (res.ok && res.u) store.set("lab_u", res.u);
       if (res.ok && res.thanks_url && /^https:[/][/]/.test(res.thanks_url)) { location.href = res.thanks_url; return; }
-      if (res.ok) { el.innerHTML = '<p class="lab-note" style="white-space:pre-wrap">' + esc(res.label + " で予約を受け付けました。確認のメールをお送りしました。") + "</p>"; return; }
+      if (res.ok) {
+        const s = (open.get(jstKey(st.slot)) || []).find((x) => x.slot === st.slot);
+        el.innerHTML = '<div class="lab-bk-done" tabindex="-1"><div class="lab-bk-ok" aria-hidden="true">✓</div><b>予約を受け付けました</b><div class="lab-bk-when">' + esc(s ? dayLabel(jstKey(st.slot)) + " " + span(s) : res.label) + "（日本時間）</div>"
+          + '<p class="lab-note">確認のメールをお送りしました。届かないときは迷惑メールのフォルダもご覧ください。</p></div>';
+        const d = el.querySelector(".lab-bk-done"); d.focus({ preventScroll: true }); toTop(); return;
+      }
+      if (res.error === "slot_taken") {
+        const k = jstKey(st.slot), left = (open.get(k) || []).filter((x) => x.slot !== st.slot);
+        if (left.length) open.set(k, left); else open.delete(k);
+        st.slot = ""; showPick(); q("[data-pmsg]").textContent = "その時間はちょうど埋まりました。ほかの時間を選んでください（入力した内容は残っています）"; return;
+      }
       if (res.error === "answer_required") { msg.textContent = "「" + (res.label || "") + "」を書いてください"; return; }
       if (res.error === "bad_answer" || res.error === "bad_number") { msg.textContent = "「" + (res.label || "") + "」を確かめてください" + (res.error === "bad_number" ? "（数字で）" : ""); return; }
-      msg.textContent = res.error === "slot_taken" ? "その時間はちょうど埋まりました。ほかの時間を選んでください" : res.error === "already_booked" ? "すでに " + (res.label || "") + " で予約があります" : res.error === "bad_email" ? "メールアドレスを確かめてください" : "予約できませんでした。時間をおいてもう一度お試しください";
+      msg.textContent = res.error === "already_booked" ? "すでに " + (res.label || "") + " で予約があります" : res.error === "bad_email" ? "メールアドレスを確かめてください" : "予約できませんでした。時間をおいてもう一度お試しください";
     });
   }
   // 便 S2：公開サイトの部品。中身は読者の段階（この端末の印 lab_u）で B が選ぶ。見たは B が数え、押した・登録はここから送る

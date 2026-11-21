@@ -496,7 +496,7 @@ export function makeBooking(h) {
     if (!t || !t.active || t.archived_at || (t.audience || "public") !== "public") return { ok: false, error: "not_found" };
     const r = await slots(env, t);
     return { ok: true, type: { title: t.title, minutes: t.minutes }, questions: (t.questions || []).map(({ key, label, kind, required, hint, options }) => ({ key, label, kind, required, hint, ...(options ? { options } : {}) })),
-      slots: r.slots.map((s) => ({ slot: s, label: fmtJst(s), day: fmtJst(s).split("（")[0] })) };
+      slots: r.slots.map((s) => ({ slot: s, label: fmtJst(s), day: fmtJst(s).split("（")[0], end: endLabel(s, t.minutes) })) };
   }
 
   async function getSlots(env, { type_id, slug } = {}) {
