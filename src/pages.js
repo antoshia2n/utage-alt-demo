@@ -12,6 +12,7 @@
 //   data-lab-button="名前"             … ボタン。押したら出来事に積み、コネクタのきっかけ「ページのボタンを押した」になる
 //   data-lab-part="booking:slug"     … 便 13b：個別相談の予約の枠（空き時間を選び、名前とメールで予約する）
 //   data-lab-part="part:名前"         … 便 S2（2026-11-07）：公開サイトの部品（src/web.js）。中身は読者の段階で変わる
+//   data-lab-part="blog:latest-8"    … 便 X1（2026-11-24 Naoki OK）：公開中のブログの新しい記事を 8 本（1〜24・省くと 8）。home に新着を手で書き足さないため
 // 便 S1（2026-11-07）：embed.js は /_lab/look.css（公開サイトの見た目・src/web.js）も head の先頭に足す。ページは var(--lab-c) などで色を当てる
 // 便 T2（2026-11-07 Naoki OK 23:05）：期間限定の公開。b_pages の closes_at を過ぎたら、closed_to のページ（公開中・自分以外）か
 //   決まった「公開は終了しました」の画面を出す。ページの中の data-lab-countdown の所には「あと 2日 3時間」のように残りが入る。
@@ -38,11 +39,13 @@ const now = () => new Date().toISOString();
 export function parseParts(html) {
   // 便 13：HTML の注意書き（<!-- -->）の中の印は読まない（便 12a の版 1 で、説明の文の印を印として拾った件）
   const s = String(html || "").replace(/<!--[\s\S]*?-->/g, "");
-  const forms = new Set(), checkouts = new Set(), buttons = new Set(), bookings = new Set(), webParts = new Set(), bad = [];
+  const forms = new Set(), checkouts = new Set(), buttons = new Set(), bookings = new Set(), webParts = new Set(), blogs = new Set(), bad = [];
   for (const m of s.matchAll(/data-lab-part\s*=\s*["']([^"']*)["']/g)) {
     const v = m[1].trim();
     const f = v.match(/^form:(.+)$/), c = v.match(/^checkout:(.+)$/), bk = v.match(/^booking:(.+)$/), wp = v.match(/^part:(.+)$/);
+    const bl = v.match(/^blog:latest(?:-([0-9]{1,2}))?$/);
     if (f && SLUG_RE.test(f[1])) forms.add(f[1]);
+    else if (bl && (!bl[1] || (Number(bl[1]) >= 1 && Number(bl[1]) <= 24))) blogs.add(v);
     else if (wp && /^[a-z0-9][a-z0-9-]{1,30}$/.test(wp[1])) webParts.add(wp[1]);
     else if (bk && SLUG_RE.test(bk[1])) bookings.add(bk[1]);
     else if (c && PRODUCT_ID_RE.test(c[1])) checkouts.add(c[1]);
@@ -52,7 +55,7 @@ export function parseParts(html) {
     const v = m[1].trim();
     if (BUTTON_RE.test(v)) buttons.add(v); else bad.push("button:" + v.slice(0, 40));
   }
-  return { forms: [...forms], checkouts: [...checkouts], buttons: [...buttons], bookings: [...bookings], web_parts: [...webParts], bad };
+  return { forms: [...forms], checkouts: [...checkouts], buttons: [...buttons], bookings: [...bookings], web_parts: [...webParts], blogs: [...blogs], bad };
 }
 
 // 公開のときに B の差し込みの仕掛けを足す（Claude が書いた同じ行は外してから 1 回だけ）
@@ -227,6 +230,7 @@ export function makePages(h) {
       countdown: "期間限定の残り（便 T2）：<span data-lab-countdown></span> の所に「あと 2日 3時間 4分」が入る（set_page_close で期限を決めたページだけ）。期限を過ぎると、決めたページか「公開は終了しました」の画面になる",
       booking: "予約の枠：<div data-lab-part=\"booking:予約の種類の住所の名前\"></div>。空き時間の一覧と、名前・メール・相談したいこと・同意の欄が入る。予約した人は台帳に入り、受付のメールが届く",
       look: "公開サイトの見た目（便 S1）：B が /_lab/look.css を自分で読ませる。色は var(--lab-c)（主の色）・var(--lab-c2)（差し色）・var(--lab-bg)・var(--lab-card)・var(--lab-line)・var(--lab-fg)・var(--lab-mut)、角は var(--lab-r)、字は var(--lab-font)・var(--lab-head) を使う（テーマを替えると全ページが変わる）。記事の装飾は class lab-toc（目次）・lab-box（ボックス）・lab-fuki（ふきだし）",
+      blog: "ブログの新着（便 X1）：<div data-lab-part=\"blog:latest-8\"></div>。公開中の記事の新しい順に、サムネ（16:9）・題名・日付のカードが並ぶ（数は 1〜24・省くと 8）。カードは class lab-bl（並べる箱）・lab-bc（カード 1 枚）",
       part: "公開サイトの部品（便 S2）：<div data-lab-part=\"part:部品の名前\"></div>。中身（題・文・ボタンか申込の枠）は読者の段階で変わり、マーケくんの「ブログ・公開ページ › 部品」で 1 か所を直すと全部のページで変わる。使える部品は get_web の parts",
       thanks: "サンクスページ（目的 thanks）：申込の枠もボタンも要らない。申込を受け付けたこと・日時・参加の URL はメールで届くこと・迷惑メールの確かめ方を書く。セミナーの回に結ぶのは set_seminar の thanks_page_slug",
       forms: fl.filter((f) => f.active).map((f) => ({ slug: f.slug, title: f.title })),
@@ -623,7 +627,7 @@ export const EMBED_JS = `(() => {
   const look = document.createElement("link"); look.rel = "stylesheet"; look.href = "/_lab/look.css";
   document.head.insertBefore(look, document.head.firstChild);
   const css = document.createElement("style");
-  css.textContent = ".lab-form,.lab-checkout{max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:12px;text-align:left;box-sizing:border-box}.lab-form label{display:block;font-size:14px;margin:0 0 4px}.lab-input{width:100%;box-sizing:border-box;min-height:44px;padding:10px 12px;font-size:16px;border:1px solid #c9c9c9;border-radius:8px;background:#fff;color:#111}.lab-btn{display:inline-block;box-sizing:border-box;width:100%;min-height:52px;border:0;border-radius:10px;background:#1f6f5c;color:#fff;font-size:17px;font-weight:700;cursor:pointer;text-align:center;text-decoration:none;line-height:52px;padding:0 16px}.lab-btn[disabled]{opacity:.6}.lab-note{font-size:13px;opacity:.8}.lab-err{color:#b3261e;font-size:13px}.lab-check{display:flex;gap:8px;align-items:flex-start;font-size:14px}.lab-bk{--bk:var(--lab-c,#1f6f5c);max-width:640px;margin:0 auto;text-align:left;box-sizing:border-box;container-type:inline-size;font-size:15px;line-height:1.6}.lab-bk *{box-sizing:border-box}.lab-bk [hidden]{display:none!important}.lab-bk-top{margin-top:14px}.lab-bk-title{font-weight:700;font-size:17px}.lab-bk-steps{display:flex;gap:6px;flex-wrap:wrap;list-style:none;margin:8px 0 14px;padding:0;font-size:13px}.lab-bk-steps li{padding:4px 12px;border-radius:99px;background:#efefef;color:#666}.lab-bk-steps li.on{background:var(--bk);color:#fff;font-weight:700}.lab-bk-pick{display:grid;gap:18px}@container (min-width:560px){.lab-bk-pick{grid-template-columns:minmax(0,1fr) 190px;align-items:start}.lab-bk-tlist{grid-template-columns:1fr!important;max-height:372px;overflow:auto;padding-right:2px}.lab-bk-pick .lab-err{grid-column:1/-1}}.lab-bk-cal-h{display:flex;align-items:center;gap:8px;margin-bottom:8px}.lab-bk-cal-h b{flex:1;text-align:center;font-size:17px}.lab-bk-nav{width:44px;height:44px;border-radius:99px;border:1px solid #ddd;background:#fff;color:#111;font-size:22px;line-height:1;cursor:pointer;padding:0}.lab-bk-nav:disabled{opacity:.3;cursor:default}.lab-bk-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}.lab-bk-wd{text-align:center;font-size:12px;color:#888;padding:2px 0 4px}.lab-bk-wd.sun{color:#c0392b}.lab-bk-wd.sat{color:#2563eb}.lab-bk-d{position:relative;aspect-ratio:1/1;min-height:44px;border:0;border-radius:99px;background:transparent;display:grid;place-items:center;font:inherit;font-size:15px;color:#b5b5b5;padding:0}.lab-bk-d.on{background:#e6f0ed;background:color-mix(in srgb,var(--bk) 14%,#fff);color:var(--bk);font-weight:700;cursor:pointer}.lab-bk-d[aria-pressed=true]{background:var(--bk);color:#fff}.lab-bk-d.today::after{content:'';position:absolute;bottom:5px;width:4px;height:4px;border-radius:99px;background:currentColor}.lab-bk-tz{margin-top:8px}.lab-bk-th{font-weight:700;margin:0 0 8px}.lab-bk-tlist{display:grid;grid-template-columns:1fr 1fr;gap:8px}.lab-bk-t{min-height:48px;border-radius:10px;border:1px solid var(--bk);background:#fff;color:var(--bk);font:inherit;font-weight:700;font-size:16px;cursor:pointer;padding:0 8px}.lab-bk-t small{font-weight:400;font-size:13px}.lab-bk-t:active,.lab-bk-t:hover{background:#f1f7f5;background:color-mix(in srgb,var(--bk) 8%,#fff)}.lab-bk .lab-form{max-width:none}.lab-bk .lab-check{display:flex}.lab-bk-sum{display:flex;align-items:center;gap:4px 10px;flex-wrap:wrap;border:1px solid var(--bk);border-radius:12px;padding:10px 14px;background:#f4f9f7;background:color-mix(in srgb,var(--bk) 6%,#fff)}.lab-bk-sum b{flex:1;min-width:170px;font-size:16px}.lab-bk-back{border:0;background:none;color:var(--bk);font:inherit;font-weight:700;min-height:44px;cursor:pointer;padding:0 4px;text-decoration:underline}.lab-bk-done{text-align:center;padding:16px 0;outline:none}.lab-bk-done b{display:block;font-size:19px}.lab-bk-ok{width:52px;height:52px;border-radius:99px;background:var(--bk);color:#fff;display:grid;place-items:center;font-size:26px;margin:0 auto 10px}.lab-bk-when{font-size:16px;font-weight:700;margin:6px 0 8px}";
+  css.textContent = ".lab-form,.lab-checkout{max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:12px;text-align:left;box-sizing:border-box}.lab-form label{display:block;font-size:14px;margin:0 0 4px}.lab-input{width:100%;box-sizing:border-box;min-height:44px;padding:10px 12px;font-size:16px;border:1px solid #c9c9c9;border-radius:8px;background:#fff;color:#111}.lab-btn{display:inline-block;box-sizing:border-box;width:100%;min-height:52px;border:0;border-radius:10px;background:#1f6f5c;color:#fff;font-size:17px;font-weight:700;cursor:pointer;text-align:center;text-decoration:none;line-height:52px;padding:0 16px}.lab-btn[disabled]{opacity:.6}.lab-note{font-size:13px;opacity:.8}.lab-err{color:#b3261e;font-size:13px}.lab-check{display:flex;gap:8px;align-items:flex-start;font-size:14px}.lab-bk{--bk:var(--lab-c,#1f6f5c);max-width:640px;margin:0 auto;text-align:left;box-sizing:border-box;container-type:inline-size;font-size:15px;line-height:1.6}.lab-bk *{box-sizing:border-box}.lab-bk [hidden]{display:none!important}.lab-bk-top{margin-top:14px}.lab-bk-title{font-weight:700;font-size:17px}.lab-bk-steps{display:flex;gap:6px;flex-wrap:wrap;list-style:none;margin:8px 0 14px;padding:0;font-size:13px}.lab-bk-steps li{padding:4px 12px;border-radius:99px;background:#efefef;color:#666}.lab-bk-steps li.on{background:var(--bk);color:#fff;font-weight:700}.lab-bk-pick{display:grid;gap:18px}@container (min-width:560px){.lab-bk-pick{grid-template-columns:minmax(0,1fr) 190px;align-items:start}.lab-bk-tlist{grid-template-columns:1fr!important;max-height:372px;overflow:auto;padding-right:2px}.lab-bk-pick .lab-err{grid-column:1/-1}}.lab-bk-cal-h{display:flex;align-items:center;gap:8px;margin-bottom:8px}.lab-bk-cal-h b{flex:1;text-align:center;font-size:17px}.lab-bk-nav{width:44px;height:44px;border-radius:99px;border:1px solid #ddd;background:#fff;color:#111;font-size:22px;line-height:1;cursor:pointer;padding:0}.lab-bk-nav:disabled{opacity:.3;cursor:default}.lab-bk-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}.lab-bk-wd{text-align:center;font-size:12px;color:#888;padding:2px 0 4px}.lab-bk-wd.sun{color:#c0392b}.lab-bk-wd.sat{color:#2563eb}.lab-bk-d{position:relative;aspect-ratio:1/1;min-height:44px;border:0;border-radius:99px;background:transparent;display:grid;place-items:center;font:inherit;font-size:15px;color:#b5b5b5;padding:0}.lab-bk-d.on{background:#e6f0ed;background:color-mix(in srgb,var(--bk) 14%,#fff);color:var(--bk);font-weight:700;cursor:pointer}.lab-bk-d[aria-pressed=true]{background:var(--bk);color:#fff}.lab-bk-d.today::after{content:'';position:absolute;bottom:5px;width:4px;height:4px;border-radius:99px;background:currentColor}.lab-bk-tz{margin-top:8px}.lab-bk-th{font-weight:700;margin:0 0 8px}.lab-bk-tlist{display:grid;grid-template-columns:1fr 1fr;gap:8px}.lab-bk-t{min-height:48px;border-radius:10px;border:1px solid var(--bk);background:#fff;color:var(--bk);font:inherit;font-weight:700;font-size:16px;cursor:pointer;padding:0 8px}.lab-bk-t small{font-weight:400;font-size:13px}.lab-bk-t:active,.lab-bk-t:hover{background:#f1f7f5;background:color-mix(in srgb,var(--bk) 8%,#fff)}.lab-bk .lab-form{max-width:none}.lab-bk .lab-check{display:flex}.lab-bk-sum{display:flex;align-items:center;gap:4px 10px;flex-wrap:wrap;border:1px solid var(--bk);border-radius:12px;padding:10px 14px;background:#f4f9f7;background:color-mix(in srgb,var(--bk) 6%,#fff)}.lab-bk-sum b{flex:1;min-width:170px;font-size:16px}.lab-bk-back{border:0;background:none;color:var(--bk);font:inherit;font-weight:700;min-height:44px;cursor:pointer;padding:0 4px;text-decoration:underline}.lab-bk-done{text-align:center;padding:16px 0;outline:none}.lab-bk-done b{display:block;font-size:19px}.lab-bk-ok{width:52px;height:52px;border-radius:99px;background:var(--bk);color:#fff;display:grid;place-items:center;font-size:26px;margin:0 auto 10px}.lab-bk-when{font-size:16px;font-weight:700;margin:6px 0 8px}.lab-bl{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:24px 16px}.lab-bc{display:block;color:inherit;text-decoration:none;min-width:0}.lab-bc img,.lab-bc i{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:12px;background:#f2f2f4}.lab-bc b{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin:10px 0 4px;font-size:15px;line-height:1.45}.lab-bc small{font-size:13px;opacity:.65}.lab-bc:hover b{text-decoration:underline}";
   // ページの CSS で上書きできるよう、差し込む見た目は head のいちばん前に置く
   document.head.insertBefore(css, document.head.firstChild);
   async function mountForm(el, slug, onOk) {
@@ -808,8 +812,20 @@ export const EMBED_JS = `(() => {
     if (p.form) mountForm(el.querySelector("[data-in]"), p.form, () => ping("signup"));
     else el.querySelector(".lab-part-go").addEventListener("click", () => ping("click"));
   }
+  // 便 X1：ブログの新着のカード（home など）。記事が無ければ枠ごと隠す
+  async function mountBlog(el, n) {
+    el.classList.add("lab-bl");
+    const r = await fetch("/api/p/blog-latest?n=" + n).then((x) => x.json()).catch(() => ({}));
+    const rows = (r && r.ok && r.posts) || [];
+    if (!rows.length) { el.innerHTML = ""; el.style.display = "none"; return; }
+    el.innerHTML = rows.map((p) => '<a class="lab-bc" href="/blog/' + encodeURIComponent(p.slug) + '">'
+      + (p.thumb_url && /^https:[/][/]/.test(p.thumb_url) ? '<img src="' + esc(p.thumb_url) + '" alt="" loading="lazy">' : '<i aria-hidden="true"></i>')
+      + "<b>" + esc(p.title) + "</b><small>" + esc(p.date || "") + "</small></a>").join("");
+  }
   document.querySelectorAll("[data-lab-part]").forEach((el) => {
     const v = el.getAttribute("data-lab-part") || "";
+    const bl = v.match(/^blog:latest(?:-([0-9]{1,2}))?$/);
+    if (bl) { mountBlog(el, Math.min(24, Math.max(1, Number(bl[1] || 8)))); return; }
     if (v.startsWith("part:")) { mountPart(el, v.slice(5)); return; }
     if (v.startsWith("booking:")) mountBooking(el, v.slice(8));
     else if (v.startsWith("form:")) mountForm(el, v.slice(5));

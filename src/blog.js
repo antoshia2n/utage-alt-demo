@@ -353,6 +353,12 @@ ${more.length ? `<section class="bmore"><h2>ほかの記事</h2><div class="bl">
       }),
     };
   }
+  // 便 X1：公開中の新しい記事 n 本（ページの印 blog:latest-n が読む）。下書き・止めた記事は出さない
+  async function latest(env, n = 8) {
+    const k = Math.min(24, Math.max(1, Number(n) || 8));
+    const rows = await db(env, "GET", `b_blog_posts?select=slug,title,thumb_url,published_at&status=eq.published&order=published_at.desc&limit=${k}`).catch(() => []);
+    return { ok: true, posts: rows.map((r) => ({ slug: r.slug, title: r.title, thumb_url: r.thumb_url || "", date: jpDate(r.published_at) })) };
+  }
   async function sitemap(env) {
     const rows = await db(env, "GET", "b_blog_posts?select=slug,updated_at&status=eq.published&order=published_at.desc&limit=5000").catch(() => []);
     const o = origin(env);
@@ -370,5 +376,5 @@ ${more.length ? `<section class="bmore"><h2>ほかの記事</h2><div class="bl">
     return { ok: true };
   }
 
-  return { get, sources, copy, save, publicIndex, publicArticle, sitemap, hit, views };
+  return { get, sources, copy, save, publicIndex, publicArticle, latest, sitemap, hit, views };
 }
