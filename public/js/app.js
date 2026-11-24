@@ -381,7 +381,7 @@ function paintBookingLine(ready) {
   const old = home.querySelector(".bk-line"); if (old) old.remove();
   home.insertAdjacentHTML("afterbegin", `<div class="bk-line"><span>シアニンに相談したいときは</span><a class="btn small" href="#booking">相談を予約する →</a></div>`);
 }
-const BK_WHY = { bad_answer: "選択肢から選んでください", bad_number: "数字で入力してください", slot_taken: "その時間はちょうど埋まりました。ほかの時間を選択してください", already_booked: "このメニューは、すでに予約があります", bad_slot: "その時間は選択できません", answer_required: "入力されていない項目があります", not_found: "この予約はいま受け付けていません", too_late: "変更・キャンセルの期限を過ぎています。ご連絡ください", bad_minutes: "その所要時間は選択できません" };
+const BK_WHY = { bad_answer: "選択肢から選んでください", bad_number: "数字で入力してください", slot_taken: "その時間はちょうど埋まりました。ほかの時間を選択してください", already_booked: "このメニューは、すでに予約があります", bad_slot: "その時間は選択できません", answer_required: "入力されていない項目があります", not_found: "この予約はいま受け付けていません", too_late: "変更・キャンセルの期限を過ぎています。ご連絡ください", bad_minutes: "その所要時間は選択できません", full: "募集の数に達したため、受付を締め切りました" };
 const BK_WD = ["日", "月", "火", "水", "木", "金", "土"];
 // 状態：bk.data＝サーバーの答え・bk.menu＝選んでいるメニュー・bk.day＝選んだ日（YYYY-MM-DD・日本時間）・bk.slot＝選んだ枠・bk.ym＝表示中の月・bk.moving＝日時を変更している予約・bk.draft＝書きかけ
 const bk = { token: null, data: null, menu: null, day: null, slot: null, ym: null, moving: null, draft: {}, step: "pick", len: null };

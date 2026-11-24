@@ -685,6 +685,7 @@ export const EMBED_JS = `(() => {
     el.innerHTML = '<p class="lab-note">空き時間を読み込んでいます…</p>';
     const r = await fetch("/api/p/booking/" + encodeURIComponent(slug)).then((x) => x.json()).catch(() => ({}));
     if (!r.ok) { el.innerHTML = '<p class="lab-note">この予約はいま受け付けていません</p>'; return; }
+    if (r.full) { el.innerHTML = '<p class="lab-note">募集の数に達したため、受付を締め切りました</p>'; return; }
     if (!r.slots.length) { el.innerHTML = '<p class="lab-note">いま予約できる空き時間がありません。少し時間をおいてもう一度ご覧ください</p>'; return; }
     const minutes = Number(r.type.minutes) || 30;
     const endOf = (s) => s.end || jstTime(new Date(Date.parse(s.slot) + minutes * 6e4).toISOString());
@@ -790,7 +791,7 @@ export const EMBED_JS = `(() => {
       }
       if (res.error === "answer_required") { msg.textContent = "「" + (res.label || "") + "」を書いてください"; return; }
       if (res.error === "bad_answer" || res.error === "bad_number") { msg.textContent = "「" + (res.label || "") + "」を確かめてください" + (res.error === "bad_number" ? "（数字で）" : ""); return; }
-      msg.textContent = res.error === "already_booked" ? "すでに " + (res.label || "") + " で予約があります" : res.error === "bad_email" ? "メールアドレスを確かめてください" : "予約できませんでした。時間をおいてもう一度お試しください";
+      msg.textContent = res.error === "full" ? "募集の数に達したため、受付を締め切りました" : res.error === "already_booked" ? "すでに " + (res.label || "") + " で予約があります" : res.error === "bad_email" ? "メールアドレスを確かめてください" : "予約できませんでした。時間をおいてもう一度お試しください";
     });
   }
   // 便 S2：公開サイトの部品。中身は読者の段階（この端末の印 lab_u）で B が選ぶ。見たは B が数え、押した・登録はここから送る

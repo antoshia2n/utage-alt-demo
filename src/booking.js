@@ -276,7 +276,7 @@ export function makeBooking(h) {
     active: t.active, archived: !!t.archived_at, audience: t.audience || "public", entitlements: t.entitlements || [], questions: t.questions || [], after_actions: t.after_actions || [],
     description: t.description || "", color: t.color || "", allowed_members: t.allowed_members || [],
     week_hours: weekHours(t), date_overrides: t.date_overrides || {}, durations: t.durations || [], slot_step: t.slot_step || null,
-    buffer_before: t.buffer_before || 0, buffer_after: t.buffer_after || 0, max_per_day: t.max_per_day || null, max_per_person: t.max_per_person || 1, cancel_hours: t.cancel_hours ?? null, reminders: Array.isArray(t.reminders) ? t.reminders : null, gcal_write: t.gcal_write !== false, gcal_invite: t.gcal_invite !== false, staff_id: t.staff_id || null,
+    buffer_before: t.buffer_before || 0, buffer_after: t.buffer_after || 0, max_per_day: t.max_per_day || null, max_total: t.max_total || null, max_per_person: t.max_per_person || 1, cancel_hours: t.cancel_hours ?? null, reminders: Array.isArray(t.reminders) ? t.reminders : null, gcal_write: t.gcal_write !== false, gcal_invite: t.gcal_invite !== false, staff_id: t.staff_id || null,
     embed: (t.audience || "public") === "public" ? `<div data-lab-part="booking:${t.slug}"></div>` : "", ...extra,
   });
 
@@ -357,7 +357,7 @@ export function makeBooking(h) {
       row.durations = arr.length > 1 ? arr : [];
       if (arr.length) row.minutes = arr[0];
     }
-    for (const [k, min, max] of [["slot_step", 5, 240], ["max_per_day", 1, 50], ["cancel_hours", 0, 168]]) if (k in args) {
+    for (const [k, min, max] of [["slot_step", 5, 240], ["max_per_day", 1, 50], ["max_total", 1, 500], ["cancel_hours", 0, 168]]) if (k in args) {
       const v = args[k] === null || args[k] === "" ? null : Number(args[k]);
       if (v !== null && (!Number.isInteger(v) || v < min || v > max)) return { ok: false, error: "bad_" + k };
       row[k] = v;
@@ -469,9 +469,14 @@ export function makeBooking(h) {
   }
 
   // 空き時間（公開の面と AI の両方）。カレンダーが読めないときは、予定を避けずに出して calendar に理由を返す
-  async function slots(env, t, at = Date.now(), minutes = t.minutes) {
+  async function slots(env, t, at = Date.now(), minutes = t.minutes, { allowFull = false } = {}) {
     const range = [at, at + ((t.days_ahead || 14) + 1) * DAY];
     let all = await bookings(env);
+    // 先着の数（2026-11-24・人数限定の個別相談）：このメニューの生きている予約（済んだものも含む・取り消しは引く）が数に届いたら、空きを出さない。
+    // 日時の変更（allowFull）は席を増やさないので止めない
+    const taken = all.filter((b) => b.type_id === t.id).length;
+    const full = !!t.max_total && taken >= t.max_total;
+    if (full && !allowFull) return { slots: [], calendar: "off", booked: [], busy: [], full: true, taken };
     // 担当者がいるメニューは、同じ担当者の予約とだけ重なりを避ける（担当者の無い古い予約はどれとも避ける）
     if (t.staff_id) {
       const staffOf = new Map((await db(env, "GET", "b_booking_types?select=id,staff_id")).map((x) => [x.id, x.staff_id]));
@@ -488,14 +493,14 @@ export function makeBooking(h) {
         busy = r.busy || []; calendar = r.state;
       } else calendar = g.state === "none" ? "unset" : g.state;
     }
-    return { slots: freeSlots(t, { booked, busy }, at, minutes), calendar, booked, busy };
+    return { slots: freeSlots(t, { booked, busy }, at, minutes), calendar, booked, busy, full, taken };
   }
 
   async function publicSlots(env, slug) {
     const t = await typeBySlug(env, slug);
     if (!t || !t.active || t.archived_at || (t.audience || "public") !== "public") return { ok: false, error: "not_found" };
     const r = await slots(env, t);
-    return { ok: true, type: { title: t.title, minutes: t.minutes }, questions: (t.questions || []).map(({ key, label, kind, required, hint, options }) => ({ key, label, kind, required, hint, ...(options ? { options } : {}) })),
+    return { ok: true, type: { title: t.title, minutes: t.minutes }, ...(r.full ? { full: true } : {}), questions: (t.questions || []).map(({ key, label, kind, required, hint, options }) => ({ key, label, kind, required, hint, ...(options ? { options } : {}) })),
       slots: r.slots.map((s) => ({ slot: s, label: fmtJst(s), day: fmtJst(s).split("（")[0], end: endLabel(s, t.minutes) })) };
   }
 
@@ -503,7 +508,7 @@ export function makeBooking(h) {
     const t = type_id ? await typeById(env, type_id) : await typeBySlug(env, slug);
     if (!t) return { ok: true, found: false };
     const r = await slots(env, t);
-    return { ok: true, found: true, title: t.title, count: r.slots.length, calendar: r.calendar, slots: r.slots.slice(0, 200).map((s) => ({ slot: s, label: fmtJst(s) })) };
+    return { ok: true, found: true, title: t.title, count: r.slots.length, calendar: r.calendar, ...(t.max_total ? { max_total: t.max_total, taken: r.taken, full: r.full } : {}), slots: r.slots.slice(0, 200).map((s) => ({ slot: s, label: fmtJst(s) })) };
   }
 
   async function sendNotice(env, t, b, person, which, actor) {
@@ -562,7 +567,9 @@ export function makeBooking(h) {
     const iso = parseStart(slot);
     if (!iso) return { ok: false, error: "bad_slot" };
     // 予約の直前にもう一度空きを確かめる（同じ枠を 2 人が取らない）
-    const free = (await slots(env, t)).slots;
+    const sr = await slots(env, t);
+    if (sr.full) return { ok: false, error: "full", note: "募集の数に達しました" };
+    const free = sr.slots;
     if (!free.includes(iso)) return { ok: false, error: "slot_taken" };
     const topic = String(body.topic || "").trim().slice(0, 1000);
     const ans = cleanAnswers(t.questions, body.answers);
@@ -644,7 +651,7 @@ export function makeBooking(h) {
       const mineT = mine.filter((b) => b.type_id === t.id);
       out.push({ slug: t.slug, title: t.title, minutes: t.minutes, ...(options ? { options } : {}), max_per_person: t.max_per_person || 1, cancel_hours: t.cancel_hours ?? null, description: t.description || "", color: t.color || "", zoom: !!t.zoom_url, ...(t.active ? {} : { paused: true }),
         questions: (t.questions || []).map(({ key, label, kind, required, hint, options }) => ({ key, label, kind, required, hint, ...(options ? { options } : {}) })),
-        booked: mineT.length >= (t.max_per_person || 1), slots: mk(r.slots, t.minutes) });
+        booked: mineT.length >= (t.max_per_person || 1), ...(r.full ? { full: true } : {}), slots: mk(r.slots, t.minutes) });
     }
     return { ok: true, ready: out.length > 0, types: out,
       mine: mine.map((b) => { const t = types.find((x) => x.id === b.type_id); return { slot: b.slot, label: fmtJst(b.slot), end: endLabel(b.slot, b.minutes), slug: t ? t.slug : null, title: b.type_title || (t || {}).title || "個別相談", minutes: b.minutes, answers: b.answers, ...(t && tooLate(t, b.slot, at) ? { locked: true, cancel_hours: t.cancel_hours } : {}) }; }) };
@@ -659,7 +666,9 @@ export function makeBooking(h) {
     if (ans.error) return { ok: false, error: ans.error, key: ans.key, label: ans.label };
     const lens = lengthsOf(t), m = body.minutes == null || body.minutes === "" ? lens[0] : Number(body.minutes);
     if (!lens.includes(m)) return { ok: false, error: "bad_minutes" };
-    if (!(await slots(env, t, Date.now(), m)).slots.includes(iso)) return { ok: false, error: "slot_taken" };
+    const sr = await slots(env, t, Date.now(), m, { allowFull: !!body.from });
+    if (sr.full && !body.from) return { ok: false, error: "full", note: "募集の数に達しました" };
+    if (!sr.slots.includes(iso)) return { ok: false, error: "slot_taken" };
     // 日時を変更（from＝いまの予約の時刻）：同じ種類のいまの予約を、新しい時刻に入れ替える
     const fromIso = body.from ? parseStart(String(body.from)) : null;
     const mine = (await bookings(env)).filter((b) => b.customer_id === customer.id && b.type_id === t.id && Date.parse(b.slot) > Date.now());

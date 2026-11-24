@@ -1268,7 +1268,7 @@ const BT_WHY = {
   bad_days_ahead: "予約受付期間は 1〜90 日", bad_min_notice_hours: "予約締切は 0〜168 時間", bad_remind_minutes: "前日のリマインドは 1〜168 時間前（空欄で送らない）",
   bad_zoom_url: "Zoom の URL は https:// から入力してください", thanks_page_not_found: "そのページが見つかりません", bad_description: "説明は 1000 字までです", bad_color: "色が正しくありません", bad_allowed_members: "個別ユーザーは 200 人までです",
   bad_week_hours: "受付時間を 1 つ以上選択してください", bad_date_overrides: "特定日の時間は「10:00-12:00,15:00-16:00」の形で入力してください（5 分刻み・重ならない）", bad_durations: "所要時間は 10〜240 分（5 分刻み）を 6 つまで",
-  bad_slot_step: "開始時刻の間隔が正しくありません", bad_buffer_before: "前のバッファは 0〜120 分", bad_buffer_after: "後のバッファは 0〜120 分", bad_max_per_day: "1 日の上限件数は 1〜50 件", bad_max_per_person: "1 人あたりの予約上限は 1〜10 件", bad_cancel_hours: "キャンセル・変更の期限は 0〜168 時間前",
+  bad_slot_step: "開始時刻の間隔が正しくありません", bad_buffer_before: "前のバッファは 0〜120 分", bad_buffer_after: "後のバッファは 0〜120 分", bad_max_per_day: "1 日の上限件数は 1〜50 件", bad_max_total: "先着の数は 1〜500 件", bad_max_per_person: "1 人あたりの予約上限は 1〜10 件", bad_cancel_hours: "キャンセル・変更の期限は 0〜168 時間前",
 };
 const BT_ENT = [["shiarabo_basic", "シアラボ"], ["shiarabo_pilot", "先行"], ["shiarabo_next_premium", "NEXT プレミアム"], ["shiarabo_next_standard", "NEXT スタンダード"], ["shiarabo_trial", "お試しライト"], ["shiarabo_monitor", "モニター"], ["note_membership", "メンシプ"], ["guest", "ゲスト"]];
 const BT_COLORS = ["#5e5ce6", "#b45309", "#0d9488", "#be123c", "#2563eb", "#4d7c0f"];
@@ -1399,13 +1399,14 @@ const btOpt = (vals, cur, lab) => { const v = vals.includes(cur) ? vals : [...va
 const btSw = (id, on, label) => `<button type="button" class="sw" role="switch" id="${id}" aria-checked="${on}" aria-label="${label}"></button>`;
 function btRulesHtml(t) {
   const notice = t ? t.min_notice_hours : 12, days = t ? t.days_ahead : 14, pre = t ? t.buffer_before || 0 : 0, post = t ? t.buffer_after || 0 : 0;
-  const perDay = t ? t.max_per_day : null, perPerson = t ? t.max_per_person || 1 : 1, step = t ? t.slot_step : null, cancel = t ? t.cancel_hours ?? null : null;
+  const perDay = t ? t.max_per_day : null, total = t ? t.max_total || null : null, perPerson = t ? t.max_per_person || 1 : 1, step = t ? t.slot_step : null, cancel = t ? t.cancel_hours ?? null : null;
   const hLab = (h) => (h >= 24 && h % 24 === 0 ? `${h / 24} 日前` : `${h} 時間前`);
   const card = (title, desc, sw, body) => `<div class="bt-c2"><div class="h"><b>${title}</b>${sw || ""}</div><p>${desc}</p>${body}</div>`;
   return card("予約締切", "開始の何時間前まで受け付けるか", btSw("bt-r-notice", notice > 0, "予約締切"), `<select id="bt-notice" aria-label="予約締切"${notice > 0 ? "" : " disabled"}>${btOpt([1, 2, 3, 6, 12, 24, 48], notice || 12, hLab)}</select>`)
     + card("予約受付期間", "何日先まで受け付けるか", "", `<select id="bt-days" aria-label="予約受付期間">${btOpt([7, 14, 21, 30, 60, 90], days, (d) => `${d} 日先まで`)}</select>`)
     + card("前後のバッファ", "予約の前後に空き時間を確保する（ほかの予約・予定とのあいだ）", btSw("bt-r-buf", pre + post > 0, "前後のバッファ"), `<div class="bt-g2"><select id="bt-pre" aria-label="前のバッファ"${pre + post > 0 ? "" : " disabled"}>${btOpt([0, 5, 10, 15, 30, 60], pre, (m) => (m ? `前：${m} 分` : "前：なし"))}</select><select id="bt-post" aria-label="後のバッファ"${pre + post > 0 ? "" : " disabled"}>${btOpt([0, 5, 10, 15, 30, 60], post || (pre ? 0 : 15), (m) => (m ? `後：${m} 分` : "後：なし"))}</select></div>`)
     + card("1 日の上限件数", "このメニューで 1 日に受ける件数", btSw("bt-r-day", !!perDay, "1 日の上限件数"), `<select id="bt-perday" aria-label="1 日の上限件数"${perDay ? "" : " disabled"}>${btOpt([1, 2, 3, 4, 5, 8, 10], perDay || 3, (n) => `${n} 件まで`)}</select>`)
+    + card("先着の数", "このメニューで受ける予約の合計（人数限定の募集）。数に届くと空きを出さない。取り消しは数えない", btSw("bt-r-total", !!total, "先着の数"), `<select id="bt-total" aria-label="先着の数"${total ? "" : " disabled"}>${btOpt([1, 3, 5, 10, 20, 30, 50], total || 5, (n) => `${n} 件まで`)}</select>`)
     + card("1 人あたりの予約上限", "同じ人が同時に持てる予約の件数", "", `<select id="bt-perperson" aria-label="1 人あたりの予約上限">${btOpt([1, 2, 3, 5], perPerson, (n) => `${n} 件`)}</select>`)
     + card("開始時刻の間隔", "予約枠を何分ごとに表示するか", "", `<select id="bt-step" aria-label="開始時刻の間隔"><option value=""${step ? "" : " selected"}>所要時間ごと</option>${[15, 30, 60].map((m) => `<option value="${m}"${m === step ? " selected" : ""}>${m} 分ごと</option>`).join("")}</select>`)
     + card("キャンセル・変更の期限", "期限を過ぎると、予約者は自分で変更・キャンセルできない（会員限定のメニュー）", btSw("bt-r-cancel", cancel != null, "キャンセル・変更の期限"), `<select id="bt-cancel" aria-label="キャンセル・変更の期限"${cancel != null ? "" : " disabled"}>${btOpt([1, 3, 6, 12, 24, 48, 72], cancel ?? 24, (h) => hLab(h) + "まで")}</select>`);
@@ -1487,7 +1488,7 @@ function wireBookingTypeForm(t, r = {}) {
     if (!on) { const first = document.querySelector('#bt-dur [data-min][aria-pressed="true"]'); document.querySelectorAll("#bt-dur [data-min]").forEach((x) => x.setAttribute("aria-pressed", String(x === first))); if (first) $("bt-min").value = first.dataset.min; }
     markDirty(); });
   // 予約ルール：スイッチで欄を有効・無効に
-  [["bt-r-notice", ["bt-notice"]], ["bt-r-buf", ["bt-pre", "bt-post"]], ["bt-r-day", ["bt-perday"]], ["bt-r-cancel", ["bt-cancel"]]].forEach(([sw, ids]) => $(sw).addEventListener("click", () => {
+  [["bt-r-notice", ["bt-notice"]], ["bt-r-buf", ["bt-pre", "bt-post"]], ["bt-r-day", ["bt-perday"]], ["bt-r-total", ["bt-total"]], ["bt-r-cancel", ["bt-cancel"]]].forEach(([sw, ids]) => $(sw).addEventListener("click", () => {
     const on = $(sw).getAttribute("aria-checked") !== "true"; $(sw).setAttribute("aria-checked", String(on)); ids.forEach((id) => { $(id).disabled = !on; }); markDirty(); }));
   // 基本の受付時間：引っぱって塗る
   const grid = btGridFrom(t ? t.week_hours || {} : { 1: [[600, 720], [1200, 1320]], 2: [[600, 720], [1200, 1320]], 3: [[600, 720], [1200, 1320]], 4: [[600, 720], [1200, 1320]], 5: [[600, 720], [1200, 1320]] });
@@ -1607,7 +1608,7 @@ function wireBookingTypeForm(t, r = {}) {
       staff_id: $("bt-staff").value || null, gcal_write: $("bt-gwrite").checked, gcal_invite: $("bt-ginvite").checked,
       durations: isMulti() ? [...document.querySelectorAll('#bt-dur [data-min][aria-pressed="true"]')].map((x) => Number(x.dataset.min)).sort((a, b) => a - b) : [],
       buffer_before: $("bt-pre").disabled ? 0 : Number($("bt-pre").value), buffer_after: $("bt-post").disabled ? 0 : Number($("bt-post").value),
-      max_per_day: $("bt-perday").disabled ? null : Number($("bt-perday").value), max_per_person: Number($("bt-perperson").value),
+      max_per_day: $("bt-perday").disabled ? null : Number($("bt-perday").value), max_total: $("bt-total").disabled ? null : Number($("bt-total").value), max_per_person: Number($("bt-perperson").value),
       slot_step: $("bt-step").value ? Number($("bt-step").value) : null, cancel_hours: $("bt-cancel").disabled ? null : Number($("bt-cancel").value),
       avoid_calendar: $("bt-avoid").checked, zoom_url: $("bt-zoom").value.trim(), thanks_page_slug: $("bt-thanks").value, active: $("bt-active").checked,
       audience: aud, entitlements: [...document.querySelectorAll("#bt [data-ent]:checked")].map((x) => x.dataset.ent),
@@ -1624,7 +1625,7 @@ function wireBookingTypeForm(t, r = {}) {
     if (body.durations.length) body.minutes = body.durations[0];
     if (t) body.id = t.id; else if ($("bt-camp") && $("bt-camp").value) body.campaign_id = $("bt-camp").value;
     const res = await api("/api/admin/booking-types", { method: "POST", token, body });
-    if (!res.ok) { const where = { bad_title: ["basic", "#bt-title"], bad_slug: ["basic", "#bt-slug"], slug_taken: ["basic", "#bt-slug"], bad_minutes: ["basic", "#bt-min"], bad_zoom_url: ["basic", "#bt-zoom"], bad_description: ["basic", "#bt-desc"], bad_week_hours: ["hours", "#bt-wkg .cell[tabindex='0']"], bad_date_overrides: ["hours", "#bt-ovlist button"], bad_durations: ["basic", "#bt-dur button"], bad_days_ahead: ["rules", "#bt-days"], bad_min_notice_hours: ["rules", "#bt-notice"], bad_slot_step: ["rules", "#bt-step"], bad_buffer_before: ["rules", "#bt-pre"], bad_buffer_after: ["rules", "#bt-post"], bad_max_per_day: ["rules", "#bt-perday"], bad_max_per_person: ["rules", "#bt-perperson"], bad_cancel_hours: ["rules", "#bt-cancel"] }[res.error] || ["basic", "#bt-title"];
+    if (!res.ok) { const where = { bad_title: ["basic", "#bt-title"], bad_slug: ["basic", "#bt-slug"], slug_taken: ["basic", "#bt-slug"], bad_minutes: ["basic", "#bt-min"], bad_zoom_url: ["basic", "#bt-zoom"], bad_description: ["basic", "#bt-desc"], bad_week_hours: ["hours", "#bt-wkg .cell[tabindex='0']"], bad_date_overrides: ["hours", "#bt-ovlist button"], bad_durations: ["basic", "#bt-dur button"], bad_days_ahead: ["rules", "#bt-days"], bad_min_notice_hours: ["rules", "#bt-notice"], bad_slot_step: ["rules", "#bt-step"], bad_buffer_before: ["rules", "#bt-pre"], bad_buffer_after: ["rules", "#bt-post"], bad_max_per_day: ["rules", "#bt-perday"], bad_max_total: ["rules", "#bt-total"], bad_max_per_person: ["rules", "#bt-perperson"], bad_cancel_hours: ["rules", "#bt-cancel"] }[res.error] || ["basic", "#bt-title"];
       return go(where[0], where[1], BT_WHY[res.error] || "保存できませんでした（" + (res.error || res.status) + "）"); }
     dirty = false;
     await loadBookingTypes();
