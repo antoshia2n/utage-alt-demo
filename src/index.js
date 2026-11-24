@@ -46,7 +46,7 @@ import { makeGuard } from "./guard.js";
 import { makeSell } from "./sell.js";
 import { makeDeliver } from "./deliver.js";
 import { makeLearn, normalizeNotes, LESSON_ID_RE } from "./learn.js";
-import { makeBridge, appAccess, memberWaiting, PUBLISH_APPS } from "./bridge.js";
+import { makeBridge, appAccess, memberWaiting, studentTier, PUBLISH_APPS } from "./bridge.js";
 import { makePlan } from "./plan.js";
 import { makeMailCfg } from "./mailcfg.js";
 import { makeChanges } from "./changes.js";
@@ -97,7 +97,7 @@ import { makeNames } from "./names.js";
 import { makeChatAi, AI_MODEL } from "./chatai.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.81.0-bfree1";
+const VERSION = "0.82.0-bfree2";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -1030,10 +1030,11 @@ function snippet(e) {
   return String(t).replace(/\s+/g, " ").slice(0, 60);
 }
 
-// 関門 1：生徒の画面で開けるのは full（会員の 4 つ・先行で試す・ゲスト・シアニン）か contract（ご契約だけ）
+// 関門 1：生徒の画面で開けるのは full（先行で試す・ゲスト・シアニン）か contract（ご契約だけ）。
+// 便 B（2026-11-24）：無料会員（権利 free だけ）は free（チャット・グループ・free に開いた会員サイトの棚）
 async function studentAccess(env, customer, email) {
   const [ent, admin] = await Promise.all([sell.entitlement(env, customer.id), learn.isAdminEmail(env, email)]);
-  return { ent, admin, access: appAccess(ent, admin) };
+  return { ent, admin, access: studentTier(ent, admin) };
 }
 // 便 2（関門 5）：右上の「アプリ一覧」に出す、この人が開けるアプリの名前（権利 × 開くものの表 member_access）。共通の外枠の門番の答えと同じ形
 // 生徒のホームの版（2026-11-04）。権利の名前は門番の member_entitlement のキー
@@ -1256,7 +1257,7 @@ async function handleApi(request, env, url) {
     if (v.error) return json({ ok: false, error: v.error }, 401);
     const customer = await customerByEmail(env, v.email);
     if (!customer) return json({ ok: false, error: "not_registered" }, 404);
-    if ((await studentAccess(env, customer, v.email)).access !== "full") return json(NOT_MEMBER, 403);
+    if ((await studentAccess(env, customer, v.email)).access === "contract") return json(NOT_MEMBER, 403); // 無料会員も、free に開いた棚の録画は見られる（見られるかは learn.recFor が権利で決める）
     const l = await learn.recFor(env, customer, v.email, mr[1]);
     if (!l) return json({ ok: false, error: "not_found" }, 404);
     if (!env.ZOOM) return json({ ok: false, error: "no_binding" }, 503);
@@ -1298,7 +1299,7 @@ async function handleApi(request, env, url) {
     }
     if (url.searchParams.get("fresh") === "1") await addEvent(env, customer.id, "login", {}, "site");
     const sa = await studentAccess(env, customer, v.email);
-    if (sa.access !== "full") {
+    if (sa.access === "contract") {
       return json({ ok: true, access: "contract", member_waiting: memberWaiting(sa.ent), admin: false, apps: [], me: { name: customer.name, email: customer.email, source: customer.source },
         lessons: [], announcements: [], viewed: [], library: { source: "manabu", member: false, lesson_count: 0, programs: [] },
         room_unread: 0, entitlement: sa.ent, community: null, community_url: null, referral: null,
@@ -1329,10 +1330,11 @@ async function handleApi(request, env, url) {
     const views = viewed.filter((e) => e.payload && e.payload.lesson_id).slice(0, 1000).map((e) => ({ id: e.payload.lesson_id, at: e.occurred_at }));
     const room = roomState(roomEv);
     const open = sa.admin ? null : new Set(openTargets || []);
+    const isFree = sa.access === "free"; // 無料会員：アプリ・目標・紹介は出さない
     return json({
-      ok: true, access: "full", admin: sa.admin, apps: sa.admin ? [] : openTargets,
+      ok: true, access: sa.access, admin: sa.admin, apps: sa.admin || isFree ? [] : openTargets,
       // 生徒の画面の「アプリ」（2026-11-04）：公開しているアプリの全部と、その人が開けるか。管理者は全部開ける
-      app_catalog: PUBLISH_APPS.filter((a) => APP_URLS[a.target]).map((a) => ({ target: a.target, name: a.name, url: APP_URLS[a.target], open: !open || open.has(a.target) })),
+      app_catalog: isFree ? [] : PUBLISH_APPS.filter((a) => APP_URLS[a.target]).map((a) => ({ target: a.target, name: a.name, url: APP_URLS[a.target], open: !open || open.has(a.target) })),
       me: { name: customer.name, email: customer.email, source: customer.source },
       lessons: lib.flat, announcements, viewed: viewedIds, views,
       marks: markList,
@@ -1345,11 +1347,11 @@ async function handleApi(request, env, url) {
       entitlement: ent,
       community: community.state,
       community_url: community.url,
-      referral,
+      referral: isFree ? null : referral,
       // 予約（2026-11-05）：その人の権利で予約できる個別相談の種類（audience=member）が 1 つでもあれば、左のメニューに出る
       booking_ready: bookingReady,
       // 目標タブ（2026-10-30）：しあらぼ管理の生徒に結ばれた人だけ（ゲストには出ない）
-      goals_ready: goalsReady,
+      goals_ready: isFree ? false : goalsReady,
     }, 200, { "server-timing": Object.entries(T).map(([k, ms]) => `${k};dur=${ms}`).join(", ") });
   }
 
@@ -1455,7 +1457,7 @@ async function handleApi(request, env, url) {
     if (v.error) return json({ ok: false, error: v.error }, 401);
     const customer = await customerByEmail(env, v.email);
     if (!customer) return json({ ok: false, error: "not_registered" }, 404);
-    if ((await studentAccess(env, customer, v.email)).access !== "full") return json(NOT_MEMBER, 403);
+    if ((await studentAccess(env, customer, v.email)).access === "contract") return json(NOT_MEMBER, 403);
     if (path === "/api/lesson/notes" && method === "GET") {
       const r = await lessonqa.notes(env, customer, v.email, url.searchParams.get("lesson_id"), roomEvents);
       return json(r, r.ok ? 200 : 404);
@@ -1482,7 +1484,8 @@ async function handleApi(request, env, url) {
     if (v.error) return json({ ok: false, error: v.error }, 401);
     const customer = await customerByEmail(env, v.email);
     if (!customer) return json({ ok: false, error: "not_registered" }, 404);
-    if ((await studentAccess(env, customer, v.email)).access !== "full") return json(NOT_MEMBER, 403);
+    const roomAccess = (await studentAccess(env, customer, v.email)).access;
+    if (roomAccess === "contract") return json(NOT_MEMBER, 403);
 
     if (path === "/api/room" && method === "GET") {
       const evs = await roomEvents(env, customer.id);
@@ -1509,6 +1512,8 @@ async function handleApi(request, env, url) {
         if (text.length > QUESTION_MAX) return json({ ok: false, error: "too_long", max: QUESTION_MAX }, 400);
       }
       const isChat = body.kind === "chat" || !!lesson;
+      // 無料会員はやり取り（チャット）だけ。添削の依頼は受けない（2026-11-24 作らないもの「free の人への添削」）
+      if (!isChat && roomAccess === "free") return json({ ok: false, error: "correction_members_only", note: "添削はしあらぼの会員向けです" }, 403);
       const ev = await addEvent(env, customer.id, isChat ? "room_chat" : "correction_submitted", isChat ? { from: "student", text, images, ...(lesson ? { lesson } : {}) } : { text, images }, "site");
       await logInbound(env, "room", { customer_id: customer.id, kind: isChat ? "chat" : "correction", chars: text.length, images: images.length }, { ok: true, id: ev.id }, 200);
       // 生徒からのメッセージはすぐ Naoki のスマホへ（添削の依頼はコネクタの知らせで届く）

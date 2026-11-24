@@ -20,7 +20,12 @@ test("会員・先行で試す・ゲスト・シアニンは full、それ以外
 test("マイページ・教材の質問とメモ・添削ルーム・目標・設計の口は、contract の人に 403 を返す", () => {
   const src = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
   const n = (src.match(/studentAccess\(env, customer, v\.email\)\)\.access !== "full"\) return json\(NOT_MEMBER, 403\)/g) || []).length;
-  assert.equal(n, 8, "マイページ・lesson・room・目標（2026-10-30）・目標達成くんの設計と週報（2026-11-05）・下書き（6 便目）・録画（便B 2026-11-06）の 8 か所");
+  assert.equal(n, 5, "full だけ：マイページ・目標（2026-10-30）・目標達成くんの設計と週報（2026-11-05）・下書き（6 便目）の 5 か所");
+  // 無料会員の便 B（2026-11-24）：lesson・録画は contract だけを断り（free は権利で絞る）、room は contract を断って free の添削も断る
+  const c = (src.match(/studentAccess\(env, customer, v\.email\)\)\.access === "contract"\) return json\(NOT_MEMBER, 403\)/g) || []).length;
+  assert.equal(c, 2, "lesson・録画の 2 か所");
+  assert.ok(src.includes('if (roomAccess === "contract") return json(NOT_MEMBER, 403);'), "room は contract を断る");
+  assert.ok(src.includes('if (!isChat && roomAccess === "free")'), "room は free の添削の依頼を断る");
   assert.ok(src.includes('access: "contract"'), "/api/me は contract の人に中身を返さない");
 });
 
