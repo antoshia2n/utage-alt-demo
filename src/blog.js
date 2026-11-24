@@ -12,7 +12,8 @@
 export const BLOG_SLUG_RE = /^[a-z0-9][a-z0-9-]{1,60}$/;
 const UUID_RE = /^[0-9a-f-]{36}$/i;
 const VID_RE = /^[a-z0-9]{8,40}$/;
-const SOURCE_TYPES = ["x_article", "note"];
+// 便 C（2026-11-24）：メンシプ記事（membership）も選べる。本文は写さず、題名・説明・note へのボタンだけ（有料の部分を外に出さないため）
+const SOURCE_TYPES = ["x_article", "note", "membership"];
 const now = () => new Date().toISOString();
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -26,8 +27,31 @@ function attrsOf(s) {
   return out;
 }
 const unent = (s) => String(s).replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+// 便 C（2026-11-24）：YouTube の埋め込み。iframe と、1 段落に YouTube の住所だけがあるものを、決まった形の埋め込みに替える（ほかの iframe は今までどおり消す）
+const YT_ID = /^[A-Za-z0-9_-]{11}$/;
+export function ytId(u) {
+  try {
+    const x = new URL(unent(String(u || "")).trim());
+    if (x.protocol !== "https:") return "";
+    const h = x.hostname.replace(/^(www|m)[.]/, "");
+    let id = "";
+    if (h === "youtu.be") id = x.pathname.slice(1).split("/")[0];
+    else if (h === "youtube.com" || h === "youtube-nocookie.com") {
+      if (x.pathname === "/watch") id = x.searchParams.get("v") || "";
+      else { const m = x.pathname.match(/^[/](?:embed|shorts|live)[/]([^/?#]+)/); if (m) id = m[1]; }
+    }
+    return YT_ID.test(id) ? id : "";
+  } catch { return ""; }
+}
+const YT_MARK = (id) => `@@labyt:${id}@@`;
+export const ytEmbed = (id) => `<div class="lab-yt"><iframe src="https://www.youtube-nocookie.com/embed/${id}" title="YouTube の動画" loading="lazy" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>`;
+function markYoutube(html) {
+  return String(html || "")
+    .replace(/<iframe\b([^>]*)>[\s\S]*?<\/iframe\s*>/gi, (all, attrs) => { const id = ytId(attrsOf(attrs).src); return id ? YT_MARK(id) : all; })
+    .replace(/<p>\s*(?:<a\b([^>]*)>[^<]*<\/a>|(https:[/][/][^\s<]+))\s*<\/p>/gi, (all, attrs, bare) => { const id = ytId(bare || attrsOf(attrs).href); return id ? YT_MARK(id) : all; });
+}
 export function cleanHtml(html) {
-  let s = String(html || "").replace(/<!--[\s\S]*?-->/g, "").replace(DROP_WITH_BODY, "");
+  let s = markYoutube(String(html || "").replace(/<!--[\s\S]*?-->/g, "")).replace(DROP_WITH_BODY, "");
   s = s.replace(/<\s*(\/?)\s*([a-zA-Z0-9]+)([^>]*)>/g, (all, close, tag, rest) => {
     const t = tag.toLowerCase();
     if (!KEEP.has(t)) return "";
@@ -49,6 +73,7 @@ export function cleanHtml(html) {
   });
   // < と > が残っていれば字として出す（タグの形をしていない残り）
   s = s.replace(/<(?![/]?(?:[a-z0-9]+)(?:\s[^<>]*)?>)/gi, "&lt;");
+  s = s.replace(/@@labyt:([A-Za-z0-9_-]{11})@@/g, (_, id) => ytEmbed(id));
   return s.replace(/<\/?span>/g, "").replace(/<p>\s*<\/p>/g, "").trim();
 }
 export function plainText(html) {
@@ -79,6 +104,17 @@ export function insertMid(html, snippet) {
   if (ps.length >= 3) { const i = ps[2].index + 4; return s.slice(0, i) + snippet + s.slice(i); }
   return s + snippet;
 }
+// メンシプ記事の本文の欄：説明と note へのボタンだけ（住所が無い間はボタンを出さない）
+export function membershipBody(link) {
+  const ok = okUrl(link);
+  return `<div class="lab-mship"><p>この記事の続きは note のメンバーシップで読めます。</p>${ok ? `<a href="${esc(link)}" rel="noopener" target="_blank">note で続きを読む</a>` : ""}</div>`;
+}
+export const isMembershipBody = (html) => /^<div class="lab-mship">/.test(String(html || ""));
+export function membershipLink(html) {
+  if (!isMembershipBody(html)) return "";
+  const m = String(html).match(/<a href="(https:[/][/][^"]+)"/);
+  return m ? unent(m[1]) : "";
+}
 const partTag = (id, cls = "") => id ? `<div${cls ? ` class="${cls}"` : ""} data-lab-part="part:${esc(id)}"></div>` : "";
 const jpDate = (iso) => { const d = new Date(iso || 0); if (!iso || isNaN(d)) return ""; const j = new Date(d.getTime() + 9 * 3600e3); return `${j.getUTCFullYear()}年${j.getUTCMonth() + 1}月${j.getUTCDate()}日`; };
 
@@ -86,7 +122,7 @@ const jpDate = (iso) => { const d = new Date(iso || 0); if (!iso || isNaN(d)) re
 const SHELL_CSS = `*{box-sizing:border-box}body{margin:0;background:var(--lab-bg,#fafaf9);color:var(--lab-fg,#1c1917);font-family:var(--lab-font,system-ui,sans-serif)}
 a{color:inherit}.bh{background:var(--lab-card,#fff);border-bottom:1px solid var(--lab-line,#e7e5e4)}.bh>div{max-width:1120px;margin:0 auto;padding:14px 20px;display:flex;align-items:center;gap:12px}
 .bh a{font-family:var(--lab-head,inherit);font-weight:800;font-size:18px;text-decoration:none}.bh small{color:var(--lab-mut,#57534e)}
-.bw{max-width:1120px;margin:0 auto;padding:28px 20px 80px;display:grid;grid-template-columns:minmax(0,1fr);gap:32px}
+.bw{max-width:1280px;margin:0 auto;padding:28px 20px 80px;display:grid;grid-template-columns:minmax(0,1fr);gap:32px}
 @media(min-width:1000px){.bw.has-side{grid-template-columns:minmax(0,var(--lab-w,720px)) 300px;justify-content:center}}
 .lab-article{margin:0 auto;width:100%}.ba-h1{font-family:var(--lab-head,inherit);font-size:clamp(24px,4vw,32px);line-height:1.45;margin:0 0 10px}
 .ba-meta{color:var(--lab-mut,#57534e);font-size:13px;margin:0 0 20px}.ba-thumb{width:100%;aspect-ratio:1200/630;object-fit:cover;border-radius:var(--lab-r,14px);margin:0 0 22px;display:block}
@@ -96,7 +132,10 @@ a{color:inherit}.bh{background:var(--lab-card,#fff);border-bottom:1px solid var(
 .bs{position:relative}.bs .lab-side{position:sticky;top:20px}
 .lab-barpart{display:none}@media(max-width:760px){.lab-barpart.lab-part{display:block;position:fixed;left:8px;right:8px;bottom:8px;margin:0;z-index:20;padding:12px 14px;box-shadow:0 6px 24px rgba(0,0,0,.18)}.lab-barpart .lab-part-p{display:none}body{padding-bottom:120px}}
 .bmore{max-width:var(--lab-w,720px);margin:40px auto 0}.bmore h2{font-size:16px;margin:0 0 10px;font-family:var(--lab-head,inherit)}
-.bl{display:grid;gap:16px;grid-template-columns:repeat(auto-fill,minmax(280px,1fr))}.bc{display:flex;flex-direction:column;background:var(--lab-card,#fff);border:1px solid var(--lab-line,#e7e5e4);border-radius:var(--lab-r,14px);overflow:hidden;text-decoration:none}
+.bl{display:grid;gap:16px;grid-template-columns:repeat(auto-fill,minmax(240px,1fr))}
+.lab-yt{position:relative;aspect-ratio:16/9;margin:0 0 1.3em}.lab-yt iframe{position:absolute;inset:0;width:100%;height:100%;border:0;border-radius:var(--lab-r,14px)}
+.lab-mship{border:1px solid var(--lab-line,#e7e5e4);border-radius:var(--lab-r,14px);background:var(--lab-card,#fff);padding:20px;margin:0 0 1.3em}.lab-mship p{margin:0 0 14px;color:var(--lab-mut,#57534e)}
+.lab-mship a{display:inline-block;background:var(--lab-c,#1c1917);color:#fff;text-decoration:none;font-weight:700;padding:12px 20px;border-radius:999px;min-height:44px;box-sizing:border-box}.bc{display:flex;flex-direction:column;background:var(--lab-card,#fff);border:1px solid var(--lab-line,#e7e5e4);border-radius:var(--lab-r,14px);overflow:hidden;text-decoration:none}
 .bc i{display:block;aspect-ratio:1200/630;background:color-mix(in srgb,var(--lab-c,#1c1917) 10%,var(--lab-card,#fff)) center/cover no-repeat}.bc div{padding:12px 14px 14px}.bc.nt{border-top:4px solid var(--lab-c2,#f59e0b)}.bc.nt div{padding:16px}.bc b{display:block;font-family:var(--lab-head,inherit);line-height:1.5;margin:0 0 6px}.bc p{margin:0;font-size:13px;color:var(--lab-mut,#57534e);line-height:1.6}.bc small{display:block;margin-top:6px;color:var(--lab-mut,#57534e);font-size:12px}
 .bf{color:var(--lab-mut,#57534e);font-size:12px;text-align:center;padding:24px}`;
 function shell({ title, description, canonical, image, siteName, body, embed, jsonld, noindex }) {
@@ -133,6 +172,7 @@ export function makeBlog({ db, logInbound, web, pagesOrigin, previewToken, readP
   }
   const shape = async (env, p, v) => ({
     id: p.id, slug: p.slug, title: p.title, description: p.description, thumb_url: p.thumb_url, gift_part: p.gift_part || "",
+    ...(isMembershipBody(p.body_html) ? { kind: "membership", link_url: membershipLink(p.body_html) } : {}),
     status: p.status, published_at: p.published_at, source_post_id: p.source_post_id, source_updated_at: p.source_updated_at,
     copied_at: p.copied_at, updated_at: p.updated_at, url: `${origin(env)}/blog/${p.slug}`,
     preview_url: `${origin(env)}/blog/${p.slug}?preview=${await previewToken(env, `blog:${p.id}`, 1)}`,
@@ -177,8 +217,12 @@ export function makeBlog({ db, logInbound, web, pagesOrigin, previewToken, readP
     if (!/^\d{1,20}$/.test(String(id || ""))) return null;
     return (await db(env, "GET", `posts?select=id,account_id,title,body,status,post_type,thumb_url,updated_at&id=eq.${id}`))[0] || null;
   }
-  const fromSource = (src) => {
+  const fromSource = (src, link) => {
     const body = cleanHtml(src.body);
+    if (src.post_type === "membership") {
+      // メンシプ記事は本文を写さない。説明の元にする書き出しだけ読み、本文の欄には note へのボタンだけを置く
+      return { body_html: membershipBody(link), thumb_url: okUrl(src.thumb_url) ? src.thumb_url : null, source_updated_at: src.updated_at || null, _lead: plainText(body).slice(0, 120) };
+    }
     return { body_html: body, thumb_url: okUrl(src.thumb_url) ? src.thumb_url : firstImage(body) || null, source_updated_at: src.updated_at || null };
   };
 
@@ -193,9 +237,10 @@ export function makeBlog({ db, logInbound, web, pagesOrigin, previewToken, readP
     const s = String(slug || "").trim().toLowerCase();
     if (!BLOG_SLUG_RE.test(s)) return { ok: false, error: "bad_slug" };
     if (await bySlug(env, s)) return { ok: false, error: "slug_taken" };
-    const f = fromSource(src);
+    const f = fromSource(src, "");
+    const lead = f._lead; delete f._lead;
     const row = {
-      id: crypto.randomUUID(), slug: s, title: String(src.title || "").slice(0, 120) || "（題なし）", description: plainText(f.body_html).slice(0, 120),
+      id: crypto.randomUUID(), slug: s, title: String(src.title || "").slice(0, 120) || "（題なし）", description: lead != null ? lead : plainText(f.body_html).slice(0, 120),
       ...f, source_post_id: src.id, status: "draft", copied_at: now(), updated_at: now(), updated_by: String(actor).slice(0, 200),
     };
     const [made] = await db(env, "POST", "b_blog_posts", [row], "return=representation");
@@ -233,13 +278,27 @@ export function makeBlog({ db, logInbound, web, pagesOrigin, previewToken, readP
       }
       patch.gift_part = g || null;
     }
+    // メンシプ記事：note の記事の住所（link_url）でボタンを作る。住所は本文の欄のボタンにだけ持つ
+    const src0 = p.source_post_id ? await readSource(env, p.source_post_id) : null;
+    const isMship = !!(src0 && src0.post_type === "membership");
+    let link = isMship ? membershipLink(p.body_html) : "";
+    if (args.link_url !== undefined) {
+      if (!isMship) return { ok: false, error: "not_membership" };
+      const u = String(args.link_url || "").trim();
+      if (u && !okUrl(u)) return { ok: false, error: "bad_link_url" };
+      link = u; patch.body_html = membershipBody(u);
+    }
     if (action === "refresh") {
-      const src = await readSource(env, p.source_post_id);
+      const src = src0;
       if (!src) return { ok: false, error: "source_not_found" };
-      Object.assign(patch, fromSource(src), { copied_at: now() });
+      const f = fromSource(src, link); delete f._lead;
+      Object.assign(patch, f, { copied_at: now() });
       if (p.thumb_url && args.thumb_url === undefined && !src.thumb_url) delete patch.thumb_url; // 手で入れたサムネは残す
     }
-    if (action === "publish") { patch.status = "published"; if (!p.published_at) patch.published_at = now(); }
+    if (action === "publish") {
+      if (isMship && !link) return { ok: false, error: "need_link_url", note: "メンシプ記事は note の記事の住所（link_url）を入れてから公開する" };
+      patch.status = "published"; if (!p.published_at) patch.published_at = now();
+    }
     if (action === "unpublish") patch.status = "draft";
     if (action && !["publish", "unpublish", "refresh"].includes(action)) return { ok: false, error: "bad_action" };
     if (!Object.keys(patch).length) return { ok: false, error: "nothing_to_change" };

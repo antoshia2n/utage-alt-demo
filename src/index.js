@@ -97,7 +97,7 @@ import { makeNames } from "./names.js";
 import { makeChatAi, AI_MODEL } from "./chatai.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.83.0-btotal";
+const VERSION = "0.84.0-bsite1";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -595,6 +595,12 @@ async function handlePagesHost(request, env, url) {
   // 便 S3：ブログ（一覧・記事）と検索向けの地図
   if (method === "GET" || method === "HEAD") {
     if (path === "/blog" || path === "/blog/") return html(await blog.publicIndex(env), 200, { "cache-control": "public, max-age=60" });
+    // 便 C（2026-11-24）：公式サイトの頭のページ。公開中のページ home があればそれ、無ければブログの一覧
+    if (path === "/") {
+      const home = await pages.serve(env, "home", url.searchParams.get("preview")).catch(() => null);
+      if (home) return html(home.html, 200, home.preview ? { "cache-control": "no-store", "x-robots-tag": "noindex" } : { "cache-control": "public, max-age=60" });
+      return html(await blog.publicIndex(env), 200, { "cache-control": "public, max-age=60" });
+    }
     const bm = path.match(/^[/]blog[/]([a-z0-9][a-z0-9-]{1,60})[/]?$/);
     if (bm) {
       const r = await blog.publicArticle(env, bm[1], url.searchParams.get("preview"));
@@ -2648,7 +2654,7 @@ const TOOLS = [
     name: "list_blog_sources",
     screen: "web",
     say: "ブログに写せるコンテンツくんの記事を探す",
-    description: "コンテンツくんの公開済みの X記事・note を新しい順に読む（ブログに写す前に選ぶため）。account（既定 acc_1 シアニン）・q（題の一部）。写したものには blog_id・blog_slug・blog_status が付く。読むだけ。",
+    description: "コンテンツくんの公開済みの X記事・note・メンシプ記事（type membership）を新しい順に読む（ブログに写す前に選ぶため）。account（既定 acc_1 シアニン）・q（題の一部）。写したものには blog_id・blog_slug・blog_status が付く。読むだけ。",
     inputSchema: { type: "object", properties: { account: { type: "string" }, q: { type: "string" }, limit: { type: "integer" } } },
   },
   {
@@ -2662,8 +2668,8 @@ const TOOLS = [
     name: "save_blog_post",
     screen: "web",
     say: "ブログの記事を直す・公開する・止める・写し直す・消す",
-    description: "ブログの記事（id）を直す。title（120 字）・description（検索に出る説明 200 字）・thumb_url（https）・gift_part（特典の部品 id。空で既定へ）・slug（下書きのときだけ）。action：publish 公開／unpublish 止める／refresh コンテンツくんから本文を写し直す／remove 消す（下書きのときだけ）。承認が要る道具（読者の画面が変わる）。",
-    inputSchema: { type: "object", properties: { id: { type: "string" }, title: { type: "string" }, description: { type: "string" }, thumb_url: { type: "string" }, gift_part: { type: "string" }, slug: { type: "string" }, action: { type: "string" } }, required: ["id"] },
+    description: "ブログの記事（id）を直す。title（120 字）・description（検索に出る説明 200 字）・thumb_url（https）・gift_part（特典の部品 id。空で既定へ）・slug（下書きのときだけ）・link_url（メンシプ記事だけ：note の記事の住所。本文は写さず、このボタンだけを出す。住所が無いと公開できない）。action：publish 公開／unpublish 止める／refresh コンテンツくんから本文を写し直す／remove 消す（下書きのときだけ）。承認が要る道具（読者の画面が変わる）。",
+    inputSchema: { type: "object", properties: { id: { type: "string" }, title: { type: "string" }, description: { type: "string" }, thumb_url: { type: "string" }, gift_part: { type: "string" }, slug: { type: "string" }, link_url: { type: "string" }, action: { type: "string" } }, required: ["id"] },
   },
   {
     name: "list_contracts",
