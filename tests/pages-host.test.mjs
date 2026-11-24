@@ -37,11 +37,26 @@ s.table("b_page_versions").push(
 
 test("lp の住所では、シアニン用の画面・生徒の画面・静的ファイルを返さない（ASSETS を呼ばない）", async () => {
   assetCalls = [];
-  for (const p of ["/admin.html", "/admin", "/app.html", "/login.html", "/js/admin.js", "/sw.js", "/", "/index.html"]) {
+  for (const p of ["/admin.html", "/admin", "/app.html", "/login.html", "/js/admin.js", "/sw.js", "/index.html"]) {
     const r = await call("https://lp.shia2n.jp" + p);
     assert.equal(r.status, 404, p);
     assert.match(await r.text(), /ページが見つかりません/, p);
   }
+  assert.deepEqual(assetCalls, []);
+});
+
+// 便 C（2026-11-24）：頭のページ（/）は、公開中のページ home があればそれ、無ければブログの一覧。どちらも静的ファイルは呼ばない
+test("lp の頭のページ：home が無ければブログの一覧・あれば home の公開の版", async () => {
+  assetCalls = [];
+  let r = await call("https://lp.shia2n.jp/");
+  assert.equal(r.status, 200);
+  assert.match(await r.text(), /記事 \d+ 本/);
+  const HOME = "66666666-6666-4666-8666-666666666666";
+  s.table("b_pages").push({ id: HOME, slug: "home", title: "公式サイト", purpose: "other", status: "published", latest_version: 1, published_version: 1 });
+  s.table("b_page_versions").push({ page_id: HOME, version: 1, html: "<html><body><h1>公式サイトの頭</h1></body></html>", parts: {} });
+  r = await call("https://lp.shia2n.jp/");
+  assert.equal(r.status, 200);
+  assert.match(await r.text(), /公式サイトの頭/);
   assert.deepEqual(assetCalls, []);
 });
 
