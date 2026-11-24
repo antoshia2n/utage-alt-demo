@@ -12,6 +12,9 @@
 //   data-lab-button="名前"             … ボタン。押したら出来事に積み、コネクタのきっかけ「ページのボタンを押した」になる
 //   data-lab-part="booking:slug"     … 便 13b：個別相談の予約の枠（空き時間を選び、名前とメールで予約する）
 //   data-lab-part="part:名前"         … 便 S2（2026-11-07）：公開サイトの部品（src/web.js）。中身は読者の段階で変わる
+//   <template data-lab-gate>…</template> … 便 X2（2026-11-25 Naoki OK）：登録した人だけに見せる中身。公開のときに中を外し、
+//                                      登録の印（lab_u か lab_g）がある人にだけ /api/p/gate が返す。data-lab-guest の所は登録前の人にだけ見せる
+//   data-lab-part="blog:latest-8"    … 便 X1（2026-11-24 Naoki OK）：公開中のブログの新しい記事を 8 本（1〜24・省くと 8）。home に新着を手で書き足さないため
 // 便 S1（2026-11-07）：embed.js は /_lab/look.css（公開サイトの見た目・src/web.js）も head の先頭に足す。ページは var(--lab-c) などで色を当てる
 // 便 T2（2026-11-07 Naoki OK 23:05）：期間限定の公開。b_pages の closes_at を過ぎたら、closed_to のページ（公開中・自分以外）か
 //   決まった「公開は終了しました」の画面を出す。ページの中の data-lab-countdown の所には「あと 2日 3時間」のように残りが入る。
@@ -38,11 +41,13 @@ const now = () => new Date().toISOString();
 export function parseParts(html) {
   // 便 13：HTML の注意書き（<!-- -->）の中の印は読まない（便 12a の版 1 で、説明の文の印を印として拾った件）
   const s = String(html || "").replace(/<!--[\s\S]*?-->/g, "");
-  const forms = new Set(), checkouts = new Set(), buttons = new Set(), bookings = new Set(), webParts = new Set(), bad = [];
+  const forms = new Set(), checkouts = new Set(), buttons = new Set(), bookings = new Set(), webParts = new Set(), blogs = new Set(), bad = [];
   for (const m of s.matchAll(/data-lab-part\s*=\s*["']([^"']*)["']/g)) {
     const v = m[1].trim();
     const f = v.match(/^form:(.+)$/), c = v.match(/^checkout:(.+)$/), bk = v.match(/^booking:(.+)$/), wp = v.match(/^part:(.+)$/);
+    const bl = v.match(/^blog:latest(?:-([0-9]{1,2}))?$/);
     if (f && SLUG_RE.test(f[1])) forms.add(f[1]);
+    else if (bl && (!bl[1] || (Number(bl[1]) >= 1 && Number(bl[1]) <= 24))) blogs.add(v);
     else if (wp && /^[a-z0-9][a-z0-9-]{1,30}$/.test(wp[1])) webParts.add(wp[1]);
     else if (bk && SLUG_RE.test(bk[1])) bookings.add(bk[1]);
     else if (c && PRODUCT_ID_RE.test(c[1])) checkouts.add(c[1]);
@@ -52,7 +57,7 @@ export function parseParts(html) {
     const v = m[1].trim();
     if (BUTTON_RE.test(v)) buttons.add(v); else bad.push("button:" + v.slice(0, 40));
   }
-  return { forms: [...forms], checkouts: [...checkouts], buttons: [...buttons], bookings: [...bookings], web_parts: [...webParts], bad };
+  return { forms: [...forms], checkouts: [...checkouts], buttons: [...buttons], bookings: [...bookings], web_parts: [...webParts], blogs: [...blogs], bad };
 }
 
 // 公開のときに B の差し込みの仕掛けを足す（Claude が書いた同じ行は外してから 1 回だけ）
@@ -111,6 +116,26 @@ export async function readPersonToken(env, tok) {
   if (!m) return null;
   if (Number(m[2]) * 1000 < Date.now()) return null;
   return sameHex(m[3], await hmacHex(env, `person:${m[1]}:${m[2]}`)) ? m[1] : null;
+}
+// 便 X2：「この端末の人は公開サイトのフォームに答えた」の印（形は「期限（秒）.署名」・既定 180 日）。人は特定しない。
+// フォームは誰でも答えられるので、印を持つ＝登録の手を通った、だけを表す。登録した人だけの中身（data-lab-gate）を開く
+export const GATE_TOKEN_TTL_MS = 180 * 864e5;
+export async function gateToken(env, ttlMs = GATE_TOKEN_TTL_MS) {
+  const exp = Math.floor((Date.now() + ttlMs) / 1000);
+  return `${exp}.${await hmacHex(env, `gate:site:${exp}`)}`;
+}
+export async function readGateToken(env, tok) {
+  const m = String(tok || "").match(/^([0-9]{9,11})[.]([0-9a-f]{32})$/i);
+  if (!m) return false;
+  if (Number(m[1]) * 1000 < Date.now()) return false;
+  return sameHex(m[2], await hmacHex(env, `gate:site:${m[1]}`));
+}
+// 便 X2：<template data-lab-gate>…</template> を外して、空の枠（data-lab-gated="番号"）に置き換える。外した中身は順に blocks へ
+const GATE_RE = /<template\s+data-lab-gate(?:\s[^>]*)?>([\s\S]*?)<\/template>/gi;
+export function splitGate(html) {
+  const blocks = [];
+  const out = String(html || "").replace(GATE_RE, (_, inner) => { blocks.push(inner); return `<div data-lab-gated="${blocks.length - 1}" hidden></div>`; });
+  return { html: out, blocks };
 }
 export async function previewToken(env, pageId, version, ttlMs = 6 * 3600e3) {
   const exp = Math.floor((Date.now() + ttlMs) / 1000);
@@ -227,6 +252,8 @@ export function makePages(h) {
       countdown: "期間限定の残り（便 T2）：<span data-lab-countdown></span> の所に「あと 2日 3時間 4分」が入る（set_page_close で期限を決めたページだけ）。期限を過ぎると、決めたページか「公開は終了しました」の画面になる",
       booking: "予約の枠：<div data-lab-part=\"booking:予約の種類の住所の名前\"></div>。空き時間の一覧と、名前・メール・相談したいこと・同意の欄が入る。予約した人は台帳に入り、受付のメールが届く",
       look: "公開サイトの見た目（便 S1）：B が /_lab/look.css を自分で読ませる。色は var(--lab-c)（主の色）・var(--lab-c2)（差し色）・var(--lab-bg)・var(--lab-card)・var(--lab-line)・var(--lab-fg)・var(--lab-mut)、角は var(--lab-r)、字は var(--lab-font)・var(--lab-head) を使う（テーマを替えると全ページが変わる）。記事の装飾は class lab-toc（目次）・lab-box（ボックス）・lab-fuki（ふきだし）",
+      gate: "登録した人だけの中身（便 X2）：<template data-lab-gate>…</template> の中は、公開サイトのフォームに答えた人（この端末）にだけ出る。登録前の人に見せる所（登録の枠など）には data-lab-guest を付ける（登録した人には隠れる）。見本では登録した人の見え方になり、住所の後ろに &as=guest を足すと登録前の見え方になる",
+      blog: "ブログの新着（便 X1）：<div data-lab-part=\"blog:latest-8\"></div>。公開中の記事の新しい順に、サムネ（16:9）・題名・日付のカードが並ぶ（数は 1〜24・省くと 8）。カードは class lab-bl（並べる箱）・lab-bc（カード 1 枚）",
       part: "公開サイトの部品（便 S2）：<div data-lab-part=\"part:部品の名前\"></div>。中身（題・文・ボタンか申込の枠）は読者の段階で変わり、マーケくんの「ブログ・公開ページ › 部品」で 1 か所を直すと全部のページで変わる。使える部品は get_web の parts",
       thanks: "サンクスページ（目的 thanks）：申込の枠もボタンも要らない。申込を受け付けたこと・日時・参加の URL はメールで届くこと・迷惑メールの確かめ方を書く。セミナーの回に結ぶのは set_seminar の thanks_page_slug",
       forms: fl.filter((f) => f.active).map((f) => ({ slug: f.slug, title: f.title })),
@@ -466,6 +493,7 @@ export function makePages(h) {
     // 便 13：セミナーの回にサンクスページがあれば、答えたあとそこへ移る（公開中のときだけ）
     if (r.thanks_url) out.thanks_url = r.thanks_url + (route ? `?r=${encodeURIComponent(route)}` : "");
     if (r.is_new && r.id) out.u = await personToken(env, r.id);
+    out.g = await gateToken(env); // 便 X2：答えた端末で、登録した人だけの中身を開く
     return out;
   }
 
@@ -499,14 +527,37 @@ export function makePages(h) {
         const to = page.closed_to && page.closed_to !== page.slug ? await pageBySlug(env, page.closed_to) : null;
         if (to && to.status === "published" && to.published_version && to.purpose !== "mypage" && !isClosed(to)) {
           const r2 = await version(env, to.id, to.published_version);
-          if (r2) return { html: injectEmbed(r2.html, { page: to.id, preview: "0", lab: labOrigin(env) }), preview: false, page: to, closed_from: page.slug };
+          if (r2) return { html: injectEmbed(splitGate(r2.html).html, { page: to.id, preview: "0", lab: labOrigin(env) }), preview: false, page: to, closed_from: page.slug };
         }
         return { html: closedHtml(page), preview: false, page, closed: true };
       }
     }
     const row = await version(env, page.id, v);
     if (!row) return null;
-    return { html: injectEmbed(row.html, { page: page.id, preview: preview ? "1" : "0", lab: labOrigin(env), ...(page.closes_at ? { closes: page.closes_at } : {}) }), preview, page };
+    return { html: injectEmbed(splitGate(row.html).html, { page: page.id, preview: preview ? "1" : "0", lab: labOrigin(env), ...(page.closes_at ? { closes: page.closes_at } : {}) }), preview, page };
+  }
+
+  // 便 X2：登録した人だけの中身を返す。見本（preview の印）では、シアニンが確かめられるよう印なしで返す
+  async function gate(env, { page: pageId, u, g, preview: pv } = {}) {
+    if (!UUID_RE.test(String(pageId || ""))) return { ok: false, error: "not_found" };
+    const page = await pageById(env, pageId);
+    if (!page || page.purpose === "mypage") return { ok: false, error: "not_found" };
+    let v = null;
+    if (pv) {
+      v = await readPreviewToken(env, page.id, pv);
+      if (v == null) return { ok: false, error: "not_found" };
+    } else {
+      if (page.status !== "published" || !page.published_version || isClosed(page)) return { ok: false, error: "not_found" };
+      v = page.published_version;
+    }
+    const row = await version(env, page.id, v);
+    if (!row) return { ok: false, error: "not_found" };
+    const { blocks } = splitGate(row.html);
+    if (!pv) {
+      const open = (await readGateToken(env, g)) || !!(await readPersonToken(env, u).catch(() => null));
+      if (!open) return { ok: true, locked: true, count: blocks.length };
+    }
+    return { ok: true, locked: false, blocks };
   }
 
   // 便 T2：公開の期限を決める・外す（承認の道具）。closes_at は日本時間の「2026-11-12 23:59」か ISO。空で外す。
@@ -551,7 +602,7 @@ export function makePages(h) {
     return { pages, partsOf };
   }
 
-  return { createRequest, getRequest, listRequests, saveDraft, listPages, getPage, publish, setClose, routeStats, hit, publicProduct, submitForm, submitBooking, serve, forPlan, hitsSince, pagesOrigin, rules };
+  return { createRequest, getRequest, listRequests, saveDraft, listPages, getPage, publish, setClose, routeStats, hit, publicProduct, submitForm, submitBooking, serve, gate, forPlan, hitsSince, pagesOrigin, rules };
 }
 
 // 公開のページに差し込む仕掛け（lp の住所の /_lab/embed.js）。ページの中の印を本物の枠に変え、見た・押したを送る
@@ -623,7 +674,7 @@ export const EMBED_JS = `(() => {
   const look = document.createElement("link"); look.rel = "stylesheet"; look.href = "/_lab/look.css";
   document.head.insertBefore(look, document.head.firstChild);
   const css = document.createElement("style");
-  css.textContent = ".lab-form,.lab-checkout{max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:12px;text-align:left;box-sizing:border-box}.lab-form label{display:block;font-size:14px;margin:0 0 4px}.lab-input{width:100%;box-sizing:border-box;min-height:44px;padding:10px 12px;font-size:16px;border:1px solid #c9c9c9;border-radius:8px;background:#fff;color:#111}.lab-btn{display:inline-block;box-sizing:border-box;width:100%;min-height:52px;border:0;border-radius:10px;background:#1f6f5c;color:#fff;font-size:17px;font-weight:700;cursor:pointer;text-align:center;text-decoration:none;line-height:52px;padding:0 16px}.lab-btn[disabled]{opacity:.6}.lab-note{font-size:13px;opacity:.8}.lab-err{color:#b3261e;font-size:13px}.lab-check{display:flex;gap:8px;align-items:flex-start;font-size:14px}.lab-bk{--bk:var(--lab-c,#1f6f5c);max-width:640px;margin:0 auto;text-align:left;box-sizing:border-box;container-type:inline-size;font-size:15px;line-height:1.6}.lab-bk *{box-sizing:border-box}.lab-bk [hidden]{display:none!important}.lab-bk-top{margin-top:14px}.lab-bk-title{font-weight:700;font-size:17px}.lab-bk-steps{display:flex;gap:6px;flex-wrap:wrap;list-style:none;margin:8px 0 14px;padding:0;font-size:13px}.lab-bk-steps li{padding:4px 12px;border-radius:99px;background:#efefef;color:#666}.lab-bk-steps li.on{background:var(--bk);color:#fff;font-weight:700}.lab-bk-pick{display:grid;gap:18px}@container (min-width:560px){.lab-bk-pick{grid-template-columns:minmax(0,1fr) 190px;align-items:start}.lab-bk-tlist{grid-template-columns:1fr!important;max-height:372px;overflow:auto;padding-right:2px}.lab-bk-pick .lab-err{grid-column:1/-1}}.lab-bk-cal-h{display:flex;align-items:center;gap:8px;margin-bottom:8px}.lab-bk-cal-h b{flex:1;text-align:center;font-size:17px}.lab-bk-nav{width:44px;height:44px;border-radius:99px;border:1px solid #ddd;background:#fff;color:#111;font-size:22px;line-height:1;cursor:pointer;padding:0}.lab-bk-nav:disabled{opacity:.3;cursor:default}.lab-bk-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}.lab-bk-wd{text-align:center;font-size:12px;color:#888;padding:2px 0 4px}.lab-bk-wd.sun{color:#c0392b}.lab-bk-wd.sat{color:#2563eb}.lab-bk-d{position:relative;aspect-ratio:1/1;min-height:44px;border:0;border-radius:99px;background:transparent;display:grid;place-items:center;font:inherit;font-size:15px;color:#b5b5b5;padding:0}.lab-bk-d.on{background:#e6f0ed;background:color-mix(in srgb,var(--bk) 14%,#fff);color:var(--bk);font-weight:700;cursor:pointer}.lab-bk-d[aria-pressed=true]{background:var(--bk);color:#fff}.lab-bk-d.today::after{content:'';position:absolute;bottom:5px;width:4px;height:4px;border-radius:99px;background:currentColor}.lab-bk-tz{margin-top:8px}.lab-bk-th{font-weight:700;margin:0 0 8px}.lab-bk-tlist{display:grid;grid-template-columns:1fr 1fr;gap:8px}.lab-bk-t{min-height:48px;border-radius:10px;border:1px solid var(--bk);background:#fff;color:var(--bk);font:inherit;font-weight:700;font-size:16px;cursor:pointer;padding:0 8px}.lab-bk-t small{font-weight:400;font-size:13px}.lab-bk-t:active,.lab-bk-t:hover{background:#f1f7f5;background:color-mix(in srgb,var(--bk) 8%,#fff)}.lab-bk .lab-form{max-width:none}.lab-bk .lab-check{display:flex}.lab-bk-sum{display:flex;align-items:center;gap:4px 10px;flex-wrap:wrap;border:1px solid var(--bk);border-radius:12px;padding:10px 14px;background:#f4f9f7;background:color-mix(in srgb,var(--bk) 6%,#fff)}.lab-bk-sum b{flex:1;min-width:170px;font-size:16px}.lab-bk-back{border:0;background:none;color:var(--bk);font:inherit;font-weight:700;min-height:44px;cursor:pointer;padding:0 4px;text-decoration:underline}.lab-bk-done{text-align:center;padding:16px 0;outline:none}.lab-bk-done b{display:block;font-size:19px}.lab-bk-ok{width:52px;height:52px;border-radius:99px;background:var(--bk);color:#fff;display:grid;place-items:center;font-size:26px;margin:0 auto 10px}.lab-bk-when{font-size:16px;font-weight:700;margin:6px 0 8px}";
+  css.textContent = ".lab-form,.lab-checkout{max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:12px;text-align:left;box-sizing:border-box}.lab-form label{display:block;font-size:14px;margin:0 0 4px}.lab-input{width:100%;box-sizing:border-box;min-height:44px;padding:10px 12px;font-size:16px;border:1px solid #c9c9c9;border-radius:8px;background:#fff;color:#111}.lab-btn{display:inline-block;box-sizing:border-box;width:100%;min-height:52px;border:0;border-radius:10px;background:#1f6f5c;color:#fff;font-size:17px;font-weight:700;cursor:pointer;text-align:center;text-decoration:none;line-height:52px;padding:0 16px}.lab-btn[disabled]{opacity:.6}.lab-note{font-size:13px;opacity:.8}.lab-err{color:#b3261e;font-size:13px}.lab-check{display:flex;gap:8px;align-items:flex-start;font-size:14px}.lab-bk{--bk:var(--lab-c,#1f6f5c);max-width:640px;margin:0 auto;text-align:left;box-sizing:border-box;container-type:inline-size;font-size:15px;line-height:1.6}.lab-bk *{box-sizing:border-box}.lab-bk [hidden]{display:none!important}.lab-bk-top{margin-top:14px}.lab-bk-title{font-weight:700;font-size:17px}.lab-bk-steps{display:flex;gap:6px;flex-wrap:wrap;list-style:none;margin:8px 0 14px;padding:0;font-size:13px}.lab-bk-steps li{padding:4px 12px;border-radius:99px;background:#efefef;color:#666}.lab-bk-steps li.on{background:var(--bk);color:#fff;font-weight:700}.lab-bk-pick{display:grid;gap:18px}@container (min-width:560px){.lab-bk-pick{grid-template-columns:minmax(0,1fr) 190px;align-items:start}.lab-bk-tlist{grid-template-columns:1fr!important;max-height:372px;overflow:auto;padding-right:2px}.lab-bk-pick .lab-err{grid-column:1/-1}}.lab-bk-cal-h{display:flex;align-items:center;gap:8px;margin-bottom:8px}.lab-bk-cal-h b{flex:1;text-align:center;font-size:17px}.lab-bk-nav{width:44px;height:44px;border-radius:99px;border:1px solid #ddd;background:#fff;color:#111;font-size:22px;line-height:1;cursor:pointer;padding:0}.lab-bk-nav:disabled{opacity:.3;cursor:default}.lab-bk-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}.lab-bk-wd{text-align:center;font-size:12px;color:#888;padding:2px 0 4px}.lab-bk-wd.sun{color:#c0392b}.lab-bk-wd.sat{color:#2563eb}.lab-bk-d{position:relative;aspect-ratio:1/1;min-height:44px;border:0;border-radius:99px;background:transparent;display:grid;place-items:center;font:inherit;font-size:15px;color:#b5b5b5;padding:0}.lab-bk-d.on{background:#e6f0ed;background:color-mix(in srgb,var(--bk) 14%,#fff);color:var(--bk);font-weight:700;cursor:pointer}.lab-bk-d[aria-pressed=true]{background:var(--bk);color:#fff}.lab-bk-d.today::after{content:'';position:absolute;bottom:5px;width:4px;height:4px;border-radius:99px;background:currentColor}.lab-bk-tz{margin-top:8px}.lab-bk-th{font-weight:700;margin:0 0 8px}.lab-bk-tlist{display:grid;grid-template-columns:1fr 1fr;gap:8px}.lab-bk-t{min-height:48px;border-radius:10px;border:1px solid var(--bk);background:#fff;color:var(--bk);font:inherit;font-weight:700;font-size:16px;cursor:pointer;padding:0 8px}.lab-bk-t small{font-weight:400;font-size:13px}.lab-bk-t:active,.lab-bk-t:hover{background:#f1f7f5;background:color-mix(in srgb,var(--bk) 8%,#fff)}.lab-bk .lab-form{max-width:none}.lab-bk .lab-check{display:flex}.lab-bk-sum{display:flex;align-items:center;gap:4px 10px;flex-wrap:wrap;border:1px solid var(--bk);border-radius:12px;padding:10px 14px;background:#f4f9f7;background:color-mix(in srgb,var(--bk) 6%,#fff)}.lab-bk-sum b{flex:1;min-width:170px;font-size:16px}.lab-bk-back{border:0;background:none;color:var(--bk);font:inherit;font-weight:700;min-height:44px;cursor:pointer;padding:0 4px;text-decoration:underline}.lab-bk-done{text-align:center;padding:16px 0;outline:none}.lab-bk-done b{display:block;font-size:19px}.lab-bk-ok{width:52px;height:52px;border-radius:99px;background:var(--bk);color:#fff;display:grid;place-items:center;font-size:26px;margin:0 auto 10px}.lab-bk-when{font-size:16px;font-weight:700;margin:6px 0 8px}.lab-bl{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:24px 16px}.lab-bc{display:block;color:inherit;text-decoration:none;min-width:0}.lab-bc img,.lab-bc i{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:12px;background:#f2f2f4}.lab-bc b{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin:10px 0 4px;font-size:15px;line-height:1.45}.lab-bc small{font-size:13px;opacity:.65}.lab-bc:hover b{text-decoration:underline}";
   // ページの CSS で上書きできるよう、差し込む見た目は head のいちばん前に置く
   document.head.insertBefore(css, document.head.firstChild);
   async function mountForm(el, slug, onOk) {
@@ -656,7 +707,8 @@ export const EMBED_JS = `(() => {
       if (BOT_MSG[res.error]) { msg.textContent = BOT_MSG[res.error]; return; }
       if (res.ok && onOk) { try { onOk(); } catch (_) {} }
       if (res.ok && res.thanks_url && /^https:[/][/]/.test(res.thanks_url)) { if (res.u) store.set("lab_u", res.u); location.href = res.thanks_url; return; }
-      if (res.ok) { if (res.u) store.set("lab_u", res.u); el.innerHTML = '<p class="lab-note" style="white-space:pre-wrap">' + esc(res.thanks || "受け取りました。ありがとうございます。") + "</p>"; return; }
+      if (res.ok && res.g) store.set("lab_g", res.g);
+      if (res.ok) { if (res.u) store.set("lab_u", res.u); unlock(); el.innerHTML = '<p class="lab-note" style="white-space:pre-wrap">' + esc(res.thanks || "受け取りました。ありがとうございます。") + "</p>"; return; }
       if (res.error === "bad_answers") { for (const b of res.fields || []) { const e = q('[data-e="' + b.key + '"]'); if (e) e.textContent = WHY[b.error] || "確かめてください"; } msg.textContent = "赤い字の欄を直してください"; return; }
       msg.textContent = res.error === "bad_email" ? "メールアドレスを確かめてください" : "送れませんでした。時間をおいてもう一度お試しください";
     });
@@ -808,12 +860,41 @@ export const EMBED_JS = `(() => {
     if (p.form) mountForm(el.querySelector("[data-in]"), p.form, () => ping("signup"));
     else el.querySelector(".lab-part-go").addEventListener("click", () => ping("click"));
   }
-  document.querySelectorAll("[data-lab-part]").forEach((el) => {
+  // 便 X1：ブログの新着のカード（home など）。記事が無ければ枠ごと隠す
+  async function mountBlog(el, n) {
+    el.classList.add("lab-bl");
+    const r = await fetch("/api/p/blog-latest?n=" + n).then((x) => x.json()).catch(() => ({}));
+    const rows = (r && r.ok && r.posts) || [];
+    if (!rows.length) { el.innerHTML = ""; el.style.display = "none"; return; }
+    el.innerHTML = rows.map((p) => '<a class="lab-bc" href="/blog/' + encodeURIComponent(p.slug) + '">'
+      + (p.thumb_url && /^https:[/][/]/.test(p.thumb_url) ? '<img src="' + esc(p.thumb_url) + '" alt="" loading="lazy">' : '<i aria-hidden="true"></i>')
+      + "<b>" + esc(p.title) + "</b><small>" + esc(p.date || "") + "</small></a>").join("");
+  }
+  const mountAll = (root) => root.querySelectorAll("[data-lab-part]").forEach((el) => {
     const v = el.getAttribute("data-lab-part") || "";
+    const bl = v.match(/^blog:latest(?:-([0-9]{1,2}))?$/);
+    if (bl) { mountBlog(el, Math.min(24, Math.max(1, Number(bl[1] || 8)))); return; }
     if (v.startsWith("part:")) { mountPart(el, v.slice(5)); return; }
     if (v.startsWith("booking:")) mountBooking(el, v.slice(8));
     else if (v.startsWith("form:")) mountForm(el, v.slice(5));
     else if (v.startsWith("checkout:")) mountCheckout(el, v.slice(9));
   });
+  mountAll(document);
+  // 便 X2：登録した人だけの中身。印（lab_u か lab_g）があれば中身をもらって枠に入れ、登録前の人向けの所（data-lab-guest）を隠す
+  let unlocked = false;
+  async function unlock() {
+    const boxes = document.querySelectorAll("[data-lab-gated]");
+    if (unlocked || !boxes.length) return;
+    const q = new URLSearchParams({ page: PAGE });
+    if (PREVIEW) { if (qs.get("as") === "guest") return; q.set("preview", qs.get("preview") || ""); }
+    else { const u = store.get("lab_u"), g = store.get("lab_g"); if (!u && !g) return; if (u) q.set("u", u); if (g) q.set("g", g); }
+    const r = await fetch("/api/p/gate?" + q.toString()).then((x) => x.json()).catch(() => ({}));
+    if (!r.ok || r.locked || !Array.isArray(r.blocks) || unlocked) return;
+    unlocked = true;
+    boxes.forEach((el) => { el.innerHTML = r.blocks[Number(el.getAttribute("data-lab-gated"))] || ""; el.hidden = false; mountAll(el); });
+    document.querySelectorAll("[data-lab-guest]").forEach((el) => { el.style.display = "none"; });
+    document.documentElement.classList.add("lab-in");
+  }
+  unlock();
 })();
 `;

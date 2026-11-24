@@ -97,7 +97,7 @@ import { makeNames } from "./names.js";
 import { makeChatAi, AI_MODEL } from "./chatai.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.84.0-bsite1";
+const VERSION = "0.86.0-bxmas2";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -589,6 +589,13 @@ async function handlePagesHost(request, env, url) {
   }
   const mlk = path.match(/^[/]m[/]([0-9a-f]{24})$/);
   if (mlk) return await serveMediaLink(request, env, mlk[1]);
+  // 便 X2：登録した人だけの中身（ページの <template data-lab-gate>）
+  if (path === "/api/p/gate" && method === "GET") {
+    const r = await pages.gate(env, { page: url.searchParams.get("page"), u: url.searchParams.get("u") || "", g: url.searchParams.get("g") || "", preview: url.searchParams.get("preview") || "" });
+    return json(r, r.ok ? 200 : 404, { "cache-control": "no-store" });
+  }
+  // 便 X1：ブログの新着（ページの印 blog:latest-n）
+  if (path === "/api/p/blog-latest" && method === "GET") return json(await blog.latest(env, url.searchParams.get("n")), 200, { "cache-control": "public, max-age=60" });
   const pp = path.match(/^[/]api[/]p[/]product[/]([a-z0-9-]{2,40})$/);
   if (pp && method === "GET") { const r = await pages.publicProduct(env, pp[1]); return json(r, r.ok ? 200 : 404); }
   if (path.startsWith("/api/")) return json({ ok: false, error: "not_found" }, 404);
