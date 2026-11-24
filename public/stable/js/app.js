@@ -118,6 +118,17 @@ async function main() {
     return;
   }
 
+  // 無料会員の便 B（2026-11-24）：チャット（やり取り・グループ）と、無料会員に開いた会員サイトの棚だけ。添削・振り返り・アプリ・目標は出さない
+  const isFree = r.access === "free";
+  if (isFree) {
+    document.body.classList.add("free-tier");
+    ["apps", "review", "mypage"].forEach((t) => { const b = document.querySelector(`.side [data-tab="${t}"]`); if (b) b.classList.add("hidden"); });
+    const rb = document.querySelector('.side [data-tab="room"]');
+    if (rb) { rb.dataset.label = "チャット"; const l = rb.querySelector(".lbl"); if (l) l.textContent = "チャット"; }
+    const corrBtn = document.querySelector('#tab-room [data-pane="corr"]'); if (corrBtn) corrBtn.classList.add("hidden");
+    const toReview = $("to-review"); if (toReview) toReview.parentElement.classList.add("hidden");
+    const roomNote = document.querySelector("#tab-room > p.note"); if (roomNote) roomNote.textContent = "シアニンと 1 対 1 のチャットです。質問や連絡、予約や申し込みの知らせはここに出ます。グループに入ると「グループ」も出ます。";
+  }
   const viewed = new Set(r.viewed);
   const views = Array.isArray(r.views) ? r.views : r.viewed.map((id) => ({ id, at: "1970-01-01T00:00:00Z" }));
   let flat = [], libKind = "ジャンル";
@@ -132,7 +143,9 @@ async function main() {
       <div style="flex:1;min-width:0"><h3>${esc(l.title)}</h3><div class="meta">${l.youtube_id || l.rec ? "動画" : "文章"}${l.mindmap_url ? "・マインドマップ" : ""}${l.minutes ? "・" + l.minutes + " 分" : ""}${pill(l.id)}</div></div>
     </div>`;
   };
-  if (lib.source === "manabu" && !lib.member) {
+  if (lib.source === "manabu" && !lib.member && isFree) {
+    $("tab-lessons").innerHTML = '<div class="card"><h3>特別コンテンツは準備中です</h3><p class="note" style="margin:0">無料会員の方に向けた特別コンテンツが、ここに並びます。</p></div>';
+  } else if (lib.source === "manabu" && !lib.member) {
     $("tab-lessons").innerHTML = '<div class="card"><h3>教材は会員向けです</h3><p class="note" style="margin:0">しあらぼの会員になると、セミナーのアーカイブと講座の教材がここで見られます。</p></div>';
   } else if (lib.source === "manabu") {
     // 生徒のホームと教材の図書館（2026-11-04）：種類ごとの棚・絞り込み・探す
@@ -239,7 +252,7 @@ async function main() {
   });
 
   setupMember(r.entitlement, r.me.email);
-  const room = setupRoom(token, r.community_url, r.community);
+  const room = setupRoom(token, r.community_url, r.community, { free: isFree });
   room.setBadge(r.room_unread);
   // 便 15b：#room/chat・#room/corr は、部屋のその枠を開く
   if (location.hash.startsWith("#room")) { room.setPane(location.hash.split("/")[1], location.hash.split("/")[2]); showTab("room"); }
@@ -595,12 +608,14 @@ function setupMember(ent, email) {
 }
 
 // ---------- 添削ルーム ----------
-function setupRoom(token, communityUrl, communityState) {
+function setupRoom(token, communityUrl, communityState, opts = {}) {
+  const freeOnly = opts.free === true; // 無料会員：添削の枠を出さない（やり取りとグループだけ）
   let opened = false, pending = [], timer = null, lastCount = -1, lastSig = "";
   // 便 15b：今の枠（corr 添削／chat やり取り）と、まだ開いていない枠の新着の数（部屋を開くと全部既読になるので、枠を見るまでここで覚える）
   let pane = null, last = { messages: [], notices: [] };
   const seen = { corr: 0, chat: 0, group: 0 };
   try { const p = localStorage.getItem("room_pane"); if (p === "corr" || p === "chat" || p === "group") pane = p; } catch (_) {}
+  if (freeOnly && pane === "corr") pane = "chat";
   // チャットの便 C2b：グループの枠（入っているグループがある人だけに出す）
   let groupOpen = null, roomUnread = 0, groupUnread = 0;
   const groupsUi = setupGroups(token, { onUnread: (n) => { groupUnread = n; seen.group = pane === "group" ? 0 : n; drawPaneBadges(); setBadge(roomUnread + groupUnread, true); } });
@@ -675,6 +690,7 @@ function setupRoom(token, communityUrl, communityState) {
   // 枠を替える。出す欄の案内とボタンも、その枠の出し方に替える
   const showPane = (p) => {
     pane = p === "chat" ? "chat" : p === "group" && !$("pane-group").classList.contains("hidden") ? "group" : "corr";
+    if (freeOnly && pane === "corr") pane = "chat";
     seen[pane] = 0;
     try { localStorage.setItem("room_pane", pane); } catch (_) {}
     const grp = pane === "group";
@@ -702,7 +718,7 @@ function setupRoom(token, communityUrl, communityState) {
     const un = unreadOf(r.messages);
     seen.corr = Math.max(seen.corr, un.corr); seen.chat = Math.max(seen.chat, un.chat);
     // 初めて開くとき：新着がやり取りだけならやり取り、それ以外は前に見ていた枠（無ければ添削）
-    if (!pane) pane = un.chat > 0 && un.corr === 0 ? "chat" : "corr";
+    if (!pane) pane = freeOnly ? "chat" : un.chat > 0 && un.corr === 0 ? "chat" : "corr";
     const sig = JSON.stringify([r.messages.map((m) => [m.id, m.replied, m.read_by_cyanin, m.read_by_student]), notices.map((n) => n.id)]);
     if (sig !== lastSig) {
       last = { messages: r.messages, notices };
