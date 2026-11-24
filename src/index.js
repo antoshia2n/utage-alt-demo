@@ -97,7 +97,7 @@ import { makeNames } from "./names.js";
 import { makeChatAi, AI_MODEL } from "./chatai.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.80.0-bgate2";
+const VERSION = "0.81.0-bfree1";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -497,8 +497,12 @@ async function registerPerson(env, body = {}) {
   // 便 8g-2：紹介のリンク（/register?ref=番号）から来たら、紹介された印を積む（1 人 1 回・自分の番号は積まない）
   let referred = false;
   if (body.ref) referred = (await refer.onRegister(env, id, String(body.ref), isNew)).referred === true;
-  await logInbound(env, "register", { email, source, via, route, ref: body.ref ? String(body.ref).slice(0, 20) : undefined }, { ok: true, isNew, referred }, 200);
-  return { ok: true, id, is_new: isNew };
+  // 無料会員（2026-11-24）：メール登録した時点で権利 free を付ける。付けられなくても登録は止めず、free: "failed" で返す
+  const fg = await bridge.grantFree(env, id, { via });
+  const free = fg.ok ? (fg.granted ? "granted" : "already") : "failed";
+  if (!fg.ok) await logInbound(env, "free_grant_failed", { id, via }, { ok: false, error: fg.error, detail: fg.detail }, 500);
+  await logInbound(env, "register", { email, source, via, route, ref: body.ref ? String(body.ref).slice(0, 20) : undefined }, { ok: true, isNew, referred, free }, 200);
+  return { ok: true, id, is_new: isNew, free };
 }
 
 async function addEvent(env, customerId, type, payload = {}, actor = "site") {
@@ -1166,7 +1170,7 @@ async function handleApi(request, env, url) {
     const stop = await guardPublic(request, env, "register", { ip: "public", bot: true, token: body.turnstile, email: body.email || "" });
     if (stop) return stop;
     const r = await registerPerson(env, body);
-    return json(r.ok ? { ok: true, is_new: r.is_new } : r, r.ok ? 200 : 400);
+    return json(r.ok ? { ok: true, is_new: r.is_new, free: r.free } : r, r.ok ? 200 : 400);
   }
 
   // 招待リンク（2026-10-30）：リンクの中身を見る・Google で登録して受け取る（ログイン不要。Google の印をサーバーで確かめる）

@@ -45,7 +45,12 @@ const MEETING_ROWS_MAX = 2000;
 //  ・付けられる権利の名前は、門番の表にもうある名前と、下の決めた名前だけ（打ち間違いで新しい名前を作らない）
 //  ・2026-10-29 Naoki「OK」：選べる名前はこの 6 つだけ。ほかの名前は表に残っていても選ぶ欄に出さない（消さない）
 //  ・ゲストは期限を必ず入れる（試用のあとに開いたまま残さないため）
-export const KNOWN_KEYS = ["shiarabo_basic", "shiarabo_pilot", "shiarabo_next_premium", "shiarabo_next_standard", "shiarabo_monitor", "guest"];
+export const KNOWN_KEYS = ["shiarabo_basic", "shiarabo_pilot", "shiarabo_next_premium", "shiarabo_next_standard", "shiarabo_monitor", "guest", "free"];
+// 無料会員（2026-11-24 Naoki 確定・判断記録「公式サイトはマーケくんの公開サイトに一本化し、無料会員の権利 free を足す」）。
+//  ・マーケくんでメール登録した時点で自動で付ける（registerPerson → grantFree）。会員（MEMBER_KEYS）には数えない
+//  ・行は source=manual・理由 FREE_REASON（表の決まりが payment／manual の 2 つだけのため。理由で手の行と見分ける）
+export const FREE_KEY = "free";
+export const FREE_REASON = "メール登録で自動（無料会員）";
 export const GUEST_KEY = "guest";
 // 期限が要る名前：ゲスト（10/29 08:06 Naoki「OK」）とモニター（10/27 の判断記録「手で・期限つき」）
 export const EXPIRY_REQUIRED = [GUEST_KEY, "shiarabo_monitor"];
@@ -305,6 +310,24 @@ export function makeBridge(h) {
     return { ok: true, found: true, entitlement: row || null, entitlements: await gateFull(env, person_id) };
   }
 
+  // 無料会員の権利を付ける（登録の道から呼ぶ）。持っていれば付けない。付けられなければ出来事 entitlement_grant_failed を残し、失敗を返す（0 件と分ける）
+  async function grantFree(env, person_id, { via } = {}, actor = "site") {
+    const how = via ? String(via).slice(0, 60) : "register";
+    try {
+      if (!/^[0-9a-f-]{36}$/i.test(String(person_id || ""))) return { ok: false, error: "bad_person_id" };
+      const rows = await gateFull(env, person_id);
+      if ((rows || []).some((r) => r.key === FREE_KEY && live(r))) return { ok: true, granted: false, already: true };
+      const [row] = await db(env, "POST", "member_entitlement", [{ member_id: person_id, key: FREE_KEY, source: "manual", reason: FREE_REASON, expires_at: null }], "return=representation");
+      if (!row || !row.id) throw new Error("no_row_returned");
+      await addEvent(env, person_id, "entitlement_granted", { key: FREE_KEY, reason: FREE_REASON, via: how, auto: true, entitlement_id: row.id }, actor);
+      return { ok: true, granted: true, entitlement_id: row.id };
+    } catch (e) {
+      const detail = String((e && e.message) || e).slice(0, 300);
+      try { await addEvent(env, person_id, "entitlement_grant_failed", { key: FREE_KEY, via: how, error: detail }, actor); } catch (_) { /* 記録の失敗で登録を止めない */ }
+      return { ok: false, error: "free_grant_failed", detail };
+    }
+  }
+
   async function revokeManual(env, { person_id, entitlement_id, reason } = {}, actor = "admin") {
     if (!/^[0-9a-f-]{36}$/i.test(String(person_id || ""))) return { ok: false, error: "bad_person_id" };
     if (!/^[0-9a-z-]{1,40}$/i.test(String(entitlement_id ?? ""))) return { ok: false, error: "bad_entitlement_id" };
@@ -355,5 +378,5 @@ export function makeBridge(h) {
     return { ok: true, changed: !!have !== on, ...(await accessList(env, { key: k })) };
   }
 
-  return { withGate, gateMembers, gateKeysAll, syncGrants, listTables, meetings, entitlementKeys, gateAll, gateFull, grantManual, revokeManual, accessList, setAccess };
+  return { withGate, gateMembers, gateKeysAll, syncGrants, listTables, meetings, entitlementKeys, gateAll, gateFull, grantManual, grantFree, revokeManual, accessList, setAccess };
 }
