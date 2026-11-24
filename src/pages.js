@@ -12,6 +12,8 @@
 //   data-lab-button="名前"             … ボタン。押したら出来事に積み、コネクタのきっかけ「ページのボタンを押した」になる
 //   data-lab-part="booking:slug"     … 便 13b：個別相談の予約の枠（空き時間を選び、名前とメールで予約する）
 //   data-lab-part="part:名前"         … 便 S2（2026-11-07）：公開サイトの部品（src/web.js）。中身は読者の段階で変わる
+//   <template data-lab-gate>…</template> … 便 X2（2026-11-25 Naoki OK）：登録した人だけに見せる中身。公開のときに中を外し、
+//                                      登録の印（lab_u か lab_g）がある人にだけ /api/p/gate が返す。data-lab-guest の所は登録前の人にだけ見せる
 //   data-lab-part="blog:latest-8"    … 便 X1（2026-11-24 Naoki OK）：公開中のブログの新しい記事を 8 本（1〜24・省くと 8）。home に新着を手で書き足さないため
 // 便 S1（2026-11-07）：embed.js は /_lab/look.css（公開サイトの見た目・src/web.js）も head の先頭に足す。ページは var(--lab-c) などで色を当てる
 // 便 T2（2026-11-07 Naoki OK 23:05）：期間限定の公開。b_pages の closes_at を過ぎたら、closed_to のページ（公開中・自分以外）か
@@ -114,6 +116,26 @@ export async function readPersonToken(env, tok) {
   if (!m) return null;
   if (Number(m[2]) * 1000 < Date.now()) return null;
   return sameHex(m[3], await hmacHex(env, `person:${m[1]}:${m[2]}`)) ? m[1] : null;
+}
+// 便 X2：「この端末の人は公開サイトのフォームに答えた」の印（形は「期限（秒）.署名」・既定 180 日）。人は特定しない。
+// フォームは誰でも答えられるので、印を持つ＝登録の手を通った、だけを表す。登録した人だけの中身（data-lab-gate）を開く
+export const GATE_TOKEN_TTL_MS = 180 * 864e5;
+export async function gateToken(env, ttlMs = GATE_TOKEN_TTL_MS) {
+  const exp = Math.floor((Date.now() + ttlMs) / 1000);
+  return `${exp}.${await hmacHex(env, `gate:site:${exp}`)}`;
+}
+export async function readGateToken(env, tok) {
+  const m = String(tok || "").match(/^([0-9]{9,11})[.]([0-9a-f]{32})$/i);
+  if (!m) return false;
+  if (Number(m[1]) * 1000 < Date.now()) return false;
+  return sameHex(m[2], await hmacHex(env, `gate:site:${m[1]}`));
+}
+// 便 X2：<template data-lab-gate>…</template> を外して、空の枠（data-lab-gated="番号"）に置き換える。外した中身は順に blocks へ
+const GATE_RE = /<template\s+data-lab-gate(?:\s[^>]*)?>([\s\S]*?)<\/template>/gi;
+export function splitGate(html) {
+  const blocks = [];
+  const out = String(html || "").replace(GATE_RE, (_, inner) => { blocks.push(inner); return `<div data-lab-gated="${blocks.length - 1}" hidden></div>`; });
+  return { html: out, blocks };
 }
 export async function previewToken(env, pageId, version, ttlMs = 6 * 3600e3) {
   const exp = Math.floor((Date.now() + ttlMs) / 1000);
@@ -230,6 +252,7 @@ export function makePages(h) {
       countdown: "期間限定の残り（便 T2）：<span data-lab-countdown></span> の所に「あと 2日 3時間 4分」が入る（set_page_close で期限を決めたページだけ）。期限を過ぎると、決めたページか「公開は終了しました」の画面になる",
       booking: "予約の枠：<div data-lab-part=\"booking:予約の種類の住所の名前\"></div>。空き時間の一覧と、名前・メール・相談したいこと・同意の欄が入る。予約した人は台帳に入り、受付のメールが届く",
       look: "公開サイトの見た目（便 S1）：B が /_lab/look.css を自分で読ませる。色は var(--lab-c)（主の色）・var(--lab-c2)（差し色）・var(--lab-bg)・var(--lab-card)・var(--lab-line)・var(--lab-fg)・var(--lab-mut)、角は var(--lab-r)、字は var(--lab-font)・var(--lab-head) を使う（テーマを替えると全ページが変わる）。記事の装飾は class lab-toc（目次）・lab-box（ボックス）・lab-fuki（ふきだし）",
+      gate: "登録した人だけの中身（便 X2）：<template data-lab-gate>…</template> の中は、公開サイトのフォームに答えた人（この端末）にだけ出る。登録前の人に見せる所（登録の枠など）には data-lab-guest を付ける（登録した人には隠れる）。見本では登録した人の見え方になり、住所の後ろに &as=guest を足すと登録前の見え方になる",
       blog: "ブログの新着（便 X1）：<div data-lab-part=\"blog:latest-8\"></div>。公開中の記事の新しい順に、サムネ（16:9）・題名・日付のカードが並ぶ（数は 1〜24・省くと 8）。カードは class lab-bl（並べる箱）・lab-bc（カード 1 枚）",
       part: "公開サイトの部品（便 S2）：<div data-lab-part=\"part:部品の名前\"></div>。中身（題・文・ボタンか申込の枠）は読者の段階で変わり、マーケくんの「ブログ・公開ページ › 部品」で 1 か所を直すと全部のページで変わる。使える部品は get_web の parts",
       thanks: "サンクスページ（目的 thanks）：申込の枠もボタンも要らない。申込を受け付けたこと・日時・参加の URL はメールで届くこと・迷惑メールの確かめ方を書く。セミナーの回に結ぶのは set_seminar の thanks_page_slug",
@@ -470,6 +493,7 @@ export function makePages(h) {
     // 便 13：セミナーの回にサンクスページがあれば、答えたあとそこへ移る（公開中のときだけ）
     if (r.thanks_url) out.thanks_url = r.thanks_url + (route ? `?r=${encodeURIComponent(route)}` : "");
     if (r.is_new && r.id) out.u = await personToken(env, r.id);
+    out.g = await gateToken(env); // 便 X2：答えた端末で、登録した人だけの中身を開く
     return out;
   }
 
@@ -503,14 +527,37 @@ export function makePages(h) {
         const to = page.closed_to && page.closed_to !== page.slug ? await pageBySlug(env, page.closed_to) : null;
         if (to && to.status === "published" && to.published_version && to.purpose !== "mypage" && !isClosed(to)) {
           const r2 = await version(env, to.id, to.published_version);
-          if (r2) return { html: injectEmbed(r2.html, { page: to.id, preview: "0", lab: labOrigin(env) }), preview: false, page: to, closed_from: page.slug };
+          if (r2) return { html: injectEmbed(splitGate(r2.html).html, { page: to.id, preview: "0", lab: labOrigin(env) }), preview: false, page: to, closed_from: page.slug };
         }
         return { html: closedHtml(page), preview: false, page, closed: true };
       }
     }
     const row = await version(env, page.id, v);
     if (!row) return null;
-    return { html: injectEmbed(row.html, { page: page.id, preview: preview ? "1" : "0", lab: labOrigin(env), ...(page.closes_at ? { closes: page.closes_at } : {}) }), preview, page };
+    return { html: injectEmbed(splitGate(row.html).html, { page: page.id, preview: preview ? "1" : "0", lab: labOrigin(env), ...(page.closes_at ? { closes: page.closes_at } : {}) }), preview, page };
+  }
+
+  // 便 X2：登録した人だけの中身を返す。見本（preview の印）では、シアニンが確かめられるよう印なしで返す
+  async function gate(env, { page: pageId, u, g, preview: pv } = {}) {
+    if (!UUID_RE.test(String(pageId || ""))) return { ok: false, error: "not_found" };
+    const page = await pageById(env, pageId);
+    if (!page || page.purpose === "mypage") return { ok: false, error: "not_found" };
+    let v = null;
+    if (pv) {
+      v = await readPreviewToken(env, page.id, pv);
+      if (v == null) return { ok: false, error: "not_found" };
+    } else {
+      if (page.status !== "published" || !page.published_version || isClosed(page)) return { ok: false, error: "not_found" };
+      v = page.published_version;
+    }
+    const row = await version(env, page.id, v);
+    if (!row) return { ok: false, error: "not_found" };
+    const { blocks } = splitGate(row.html);
+    if (!pv) {
+      const open = (await readGateToken(env, g)) || !!(await readPersonToken(env, u).catch(() => null));
+      if (!open) return { ok: true, locked: true, count: blocks.length };
+    }
+    return { ok: true, locked: false, blocks };
   }
 
   // 便 T2：公開の期限を決める・外す（承認の道具）。closes_at は日本時間の「2026-11-12 23:59」か ISO。空で外す。
@@ -555,7 +602,7 @@ export function makePages(h) {
     return { pages, partsOf };
   }
 
-  return { createRequest, getRequest, listRequests, saveDraft, listPages, getPage, publish, setClose, routeStats, hit, publicProduct, submitForm, submitBooking, serve, forPlan, hitsSince, pagesOrigin, rules };
+  return { createRequest, getRequest, listRequests, saveDraft, listPages, getPage, publish, setClose, routeStats, hit, publicProduct, submitForm, submitBooking, serve, gate, forPlan, hitsSince, pagesOrigin, rules };
 }
 
 // 公開のページに差し込む仕掛け（lp の住所の /_lab/embed.js）。ページの中の印を本物の枠に変え、見た・押したを送る
@@ -660,7 +707,8 @@ export const EMBED_JS = `(() => {
       if (BOT_MSG[res.error]) { msg.textContent = BOT_MSG[res.error]; return; }
       if (res.ok && onOk) { try { onOk(); } catch (_) {} }
       if (res.ok && res.thanks_url && /^https:[/][/]/.test(res.thanks_url)) { if (res.u) store.set("lab_u", res.u); location.href = res.thanks_url; return; }
-      if (res.ok) { if (res.u) store.set("lab_u", res.u); el.innerHTML = '<p class="lab-note" style="white-space:pre-wrap">' + esc(res.thanks || "受け取りました。ありがとうございます。") + "</p>"; return; }
+      if (res.ok && res.g) store.set("lab_g", res.g);
+      if (res.ok) { if (res.u) store.set("lab_u", res.u); unlock(); el.innerHTML = '<p class="lab-note" style="white-space:pre-wrap">' + esc(res.thanks || "受け取りました。ありがとうございます。") + "</p>"; return; }
       if (res.error === "bad_answers") { for (const b of res.fields || []) { const e = q('[data-e="' + b.key + '"]'); if (e) e.textContent = WHY[b.error] || "確かめてください"; } msg.textContent = "赤い字の欄を直してください"; return; }
       msg.textContent = res.error === "bad_email" ? "メールアドレスを確かめてください" : "送れませんでした。時間をおいてもう一度お試しください";
     });
@@ -822,7 +870,7 @@ export const EMBED_JS = `(() => {
       + (p.thumb_url && /^https:[/][/]/.test(p.thumb_url) ? '<img src="' + esc(p.thumb_url) + '" alt="" loading="lazy">' : '<i aria-hidden="true"></i>')
       + "<b>" + esc(p.title) + "</b><small>" + esc(p.date || "") + "</small></a>").join("");
   }
-  document.querySelectorAll("[data-lab-part]").forEach((el) => {
+  const mountAll = (root) => root.querySelectorAll("[data-lab-part]").forEach((el) => {
     const v = el.getAttribute("data-lab-part") || "";
     const bl = v.match(/^blog:latest(?:-([0-9]{1,2}))?$/);
     if (bl) { mountBlog(el, Math.min(24, Math.max(1, Number(bl[1] || 8)))); return; }
@@ -831,5 +879,22 @@ export const EMBED_JS = `(() => {
     else if (v.startsWith("form:")) mountForm(el, v.slice(5));
     else if (v.startsWith("checkout:")) mountCheckout(el, v.slice(9));
   });
+  mountAll(document);
+  // 便 X2：登録した人だけの中身。印（lab_u か lab_g）があれば中身をもらって枠に入れ、登録前の人向けの所（data-lab-guest）を隠す
+  let unlocked = false;
+  async function unlock() {
+    const boxes = document.querySelectorAll("[data-lab-gated]");
+    if (unlocked || !boxes.length) return;
+    const q = new URLSearchParams({ page: PAGE });
+    if (PREVIEW) { if (qs.get("as") === "guest") return; q.set("preview", qs.get("preview") || ""); }
+    else { const u = store.get("lab_u"), g = store.get("lab_g"); if (!u && !g) return; if (u) q.set("u", u); if (g) q.set("g", g); }
+    const r = await fetch("/api/p/gate?" + q.toString()).then((x) => x.json()).catch(() => ({}));
+    if (!r.ok || r.locked || !Array.isArray(r.blocks) || unlocked) return;
+    unlocked = true;
+    boxes.forEach((el) => { el.innerHTML = r.blocks[Number(el.getAttribute("data-lab-gated"))] || ""; el.hidden = false; mountAll(el); });
+    document.querySelectorAll("[data-lab-guest]").forEach((el) => { el.style.display = "none"; });
+    document.documentElement.classList.add("lab-in");
+  }
+  unlock();
 })();
 `;
