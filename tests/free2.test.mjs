@@ -47,34 +47,29 @@ s.table("member_entitlement").push(
 );
 
 import { studentTier, gateView } from "../src/bridge.js";
-test("段の決め方：free だけ → free・生徒の権利もある → contract のまま・先行は full・何も無い → contract", () => {
-  assert.equal(studentTier(gateView(null, ["free"]), false), "free");
+// 2026-11-25 08:16 Naoki：無料会員に会員サイトのログインは渡さない（便 B の free の段をやめた）。free だけの人は「ご契約」の画面で公式サイトへ案内する
+test("段の決め方：free だけ → contract（会員サイトは開かない）・生徒の権利もある → contract・先行は full・何も無い → contract", () => {
+  assert.equal(studentTier(gateView(null, ["free"]), false), "contract");
   assert.equal(studentTier(gateView(null, ["free", "shiarabo_basic"]), false), "contract");
   assert.equal(studentTier(gateView(null, ["free", "shiarabo_pilot"]), false), "full");
   assert.equal(studentTier(gateView(null, []), false), "contract");
   assert.equal(studentTier(gateView(null, ["free"]), true), "full");
 });
 
-test("無料会員：/api/me は access free・アプリと目標と紹介は出さない", async () => {
+test("無料会員：/api/me はご契約の画面で、公式サイトのログインへの案内（site_member）を返す", async () => {
   const j = await (await call("/api/me", "fre")).json();
   assert.equal(j.ok, true);
-  assert.equal(j.access, "free");
+  assert.equal(j.access, "contract");
+  assert.equal(j.site_member, true);
+  assert.equal(j.site_login_url, "https://lp.shia2n.jp/login");
   assert.deepEqual(j.apps, []);
-  assert.deepEqual(j.app_catalog, []);
-  assert.equal(j.goals_ready, false);
-  assert.equal(j.referral, null);
 });
 
-test("無料会員：やり取り（チャット）は送れる・添削の依頼は 403", async () => {
-  const ok = await call("/api/room", "fre", { method: "POST", body: { text: "質問です", kind: "chat" } });
-  assert.equal(ok.status, 200);
-  assert.ok(s.table("b_events").some((e) => e.customer_id === FRE && e.type === "room_chat"));
-  const ng = await call("/api/room", "fre", { method: "POST", body: { text: "添削してください" } });
+test("無料会員：会員サイトの部屋（チャット・添削）は 403", async () => {
+  const ng = await call("/api/room", "fre", { method: "POST", body: { text: "質問です", kind: "chat" } });
   assert.equal(ng.status, 403);
-  assert.equal((await ng.json()).error, "correction_members_only");
-  assert.ok(!s.table("b_events").some((e) => e.customer_id === FRE && e.type === "correction_submitted"));
-  assert.equal((await call("/api/room", "fre")).status, 200);
-  assert.equal((await call("/api/room/groups", "fre")).status, 200);
+  assert.ok(!s.table("b_events").some((e) => e.customer_id === FRE && e.type === "room_chat"));
+  assert.equal((await call("/api/room", "fre")).status, 403);
 });
 
 test("無料会員：マイページの HTML と目標は今までどおり 403", async () => {
@@ -86,6 +81,7 @@ test("生徒の権利もある人は free を持っていても今までどお�
   const j = await (await call("/api/me", "fm")).json();
   assert.equal(j.access, "contract");
   assert.equal(j.member_waiting, true);
+  assert.equal(j.site_member, false);
   assert.equal((await call("/api/room", "fm")).status, 403);
 });
 

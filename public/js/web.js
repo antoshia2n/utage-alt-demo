@@ -234,6 +234,7 @@ export function mountWeb(host, { getToken }) {
       <div class="fld"><label for="be-slug">住所の名前</label><input class="in" id="be-slug" maxlength="61" value="${esc(bed.slug)}" ${pub ? "disabled" : ""}><span class="hint">${pub ? "公開中は変えられません" : "lp.shia2n.jp/blog/" + esc(bed.slug)}</span></div>
       <div class="fld"><label for="be-desc">説明（200 字）</label><textarea class="in" id="be-desc" rows="2" maxlength="200" style="flex:1;min-width:260px">${esc(bed.description)}</textarea></div>
       ${bed.kind === "membership" ? `<div class="fld"><label for="be-link">note の記事の住所（メンシプ記事）</label><input class="in" id="be-link" maxlength="500" value="${esc(bed.link_url || "")}" placeholder="https://note.com/…" style="flex:1;min-width:260px"><span class="hint">本文は写さず、このボタンだけを出す。住所を入れるまで公開できない</span></div>` : ""}
+      <div class="fld"><label for="be-cat">カテゴリ</label><input class="in" id="be-cat" maxlength="20" value="${esc(bed.category || "")}" placeholder="例：SNS攻略（空なら付けない）" style="flex:1;min-width:200px"><span class="hint">公式サイトのカテゴリの一覧に出る。20 字まで</span></div>
       <div class="fld"><label for="be-thumb">サムネの住所</label><input class="in" id="be-thumb" maxlength="500" value="${esc(bed.thumb_url)}" placeholder="https://（空なら本文の最初の画像）" style="flex:1;min-width:260px"></div>
       <div class="fld"><label for="be-gift">特典（本文の途中）</label><select class="in" id="be-gift"><option value="">${defMid() ? "既定（" + esc(defMid().name) + "）" : "既定（本文の途中の部品なし）"}</option>${(B.parts || []).map((x) => `<option value="${esc(x.id)}" ${bed.gift_part === x.id ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select><span class="hint">2 つ目の見出しの前に出る。中身は読者の段階で変わる（部品のタブで作る）</span></div>
       <div class="fld" style="margin-top:12px"><button class="btn sm pri" type="button" id="be-save">保存</button>
@@ -251,7 +252,7 @@ export function mountWeb(host, { getToken }) {
   }
   function readBed() {
     bed.title = $("#be-title").value.trim(); bed.slug = $("#be-slug").value.trim();
-    bed.description = $("#be-desc").value.trim(); bed.thumb_url = $("#be-thumb").value.trim(); bed.gift_part = $("#be-gift").value;
+    bed.description = $("#be-desc").value.trim(); bed.thumb_url = $("#be-thumb").value.trim(); bed.category = $("#be-cat").value.trim(); bed.gift_part = $("#be-gift").value;
     if ($("#be-link")) bed.link_url = $("#be-link").value.trim();
   }
   async function saveBlog(body, done) {
@@ -264,7 +265,7 @@ export function mountWeb(host, { getToken }) {
     $("#b-pick").addEventListener("click", async () => { pick = { account: (B.accounts.find((a) => a.id === "acc_1") || B.accounts[0] || {}).id || "acc_1", q: "", rows: null }; draw(); $("#pk-q").focus(); await loadPick(); const f = $("#pk-q"); if (f) f.focus(); });
     $("#main").querySelectorAll("[data-bedit]").forEach((b) => b.addEventListener("click", () => {
       const p = B.posts.find((x) => x.id === b.dataset.bedit); armDel = false; back = `[data-bedit="${p.id}"]`;
-      bed = { id: p.id, title: p.title, slug: p.slug, description: p.description || "", thumb_url: p.thumb_url || "", gift_part: p.gift_part || "", kind: p.kind || "", link_url: p.link_url || "" };
+      bed = { id: p.id, title: p.title, slug: p.slug, description: p.description || "", thumb_url: p.thumb_url || "", category: p.category || "", gift_part: p.gift_part || "", kind: p.kind || "", link_url: p.link_url || "" };
       draw(); $("#be-title").focus();
     }));
     if (pick) {
@@ -280,7 +281,7 @@ export function mountWeb(host, { getToken }) {
         const r = await api("/api/admin/blog/copy", { method: "POST", token: getToken(), body: { post_id: id, slug } });
         if (!r.ok) { say(errText(r)); inp.focus(); return; }
         pick = null; await loadBlog();
-        const p = r.post; bed = { id: p.id, title: p.title, slug: p.slug, description: p.description || "", thumb_url: p.thumb_url || "", gift_part: "", kind: p.kind || "", link_url: p.link_url || "" }; back = `[data-bedit="${p.id}"]`;
+        const p = r.post; bed = { id: p.id, title: p.title, slug: p.slug, description: p.description || "", thumb_url: p.thumb_url || "", category: p.category || "", gift_part: "", kind: p.kind || "", link_url: p.link_url || "" }; back = `[data-bedit="${p.id}"]`;
         draw(); say(`「${p.title}」を下書きにコピーしました。説明と特典を決めて公開してください`); $("#be-title").focus();
       }));
     }
@@ -291,7 +292,7 @@ export function mountWeb(host, { getToken }) {
     const p = () => B.posts.find((x) => x.id === bed.id);
     $("#be-save").addEventListener("click", async () => {
       readBed(); const cur = p(); const body = { id: bed.id };
-      for (const k of ["title", "description", "thumb_url", "gift_part"]) if ((cur[k] || "") !== bed[k]) body[k] = bed[k];
+      for (const k of ["title", "description", "thumb_url", "category", "gift_part"]) if ((cur[k] || "") !== bed[k]) body[k] = bed[k];
       if (bed.kind === "membership" && (cur.link_url || "") !== (bed.link_url || "")) body.link_url = bed.link_url || "";
       if (cur.status !== "published" && bed.slug !== cur.slug) body.slug = bed.slug;
       if (Object.keys(body).length === 1) { say(ERR.nothing_to_change); return; }

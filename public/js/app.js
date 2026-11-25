@@ -103,7 +103,10 @@ async function main() {
     $("news-btn").classList.add("hidden");
     ["mypage", "goals", "lessons", "lesson", "news", "room", "review", "booking", "apps"].forEach((t) => $("tab-" + t).classList.add("hidden"));
     $("tab-contract").classList.remove("hidden");
-    $("tab-contract").insertAdjacentHTML("afterbegin", r.member_waiting
+    // 2026-11-25 Naoki：無料会員は会員サイトではなく公式サイトで使う。公式サイトのログインへ案内する
+    $("tab-contract").insertAdjacentHTML("afterbegin", r.site_member
+      ? '<div class="card"><h3>この画面はしあらぼの会員向けです</h3><p class="note" style="margin:0 0 12px">無料会員の方は、公式サイトにログインしてご利用ください。会員限定コンテンツとチャットは、公式サイトでご覧いただけます。</p><a class="btn primary" href="' + esc(r.site_login_url || "https://lp.shia2n.jp/login") + '">公式サイトのログインへ移動 →</a></div>'
+      : r.member_waiting
       ? '<div class="card"><h3>マイページは準備中です</h3><p class="note" style="margin:0">教材は今までどおり <a href="https://manabu.shia2n.jp/" target="_blank" rel="noopener">学ぶくん ↗</a> で見られます。ご契約の内容と、定期の停止はここからできます。</p></div>'
       : '<div class="card"><h3>この画面はご契約の確認用です</h3><p class="note" style="margin:0">教材・添削ルーム・マイページは、しあらぼの会員向けです。ご契約の内容と、定期の停止はここからできます。</p></div>');
     // スキルズの管理 3便目（2026-11-15）：会員（マイページの準備中の人）には、生徒に出しているスキルを受け取るカードを出す
