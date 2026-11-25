@@ -14,6 +14,7 @@
 //   data-lab-part="part:名前"         … 便 S2（2026-11-07）：公開サイトの部品（src/web.js）。中身は読者の段階で変わる
 //   <template data-lab-gate>…</template> … 便 X2（2026-11-25 Naoki OK）：登録した人だけに見せる中身。公開のときに中を外し、
 //                                      登録の印（lab_u か lab_g）か、公式サイトのログイン（cookie lab_site）がある人にだけ /api/p/gate が返す。data-lab-guest の所は登録前の人にだけ見せる
+//   data-lab-part="slider:home" など … 公式サイトの作り直し 便 2：ホームのスライダー・本棚・サイドバー・カテゴリ・ログイン（中身は /admin の「ホーム」）
 //   data-lab-part="blog:latest-8"    … 便 X1（2026-11-24 Naoki OK）：公開中のブログの新しい記事を 8 本（1〜24・省くと 8）。home に新着を手で書き足さないため
 // 便 S1（2026-11-07）：embed.js は /_lab/look.css（公開サイトの見た目・src/web.js）も head の先頭に足す。ページは var(--lab-c) などで色を当てる
 // 便 T2（2026-11-07 Naoki OK 23:05）：期間限定の公開。b_pages の closes_at を過ぎたら、closed_to のページ（公開中・自分以外）か
@@ -21,6 +22,7 @@
 // 経路：ページの住所の後ろの ?r=名前。初めて登録したときの経路をその人の経路にする（registered の payload.route）。
 
 import { SLUG_RE } from "./forms.js";
+import { homeEmbed } from "./homeembed.js";
 import { putMember } from "./plan.js";
 import { isTestPurchase } from "./purchase.js";
 
@@ -37,17 +39,20 @@ export const HTML_MAX = 400000;
 const TEXT_MAX = 2000;
 const now = () => new Date().toISOString();
 
+// 公式サイトの作り直し 便 2：ホームの部品の印（src/homeembed.js が描く）
+export const SITE_MARKS = ["slider:home", "shelf:home", "sidebar:home", "categories", "account"];
 // HTML の中の印を拾う（フォーム・決済の枠・ボタン）
 export function parseParts(html) {
   // 便 13：HTML の注意書き（<!-- -->）の中の印は読まない（便 12a の版 1 で、説明の文の印を印として拾った件）
   const s = String(html || "").replace(/<!--[\s\S]*?-->/g, "");
-  const forms = new Set(), checkouts = new Set(), buttons = new Set(), bookings = new Set(), webParts = new Set(), blogs = new Set(), bad = [];
+  const forms = new Set(), checkouts = new Set(), buttons = new Set(), bookings = new Set(), webParts = new Set(), blogs = new Set(), site = new Set(), bad = [];
   for (const m of s.matchAll(/data-lab-part\s*=\s*["']([^"']*)["']/g)) {
     const v = m[1].trim();
     const f = v.match(/^form:(.+)$/), c = v.match(/^checkout:(.+)$/), bk = v.match(/^booking:(.+)$/), wp = v.match(/^part:(.+)$/);
     const bl = v.match(/^blog:latest(?:-([0-9]{1,2}))?$/);
     if (f && SLUG_RE.test(f[1])) forms.add(f[1]);
     else if (bl && (!bl[1] || (Number(bl[1]) >= 1 && Number(bl[1]) <= 24))) blogs.add(v);
+    else if (SITE_MARKS.includes(v)) site.add(v);
     else if (wp && /^[a-z0-9][a-z0-9-]{1,30}$/.test(wp[1])) webParts.add(wp[1]);
     else if (bk && SLUG_RE.test(bk[1])) bookings.add(bk[1]);
     else if (c && PRODUCT_ID_RE.test(c[1])) checkouts.add(c[1]);
@@ -57,7 +62,7 @@ export function parseParts(html) {
     const v = m[1].trim();
     if (BUTTON_RE.test(v)) buttons.add(v); else bad.push("button:" + v.slice(0, 40));
   }
-  return { forms: [...forms], checkouts: [...checkouts], buttons: [...buttons], bookings: [...bookings], web_parts: [...webParts], blogs: [...blogs], bad };
+  return { forms: [...forms], checkouts: [...checkouts], buttons: [...buttons], bookings: [...bookings], web_parts: [...webParts], blogs: [...blogs], site: [...site], bad };
 }
 
 // 公開のときに B の差し込みの仕掛けを足す（Claude が書いた同じ行は外してから 1 回だけ）
@@ -270,6 +275,7 @@ export function makePages(h) {
       booking: "予約の枠：<div data-lab-part=\"booking:予約の種類の住所の名前\"></div>。空き時間の一覧と、名前・メール・相談したいこと・同意の欄が入る。予約した人は台帳に入り、受付のメールが届く",
       look: "公開サイトの見た目（便 S1）：B が /_lab/look.css を自分で読ませる。色は var(--lab-c)（主の色）・var(--lab-c2)（差し色）・var(--lab-bg)・var(--lab-card)・var(--lab-line)・var(--lab-fg)・var(--lab-mut)、角は var(--lab-r)、字は var(--lab-font)・var(--lab-head) を使う（テーマを替えると全ページが変わる）。記事の装飾は class lab-toc（目次）・lab-box（ボックス）・lab-fuki（ふきだし）",
       gate: "登録した人だけの中身（便 X2）：<template data-lab-gate>…</template> の中は、公開サイトのフォームに答えた人（この端末）にだけ出る。登録前の人に見せる所（登録の枠など）には data-lab-guest を付ける（登録した人には隠れる）。見本では登録した人の見え方になり、住所の後ろに &as=guest を足すと登録前の見え方になる",
+      home: "ホームの部品（公式サイトの作り直し 便 2）：<div data-lab-part=\"slider:home\"></div>（スライダー）・shelf:home（本棚）・sidebar:home（サイドバー：無料会員登録・個別相談の残り枠・メンバーシップ）・categories（カテゴリ）・account（ログイン／ログイン中の名前）。中身は /admin の「ブログ・公開ページ › ホーム」で差し替える",
       blog: "ブログの新着（便 X1）：<div data-lab-part=\"blog:latest-8\"></div>。公開中の記事の新しい順に、サムネ（16:9）・題名・日付のカードが並ぶ（数は 1〜24・省くと 8）。カードは class lab-bl（並べる箱）・lab-bc（カード 1 枚）",
       part: "公開サイトの部品（便 S2）：<div data-lab-part=\"part:部品の名前\"></div>。中身（題・文・ボタンか申込の枠）は読者の段階で変わり、マーケくんの「ブログ・公開ページ › 部品」で 1 か所を直すと全部のページで変わる。使える部品は get_web の parts",
       thanks: "サンクスページ（目的 thanks）：申込の枠もボタンも要らない。申込を受け付けたこと・日時・参加の URL はメールで届くこと・迷惑メールの確かめ方を書く。セミナーの回に結ぶのは set_seminar の thanks_page_slug",
@@ -887,8 +893,11 @@ export const EMBED_JS = `(() => {
       + (p.thumb_url && /^https:[/][/]/.test(p.thumb_url) ? '<img src="' + esc(p.thumb_url) + '" alt="" loading="lazy">' : '<i aria-hidden="true"></i>')
       + "<b>" + esc(p.title) + "</b><small>" + esc(p.date || "") + "</small></a>").join("");
   }
+  // 公式サイトの作り直し 便 2：ホームの部品（スライダー・本棚・サイドバー・カテゴリ・ログイン）
+  const homeMount = (${homeEmbed.toString()})({ esc, mountForm, PREVIEW });
   const mountAll = (root) => root.querySelectorAll("[data-lab-part]").forEach((el) => {
     const v = el.getAttribute("data-lab-part") || "";
+    if (homeMount(el, v)) return;
     const bl = v.match(/^blog:latest(?:-([0-9]{1,2}))?$/);
     if (bl) { mountBlog(el, Math.min(24, Math.max(1, Number(bl[1] || 8)))); return; }
     if (v.startsWith("part:")) { mountPart(el, v.slice(5)); return; }

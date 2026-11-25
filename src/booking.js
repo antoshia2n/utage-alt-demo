@@ -504,6 +504,14 @@ export function makeBooking(h) {
       slots: r.slots.map((s) => ({ slot: s, label: fmtJst(s), day: fmtJst(s).split("（")[0], end: endLabel(s, t.minutes) })) };
   }
 
+  // 公式サイトの作り直し 便 2：公開のメニューの先着の残り（ホームのサイドバーの「残り N 名」）。先着の数が無いメニューは null
+  async function seatsLeft(env, slug) {
+    const t = await typeBySlug(env, slug);
+    if (!t || !t.active || t.archived_at || (t.audience || "public") !== "public" || !t.max_total) return null;
+    const taken = (await bookings(env)).filter((b) => b.type_id === t.id).length;
+    return { left: Math.max(0, t.max_total - taken), max: t.max_total };
+  }
+
   async function getSlots(env, { type_id, slug } = {}) {
     const t = type_id ? await typeById(env, type_id) : await typeBySlug(env, slug);
     if (!t) return { ok: true, found: false };
@@ -753,5 +761,5 @@ export function makeBooking(h) {
     return { ok: r.result === "sent", result: r.result, to: p.email, error: r.error || r.reason || null };
   }
 
-  return { list, get, set, getSlots, publicSlots, book, run, forPlan, forMember, readyFor, memberBook, memberCancel, listTemplates, setTemplate, testTemplate };
+  return { list, get, set, getSlots, seatsLeft, publicSlots, book, run, forPlan, forMember, readyFor, memberBook, memberCancel, listTemplates, setTemplate, testTemplate };
 }
