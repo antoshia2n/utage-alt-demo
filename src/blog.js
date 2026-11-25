@@ -270,6 +270,8 @@ export function makeBlog({ db, logInbound, web, pagesOrigin, previewToken, readP
     if (args.title !== undefined) { const t = String(args.title).trim(); if (!t || t.length > 120) return { ok: false, error: "bad_title" }; patch.title = t; }
     if (args.description !== undefined) { const d = String(args.description).trim(); if (d.length > 200) return { ok: false, error: "too_long", field: "description", max: 200 }; patch.description = d; }
     if (args.thumb_url !== undefined) { const u = String(args.thumb_url || "").trim(); if (u && !okUrl(u)) return { ok: false, error: "bad_thumb" }; patch.thumb_url = u || null; }
+    // 公式サイトの作り直し 便 1：カテゴリ（20 字まで・空で外す）
+    if (args.category !== undefined) { const c = String(args.category || "").trim(); if (c.length > 20) return { ok: false, error: "too_long", field: "category", max: 20 }; patch.category = c || null; }
     if (args.gift_part !== undefined) {
       const g = String(args.gift_part || "").trim();
       if (g) {
@@ -356,8 +358,17 @@ ${more.length ? `<section class="bmore"><h2>ほかの記事</h2><div class="bl">
   // 便 X1：公開中の新しい記事 n 本（ページの印 blog:latest-n が読む）。下書き・止めた記事は出さない
   async function latest(env, n = 8) {
     const k = Math.min(24, Math.max(1, Number(n) || 8));
-    const rows = await db(env, "GET", `b_blog_posts?select=slug,title,thumb_url,published_at&status=eq.published&order=published_at.desc&limit=${k}`).catch(() => []);
-    return { ok: true, posts: rows.map((r) => ({ slug: r.slug, title: r.title, thumb_url: r.thumb_url || "", date: jpDate(r.published_at) })) };
+    // カテゴリの欄（b_blog_category.sql）がまだ無いときは、欄なしで読み直す
+    const q = (cols) => db(env, "GET", `b_blog_posts?select=${cols}&status=eq.published&order=published_at.desc&limit=${k}`);
+    const rows = await q("slug,title,thumb_url,published_at,category").catch(() => q("slug,title,thumb_url,published_at")).catch(() => []);
+    return { ok: true, posts: rows.map((r) => ({ slug: r.slug, title: r.title, thumb_url: r.thumb_url || "", date: jpDate(r.published_at), category: r.category || "" })) };
+  }
+  // 公式サイトの作り直し 便 1：カテゴリと本数（公開中の記事だけ・本数の多い順）。欄がまだ無ければ空
+  async function categories(env) {
+    const rows = await db(env, "GET", "b_blog_posts?select=category&status=eq.published&category=not.is.null&limit=5000").catch(() => []);
+    const n = new Map();
+    for (const r of rows) { const c = String(r.category || "").trim(); if (c) n.set(c, (n.get(c) || 0) + 1); }
+    return { ok: true, categories: [...n.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ja")).map(([name, count]) => ({ name, count })) };
   }
   async function sitemap(env) {
     const rows = await db(env, "GET", "b_blog_posts?select=slug,updated_at&status=eq.published&order=published_at.desc&limit=5000").catch(() => []);
@@ -376,5 +387,5 @@ ${more.length ? `<section class="bmore"><h2>ほかの記事</h2><div class="bl">
     return { ok: true };
   }
 
-  return { get, sources, copy, save, publicIndex, publicArticle, latest, sitemap, hit, views };
+  return { get, sources, copy, save, publicIndex, publicArticle, latest, categories, sitemap, hit, views };
 }

@@ -46,7 +46,7 @@ import { makeGuard } from "./guard.js";
 import { makeSell } from "./sell.js";
 import { makeDeliver } from "./deliver.js";
 import { makeLearn, normalizeNotes, LESSON_ID_RE } from "./learn.js";
-import { makeBridge, appAccess, memberWaiting, studentTier, PUBLISH_APPS } from "./bridge.js";
+import { makeBridge, appAccess, memberWaiting, studentTier, siteOnly, PUBLISH_APPS } from "./bridge.js";
 import { makePlan } from "./plan.js";
 import { makeMailCfg } from "./mailcfg.js";
 import { makeChanges } from "./changes.js";
@@ -61,7 +61,8 @@ import { LANES } from "./plan.js";
 import { makeSeminars } from "./seminars.js";
 import { makeGcal } from "./gcal.js";
 import { makeBooking } from "./booking.js";
-import { makePages, EMBED_JS, personToken, readPersonToken, previewToken, readPreviewToken, PURPOSES, ROUTE_RE as ROUTE_OK } from "./pages.js";
+import { makePages, EMBED_JS, personToken, readPersonToken, previewToken, readPreviewToken, siteToken, readSiteToken, siteCodeHash, SITE_TOKEN_TTL_MS, PURPOSES, ROUTE_RE as ROUTE_OK } from "./pages.js";
+import { makeSiteLogin, siteLoginHtml, safeNext } from "./sitelogin.js";
 import { makeWeb } from "./web.js";
 import { makeBlog } from "./blog.js";
 import { makeLessonQA, openLessonQuestions, QUESTION_MAX } from "./lessonqa.js";
@@ -97,7 +98,7 @@ import { makeNames } from "./names.js";
 import { makeChatAi, AI_MODEL } from "./chatai.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.86.0-bxmas2";
+const VERSION = "0.87.0-bsite2";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -306,6 +307,16 @@ async function contractMail(env, { to, subject, text }) {
     return { ok: true, message_id: r && r.messageId || null };
   } catch (e) { return { ok: false, error: String(e && e.message || e).slice(0, 200) }; }
 }
+// 公式サイトの作り直し 便 1：公式サイトのログインの確認コードのメール（手続きのメール）
+async function siteMail(env, { to, subject, text }) {
+  try {
+    const cfg = await mailcfg.get(env);
+    if (!env.EMAIL || !cfg.from) return { ok: false, error: "mail_not_configured" };
+    if (!mailcfg.openFor(cfg, "site_login") && !(await bin3.mailAllowed(env, to, "site_login"))) return { ok: false, error: "not_test_recipient" };
+    const r = await env.EMAIL.send({ to, from: mailcfg.fromField(cfg), subject, text: mailText(text), html: mailHtml(String(text), { brand: "シアニン" }), ...(cfg.reply_to ? { replyTo: cfg.reply_to } : {}) });
+    return { ok: true, message_id: r && r.messageId || null };
+  } catch (e) { return { ok: false, error: String(e && e.message || e).slice(0, 200) }; }
+}
 // X攻略くんの知らせのメール（2026-11-12）：日曜 20 時台と月曜 7 時台に、メールをオンにした人へ。宛先は member のログインのアドレスだけ
 async function xkSend(env, { to, subject, text }) {
   try {
@@ -328,6 +339,17 @@ async function nkSend(env, { to, subject, text }) {
   } catch (e) { return { ok: false, error: String(e && e.message || e).slice(0, 200) }; }
 }
 const nkMail = makeNkMail({ rawDb, logInbound, send: nkSend });
+const siteLogin = makeSiteLogin({ db, addEvent: (env, cid, type, payload, actor) => addEvent(env, cid, type, payload, actor), mail: siteMail, codeHash: siteCodeHash, siteToken });
+// cookie の中の値を 1 つ読む
+function cookieValue(request, name) {
+  const raw = request.headers.get("cookie") || "";
+  for (const part of raw.split(";")) {
+    const i = part.indexOf("=");
+    if (i > 0 && part.slice(0, i).trim() === name) return decodeURIComponent(part.slice(i + 1).trim());
+  }
+  return "";
+}
+const SITE_COOKIE = "lab_site";
 const contractSign = makeContractSign({
   db, logInbound, contracts, mail: contractMail,
   hasLine: async (env, pid) => (await line.personLinks(env, pid)).links.length > 0,
@@ -589,9 +611,38 @@ async function handlePagesHost(request, env, url) {
   }
   const mlk = path.match(/^[/]m[/]([0-9a-f]{24})$/);
   if (mlk) return await serveMediaLink(request, env, mlk[1]);
+  // 公式サイトの作り直し 便 1：公式サイトだけで効くログイン（会員サイトのログインとは別）
+  if (path === "/login" && method === "GET") return html(siteLoginHtml({ next: url.searchParams.get("next") || "/", lab: env.PUBLIC_ORIGIN || "https://lab.shia2n.jp" }), 200, { "cache-control": "no-store", "x-robots-tag": "noindex" });
+  if (path === "/api/p/login/code" && method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    const stop = await guardPublic(request, env, "site_login", { ip: "public" });
+    if (stop) return stop;
+    const r = await siteLogin.sendCode(env, body);
+    return json(r, r.ok ? 200 : r.error === "too_many" ? 429 : 400);
+  }
+  if (path === "/api/p/login/verify" && method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    const stop = await guardPublic(request, env, "site_login", { ip: "public" });
+    if (stop) return stop;
+    const r = await siteLogin.verify(env, body);
+    if (!r.ok) return json(r, r.error === "too_many_tries" ? 429 : 400);
+    const cookie = `${SITE_COOKIE}=${encodeURIComponent(r.token)}; Path=/; Max-Age=${Math.floor(SITE_TOKEN_TTL_MS / 1000)}; HttpOnly; Secure; SameSite=Lax`;
+    return json({ ok: true }, 200, { "set-cookie": cookie });
+  }
+  if (path === "/api/p/logout" && method === "POST") {
+    return json({ ok: true }, 200, { "set-cookie": `${SITE_COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax` });
+  }
+  if (path === "/api/p/me" && method === "GET") {
+    const cid = await readSiteToken(env, cookieValue(request, SITE_COOKIE)).catch(() => null);
+    if (!cid) return json({ ok: true, logged_in: false });
+    const [c] = await db(env, "GET", `customers?select=name&id=eq.${cid}`);
+    return json(c ? { ok: true, logged_in: true, name: c.name || "" } : { ok: true, logged_in: false });
+  }
+  // 公式サイトの作り直し 便 1：記事のカテゴリと本数（公開中の記事だけ）
+  if (path === "/api/p/categories" && method === "GET") return json(await blog.categories(env), 200, { "cache-control": "public, max-age=60" });
   // 便 X2：登録した人だけの中身（ページの <template data-lab-gate>）
   if (path === "/api/p/gate" && method === "GET") {
-    const r = await pages.gate(env, { page: url.searchParams.get("page"), u: url.searchParams.get("u") || "", g: url.searchParams.get("g") || "", preview: url.searchParams.get("preview") || "" });
+    const r = await pages.gate(env, { page: url.searchParams.get("page"), u: url.searchParams.get("u") || "", g: url.searchParams.get("g") || "", site: cookieValue(request, SITE_COOKIE), preview: url.searchParams.get("preview") || "" });
     return json(r, r.ok ? 200 : 404, { "cache-control": "no-store" });
   }
   // 便 X1：ブログの新着（ページの印 blog:latest-n）
@@ -1156,7 +1207,9 @@ async function handleApi(request, env, url) {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({ ok: false, error: "bad_email" }, 400);
     const [c] = await db(env, "GET", `customers?select=id,auth_user_id&email=eq.${encodeURIComponent(email)}`);
     let created = false;
-    if (c && !c.auth_user_id) {
+    // 2026-11-25 Naoki：無料会員（free だけの人）には会員サイトのログインを渡さない。公式サイトのログインを使う
+    const memberLike = c && !c.auth_user_id ? !siteOnly(await sell.entitlement(env, c.id).catch(() => null)) : false;
+    if (c && !c.auth_user_id && memberLike) {
       const res = await fetch(`${env.SUPABASE_URL}/auth/v1/admin/users`, { method: "POST", headers: secretHeaders(env), body: JSON.stringify({ email, email_confirm: true }) });
       created = res.ok; // 既にある（422）ときは作らずに進む
       if (!res.ok && res.status !== 422) await logInbound(env, "login_prepare", { email }, { ok: false, status: res.status, body: (await res.text()).slice(0, 200) }, res.status);
@@ -1313,7 +1366,7 @@ async function handleApi(request, env, url) {
     if (url.searchParams.get("fresh") === "1") await addEvent(env, customer.id, "login", {}, "site");
     const sa = await studentAccess(env, customer, v.email);
     if (sa.access === "contract") {
-      return json({ ok: true, access: "contract", member_waiting: memberWaiting(sa.ent), admin: false, apps: [], me: { name: customer.name, email: customer.email, source: customer.source },
+      return json({ ok: true, access: "contract", member_waiting: memberWaiting(sa.ent), site_member: siteOnly(sa.ent), site_login_url: `${pages.pagesOrigin(env)}/login`, admin: false, apps: [], me: { name: customer.name, email: customer.email, source: customer.source },
         lessons: [], announcements: [], viewed: [], library: { source: "manabu", member: false, lesson_count: 0, programs: [] },
         room_unread: 0, entitlement: sa.ent, community: null, community_url: null, referral: null,
         // 2026-11-05：個別相談の予約は、マイページを開く前の生徒（ご契約だけの画面）でも、種類の権利が合えば出す
@@ -2675,8 +2728,8 @@ const TOOLS = [
     name: "save_blog_post",
     screen: "web",
     say: "ブログの記事を直す・公開する・止める・写し直す・消す",
-    description: "ブログの記事（id）を直す。title（120 字）・description（検索に出る説明 200 字）・thumb_url（https）・gift_part（特典の部品 id。空で既定へ）・slug（下書きのときだけ）・link_url（メンシプ記事だけ：note の記事の住所。本文は写さず、このボタンだけを出す。住所が無いと公開できない）。action：publish 公開／unpublish 止める／refresh コンテンツくんから本文を写し直す／remove 消す（下書きのときだけ）。承認が要る道具（読者の画面が変わる）。",
-    inputSchema: { type: "object", properties: { id: { type: "string" }, title: { type: "string" }, description: { type: "string" }, thumb_url: { type: "string" }, gift_part: { type: "string" }, slug: { type: "string" }, link_url: { type: "string" }, action: { type: "string" } }, required: ["id"] },
+    description: "ブログの記事（id）を直す。title（120 字）・description（検索に出る説明 200 字）・thumb_url（https）・category（カテゴリ 20 字まで・空で外す。公式サイトのカテゴリの一覧になる）・gift_part（特典の部品 id。空で既定へ）・slug（下書きのときだけ）・link_url（メンシプ記事だけ：note の記事の住所。本文は写さず、このボタンだけを出す。住所が無いと公開できない）。action：publish 公開／unpublish 止める／refresh コンテンツくんから本文を写し直す／remove 消す（下書きのときだけ）。承認が要る道具（読者の画面が変わる）。",
+    inputSchema: { type: "object", properties: { id: { type: "string" }, title: { type: "string" }, description: { type: "string" }, thumb_url: { type: "string" }, category: { type: "string" }, gift_part: { type: "string" }, slug: { type: "string" }, link_url: { type: "string" }, action: { type: "string" } }, required: ["id"] },
   },
   {
     name: "list_contracts",

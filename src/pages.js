@@ -13,7 +13,7 @@
 //   data-lab-part="booking:slug"     … 便 13b：個別相談の予約の枠（空き時間を選び、名前とメールで予約する）
 //   data-lab-part="part:名前"         … 便 S2（2026-11-07）：公開サイトの部品（src/web.js）。中身は読者の段階で変わる
 //   <template data-lab-gate>…</template> … 便 X2（2026-11-25 Naoki OK）：登録した人だけに見せる中身。公開のときに中を外し、
-//                                      登録の印（lab_u か lab_g）がある人にだけ /api/p/gate が返す。data-lab-guest の所は登録前の人にだけ見せる
+//                                      登録の印（lab_u か lab_g）か、公式サイトのログイン（cookie lab_site）がある人にだけ /api/p/gate が返す。data-lab-guest の所は登録前の人にだけ見せる
 //   data-lab-part="blog:latest-8"    … 便 X1（2026-11-24 Naoki OK）：公開中のブログの新しい記事を 8 本（1〜24・省くと 8）。home に新着を手で書き足さないため
 // 便 S1（2026-11-07）：embed.js は /_lab/look.css（公開サイトの見た目・src/web.js）も head の先頭に足す。ページは var(--lab-c) などで色を当てる
 // 便 T2（2026-11-07 Naoki OK 23:05）：期間限定の公開。b_pages の closes_at を過ぎたら、closed_to のページ（公開中・自分以外）か
@@ -129,6 +129,23 @@ export async function readGateToken(env, tok) {
   if (!m) return false;
   if (Number(m[1]) * 1000 < Date.now()) return false;
   return sameHex(m[2], await hmacHex(env, `gate:site:${m[1]}`));
+}
+// 公式サイトの作り直し 便 1：公式サイト（lp）だけで効くログインの印（形は「人の番号.期限（秒）.署名」・既定 90 日）。
+// cookie lab_site（HttpOnly）で持つ。会員サイト（lab）のログインとは別
+export const SITE_TOKEN_TTL_MS = 90 * 864e5;
+export async function siteToken(env, cid, ttlMs = SITE_TOKEN_TTL_MS) {
+  const exp = Math.floor((Date.now() + ttlMs) / 1000);
+  return `${cid}.${exp}.${await hmacHex(env, `site:${cid}:${exp}`)}`;
+}
+export async function readSiteToken(env, tok) {
+  const m = String(tok || "").match(/^([0-9a-f-]{36})[.]([0-9]{9,11})[.]([0-9a-f]{32})$/i);
+  if (!m) return null;
+  if (Number(m[2]) * 1000 < Date.now()) return null;
+  return sameHex(m[3], await hmacHex(env, `site:${m[1]}:${m[2]}`)) ? m[1] : null;
+}
+// 確認コードは控えに生で残さない（人・送った回の印・コードから作った署名だけを残す）
+export async function siteCodeHash(env, cid, key, code) {
+  return hmacHex(env, `sitecode:${cid}:${key}:${code}`);
 }
 // 便 X2：<template data-lab-gate>…</template> を外して、空の枠（data-lab-gated="番号"）に置き換える。外した中身は順に blocks へ
 const GATE_RE = /<template\s+data-lab-gate(?:\s[^>]*)?>([\s\S]*?)<\/template>/gi;
@@ -538,7 +555,7 @@ export function makePages(h) {
   }
 
   // 便 X2：登録した人だけの中身を返す。見本（preview の印）では、シアニンが確かめられるよう印なしで返す
-  async function gate(env, { page: pageId, u, g, preview: pv } = {}) {
+  async function gate(env, { page: pageId, u, g, site, preview: pv } = {}) {
     if (!UUID_RE.test(String(pageId || ""))) return { ok: false, error: "not_found" };
     const page = await pageById(env, pageId);
     if (!page || page.purpose === "mypage") return { ok: false, error: "not_found" };
@@ -554,7 +571,7 @@ export function makePages(h) {
     if (!row) return { ok: false, error: "not_found" };
     const { blocks } = splitGate(row.html);
     if (!pv) {
-      const open = (await readGateToken(env, g)) || !!(await readPersonToken(env, u).catch(() => null));
+      const open = (await readGateToken(env, g)) || !!(await readPersonToken(env, u).catch(() => null)) || !!(await readSiteToken(env, site).catch(() => null));
       if (!open) return { ok: true, locked: true, count: blocks.length };
     }
     return { ok: true, locked: false, blocks };
@@ -887,7 +904,7 @@ export const EMBED_JS = `(() => {
     if (unlocked || !boxes.length) return;
     const q = new URLSearchParams({ page: PAGE });
     if (PREVIEW) { if (qs.get("as") === "guest") return; q.set("preview", qs.get("preview") || ""); }
-    else { const u = store.get("lab_u"), g = store.get("lab_g"); if (!u && !g) return; if (u) q.set("u", u); if (g) q.set("g", g); }
+    else { const u = store.get("lab_u"), g = store.get("lab_g"); if (u) q.set("u", u); if (g) q.set("g", g); } // 公式サイトにログインした人は cookie で見分ける
     const r = await fetch("/api/p/gate?" + q.toString()).then((x) => x.json()).catch(() => ({}));
     if (!r.ok || r.locked || !Array.isArray(r.blocks) || unlocked) return;
     unlocked = true;
