@@ -105,7 +105,6 @@ test("月次アンケート：作る → 公開 → 答える → 人の 1 枚�
   await forms.setField(env, { key: "x_account", label: "X アカウント名", type: "text" });
   await forms.setField(env, { key: "sales", label: "先月の売上", type: "number" });
   await forms.setField(env, { key: "goal", label: "今月の目標", type: "textarea" });
-  assert.equal((await forms.setForm(env, { title: "月次", slug: "monthly", items: [] })).error, "need_items");
   const f = await forms.setForm(env, { title: "月次アンケート", slug: "monthly", items: [{ key: "x_account", required: true }, { key: "sales" }, { key: "goal" }, { key: "nope" }] });
   assert.equal(f.ok, true); assert.equal(f.form.items.length, 3);
   assert.equal((await forms.setForm(env, { title: "別", slug: "monthly", items: [{ key: "sales" }] })).error, "slug_taken");
@@ -135,4 +134,13 @@ test("月次アンケート：作る → 公開 → 答える → 人の 1 枚�
   assert.equal(list.forms[0].answers, 3);
   const ans = await forms.listAnswers(env, { form_id: f.form.id });
   assert.equal(ans.count, 3); assert.equal(ans.answers[0].items.find((i) => i.key === "sales").label, "先月の売上");
+});
+
+test("便 4：メールと名前だけの登録フォーム（項目 0 個）も作れて、答えられる", async () => {
+  const { forms, env } = setup();
+  const mo = await forms.setForm(env, { title: "メールだけ", slug: "mail-only", items: [], ask_name: true }); // 便 4：メールと名前だけの登録フォーム
+  assert.equal(mo.ok, true); assert.deepEqual(mo.form.items, []);
+  await forms.setForm(env, { id: mo.form.id, active: true });
+  assert.deepEqual((await forms.publicForm(env, "mail-only")).form.items, []);
+  assert.equal((await forms.submit(env, "mail-only", { email: "m@ex.jp", name: "M", consent: true, answers: {} })).ok, true);
 });

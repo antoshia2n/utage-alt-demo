@@ -163,11 +163,9 @@ export function makeForms(h) {
       if (v.length > 2000) return { ok: false, error: "too_long", field: k };
       row[k] = v;
     }
-    if ("items" in args || "fields" in args) {
-      const items = shapeItems(args.items || args.fields, fm);
-      if (!items.length) return { ok: false, error: "need_items", note: "項目を 1 つ以上選ぶ（先に set_field で項目を作る）" };
-      row.items = items;
-    } else if (!cur) return { ok: false, error: "need_items" };
+    // 公式サイトの作り直し 便 4：メールアドレスと名前だけの登録フォーム（項目 0 個）も作れる。メールと同意は必ず聞く
+    if ("items" in args || "fields" in args) row.items = shapeItems(args.items || args.fields, fm);
+    else if (!cur) row.items = [];
     if ("ask_name" in args) row.ask_name = !!args.ask_name;
     if ("active" in args) row.active = !!args.active;
     let out;
