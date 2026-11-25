@@ -356,6 +356,11 @@ export function mountWeb(host, { getToken }) {
         ${hf("hb-consult-title", "題", hd.sidebar.consult.title, 40)}${hf("hb-consult-body", "本文", hd.sidebar.consult.body, 120)}${hf("hb-consult-booking", "予約のメニュー", hd.sidebar.consult.booking, 41, "住所の名前。先着の数があれば「残り N 名」が自動で出る", false)}${hf("hb-consult-cta", "ボタンの文字", hd.sidebar.consult.cta, 20, "", false)}${hf("hb-consult-href", "押した先", hd.sidebar.consult.href, 400)}</fieldset>
       <fieldset style="border:1px solid var(--line);border-radius:12px;padding:12px;margin:0 0 12px"><legend><b>メンバーシップ</b></legend>
         ${hf("hb-membership-title", "題", hd.sidebar.membership.title, 40)}${hf("hb-membership-body", "本文", hd.sidebar.membership.body, 120)}${hf("hb-membership-cta", "ボタンの文字", hd.sidebar.membership.cta, 20, "", false)}${hf("hb-membership-href", "押した先", hd.sidebar.membership.href, 400, "note のメンバーシップの住所")}</fieldset>
+      <h2 style="font-size:18px">チャット（公式サイトの /chat）</h2>
+      <fieldset style="border:1px solid var(--line);border-radius:12px;padding:12px;margin:0 0 12px"><legend><b>はじめて開いた人へ</b></legend>
+        <div class="fld"><label for="hc-welcome">自動メッセージ</label><textarea class="in" id="hc-welcome" rows="4" maxlength="600" style="flex:1;min-width:260px">${esc((hd.chat || {}).welcome || "")}</textarea><span class="hint">部屋にまだ何も無い人が開いたとき、シアニンから 1 回だけ届く。600 字まで。空なら送らない</span></div>
+        ${hf("hc-eta", "返信の目安", (hd.chat || {}).eta, 30, "例：24時間以内", false)}
+        <div class="fld"><label for="hc-chips">選ぶだけで送れる文</label><textarea class="in" id="hc-chips" rows="4" style="flex:1;min-width:260px">${esc(((hd.chat || {}).chips || []).join("\n"))}</textarea><span class="hint">1 行に 1 つ・6 つまで・1 つ 40 字まで。まだ 1 回も送っていない人にだけ出る</span></div></fieldset>
       <div class="fld"><span></span><button class="btn sm pri" type="button" id="hm-save" ${changed ? "" : 'aria-disabled="true"'}>保存</button>${changed ? '<button class="btn sm" type="button" id="hm-reset">キャンセル</button><span class="hint">保存していない変更があります</span>' : ""}</div>
     </div>`;
   }
@@ -364,6 +369,7 @@ export function mountWeb(host, { getToken }) {
     hd.slides.forEach((sl, i) => { for (const k of ["label", "title", "body", "cta", "href", "img", "alt", "note"]) sl[k] = v(`hs-${i}-${k}`); });
     hd.shelves.forEach((sh, i) => { sh.name = v(`hh-${i}-name`); sh.who = v(`hh-${i}-who`); });
     for (const k of ["join", "consult", "membership"]) for (const f of ["title", "body", "cta", "href", "form", "booking"]) if ($(`#hb-${k}-${f}`)) hd.sidebar[k][f] = v(`hb-${k}-${f}`);
+    hd.chat = { welcome: v("hc-welcome"), eta: v("hc-eta"), chips: v("hc-chips").split("\n").map((x) => x.trim()).filter(Boolean) };
   }
   function wireHome() {
     if (!hd) { loadHome(); return; }
@@ -400,9 +406,10 @@ export function mountWeb(host, { getToken }) {
       const r = await api("/api/admin/site/home", { method: "POST", token: getToken(), body: hd });
       if (!r.ok) {
         const m = String(r.field || "").match(/^(slides|shelves)\.(\d+)\.(\w+)$/) || String(r.field || "").match(/^sidebar\.(\w+)\.(\w+)$/);
+        const cf = String(r.field || "").match(/^chat\.(\w+)$/);
         say((HOME_ERR[r.error] || errText(r)) + (r.field ? `（${r.field}）` : ""));
         const id = !m ? null : m[1] === "slides" ? `#hs-${m[2]}-${m[3]}` : m[1] === "shelves" ? (m[3] === "posts" ? `#hh-${m[2]}-add` : `#hh-${m[2]}-${m[3]}`) : `#hb-${m[1]}-${m[2]}`;
-        const f = id && $(id); if (f) f.focus();
+        const f = (cf && $(`#hc-${cf[1]}`)) || (id && $(id)); if (f) f.focus();
         return;
       }
       H.home = r.home; hd = JSON.parse(JSON.stringify(r.home)); redraw("#hm-save"); say("ホームの中身を保存しました");
