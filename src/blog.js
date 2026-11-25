@@ -191,7 +191,7 @@ ${image ? `<meta property="og:image" content="${esc(image)}"><meta name="twitter
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=Zen+Kurenaido&display=swap">
 <link rel="stylesheet" href="/_lab/look.css"><style>${SHELL_CSS}</style>${jsonld ? `<script type="application/ld+json">${JSON.stringify(jsonld).replace(/</g, "\\u003c")}</script>` : ""}</head>
 <body><a class="skip" href="#main">本文へ移動</a>
-<header class="sh"><div><a class="logo" href="/">${esc(siteName)}</a><nav aria-label="サイトの案内"><a href="/#start">はじめての方へ</a><a href="/#special">会員限定コンテンツ</a><a href="/#consult">個別相談</a><a href="/blog">記事一覧</a></nav>
+<header class="sh"><div><a class="logo" href="/">${esc(siteName)}</a><nav aria-label="サイトの案内"><a href="/#start">はじめての方へ</a><a href="/gift">会員限定コンテンツ</a><a href="/chat">チャット</a><a href="/#consult">個別相談</a><a href="/blog">記事一覧</a></nav>
 <div data-lab-part="account"></div><a class="join" href="${esc(join)}" data-lab-button="head-join">無料会員登録</a></div></header>
 ${body}
 <footer class="bf"><div><span style="font-weight:700;color:#1a1a1a">${esc(siteName)}</span><a href="${LEGAL}/terms">利用規約</a><a href="${LEGAL}/privacy">プライバシーポリシー</a><a href="${LEGAL}/tokushoho">特定商取引法に基づく表記</a><span>© 株式会社Best Life Consulting</span></div></footer>${embed || `<script src="/_lab/embed.js" defer data-kind="site"></script>`}</body></html>`;

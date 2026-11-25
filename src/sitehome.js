@@ -10,7 +10,7 @@
 export const HOME_KEY = "site/home.json";
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,60}$/;
 const FORM_RE = /^[a-z0-9][a-z0-9-]{1,40}$/;
-const LIM = { slides: 8, shelves: 3, books: 12 };
+const LIM = { slides: 8, shelves: 3, books: 12, chips: 6 };
 
 export const HOME_DEFAULT = {
   slides: [
@@ -26,6 +26,12 @@ export const HOME_DEFAULT = {
     join: { title: "無料会員登録", body: "会員限定コンテンツ・チャット・新着のお知らせをご利用いただけます", form: "", cta: "無料会員登録", href: "/xmas-gift" },
     consult: { title: "個別相談（AI活用コンサルモニター）", body: "［仮のコピー］", booking: "", cta: "予約する", href: "#consult" },
     membership: { title: "メンバーシップ", body: "毎週の記事は note のメンバーシップでお読みいただけます。", cta: "詳しく見る", href: "" },
+  },
+  // 便 5：公式サイトのチャット（登録した人がはじめて開いたときの自動メッセージ・返信の目安・選ぶだけで送れる文）
+  chat: {
+    welcome: "ご登録ありがとうございます。シアニンです。会員限定コンテンツから、すぐにご覧いただけます。\n最初に1つだけ教えてください。いま一番困っていることは何ですか？［文面は仮］",
+    eta: "24時間以内",
+    chips: ["何を発信すればいいかわからない", "書いても伸びない", "発信を収入につなげたい", "先に会員限定コンテンツを見ます"],
   },
 };
 
@@ -80,6 +86,13 @@ export function normalizeHome(input = {}) {
     if (k === "consult") { const b = String(c.booking || "").trim(); if (b && !FORM_RE.test(b)) return { ok: false, error: "bad_booking", field: "sidebar.consult.booking" }; card.booking = b; }
     out.sidebar[k] = card;
   }
+  // 便 5：チャット（無ければ決まった中身）
+  const ch = input.chat && typeof input.chat === "object" ? input.chat : HOME_DEFAULT.chat;
+  const welcome = String(ch.welcome == null ? "" : ch.welcome).replace(/\r/g, "").trim();
+  if (welcome.length > 600) return { ok: false, error: "too_long", field: "chat.welcome", max: 600 };
+  const chips = (Array.isArray(ch.chips) ? ch.chips : []).map((c) => str(c, 40)).filter(Boolean);
+  if (chips.length > LIM.chips) return { ok: false, error: "too_many", field: "chat.chips", max: LIM.chips };
+  out.chat = { welcome, eta: str(ch.eta, 30), chips: [...new Set(chips)] };
   return { ok: true, home: out };
 }
 

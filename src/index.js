@@ -64,6 +64,7 @@ import { makeBooking } from "./booking.js";
 import { makePages, EMBED_JS, personToken, readPersonToken, previewToken, readPreviewToken, readGateToken, siteToken, readSiteToken, siteCodeHash, SITE_TOKEN_TTL_MS, PURPOSES, ROUTE_RE as ROUTE_OK } from "./pages.js";
 import { makeSiteLogin, siteLoginHtml, safeNext } from "./sitelogin.js";
 import { makeSiteHome } from "./sitehome.js";
+import { makeSiteChat, chatPageHtml } from "./sitechat.js";
 import { makeWeb } from "./web.js";
 import { makeBlog } from "./blog.js";
 import { makeLessonQA, openLessonQuestions, QUESTION_MAX } from "./lessonqa.js";
@@ -99,7 +100,7 @@ import { makeNames } from "./names.js";
 import { makeChatAi, AI_MODEL } from "./chatai.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.90.0-bsite5";
+const VERSION = "0.91.0-bsite6";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -646,6 +647,29 @@ async function handlePagesHost(request, env, url) {
     const [c] = await db(env, "GET", `customers?select=name&id=eq.${cid}`);
     return json(c ? { ok: true, logged_in: true, name: c.name || "" } : { ok: true, logged_in: false });
   }
+  // 公式サイトの作り直し 便 5：チャット（/chat）。公式サイトのログインか、登録したその端末の印（x-lab-u）で見分ける
+  if (path === "/chat" && method === "GET") {
+    const h = await siteHome.read(env).catch(() => null);
+    const j = h && h.sidebar && h.sidebar.join && /^[/](?![/])/.test(h.sidebar.join.href || "") ? h.sidebar.join.href : "/xmas-gift";
+    const name = ((await web.getLook(env).catch(() => ({ look: {} }))).look || {}).name || "シアニン";
+    return html(chatPageHtml({ siteName: name, join: j }), 200, { "cache-control": "no-store", "x-robots-tag": "noindex" });
+  }
+  if (path.startsWith("/api/p/chat")) {
+    const cid = (await readSiteToken(env, cookieValue(request, SITE_COOKIE)).catch(() => null)) || (await readPersonToken(env, request.headers.get("x-lab-u") || "").catch(() => null));
+    const [person] = cid ? await db(env, "GET", `customers?select=id,name,email&id=eq.${cid}`) : [];
+    if (!person) return json({ ok: false, error: "need_login" }, 401, { "cache-control": "no-store" });
+    if (method === "POST") { const stop = await guardPublic(request, env, "site_chat", { ip: "hit" }); if (stop) return stop; }
+    const body = method === "POST" ? await request.json().catch(() => ({})) : {};
+    if (path === "/api/p/chat" && method === "GET") return json(await siteChat.state(env, person), 200, { "cache-control": "no-store" });
+    if (path === "/api/p/chat" && method === "POST") { const r = await siteChat.send(env, person, body); return json(r, r.ok ? 200 : 400); }
+    if (path === "/api/p/chat/read" && method === "POST") return json(await siteChat.read(env, person));
+    if (path === "/api/p/chat/nickname" && method === "POST") { const r = await nicks.setNickname(env, person.id, body.nickname); return json(r, r.ok === false ? 400 : 200); }
+    const cg = path.match(/^[/]api[/]p[/]chat[/]groups[/]([0-9a-f-]{36})(?:[/](read))?$/i);
+    if (cg && method === "GET" && !cg[2]) { const r = await groups.view(env, { group_id: cg[1] }, person.id); return json(r, r.ok === false ? 404 : 200, { "cache-control": "no-store" }); }
+    if (cg && method === "POST" && cg[2] === "read") return json(await groups.markRead(env, { group_id: cg[1] }, person.id));
+    if (cg && method === "POST") { const r = await groups.post(env, { group_id: cg[1], text: body.text, images: [] }, person.id, "site"); return json(r, r.ok === false ? 400 : 200); }
+    return json({ ok: false, error: "not_found" }, 404);
+  }
   // 公式サイトの作り直し 便 2：ホームの中身（スライダー・本棚・サイドバー）
   if (path === "/api/p/home" && method === "GET") return json(await siteHome.publicHome(env), 200, { "cache-control": "public, max-age=60" });
   // 公式サイトの作り直し 便 1：記事のカテゴリと本数（公開中の記事だけ）
@@ -989,6 +1013,8 @@ const core = {
 // C2b-2：名前の 3 種類（本名・ニックネーム・LINE 名）。中身は src/names.js
 const nicks = makeNames({ db });
 const groups = makeGroups({ db, push, logInbound, names: (env) => students.load(env), nicks });
+// 公式サイトの作り直し 便 5：公式サイトのチャット（1 対 1 は会員サイトのやり取りと同じ部屋・グループは入っている所だけ）
+const siteChat = makeSiteChat({ db, addEvent, roomEvents, roomState, groups, nicks, push, logInbound, siteHome });
 const chat = makeChat({ db, addEvent, core, logInbound, line, groups, nicks });
 // チャットの便 C3：右の「AI」タブ（Workers AI・結び AI）。中身は src/chatai.js
 const chatAi = makeChatAi({ chat, groups, logInbound });
