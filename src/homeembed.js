@@ -95,7 +95,7 @@ export function homeEmbed(ctx) {
               + books.map((b, i) => {
                 const w = [72, 60, 64, 56, 68, 60, 64][i % 7], h = [256, 232, 244, 220, 248, 228, 240][i % 7];
                 return "<li>" + (i === 0 ? '<span class="lab-hand" aria-hidden="true">ここから ↓</span>' : "")
-                  + '<a class="lab-bk1' + (i === 0 ? " first" : "") + '" style="width:' + w + "px;height:" + h + 'px" href="/blog/' + encodeURIComponent(b.slug) + '" aria-label="' + esc(s.name) + "向け " + (i + 1) + "本目：" + esc(b.title) + '">'
+                  + '<a class="lab-bk1' + (i === 0 ? " first" : "") + '" style="width:' + w + "px;height:" + h + 'px" href="/blog/' + encodeURIComponent(b.slug) + '?s=' + (cur + 1) + '" aria-label="' + esc(s.name) + "向け " + (i + 1) + "本目：" + esc(b.title) + '">'
                   + "<small>" + (i + 1) + "</small><b>" + esc(b.title) + "</b><small>" + esc(b.kind || "記事") + "</small></a></li>";
               }).join("") + "</ol></div>"
               : '<p class="lab-pos">この棚の記事は準備中です。</p>');

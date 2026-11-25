@@ -23,6 +23,7 @@
 
 import { SLUG_RE } from "./forms.js";
 import { homeEmbed } from "./homeembed.js";
+import { watchEmbed } from "./watchembed.js";
 import { putMember } from "./plan.js";
 import { isTestPurchase } from "./purchase.js";
 
@@ -632,7 +633,8 @@ export function makePages(h) {
 export const EMBED_JS = `(() => {
   const me = document.currentScript || document.querySelector('script[src*="/_lab/embed.js"]');
   const PAGE = me && me.dataset.page, PREVIEW = me && me.dataset.preview === "1", LAB = (me && me.dataset.lab) || "";
-  if (!PAGE) return;
+  const KIND = (me && me.dataset.kind) || ""; // 便 3：blog＝記事、site＝記事の一覧など（ページの番号が無く、ログインの表示だけ）
+  if (!PAGE && KIND !== "site") return;
   const store = { get(k) { try { return localStorage.getItem(k) || ""; } catch (_) { return ""; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (_) {} } };
   const qs = new URLSearchParams(location.search);
   let vid = store.get("lab_vid");
@@ -643,7 +645,7 @@ export const EMBED_JS = `(() => {
   const route = qs.get("r") || store.get("lab_r");
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const send = (kind, button) => {
-    if (PREVIEW) return;
+    if (PREVIEW || !PAGE) return;
     const body = JSON.stringify({ page: PAGE, kind, button, vid, r: route, u: store.get("lab_u") });
     if (kind === "click" && navigator.sendBeacon) { navigator.sendBeacon("/api/p/hit", new Blob([body], { type: "application/json" })); return; }
     fetch("/api/p/hit", { method: "POST", headers: { "content-type": "application/json" }, body, keepalive: true }).catch(() => {});
@@ -918,9 +920,12 @@ export const EMBED_JS = `(() => {
     if (!r.ok || r.locked || !Array.isArray(r.blocks) || unlocked) return;
     unlocked = true;
     boxes.forEach((el) => { el.innerHTML = r.blocks[Number(el.getAttribute("data-lab-gated"))] || ""; el.hidden = false; mountAll(el); });
+    if (watch) watch.scan(); // 便 3：続きの中の動画にも操作を付ける
     document.querySelectorAll("[data-lab-guest]").forEach((el) => { el.style.display = "none"; });
     document.documentElement.classList.add("lab-in");
   }
+  // 公式サイトの作り直し 便 3：記事（視聴ページ）の動き（続きから再生・速さ・おすすめの順番の進み具合）
+  const watch = KIND === "blog" ? (${watchEmbed.toString()})({ store, PREVIEW }) : null;
   unlock();
 })();
 `;

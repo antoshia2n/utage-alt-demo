@@ -61,7 +61,7 @@ import { LANES } from "./plan.js";
 import { makeSeminars } from "./seminars.js";
 import { makeGcal } from "./gcal.js";
 import { makeBooking } from "./booking.js";
-import { makePages, EMBED_JS, personToken, readPersonToken, previewToken, readPreviewToken, siteToken, readSiteToken, siteCodeHash, SITE_TOKEN_TTL_MS, PURPOSES, ROUTE_RE as ROUTE_OK } from "./pages.js";
+import { makePages, EMBED_JS, personToken, readPersonToken, previewToken, readPreviewToken, readGateToken, siteToken, readSiteToken, siteCodeHash, SITE_TOKEN_TTL_MS, PURPOSES, ROUTE_RE as ROUTE_OK } from "./pages.js";
 import { makeSiteLogin, siteLoginHtml, safeNext } from "./sitelogin.js";
 import { makeSiteHome } from "./sitehome.js";
 import { makeWeb } from "./web.js";
@@ -99,7 +99,7 @@ import { makeNames } from "./names.js";
 import { makeChatAi, AI_MODEL } from "./chatai.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.88.0-bsite3";
+const VERSION = "0.89.0-bsite4";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -378,7 +378,12 @@ const web = makeWeb({
   },
 });
 // 便 S3（2026-11-07）：公開サイトのブログ（コンテンツくんの記事を写して lp の /blog に出す）
-const blog = makeBlog({ db, logInbound, web, pagesOrigin: (env) => pages.pagesOrigin(env), previewToken, readPreviewToken });
+// 公式サイトの作り直し 便 3：記事の画面に本棚・残り枠を出し、会員限定の続きを登録した人にだけ返す
+const blog = makeBlog({
+  db, logInbound, web, pagesOrigin: (env) => pages.pagesOrigin(env), previewToken, readPreviewToken,
+  home: (env) => siteHome.publicHome(env),
+  canOpen: async (env, { u, g, site }) => (await readGateToken(env, g)) || !!(await readPersonToken(env, u).catch(() => null)) || !!(await readSiteToken(env, site).catch(() => null)),
+});
 // 公式サイトの作り直し 便 2：ホームの中身（スライダー・本棚・サイドバー）。R2 の site/home.json
 const siteHome = makeSiteHome({ db, logInbound, seatsLeft: (env, slug) => booking.seatsLeft(env, slug) });
 const mediaOrigin = (env) => String(env.PUBLIC_ORIGIN || "https://lab.shia2n.jp").replace(/[/]+$/, "");
@@ -647,7 +652,9 @@ async function handlePagesHost(request, env, url) {
   if (path === "/api/p/categories" && method === "GET") return json(await blog.categories(env), 200, { "cache-control": "public, max-age=60" });
   // 便 X2：登録した人だけの中身（ページの <template data-lab-gate>）
   if (path === "/api/p/gate" && method === "GET") {
-    const r = await pages.gate(env, { page: url.searchParams.get("page"), u: url.searchParams.get("u") || "", g: url.searchParams.get("g") || "", site: cookieValue(request, SITE_COOKIE), preview: url.searchParams.get("preview") || "" });
+    const ga = { page: url.searchParams.get("page"), u: url.searchParams.get("u") || "", g: url.searchParams.get("g") || "", site: cookieValue(request, SITE_COOKIE), preview: url.searchParams.get("preview") || "" };
+    let r = await pages.gate(env, ga);
+    if (!r.ok && r.error === "not_found") r = await blog.gate(env, ga); // 便 3：ページで無ければブログの記事の会員限定の続き
     return json(r, r.ok ? 200 : 404, { "cache-control": "no-store" });
   }
   // 便 X1：ブログの新着（ページの印 blog:latest-n）
@@ -666,7 +673,7 @@ async function handlePagesHost(request, env, url) {
     }
     const bm = path.match(/^[/]blog[/]([a-z0-9][a-z0-9-]{1,60})[/]?$/);
     if (bm) {
-      const r = await blog.publicArticle(env, bm[1], url.searchParams.get("preview"));
+      const r = await blog.publicArticle(env, bm[1], url.searchParams.get("preview"), { s: url.searchParams.get("s") || "" });
       if (r) return html(r.html, 200, r.preview ? { "cache-control": "no-store", "x-robots-tag": "noindex" } : { "cache-control": "public, max-age=60" });
       return html(PAGE_404, 404, { "cache-control": "no-store" });
     }
@@ -2750,8 +2757,8 @@ const TOOLS = [
     name: "save_blog_post",
     screen: "web",
     say: "ブログの記事を直す・公開する・止める・写し直す・消す",
-    description: "ブログの記事（id）を直す。title（120 字）・description（検索に出る説明 200 字）・thumb_url（https）・category（カテゴリ 20 字まで・空で外す。公式サイトのカテゴリの一覧になる）・gift_part（特典の部品 id。空で既定へ）・slug（下書きのときだけ）・link_url（メンシプ記事だけ：note の記事の住所。本文は写さず、このボタンだけを出す。住所が無いと公開できない）。action：publish 公開／unpublish 止める／refresh コンテンツくんから本文を写し直す／remove 消す（下書きのときだけ）。承認が要る道具（読者の画面が変わる）。",
-    inputSchema: { type: "object", properties: { id: { type: "string" }, title: { type: "string" }, description: { type: "string" }, thumb_url: { type: "string" }, category: { type: "string" }, gift_part: { type: "string" }, slug: { type: "string" }, link_url: { type: "string" }, action: { type: "string" } }, required: ["id"] },
+    description: "ブログの記事（id）を直す。title（120 字）・description（検索に出る説明 200 字）・thumb_url（https）・category（カテゴリ 20 字まで・空で外す。公式サイトのカテゴリの一覧になる）・gift_part（特典の部品 id。空で既定へ）・slug（下書きのときだけ）・link_url（メンシプ記事だけ：note の記事の住所。本文は写さず、このボタンだけを出す。住所が無いと公開できない）・members_from（会員限定にする所：N 番目の見出し h2 から後ろを、無料会員登録かログインをした人だけに出す。0 で外す。get_blog の headings が見出しの並び）。action：publish 公開／unpublish 止める／refresh コンテンツくんから本文を写し直す／remove 消す（下書きのときだけ）。承認が要る道具（読者の画面が変わる）。",
+    inputSchema: { type: "object", properties: { id: { type: "string" }, title: { type: "string" }, description: { type: "string" }, thumb_url: { type: "string" }, category: { type: "string" }, gift_part: { type: "string" }, slug: { type: "string" }, link_url: { type: "string" }, members_from: { type: "integer" }, action: { type: "string" } }, required: ["id"] },
   },
   {
     name: "list_contracts",
