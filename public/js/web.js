@@ -66,12 +66,18 @@ export function mountWeb(host, { getToken }) {
 
   let S = null, tab = "parts", look = null, edit = null, armDel = false, back = null;
   let B = null, pick = null, bed = null; // 便 S3：ブログ（B＝一覧、pick＝写す記事を選ぶ、bed＝記事の編集）
+  let H = null, hd = null; // 公式サイトの作り直し 便 2：ホーム（H＝読んだ中身と選べる記事、hd＝編集中の写し）
 
   async function load() {
     const r = await api("/api/admin/web", { token: getToken() });
     if (!r.ok) { $("#main").innerHTML = `<p class="lead">${esc(errText(r))}</p>`; return; }
     S = r; if (!look) look = { ...r.look };
-    if (tab === "blog") await loadBlog(); else draw();
+    if (tab === "blog") await loadBlog(); else if (tab === "home") await loadHome(); else draw();
+  }
+  async function loadHome() {
+    const r = await api("/api/admin/site/home", { token: getToken() });
+    if (!r.ok) { say(errText(r)); return; }
+    H = r; hd = JSON.parse(JSON.stringify(r.home)); delete hd.is_default; draw();
   }
   async function loadBlog() {
     const r = await api("/api/admin/blog", { token: getToken() });
@@ -81,7 +87,7 @@ export function mountWeb(host, { getToken }) {
 
   function head() {
     return `<h1>ブログ・公開ページ</h1><p class="lead">ブログとファネルページの見た目と部品です。1 か所を編集すると、差し込んだ全ページが変わります。</p>
-      <div class="tabs" role="tablist">${[["look", "見た目"], ["parts", "部品"], ["blog", "ブログ"]].map(([k, l]) => `<button role="tab" type="button" data-tab="${k}" aria-selected="${tab === k}">${l}</button>`).join("")}</div>`;
+      <div class="tabs" role="tablist">${[["look", "見た目"], ["parts", "部品"], ["blog", "ブログ"], ["home", "ホーム"]].map(([k, l]) => `<button role="tab" type="button" data-tab="${k}" aria-selected="${tab === k}">${l}</button>`).join("")}</div>`;
   }
 
   // ---------- 見た目 ----------
@@ -315,13 +321,96 @@ export function mountWeb(host, { getToken }) {
     });
   }
 
+  // ---------- 公式サイトの作り直し 便 2：ホーム（スライダー・本棚・サイドバー）----------
+  const HOME_ERR = { need_title: "題を入れてください", need_name: "棚の名前を入れてください", need_alt: "画像を入れたときは、画像の説明（読み上げ用）も入れてください", bad_href: "押した先は / か # か https:// から入れてください", bad_img: "画像の住所は https:// から入れてください", bad_post: "記事を選び直してください", bad_form: "フォームの住所の名前は英小文字・数字・ハイフンで入れてください", bad_booking: "予約のメニューの住所の名前は英小文字・数字・ハイフンで入れてください", too_many: "数が多すぎます", no_storage: "保存先が使えません" };
+  const hf = (id, label, val, max, hint = "", wide = true) => `<div class="fld"><label for="${id}">${label}</label><input class="in" id="${id}" maxlength="${max}" value="${esc(val || "")}" style="flex:1;min-width:${wide ? 260 : 160}px">${hint ? `<span class="hint">${hint}</span>` : ""}</div>`;
+  function drawHome() {
+    if (!hd) return `<p class="lead">読み込み中です…</p>`;
+    const title = (slug) => ((H.posts || []).find((p) => p.slug === slug) || {}).title || slug;
+    const pub = (H.posts || []).filter((p) => p.published);
+    const changed = JSON.stringify(hd) !== JSON.stringify((({ is_default, ...x }) => x)(H.home));
+    return `<div class="tbl" style="padding:16px">
+      <p class="hint" style="margin:0 0 12px">公式サイトのホーム（ページ home）に出る中身です。ページの印（slider:home・shelf:home・sidebar:home）の所に入ります。${H.home.is_default ? "まだ一度も保存していません（今は仮の中身です）。" : ""}</p>
+      <h2 style="font-size:18px">スライダー（${hd.slides.length} 枚・8 枚まで）</h2>
+      ${hd.slides.map((sl, i) => `<fieldset style="border:1px solid var(--line);border-radius:12px;padding:12px;margin:0 0 12px"><legend><b>${i + 1} 枚目</b></legend>
+        ${hf(`hs-${i}-label`, "小見出し", sl.label, 60)}${hf(`hs-${i}-title`, "題（必須）", sl.title, 80)}${hf(`hs-${i}-body`, "本文", sl.body, 200)}
+        ${hf(`hs-${i}-cta`, "ボタンの文字", sl.cta, 20, "", false)}${hf(`hs-${i}-href`, "押した先", sl.href, 400, "/ で始める（例 /xmas-gift）か # か https://")}
+        ${hf(`hs-${i}-img`, "画像の住所", sl.img, 400, "空なら仮の枠。メディアの棚の住所を貼る")}${hf(`hs-${i}-alt`, "画像の説明", sl.alt, 200, "読み上げ用。画像を入れたら必須")}${hf(`hs-${i}-note`, "赤ペンの一言", sl.note, 30, "", false)}
+        <div class="fld"><span></span><button class="btn sm" type="button" data-hs-up="${i}" ${i ? "" : 'aria-disabled="true"'}>上へ</button><button class="btn sm" type="button" data-hs-down="${i}" ${i < hd.slides.length - 1 ? "" : 'aria-disabled="true"'}>下へ</button><button class="btn sm" type="button" data-hs-del="${i}">「${esc(sl.title || (i + 1) + " 枚目")}」を削除</button></div></fieldset>`).join("")}
+      <p><button class="btn sm" type="button" id="hs-add" ${hd.slides.length >= 8 ? 'aria-disabled="true"' : ""}>スライドを追加</button></p>
+      <h2 style="font-size:18px">本棚（3 つまで・1 つに 12 本まで）</h2>
+      ${hd.shelves.map((sh, i) => `<fieldset style="border:1px solid var(--line);border-radius:12px;padding:12px;margin:0 0 12px"><legend><b>棚 ${i + 1}</b></legend>
+        ${hf(`hh-${i}-name`, "棚の名前", sh.name, 20, "", false)}${hf(`hh-${i}-who`, "一言", sh.who, 30)}
+        <ol style="margin:8px 0">${sh.posts.map((p, j) => `<li style="margin:4px 0">${esc(title(p))} <button class="btn sm" type="button" data-hp-up="${i}:${j}" ${j ? "" : 'aria-disabled="true"'}>上へ</button><button class="btn sm" type="button" data-hp-down="${i}:${j}" ${j < sh.posts.length - 1 ? "" : 'aria-disabled="true"'}>下へ</button><button class="btn sm" type="button" data-hp-del="${i}:${j}">「${esc(title(p))}」を外す</button></li>`).join("") || '<li class="hint">まだ記事がありません</li>'}</ol>
+        <div class="fld"><label for="hh-${i}-add">記事を追加</label><select class="in" id="hh-${i}-add"><option value="">公開中の記事から選ぶ</option>${pub.filter((p) => !sh.posts.includes(p.slug)).map((p) => `<option value="${esc(p.slug)}">${esc(p.title)}</option>`).join("")}</select><button class="btn sm" type="button" data-hp-add="${i}" ${sh.posts.length >= 12 ? 'aria-disabled="true"' : ""}>追加</button></div></fieldset>`).join("")}
+      <h2 style="font-size:18px">サイドバー</h2>
+      <fieldset style="border:1px solid var(--line);border-radius:12px;padding:12px;margin:0 0 12px"><legend><b>無料会員登録</b></legend>
+        ${hf("hb-join-title", "題", hd.sidebar.join.title, 40)}${hf("hb-join-body", "本文", hd.sidebar.join.body, 120)}${hf("hb-join-form", "フォーム", hd.sidebar.join.form, 41, "フォームの住所の名前。入れるとその場で登録できる。空ならボタン", false)}${hf("hb-join-cta", "ボタンの文字", hd.sidebar.join.cta, 20, "", false)}${hf("hb-join-href", "押した先", hd.sidebar.join.href, 400)}</fieldset>
+      <fieldset style="border:1px solid var(--line);border-radius:12px;padding:12px;margin:0 0 12px"><legend><b>個別相談</b></legend>
+        ${hf("hb-consult-title", "題", hd.sidebar.consult.title, 40)}${hf("hb-consult-body", "本文", hd.sidebar.consult.body, 120)}${hf("hb-consult-booking", "予約のメニュー", hd.sidebar.consult.booking, 41, "住所の名前。先着の数があれば「残り N 名」が自動で出る", false)}${hf("hb-consult-cta", "ボタンの文字", hd.sidebar.consult.cta, 20, "", false)}${hf("hb-consult-href", "押した先", hd.sidebar.consult.href, 400)}</fieldset>
+      <fieldset style="border:1px solid var(--line);border-radius:12px;padding:12px;margin:0 0 12px"><legend><b>メンバーシップ</b></legend>
+        ${hf("hb-membership-title", "題", hd.sidebar.membership.title, 40)}${hf("hb-membership-body", "本文", hd.sidebar.membership.body, 120)}${hf("hb-membership-cta", "ボタンの文字", hd.sidebar.membership.cta, 20, "", false)}${hf("hb-membership-href", "押した先", hd.sidebar.membership.href, 400, "note のメンバーシップの住所")}</fieldset>
+      <div class="fld"><span></span><button class="btn sm pri" type="button" id="hm-save" ${changed ? "" : 'aria-disabled="true"'}>保存</button>${changed ? '<button class="btn sm" type="button" id="hm-reset">キャンセル</button><span class="hint">保存していない変更があります</span>' : ""}</div>
+    </div>`;
+  }
+  function readHome() {
+    const v = (id) => { const e = $("#" + id); return e ? e.value.trim() : ""; };
+    hd.slides.forEach((sl, i) => { for (const k of ["label", "title", "body", "cta", "href", "img", "alt", "note"]) sl[k] = v(`hs-${i}-${k}`); });
+    hd.shelves.forEach((sh, i) => { sh.name = v(`hh-${i}-name`); sh.who = v(`hh-${i}-who`); });
+    for (const k of ["join", "consult", "membership"]) for (const f of ["title", "body", "cta", "href", "form", "booking"]) if ($(`#hb-${k}-${f}`)) hd.sidebar[k][f] = v(`hb-${k}-${f}`);
+  }
+  function wireHome() {
+    if (!hd) { loadHome(); return; }
+    const redraw = (focusSel) => { draw(); const f = focusSel && $(focusSel); if (f) f.focus(); };
+    const move = (arr, i, d) => { const j = i + d; if (j < 0 || j >= arr.length) return false; [arr[i], arr[j]] = [arr[j], arr[i]]; return true; };
+    $("#main").addEventListener("input", () => { if (tab !== "home") return; readHome(); const b = $("#hm-save"); if (b) b.removeAttribute("aria-disabled"); }, { once: true });
+    $("#main").querySelectorAll("[data-hs-up],[data-hs-down],[data-hs-del]").forEach((b) => b.addEventListener("click", () => {
+      readHome();
+      if (b.dataset.hsDel != null) { const i = Number(b.dataset.hsDel); const t = hd.slides[i].title; hd.slides.splice(i, 1); redraw("#hs-add"); say(`「${t || "スライド"}」を削除しました（保存するまで公式サイトは変わりません）`); return; }
+      const i = Number(b.dataset.hsUp ?? b.dataset.hsDown), d = b.dataset.hsUp != null ? -1 : 1;
+      if (move(hd.slides, i, d)) redraw(`[data-hs-${d < 0 ? "up" : "down"}="${i + d}"]`);
+    }));
+    const add = $("#hs-add"); if (add) add.addEventListener("click", () => {
+      readHome(); if (hd.slides.length >= 8) { say("スライドは 8 枚までです"); return; }
+      hd.slides.push({ label: "", title: "", body: "", cta: "", href: "", img: "", alt: "", note: "" }); redraw(`#hs-${hd.slides.length - 1}-title`);
+    });
+    $("#main").querySelectorAll("[data-hp-up],[data-hp-down],[data-hp-del]").forEach((b) => b.addEventListener("click", () => {
+      readHome();
+      const [i, j] = String(b.dataset.hpUp ?? b.dataset.hpDown ?? b.dataset.hpDel).split(":").map(Number);
+      const posts = hd.shelves[i].posts;
+      if (b.dataset.hpDel != null) { posts.splice(j, 1); redraw(`#hh-${i}-add`); return; }
+      const d = b.dataset.hpUp != null ? -1 : 1;
+      if (move(posts, j, d)) redraw(`[data-hp-${d < 0 ? "up" : "down"}="${i}:${j + d}"]`);
+    }));
+    $("#main").querySelectorAll("[data-hp-add]").forEach((b) => b.addEventListener("click", () => {
+      readHome(); const i = Number(b.dataset.hpAdd); const sel = $(`#hh-${i}-add`);
+      if (!sel.value) { say("追加する記事を選んでください"); sel.focus(); return; }
+      if (hd.shelves[i].posts.length >= 12) { say("1 つの棚は 12 本までです"); return; }
+      hd.shelves[i].posts.push(sel.value); redraw(`#hh-${i}-add`);
+    }));
+    const reset = $("#hm-reset"); if (reset) reset.addEventListener("click", () => { hd = JSON.parse(JSON.stringify(H.home)); delete hd.is_default; redraw("#hm-save"); say("変更を取り消しました"); });
+    $("#hm-save").addEventListener("click", async () => {
+      readHome();
+      const r = await api("/api/admin/site/home", { method: "POST", token: getToken(), body: hd });
+      if (!r.ok) {
+        const m = String(r.field || "").match(/^(slides|shelves)\.(\d+)\.(\w+)$/) || String(r.field || "").match(/^sidebar\.(\w+)\.(\w+)$/);
+        say((HOME_ERR[r.error] || errText(r)) + (r.field ? `（${r.field}）` : ""));
+        const id = !m ? null : m[1] === "slides" ? `#hs-${m[2]}-${m[3]}` : m[1] === "shelves" ? (m[3] === "posts" ? `#hh-${m[2]}-add` : `#hh-${m[2]}-${m[3]}`) : `#hb-${m[1]}-${m[2]}`;
+        const f = id && $(id); if (f) f.focus();
+        return;
+      }
+      H.home = r.home; hd = JSON.parse(JSON.stringify(r.home)); redraw("#hm-save"); say("ホームの中身を保存しました");
+    });
+  }
+
   function draw() {
-    $("#main").innerHTML = head() + (tab === "look" ? drawLook() : tab === "blog" ? drawBlog() : drawParts());
+    $("#main").innerHTML = head() + (tab === "look" ? drawLook() : tab === "blog" ? drawBlog() : tab === "home" ? drawHome() : drawParts());
     $("#main").querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", async () => {
       tab = b.dataset.tab; draw(); $(`[data-tab="${tab}"]`).focus();
       if (tab === "blog" && !B) { await loadBlog(); $(`[data-tab="blog"]`).focus(); }
+      if (tab === "home" && !H) { await loadHome(); $(`[data-tab="home"]`).focus(); }
     }));
-    if (tab === "look") wireLook(); else if (tab === "blog") wireBlog(); else wireParts();
+    if (tab === "look") wireLook(); else if (tab === "blog") wireBlog(); else if (tab === "home") { if (hd) wireHome(); } else wireParts();
   }
 
   return { open: () => load() };
