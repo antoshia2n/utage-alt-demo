@@ -416,27 +416,69 @@ export function makeBlog({ db, logInbound, web, pagesOrigin, previewToken, readP
       if ((await readPreviewToken(env, `blog:${p.id}`, previewTok)) == null) return null;
       preview = true;
     } else if (p.status !== "published") return null;
-    const [name, pl, more] = await Promise.all([
+    const relQ = (cols) => db(env, "GET", `b_blog_posts?select=${cols}&status=eq.published&id=neq.${p.id}&order=published_at.desc&limit=40`);
+    const [name, pl, others, h] = await Promise.all([
       siteName(env), placed(env),
-      db(env, "GET", `b_blog_posts?select=slug,title,description,thumb_url,published_at&status=eq.published&id=neq.${p.id}&order=published_at.desc&limit=3`).catch(() => []),
+      relQ("slug,title,thumb_url,published_at,category,members_from").catch(() => relQ("slug,title,thumb_url,published_at")).catch(() => []),
+      home ? home(env).catch(() => null) : null,
     ]);
+    const { free, rest, toc, video } = render(p);
+    const gated = !!rest;
+    const at = shelfOf(h, p.slug, shelfParam);
+    const books = at ? at.shelf.books : [];
+    const next = at && books[at.k + 1] ? books[at.k + 1] : null;
+    const memberSlugs = new Set(others.filter((o) => o.members_from).map((o) => o.slug).concat(gated ? [p.slug] : []));
+    const join = (h && h.sidebar && h.sidebar.join) || {};
+    const joinTo = await joinHref(env);
+    // 本文の途中の特典は、会員限定の枠が無い記事だけ（枠があるときは登録の枠がその役をする）
     const gift = p.gift_part && pl.ids.has(p.gift_part) ? p.gift_part : pl.mid;
-    const { body, toc } = withToc(p.body_html);
-    const tocHtml = toc.length >= 3 ? `<nav class="lab-toc" aria-label="目次"><b>目次</b><ul>${toc.map((t) => `<li><a href="#${t.id}">${esc(t.text)}</a></li>`).join("")}</ul></nav>` : "";
-    const art = `<article class="lab-article"><h1 class="ba-h1">${esc(p.title)}</h1><p class="ba-meta">${esc(jpDate(p.published_at || p.updated_at))}${preview ? "（下書きの見え方）" : ""}</p>
-${p.thumb_url ? `<img class="ba-thumb" src="${esc(p.thumb_url)}" alt="">` : ""}${tocHtml}${insertMid(body, partTag(gift))}${partTag(pl.end)}</article>
-${more.length ? `<section class="bmore"><h2>ほかの記事</h2><div class="bl">${more.map(card).join("")}</div></section>` : ""}`;
-    const side = pl.side ? `<aside class="bs">${partTag(pl.side, "lab-side")}</aside>` : "";
-    const html = `<main class="bw${side ? " has-side" : ""}"><div>${art}</div>${side}</main>${partTag(pl.bar, "lab-barpart")}`;
+    const lockedFrom = gated ? Number(p.members_from) - 1 : -1;
+    const tocHtml = toc.length >= 3 ? `<nav class="lab-toc" aria-label="目次"><b>目次</b><ul>${toc.map((t, i) => `<li><a href="#${t.id}">${esc(t.text)}</a>${lockedFrom >= 0 && i >= lockedFrom ? " <small>（会員限定）</small>" : ""}</li>`).join("")}</ul></nav>` : "";
+    const wall = gated ? `<section class="lab-wall" data-lab-guest aria-labelledby="wall-h"><p class="k">この続きは会員限定です</p><h2 id="wall-h">無料会員登録で、続きをお読みいただけます</h2>
+<p>メールアドレスだけで登録でき、このページのまま続きが表示されます。会員限定コンテンツもご利用いただけます。</p>
+${join.form ? `<div data-lab-part="form:${esc(join.form)}"></div>` : `<a class="go" href="${esc(joinTo)}" data-lab-button="wall-join">無料会員登録</a>`}
+<small>登録済みの方は <a href="/login?next=${encodeURIComponent("/blog/" + p.slug)}">ログイン</a></small></section><div data-lab-gated="0" hidden></div>` : "";
+    const bodyHtml = gated ? `<div class="lab-has-wall"><div class="lab-free-end">${free}</div>${wall}</div>` : insertMid(free, partTag(gift));
+    const where = at ? `<a href="/">ホーム</a> ／ ${esc(at.shelf.name)} ／ ${at.k + 1}本目` : `<a href="/">ホーム</a> ／ <a href="/blog">記事一覧</a>${p.category ? ` ／ <a href="/blog?cat=${encodeURIComponent(p.category)}">${esc(p.category)}</a>` : ""}`;
+    const meta = [jpDate(p.published_at || p.updated_at) + (preview ? "（下書きの見え方）" : ""), video ? "動画" : "", p.category ? `<a href="/blog?cat=${encodeURIComponent(p.category)}">${esc(p.category)}</a>` : "", at ? `${at.k + 1}本目 ／ 全${books.length}本` : "", gated ? "途中から会員限定" : ""].filter(Boolean);
+    const art = `<nav class="crumb" aria-label="現在地">${where}</nav>
+<article class="lab-article" data-slug="${esc(p.slug)}" data-video="${video ? "1" : "0"}"><h1 class="ba-h1">${esc(p.title)}</h1><p class="ba-meta">${meta.map((m) => (m.startsWith("<a") ? m : esc(m))).join(" ・ ")}</p>
+${p.thumb_url && !video ? `<img class="ba-thumb" src="${esc(p.thumb_url)}" alt="">` : ""}${tocHtml}<div class="ba-body">${bodyHtml}</div>${partTag(pl.end)}<div data-lab-end></div></article>
+${next ? `<section class="w-next" aria-label="次の記事"><div><p>次の記事（${esc(at.shelf.name)} ${at.k + 2}本目）</p><b>${esc(next.title)}</b></div><a href="/blog/${esc(next.slug)}?s=${at.i + 1}">次の記事へ</a></section>` : ""}`;
+    // 横：個別相談（残り枠）・おすすめの順番（進み具合）・関連記事・横の部品
+    const c = (h && h.sidebar && h.sidebar.consult) || {};
+    const consult = c.title ? `<section class="w-consult" aria-labelledby="wc-h"><p class="k">人数限定</p><h2 id="wc-h">${esc(c.title)}</h2>${c.body ? `<p>${esc(c.body)}</p>` : ""}${typeof c.left === "number" ? (c.left > 0 ? `<p>今月の募集枠：<b>残り ${c.left} 名</b></p>` : "<p><b>今月の募集枠は埋まりました。</b>次回はメールでお知らせします。</p>") : ""}${c.left === 0 ? "" : `<a href="${esc(relHref(c.href))}" data-lab-button="side-consult">${esc(c.cta || "予約する")}</a>`}</section>` : "";
+    const order = at ? `<section class="w-box" aria-labelledby="wo-h" data-lab-order="${esc(books.map((b) => b.slug).join(","))}"><h2 id="wo-h">おすすめの順番</h2><p class="c" data-lab-count>${esc(at.shelf.name)} ・ 全${books.length}本</p><div class="w-bar" aria-hidden="true"><i></i></div>
+<ol class="w-ord">${books.map((b, i) => `<li><a href="/blog/${esc(b.slug)}?s=${at.i + 1}" data-slug="${esc(b.slug)}"${i === at.k ? ' aria-current="page"' : ""}><span class="no">${i + 1}</span><span class="t">${esc(b.title)}</span><span class="tag">${i === at.k ? "今の記事" : memberSlugs.has(b.slug) ? "会員限定" : esc(b.kind || "")}</span></a></li>`).join("")}</ol></section>` : "";
+    const nextSlug = next ? next.slug : "";
+    const same = p.category ? others.filter((o) => o.category === p.category && o.slug !== nextSlug) : [];
+    const rel = [...same, ...others.filter((o) => !same.includes(o) && o.slug !== nextSlug)].slice(0, 4);
+    const related = rel.length ? `<section class="w-rel" aria-labelledby="wr-h"><h2 id="wr-h">関連記事</h2><ul>${rel.map((o) => `<li><a href="/blog/${esc(o.slug)}"><i${o.thumb_url ? ` style="background-image:url('${esc(o.thumb_url)}')"` : ' class="np"'} aria-hidden="true"></i><span><b>${esc(o.title)}</b><small>${[o.category, jpDate(o.published_at), o.members_from ? "途中から会員限定" : ""].filter(Boolean).map(esc).join(" ・ ")}</small></span></a></li>`).join("")}</ul></section>` : "";
+    const side = consult + order + related + (pl.side ? partTag(pl.side, "lab-side") : "");
+    const html = `<main class="bw" id="main" tabindex="-1"><div>${art}</div>${side ? `<aside class="bs" aria-label="ご案内とおすすめ">${side}</aside>` : ""}</main>${partTag(pl.bar, "lab-barpart")}`;
     const canonical = `${origin(env)}/blog/${p.slug}`;
     const embed = `<script src="/_lab/embed.js" defer data-page="${esc(p.id)}" data-preview="${preview ? "1" : "0"}" data-kind="blog"></script>`;
+    // 写したときに本文から自動で作った説明は、会員限定の所を含みうるので、だれでも読める所から作り直して出す
+    const description = gated && p.description === plainText(p.body_html).slice(0, 120) ? plainText(free).slice(0, 120) : p.description;
     return {
       preview,
       html: shell({
-        title: `${p.title}｜${name}`, description: p.description, canonical, image: p.thumb_url, siteName: name, body: html, embed, noindex: preview,
-        jsonld: { "@context": "https://schema.org", "@type": "Article", headline: p.title, datePublished: p.published_at || undefined, dateModified: p.updated_at || undefined, image: p.thumb_url || undefined, mainEntityOfPage: canonical, author: { "@type": "Person", name }, publisher: { "@type": "Organization", name } },
+        join: joinTo,
+        title: `${p.title}｜${name}`, description, canonical, image: p.thumb_url, siteName: name, body: html, embed, noindex: preview,
+        jsonld: { "@context": "https://schema.org", "@type": "Article", headline: p.title, datePublished: p.published_at || undefined, dateModified: p.updated_at || undefined, image: p.thumb_url || undefined, mainEntityOfPage: canonical, author: { "@type": "Person", name }, publisher: { "@type": "Organization", name }, ...(gated ? { isAccessibleForFree: false, hasPart: { "@type": "WebPageElement", isAccessibleForFree: false, cssSelector: ".lab-wall" } } : {}) },
       }),
     };
+  }
+  // 便 3：会員限定の続き。登録した人（登録の印・公式サイトのログイン）にだけ返す。見本の印なら確かめのため印なしで返す
+  async function gate(env, { page, u, g, site, preview: pv } = {}) {
+    const p = await byId(env, page);
+    if (!p) return { ok: false, error: "not_found" };
+    if (pv) { if ((await readPreviewToken(env, `blog:${p.id}`, pv)) == null) return { ok: false, error: "not_found" }; }
+    else if (p.status !== "published") return { ok: false, error: "not_found" };
+    const { rest } = render(p);
+    if (!rest) return { ok: true, locked: false, blocks: [] };
+    if (!pv && !(canOpen && (await canOpen(env, { u, g, site }).catch(() => false)))) return { ok: true, locked: true, count: 1 };
+    return { ok: true, locked: false, blocks: [rest] };
   }
   // 便 X1：公開中の新しい記事 n 本（ページの印 blog:latest-n が読む）。下書き・止めた記事は出さない
   async function latest(env, n = 8) {
@@ -470,5 +512,5 @@ ${more.length ? `<section class="bmore"><h2>ほかの記事</h2><div class="bl">
     return { ok: true };
   }
 
-  return { get, sources, copy, save, publicIndex, publicArticle, latest, categories, sitemap, hit, views };
+  return { get, sources, copy, save, publicIndex, publicArticle, gate, latest, categories, sitemap, hit, views };
 }
