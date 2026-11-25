@@ -188,13 +188,19 @@ function shell({ title, description, canonical, image, siteName, body, embed, js
 <title>${esc(title)}</title>${description ? `<meta name="description" content="${esc(description)}">` : ""}${noindex ? '<meta name="robots" content="noindex">' : ""}
 ${canonical ? `<link rel="canonical" href="${esc(canonical)}"><meta property="og:url" content="${esc(canonical)}">` : ""}<meta property="og:title" content="${esc(title)}"><meta property="og:site_name" content="${esc(siteName)}">${description ? `<meta property="og:description" content="${esc(description)}">` : ""}
 ${image ? `<meta property="og:image" content="${esc(image)}"><meta name="twitter:card" content="summary_large_image">` : '<meta name="twitter:card" content="summary">'}
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=Zen+Kurenaido&display=swap">
 <link rel="stylesheet" href="/_lab/look.css"><style>${SHELL_CSS}</style>${jsonld ? `<script type="application/ld+json">${JSON.stringify(jsonld).replace(/</g, "\\u003c")}</script>` : ""}</head>
-<body><header class="bh"><div><a href="/blog">${esc(siteName)}</a></div></header>${body}<footer class="bf">© ${esc(siteName)}</footer>${embed || ""}</body></html>`;
+<body><a class="skip" href="#main">本文へ移動</a>
+<header class="sh"><div><a class="logo" href="/">${esc(siteName)}</a><nav aria-label="サイトの案内"><a href="/#start">はじめての方へ</a><a href="/#special">会員限定コンテンツ</a><a href="/#consult">個別相談</a><a href="/blog">記事一覧</a></nav>
+<div data-lab-part="account"></div><a class="join" href="${esc(join)}" data-lab-button="head-join">無料会員登録</a></div></header>
+${body}
+<footer class="bf"><div><span style="font-weight:700;color:#1a1a1a">${esc(siteName)}</span><a href="${LEGAL}/terms">利用規約</a><a href="${LEGAL}/privacy">プライバシーポリシー</a><a href="${LEGAL}/tokushoho">特定商取引法に基づく表記</a><span>© 株式会社Best Life Consulting</span></div></footer>${embed || `<script src="/_lab/embed.js" defer data-kind="site"></script>`}</body></html>`;
 }
 // サムネの無い記事は画像の枠を出さない（灰色の箱が並ぶのを避ける）
-const card = (p) => `<a class="bc${p.thumb_url ? "" : " nt"}" href="/blog/${esc(p.slug)}">${p.thumb_url ? `<i style="background-image:url('${esc(p.thumb_url)}')"></i>` : ""}<div><b>${esc(p.title)}</b>${p.description ? `<p>${esc(p.description.slice(0, 80))}${p.description.length > 80 ? "…" : ""}</p>` : ""}<small>${esc(jpDate(p.published_at))}</small></div></a>`;
+const card = (p) => `<a class="bc${p.thumb_url ? "" : " nt"}" href="/blog/${esc(p.slug)}"><i${p.thumb_url ? ` style="background-image:url('${esc(p.thumb_url)}')"` : ""} aria-hidden="true"></i><b>${esc(p.title)}</b>${p.description ? `<p>${esc(p.description.slice(0, 80))}${p.description.length > 80 ? "…" : ""}</p>` : ""}<small>${esc(jpDate(p.published_at))}</small></a>`;
 
-export function makeBlog({ db, logInbound, web, pagesOrigin, previewToken, readPreviewToken }) {
+// home(env)：公式サイトのホームの中身（本棚・サイドバー。sitehome.js の publicHome）。canOpen(env, {u,g,site})：登録した人か
+export function makeBlog({ db, logInbound, web, pagesOrigin, previewToken, readPreviewToken, home = null, canOpen = null }) {
   const origin = (env) => pagesOrigin(env);
   async function siteName(env) {
     const l = (await web.getLook(env)).look;
@@ -217,6 +223,7 @@ export function makeBlog({ db, logInbound, web, pagesOrigin, previewToken, readP
   }
   const shape = async (env, p, v) => ({
     id: p.id, slug: p.slug, title: p.title, description: p.description, thumb_url: p.thumb_url, gift_part: p.gift_part || "",
+    category: p.category || "", members_from: p.members_from || 0, headings: isMembershipBody(p.body_html) ? [] : headingsOf(p.body_html),
     ...(isMembershipBody(p.body_html) ? { kind: "membership", link_url: membershipLink(p.body_html) } : {}),
     status: p.status, published_at: p.published_at, source_post_id: p.source_post_id, source_updated_at: p.source_updated_at,
     copied_at: p.copied_at, updated_at: p.updated_at, url: `${origin(env)}/blog/${p.slug}`,
@@ -317,6 +324,14 @@ export function makeBlog({ db, logInbound, web, pagesOrigin, previewToken, readP
     if (args.thumb_url !== undefined) { const u = String(args.thumb_url || "").trim(); if (u && !okUrl(u)) return { ok: false, error: "bad_thumb" }; patch.thumb_url = u || null; }
     // 公式サイトの作り直し 便 1：カテゴリ（20 字まで・空で外す）
     if (args.category !== undefined) { const c = String(args.category || "").trim(); if (c.length > 20) return { ok: false, error: "too_long", field: "category", max: 20 }; patch.category = c || null; }
+    // 便 3：会員限定にする所（N 番目の見出しから後ろ）。0 か空で外す。メンシプ記事には付けない（本文が無いため）
+    if (args.members_from !== undefined) {
+      const k = args.members_from === "" || args.members_from === null ? 0 : Number(args.members_from);
+      if (!Number.isInteger(k) || k < 0 || k > MEMBERS_MAX) return { ok: false, error: "bad_members_from" };
+      if (k && isMembershipBody(p.body_html)) return { ok: false, error: "not_for_membership" };
+      if (k && k > headingsOf(p.body_html).length) return { ok: false, error: "no_such_heading", headings: headingsOf(p.body_html).length };
+      patch.members_from = k || null;
+    }
     if (args.gift_part !== undefined) {
       const g = String(args.gift_part || "").trim();
       if (g) {
@@ -369,10 +384,31 @@ export function makeBlog({ db, logInbound, web, pagesOrigin, previewToken, readP
       db(env, "GET", `b_blog_posts?select=slug,title,description,thumb_url,published_at&status=eq.published${c ? `&category=eq.${encodeURIComponent(c)}` : ""}&order=published_at.desc&limit=100`).catch(() => []),
       siteName(env),
     ]);
-    const body = `<main class="bw"><div><h1 class="ba-h1" style="max-width:none">${esc(c || name)}</h1><p class="ba-meta">${c ? `カテゴリ ・ ` : ""}記事 ${rows.length} 本${c ? ` ・ <a href="/blog">すべての記事</a>` : ""}</p>${rows.length ? `<div class="bl">${rows.map(card).join("")}</div>` : "<p>まだ記事がありません。</p>"}</div></main>`;
-    return shell({ title: c ? `${c}｜${name}` : name, description: c ? `${name}の「${c}」の記事一覧` : `${name}の記事一覧`, canonical: `${origin(env)}/blog${c ? `?cat=${encodeURIComponent(c)}` : ""}`, siteName: name, body });
+    const body = `<main class="bw" id="main" tabindex="-1"><div><nav class="crumb" aria-label="現在地"><a href="/">ホーム</a> ／ 記事一覧${c ? ` ／ ${esc(c)}` : ""}</nav><h1 class="ba-h1">${esc(c || "記事一覧")}</h1><p class="ba-meta">${c ? `カテゴリ ・ ` : ""}記事 ${rows.length} 本${c ? ` ・ <a href="/blog">すべての記事</a>` : ""}</p>${rows.length ? `<div class="bl">${rows.map(card).join("")}</div>` : "<p>まだ記事がありません。</p>"}</div></main>`;
+    return shell({ join: await joinHref(env), title: c ? `${c}｜${name}` : name, description: c ? `${name}の「${c}」の記事一覧` : `${name}の記事一覧`, canonical: `${origin(env)}/blog${c ? `?cat=${encodeURIComponent(c)}` : ""}`, siteName: name, body });
   }
-  async function publicArticle(env, slug, previewTok) {
+  const joinHref = async (env) => {
+    if (!home) return "/xmas-gift";
+    const h = await home(env).catch(() => null);
+    const j = (h && h.sidebar && h.sidebar.join) || {};
+    return /^[/](?![/])/.test(j.href || "") || /^https:[/][/]/.test(j.href || "") ? j.href : "/xmas-gift";
+  };
+  // 本文を出す形にする（見出しの印・YouTube を動かせる形・会員限定で分ける）。gate と記事の画面で同じものを使う
+  function render(p) {
+    const { body, toc } = withToc(p.body_html);
+    const { free, rest } = splitMembers(ytPlayable(body), isMembershipBody(p.body_html) ? 0 : p.members_from);
+    return { free, rest, toc, video: /data-yt=/.test(free + rest) };
+  }
+  // 本棚のどの棚の何本目か。?s=（1 から）で棚を選ぶ。無ければこの記事が入っている最初の棚
+  function shelfOf(h, slug, s) {
+    const shelves = (h && h.shelves) || [];
+    const pickI = Number(s) - 1;
+    const order = Number.isInteger(pickI) && shelves[pickI] && shelves[pickI].books.some((b) => b.slug === slug) ? [pickI] : shelves.map((_, i) => i);
+    for (const i of order) { const k = shelves[i].books.findIndex((b) => b.slug === slug); if (k >= 0) return { i, k, shelf: shelves[i] }; }
+    return null;
+  }
+  const relHref = (h) => (/^#[A-Za-z0-9_-]+$/.test(h || "") ? "/" + h : /^[/](?![/])/.test(h || "") || /^https:[/][/]/.test(h || "") ? h : "/#consult");
+  async function publicArticle(env, slug, previewTok, { s: shelfParam = "" } = {}) {
     const p = await bySlug(env, slug);
     if (!p) return null;
     let preview = false;
