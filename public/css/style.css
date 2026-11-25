@@ -92,6 +92,7 @@ footer.site a { color: var(--muted); margin-right: 14px; }
   border-bottom: 2px solid transparent; margin-bottom: -1px;
 }
 .tabs button[aria-selected=true] { color: var(--ink); border-bottom-color: var(--accent); font-weight: 700; }
+.tabs button[aria-pressed=true] { color: var(--ink); border-bottom-color: var(--accent); font-weight: 700; } /* 公式サイトの作り直し 便 6：見本の「だれの見え方」 */
 .lesson { display: flex; gap: 14px; align-items: center; text-decoration: none; color: inherit; cursor: pointer; }
 .lesson .num { font-family: var(--mono); color: var(--accent); font-size: 13px; min-width: 34px; }
 .lesson .meta { font-size: 13px; color: var(--muted); }

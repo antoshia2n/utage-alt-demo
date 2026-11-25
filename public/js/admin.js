@@ -2755,6 +2755,7 @@ function renderPage(r, { tab = "view", version: wantV, msg } = {}) {
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <select id="pd-ver" class="inline">${vers.map((v) => `<option value="${v.version}" ${v.version === curV ? "selected" : ""}>版 ${v.version}${v.version === p.published_version && live ? "（公開中）" : ""}・${esc(fmtTime(v.created_at))}</option>`).join("")}</select>
           <div class="tabs" role="tablist" style="margin:0"><button type="button" data-w="100%" aria-selected="true">パソコン</button><button type="button" data-w="390px" aria-selected="false">スマホ</button></div>
+          <div class="tabs" role="group" aria-label="だれの見え方" style="margin:0"><button type="button" data-as="member" aria-pressed="true">登録した人の見え方</button><button type="button" data-as="guest" aria-pressed="false">登録前の見え方</button></div>
           <a class="btn ghost small" id="pd-open" href="#" target="_blank" rel="noopener">別の窓で見る</a>
         </div>
         <p class="note" id="pd-vnote" style="margin:0"></p>
@@ -2784,10 +2785,13 @@ function renderPage(r, { tab = "view", version: wantV, msg } = {}) {
   const showTab = wireTabs(root, tab);
   wireCampPicker(root, () => loadPages());
   // 見た目：版を選ぶと見本の住所を差し替える
+  let asGuest = false;
   const setV = (v) => {
     curV = Number(v);
     const src = (r.previews || {})[curV];
-    if ($("pd-frame")) { $("pd-frame").src = src || "about:blank"; $("pd-open").href = src || "#"; }
+    // 公式サイトの作り直し 便 6：登録前の人の見え方（会員限定の所を閉じ、登録の枠を出す）に切り替えられる
+    const shown = src ? src + (asGuest ? (src.includes("?") ? "&" : "?") + "as=guest" : "") : "";
+    if ($("pd-frame")) { $("pd-frame").src = shown || "about:blank"; $("pd-open").href = shown || "#"; }
     const meta = vers.find((x) => x.version === curV) || {};
     if ($("pd-vnote")) $("pd-vnote").textContent = [meta.note, meta.made_by ? `作った：${madeBy(meta.made_by)}` : "", meta.request_id ? `依頼 ${meta.request_id}` : "",
       meta.parts && (meta.parts.forms || []).length ? `申込の枠 ${(meta.parts.forms || []).join("・")}` : "", meta.parts && (meta.parts.buttons || []).length ? `ボタン ${(meta.parts.buttons || []).join("・")}` : ""].filter(Boolean).join("　");
@@ -2800,6 +2804,11 @@ function renderPage(r, { tab = "view", version: wantV, msg } = {}) {
     root.querySelectorAll("[data-w]").forEach((b) => b.addEventListener("click", () => {
       root.querySelectorAll("[data-w]").forEach((x) => x.setAttribute("aria-selected", String(x === b)));
       $("pd-frame").style.width = b.dataset.w;
+    }));
+    root.querySelectorAll("[data-as]").forEach((b) => b.addEventListener("click", () => {
+      asGuest = b.dataset.as === "guest";
+      root.querySelectorAll("[data-as]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+      setV(curV);
     }));
     setV(curV);
   }

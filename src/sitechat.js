@@ -117,7 +117,7 @@ a{color:#1a1a1a}:focus-visible{outline:3px solid #1a1a1a;outline-offset:3px}@med
 .c-row button{flex:none;min-height:52px;min-width:88px;padding:0 20px;border:0;border-radius:8px;background:#1a1a1a;color:#fff;font:inherit;font-weight:700;cursor:pointer}.c-row button:disabled{background:#8a867d}
 .c-msg{margin:8px 0 0;font-size:14px;font-weight:700;color:#c8102e}.c-msg:empty{display:none}
 .c-side{flex:1 1 260px;min-width:0;display:flex;flex-direction:column;gap:16px}
-.c-card{border:2px solid #1a1a1a;border-radius:8px;padding:24px;background:#fff}.c-card .k{margin:0 0 8px;font-size:14px;font-weight:700}.c-card h2{margin:0 0 8px;font-size:20px;line-height:1.5}.c-card p{margin:0 0 16px}
+.c-card{border:2px solid #1a1a1a;border-radius:8px;padding:24px;background:#fff}.c-card .k{margin:0 0 8px;font-size:14px;font-weight:700}.c-card h2{margin:0 0 8px;font-size:18px;line-height:1.5}.c-card p{margin:0 0 16px}
 .c-card a{display:flex;align-items:center;justify-content:center;min-height:48px;background:#c8102e;color:#fff;border-radius:8px;font-weight:700;text-decoration:none}
 .bf{border-top:1px solid #d9d6cf}.bf>div{max-width:1360px;margin:0 auto;padding:24px;display:flex;flex-wrap:wrap;align-items:center;gap:0 24px;font-size:14px;color:#555}.bf a{color:#555;padding:12px 0}.bf span:last-child{margin-left:auto}
 @media (max-width:600px){.c-log{padding:16px;max-height:60vh}.m{max-width:92%}.c-out{padding:24px}}`;
