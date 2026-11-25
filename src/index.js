@@ -63,6 +63,7 @@ import { makeGcal } from "./gcal.js";
 import { makeBooking } from "./booking.js";
 import { makePages, EMBED_JS, personToken, readPersonToken, previewToken, readPreviewToken, siteToken, readSiteToken, siteCodeHash, SITE_TOKEN_TTL_MS, PURPOSES, ROUTE_RE as ROUTE_OK } from "./pages.js";
 import { makeSiteLogin, siteLoginHtml, safeNext } from "./sitelogin.js";
+import { makeSiteHome } from "./sitehome.js";
 import { makeWeb } from "./web.js";
 import { makeBlog } from "./blog.js";
 import { makeLessonQA, openLessonQuestions, QUESTION_MAX } from "./lessonqa.js";
@@ -98,7 +99,7 @@ import { makeNames } from "./names.js";
 import { makeChatAi, AI_MODEL } from "./chatai.js";
 import { makeShield, botSiteKey, botCheckOn, isPrivatePath, stripDetail, IP_LIMITS, EMAIL_LIMITS } from "./shield.js";
 
-const VERSION = "0.87.0-bsite2";
+const VERSION = "0.88.0-bsite3";
 const SOURCES = ["x", "note", "youtube", "direct", "other"];
 const MEMBER_EVENT_TYPES = ["lesson_viewed", "announcement_opened"];
 const ROOM_TYPES = ["correction_submitted", "correction_returned", "room_chat", "room_read"];
@@ -378,6 +379,8 @@ const web = makeWeb({
 });
 // 便 S3（2026-11-07）：公開サイトのブログ（コンテンツくんの記事を写して lp の /blog に出す）
 const blog = makeBlog({ db, logInbound, web, pagesOrigin: (env) => pages.pagesOrigin(env), previewToken, readPreviewToken });
+// 公式サイトの作り直し 便 2：ホームの中身（スライダー・本棚・サイドバー）。R2 の site/home.json
+const siteHome = makeSiteHome({ db, logInbound, seatsLeft: (env, slug) => booking.seatsLeft(env, slug) });
 const mediaOrigin = (env) => String(env.PUBLIC_ORIGIN || "https://lab.shia2n.jp").replace(/[/]+$/, "");
 const MEDIA_GONE = `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>開けません</title></head><body style="font-family:system-ui,sans-serif;max-width:560px;margin:15vh auto;padding:0 16px;color:#333"><h1 style="font-size:20px">このリンクは開けません</h1><p>配布が終わったか、住所が違います。送ってくれた人に確かめてください。</p></body></html>`;
 async function serveMediaLink(request, env, token) {
@@ -638,6 +641,8 @@ async function handlePagesHost(request, env, url) {
     const [c] = await db(env, "GET", `customers?select=name&id=eq.${cid}`);
     return json(c ? { ok: true, logged_in: true, name: c.name || "" } : { ok: true, logged_in: false });
   }
+  // 公式サイトの作り直し 便 2：ホームの中身（スライダー・本棚・サイドバー）
+  if (path === "/api/p/home" && method === "GET") return json(await siteHome.publicHome(env), 200, { "cache-control": "public, max-age=60" });
   // 公式サイトの作り直し 便 1：記事のカテゴリと本数（公開中の記事だけ）
   if (path === "/api/p/categories" && method === "GET") return json(await blog.categories(env), 200, { "cache-control": "public, max-age=60" });
   // 便 X2：登録した人だけの中身（ページの <template data-lab-gate>）
@@ -652,7 +657,7 @@ async function handlePagesHost(request, env, url) {
   if (path.startsWith("/api/")) return json({ ok: false, error: "not_found" }, 404);
   // 便 S3：ブログ（一覧・記事）と検索向けの地図
   if (method === "GET" || method === "HEAD") {
-    if (path === "/blog" || path === "/blog/") return html(await blog.publicIndex(env), 200, { "cache-control": "public, max-age=60" });
+    if (path === "/blog" || path === "/blog/") return html(await blog.publicIndex(env, { cat: url.searchParams.get("cat") || "" }), 200, { "cache-control": "public, max-age=60" });
     // 便 C（2026-11-24）：公式サイトの頭のページ。公開中のページ home があればそれ、無ければブログの一覧
     if (path === "/") {
       const home = await pages.serve(env, "home", url.searchParams.get("preview")).catch(() => null);
@@ -1670,6 +1675,9 @@ async function handleApi(request, env, url) {
     if (path === "/api/admin/blog/sources" && method === "GET") { const r = await blog.sources(env, { account: url.searchParams.get("account") || "acc_1", q: url.searchParams.get("q") || "" }); return json(r, r.ok ? 200 : 400); }
     if (path === "/api/admin/blog/copy" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await blog.copy(env, b, a.email); return json(r, r.ok ? 200 : 400); }
     if (path === "/api/admin/blog/post" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await blog.save(env, b, a.email); return json(r, r.ok ? 200 : 400); }
+    // 公式サイトの作り直し 便 2：ホームの中身
+    if (path === "/api/admin/site/home" && method === "GET") return json(await siteHome.get(env));
+    if (path === "/api/admin/site/home" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await siteHome.save(env, b, a.email); return json(r, r.ok ? 200 : 400); }
     if (path === "/api/admin/web/part" && method === "POST") { const b = await request.json().catch(() => ({})); const r = await web.savePart(env, b, a.email); return json(r, r.ok ? 200 : 400); }
     // 契約の便 1（2026-11-12・ShiaSign）：契約の台帳と書類（src/contracts.js）
     if (path === "/api/admin/contracts" && method === "GET") { const sp = url.searchParams; const r = await contracts.list(env, { q: sp.get("q") || "", status: sp.get("status") || "", kind: sp.get("kind") || "", from: sp.get("from") || "", to: sp.get("to") || "", min: sp.get("min") ?? "", max: sp.get("max") ?? "", person_id: sp.get("person_id") || "", archived: sp.get("archived") === "1" }); return json(r, r.ok ? 200 : 400); }
@@ -2704,6 +2712,20 @@ const TOOLS = [
     inputSchema: { type: "object", properties: { id: { type: "string" }, slug: { type: "string" }, name: { type: "string" }, place: { type: "string" }, rules: { type: "object" }, active: { type: "boolean" }, remove: { type: "boolean" } } },
   },
   {
+    name: "get_site_home",
+    screen: "web",
+    say: "公式サイトのホームの中身を見る",
+    description: "公式サイトのホーム（スライダー・本棚・サイドバー）の中身を読む。home：slides（label・title・body・cta・href・img・alt・note）・shelves（name・who・posts＝記事の住所の名前 slug の並び）・sidebar（join：title・body・form＝フォームの住所の名前・cta・href／consult：title・body・booking＝予約のメニューの住所の名前（先着の数から残り枠を出す）・cta・href／membership：title・body・cta・href）。posts：選べる記事（slug・title・published）。is_default：まだ一度も保存していない（仮の中身）。",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "save_site_home",
+    screen: "web",
+    say: "公式サイトのホームの中身を差し替える",
+    description: "公式サイトのホームの中身を丸ごと差し替える（get_site_home の home と同じ形で渡す）。スライドは 8 枚まで（title は要る・画像を入れたら alt も要る・href は / か # か https で始める）。本棚は 3 つまで・1 つに 12 本まで（公開中の記事だけが出る）。承認が要る道具（読者の画面が変わる）。",
+    inputSchema: { type: "object", properties: { slides: { type: "array" }, shelves: { type: "array" }, sidebar: { type: "object" } }, required: ["slides", "shelves", "sidebar"] },
+  },
+  {
     name: "get_blog",
     screen: "web",
     say: "ブログの記事を見る",
@@ -3574,6 +3596,8 @@ async function runTool(env, name, args, ctx) {
   if (name === "get_web") return await web.get(env);
   if (name === "set_web_look") return await web.setLook(env, args, "mcp");
   if (name === "save_web_part") return await web.savePart(env, args, "mcp");
+  if (name === "get_site_home") return await siteHome.get(env);
+  if (name === "save_site_home") return await siteHome.save(env, args, "mcp");
   if (name === "get_blog") return await blog.get(env);
   if (name === "list_blog_sources") return await blog.sources(env, args);
   if (name === "copy_to_blog") return await blog.copy(env, args, "mcp");

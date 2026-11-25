@@ -113,6 +113,8 @@ export const COVERAGE = {
   "GET /api/admin/web": ["get_web"],
   "POST /api/admin/web/look": ["set_web_look"],
   "POST /api/admin/web/part": ["save_web_part"],
+  "GET /api/admin/site/home": ["get_site_home"],
+  "POST /api/admin/site/home": ["save_site_home"],
   "GET /api/admin/blog": ["get_blog"],
   "GET /api/admin/blog/sources": ["list_blog_sources"],
   "POST /api/admin/blog/copy": ["copy_to_blog"],

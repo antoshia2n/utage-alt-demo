@@ -317,13 +317,15 @@ export function makeBlog({ db, logInbound, web, pagesOrigin, previewToken, readP
     const first = (pl) => (parts.find((x) => x.active && x.place === pl) || {}).id || "";
     return { ids: new Set(parts.filter((x) => x.active).map((x) => x.id)), mid: first("mid"), end: first("end"), side: first("side"), bar: first("bar") };
   }
-  async function publicIndex(env) {
+  // 公式サイトの作り直し 便 2：?cat= でカテゴリに絞る（ホームのサイドバーのカテゴリから来る）
+  async function publicIndex(env, { cat = "" } = {}) {
+    const c = String(cat || "").trim().slice(0, 20);
     const [rows, name] = await Promise.all([
-      db(env, "GET", "b_blog_posts?select=slug,title,description,thumb_url,published_at&status=eq.published&order=published_at.desc&limit=100").catch(() => []),
+      db(env, "GET", `b_blog_posts?select=slug,title,description,thumb_url,published_at&status=eq.published${c ? `&category=eq.${encodeURIComponent(c)}` : ""}&order=published_at.desc&limit=100`).catch(() => []),
       siteName(env),
     ]);
-    const body = `<main class="bw"><div><h1 class="ba-h1" style="max-width:none">${esc(name)}</h1><p class="ba-meta">記事 ${rows.length} 本</p>${rows.length ? `<div class="bl">${rows.map(card).join("")}</div>` : "<p>まだ記事がありません。</p>"}</div></main>`;
-    return shell({ title: name, description: `${name}の記事一覧`, canonical: `${origin(env)}/blog`, siteName: name, body });
+    const body = `<main class="bw"><div><h1 class="ba-h1" style="max-width:none">${esc(c || name)}</h1><p class="ba-meta">${c ? `カテゴリ ・ ` : ""}記事 ${rows.length} 本${c ? ` ・ <a href="/blog">すべての記事</a>` : ""}</p>${rows.length ? `<div class="bl">${rows.map(card).join("")}</div>` : "<p>まだ記事がありません。</p>"}</div></main>`;
+    return shell({ title: c ? `${c}｜${name}` : name, description: c ? `${name}の「${c}」の記事一覧` : `${name}の記事一覧`, canonical: `${origin(env)}/blog${c ? `?cat=${encodeURIComponent(c)}` : ""}`, siteName: name, body });
   }
   async function publicArticle(env, slug, previewTok) {
     const p = await bySlug(env, slug);

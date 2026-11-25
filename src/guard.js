@@ -42,7 +42,7 @@ export const DEFAULT_MODES = {
   // 便 L3：リッチメニューを読むだけ
   list_line_richmenus: "auto",
   // メディアの便 M1：棚を読む・写す・スライドのリンク・名前を直すは自動（人へは届かない）。消すのは承認（ファイルが戻らない）
-  get_web: "auto", set_web_look: "approve", save_web_part: "approve", get_blog: "auto", list_blog_sources: "auto", copy_to_blog: "auto", save_blog_post: "approve", // 便 S1・S2：公開サイトの見た目と部品（読者の画面が変わるものは承認）
+  get_web: "auto", set_web_look: "approve", save_web_part: "approve", get_site_home: "auto", save_site_home: "approve", get_blog: "auto", list_blog_sources: "auto", copy_to_blog: "auto", save_blog_post: "approve", // 便 S1・S2：公開サイトの見た目と部品（読者の画面が変わるものは承認）
   // 契約の便 1（ShiaSign）：台帳を読む・入れる・直す・状態・確かめは自動（人へは届かない）。しまうのは承認
   list_contracts: "auto", get_contract: "auto", create_contract: "auto", save_contract: "auto", set_contract_status: "auto", add_contract_doc_link: "auto", verify_contract_file: "auto", archive_contract: "approve",
   // 契約の便 2：署名の依頼は承認（外の人にメールが届く）。取り消しは自動
