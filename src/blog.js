@@ -166,6 +166,7 @@ a{color:#1a1a1a}:focus-visible{outline:3px solid #1a1a1a;outline-offset:3px}
 .w-next{max-width:760px;margin:40px 0 0;display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:space-between;background:#f3f1eb;border-radius:8px;padding:24px}
 .w-next p{margin:0;font-size:14px;color:#555}.w-next b{display:block;font-size:18px;margin-top:4px}.w-next a{display:inline-flex;align-items:center;min-height:48px;background:#1a1a1a;color:#fff;padding:0 24px;border-radius:8px;font-weight:700;text-decoration:none}
 .w-box{border:1px solid #d9d6cf;border-radius:8px;padding:24px;background:#fff}.w-box h2{margin:0 0 4px;font-size:18px}.w-box .c{margin:0 0 12px;font-size:14px;color:#555}
+.hand{margin:0 0 8px;font-family:"Zen Kurenaido","Noto Sans JP",sans-serif;font-size:24px;line-height:1.4;color:#c8102e;transform:rotate(-2deg);transform-origin:left center}
 .w-bar{height:6px;background:#d9d6cf;border-radius:8px;margin:0 0 16px;overflow:hidden}.w-bar i{display:block;height:6px;width:0;background:#c8102e}
 .w-ord{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:2px}.w-ord a{display:flex;gap:12px;align-items:center;min-height:44px;padding:8px;border-radius:8px;text-decoration:none;font-size:16px}
 .w-ord a[aria-current=page]{background:#f3f1eb}.w-ord .no{flex:none;width:28px;height:28px;border-radius:8px;background:#d9d6cf;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700}
@@ -436,7 +437,7 @@ export function makeBlog({ db, logInbound, web, pagesOrigin, previewToken, readP
     const gift = p.gift_part && pl.ids.has(p.gift_part) ? p.gift_part : pl.mid;
     const lockedFrom = gated ? Number(p.members_from) - 1 : -1;
     const tocHtml = toc.length >= 3 ? `<nav class="lab-toc" aria-label="目次"><b>目次</b><ul>${toc.map((t, i) => `<li><a href="#${t.id}">${esc(t.text)}</a>${lockedFrom >= 0 && i >= lockedFrom ? " <small>（会員限定）</small>" : ""}</li>`).join("")}</ul></nav>` : "";
-    const wall = gated ? `<section class="lab-wall" data-lab-guest aria-labelledby="wall-h"><p class="k">この続きは会員限定です</p><h2 id="wall-h">無料会員登録で、続きをお読みいただけます</h2>
+    const wall = gated ? `<section class="lab-wall" data-lab-guest aria-labelledby="wall-h"><p class="k">この続きは会員限定です</p><h2 id="wall-h">無料会員登録で、続きをお読みいただけます</h2><p class="hand" aria-hidden="true">メールだけで、ここですぐ開きます</p>
 <p>メールアドレスだけで登録でき、このページのまま続きが表示されます。会員限定コンテンツもご利用いただけます。</p>
 ${join.form ? `<div data-lab-part="form:${esc(join.form)}" data-lab-cta="登録して続きを読む"></div>` : `<a class="go" href="${esc(joinTo)}" data-lab-button="wall-join">無料会員登録</a>`}
 <small>登録済みの方は <a href="/login?next=${encodeURIComponent("/blog/" + p.slug)}">ログイン</a></small></section><div data-lab-gated="0" hidden></div>` : "";
@@ -450,7 +451,7 @@ ${next ? `<section class="w-next" aria-label="次の記事"><div><p>次の記事
     // 横：個別相談（残り枠）・おすすめの順番（進み具合）・関連記事・横の部品
     const c = (h && h.sidebar && h.sidebar.consult) || {};
     const consult = c.title ? `<section class="w-consult" aria-labelledby="wc-h"><p class="k">人数限定</p><h2 id="wc-h">${esc(c.title)}</h2>${c.body ? `<p>${esc(c.body)}</p>` : ""}${typeof c.left === "number" ? (c.left > 0 ? `<p>今月の募集枠：<b>残り ${c.left} 名</b></p>` : "<p><b>今月の募集枠は埋まりました。</b>次回はメールでお知らせします。</p>") : ""}${c.left === 0 ? "" : `<a href="${esc(relHref(c.href))}" data-lab-button="side-consult">${esc(c.cta || "予約する")}</a>`}</section>` : "";
-    const order = at ? `<section class="w-box" aria-labelledby="wo-h" data-lab-order="${esc(books.map((b) => b.slug).join(","))}"><h2 id="wo-h">おすすめの順番</h2><p class="c" data-lab-count>${esc(at.shelf.name)} ・ 全${books.length}本</p><div class="w-bar" aria-hidden="true"><i></i></div>
+    const order = at ? `<section class="w-box" aria-labelledby="wo-h" data-lab-order="${esc(books.map((b) => b.slug).join(","))}"><h2 id="wo-h">おすすめの順番</h2><p class="hand" aria-hidden="true">上から順に読めば迷いません</p><p class="c" data-lab-count>${esc(at.shelf.name)} ・ 全${books.length}本</p><div class="w-bar" aria-hidden="true"><i></i></div>
 <ol class="w-ord">${books.map((b, i) => `<li><a href="/blog/${esc(b.slug)}?s=${at.i + 1}" data-slug="${esc(b.slug)}"${i === at.k ? ' aria-current="page"' : ""}><span class="no">${i + 1}</span><span class="t">${esc(b.title)}</span><span class="tag">${i === at.k ? "今の記事" : memberSlugs.has(b.slug) ? "会員限定" : esc(b.kind || "")}</span></a></li>`).join("")}</ol></section>` : "";
     const nextSlug = next ? next.slug : "";
     const same = p.category ? others.filter((o) => o.category === p.category && o.slug !== nextSlug) : [];
