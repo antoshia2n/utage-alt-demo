@@ -713,7 +713,7 @@ export const EMBED_JS = `(() => {
       + '<div><label for="' + u + '-email">メールアドレス<span class="lab-note">（必須）</span></label><input class="lab-input" id="' + u + '-email" data-k="email" type="email" required autocomplete="email" aria-describedby="' + u + '-msg"></div>'
       + f.items.map((it) => '<div><label for="lab-a-' + esc(it.key) + '">' + esc(it.label) + (it.required ? '<span class="lab-note">（必須）</span>' : "") + "</label>" + input(it) + '<div class="lab-err" data-e="' + esc(it.key) + '"></div></div>').join("")
       + '<label class="lab-check"><input type="checkbox" data-k="consent"><span><a href="' + LAB + '/legal/privacy" target="_blank" rel="noopener">プライバシーポリシー</a>と<a href="' + LAB + '/legal/tokushoho" target="_blank" rel="noopener">特定商取引法に基づく表記</a>を確かめました</span></label>'
-      + '<button type="button" class="lab-btn">' + (PREVIEW ? "（見本なので送れません）" : esc(el.getAttribute("data-lab-cta") || "送る")) + '</button><div class="lab-err" id="' + u + '-msg" data-msg role="alert"></div>';
+      + '<button type="button" class="lab-btn">' + (PREVIEW ? "（見本なので送れません）" : esc(el.getAttribute("data-lab-cta") || "送信")) + '</button><div class="lab-err" id="' + u + '-msg" data-msg role="alert"></div>';
     const q = (s) => el.querySelector(s), go = q(".lab-btn"), msg = q("[data-msg]");
     if (PREVIEW) { go.disabled = true; return; }
     const bot = await mountBot(el, r.bot_site_key, go);

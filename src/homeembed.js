@@ -10,16 +10,17 @@ export function homeEmbed(ctx) {
   const reduce = () => !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
   const st = document.createElement("style");
   st.textContent = ":root{--lab-ink:#1a1a1a;--lab-red:#c8102e;--lab-line:#d9d6cf;--lab-mut:#555555;--lab-soft:#f3f1eb}"
+    + ".lab-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}"
     + ".lab-hand{font-family:'Zen Kurenaido','Noto Sans JP',sans-serif;color:var(--lab-red)}"
     + ".lab-sl-box{position:relative;background:#fff;border:1px solid var(--lab-line);border-radius:8px;overflow:hidden}"
     + ".lab-sl-s{display:flex;flex-wrap:wrap;gap:32px 48px;align-items:center;padding:clamp(24px,5vw,48px);min-height:400px;box-sizing:border-box}.lab-sl-s[hidden]{display:none}"
     + ".lab-sl-tx{flex:3 1 380px;min-width:0}.lab-sl-lb{margin:0 0 16px;font-size:16px;font-weight:700;color:var(--lab-red)}"
-    + ".lab-sl-h{margin:0;font-size:clamp(32px,4.4vw,44px);line-height:1.35;font-weight:700;color:var(--lab-ink)}"
+    + ".lab-sl-h{margin:0;font-size:44px;line-height:1.35;font-weight:700;color:var(--lab-ink)}"
     + ".lab-sl-p{margin:24px 0 0;font-size:18px;max-width:30em}"
     + ".lab-sl-go{display:inline-flex;align-items:center;min-height:52px;margin-top:32px;background:var(--lab-red);color:#fff!important;font-weight:700;font-size:18px;padding:0 32px;border-radius:8px;text-decoration:none}"
     + ".lab-sl-fig{flex:2 1 300px;min-width:0;margin:0;position:relative}"
     + ".lab-sl-fig img,.lab-ph{display:block;width:100%;aspect-ratio:16/9;object-fit:contain;background:#fff;border:1px solid var(--lab-line);border-radius:8px;box-sizing:border-box}"
-    + ".lab-ph{display:flex;flex-direction:column;justify-content:center;gap:8px;padding:24px;position:relative;overflow:hidden}.lab-ph b{font-size:clamp(18px,2.4vw,28px);line-height:1.4;color:var(--lab-ink)}"
+    + ".lab-ph{display:flex;flex-direction:column;justify-content:center;gap:8px;padding:24px;position:relative;overflow:hidden}.lab-ph b{font-size:24px;line-height:1.4;color:var(--lab-ink)}"
     + ".lab-ph i{display:block;width:64px;height:4px;background:var(--lab-red);border-radius:2px}"
     + ".lab-tag{position:absolute;right:8px;top:8px;font-size:14px;font-style:normal;color:var(--lab-mut);background:var(--lab-soft);padding:0 8px;border-radius:4px}"
     + ".lab-sl-fig figcaption{position:absolute;left:-8px;bottom:-32px;font-size:24px;transform:rotate(-3deg)}"
@@ -40,7 +41,9 @@ export function homeEmbed(ctx) {
     + ".lab-left{position:relative;display:inline-block;padding:0 8px;font-weight:700}.lab-left svg{position:absolute;left:-8px;top:-8px;width:calc(100% + 16px);height:calc(100% + 16px)}"
     + ".lab-cat h2{margin:0 0 8px;font-size:24px}.lab-cat ul{list-style:none;margin:0;padding:0}.lab-cat a{display:flex;justify-content:space-between;align-items:center;min-height:44px;border-bottom:1px solid var(--lab-line);font-size:16px;color:var(--lab-ink);text-decoration:none}.lab-cat span{color:var(--lab-mut)}"
     + ".lab-acc{display:inline-flex;align-items:center;gap:8px 16px;flex-wrap:wrap;font-size:16px}.lab-acc a{padding:10px 0}"
-    + "@media (max-width:600px){.lab-sl-fig figcaption{position:static;display:block;margin-top:8px;transform:none}.lab-sl-s{min-height:0}}"
+    + "@media (max-width:600px){.lab-sl-fig figcaption{position:static;display:block;margin-top:8px;transform:none}.lab-sl-s{min-height:0}.lab-sl-h{font-size:32px}.lab-ph b{font-size:18px}}"
+    // 便 6：サイドバーの無料会員登録のフォームを v0.7 の見た目に
+    + ".lab-sb .lab-form{display:flex;flex-direction:column;gap:16px;font-size:16px;max-width:none;margin:0}.lab-sb .lab-form label{display:block;font-size:16px;font-weight:700;margin:0 0 8px}.lab-sb .lab-form .lab-note{font-weight:400;color:#555;font-size:14px;opacity:1}.lab-sb .lab-form .lab-input{width:100%;font:inherit;font-size:16px;padding:14px 16px;min-height:52px;border:1px solid #8a867d;border-radius:8px;background:#fff;color:#1a1a1a}.lab-sb .lab-form .lab-input[aria-invalid=true]{border:2px solid #c8102e}.lab-sb .lab-form .lab-check{display:flex;gap:12px;align-items:flex-start;font-weight:400;font-size:14px;line-height:1.7}.lab-sb .lab-form .lab-check input{width:24px;height:24px;flex:none;margin:0}.lab-sb .lab-form .lab-btn{min-height:56px;line-height:1.4;border:0;border-radius:8px;background:#c8102e;color:#fff;font:inherit;font-size:18px;font-weight:700;cursor:pointer}.lab-sb .lab-form .lab-btn:disabled{background:#8a867d;opacity:1;cursor:default}.lab-sb .lab-form .lab-err{color:#c8102e;font-weight:700;font-size:14px}.lab-sb .lab-form .lab-err:empty{display:none}"
     + "@media (prefers-reduced-motion: reduce){.lab-sl-s{transition:none}}";
   document.head.appendChild(st);
 
@@ -95,8 +98,8 @@ export function homeEmbed(ctx) {
               + books.map((b, i) => {
                 const w = [72, 60, 64, 56, 68, 60, 64][i % 7], h = [256, 232, 244, 220, 248, 228, 240][i % 7];
                 return "<li>" + (i === 0 ? '<span class="lab-hand" aria-hidden="true">ここから ↓</span>' : "")
-                  + '<a class="lab-bk1' + (i === 0 ? " first" : "") + '" style="width:' + w + "px;height:" + h + 'px" href="/blog/' + encodeURIComponent(b.slug) + '?s=' + (cur + 1) + '" aria-label="' + esc(s.name) + "向け " + (i + 1) + "本目：" + esc(b.title) + '">'
-                  + "<small>" + (i + 1) + "</small><b>" + esc(b.title) + "</b><small>" + esc(b.kind || "記事") + "</small></a></li>";
+                  + '<a class="lab-bk1' + (i === 0 ? " first" : "") + '" style="width:' + w + "px;height:" + h + 'px" href="/blog/' + encodeURIComponent(b.slug) + '?s=' + (cur + 1) + '">'
+                  + "<small>" + (i + 1) + '<span class="lab-sr">本目 ' + esc(s.name) + "向け：</span></small><b>" + esc(b.title) + "</b><small>" + esc(b.kind || "記事") + "</small></a></li>";
               }).join("") + "</ol></div>"
               : '<p class="lab-pos">この棚の記事は準備中です。</p>');
         })();
@@ -121,7 +124,7 @@ export function homeEmbed(ctx) {
     el.classList.add("lab-sb");
     el.innerHTML = (j.title ? '<section class="lab-join"><p class="k">無料</p><h2>' + esc(j.title) + "</h2>"
         + (me.logged_in ? "<p>" + esc(me.name ? me.name + "さん、" : "") + "ログイン中です。会員限定コンテンツをご覧いただけます。</p>"
-          : (j.body ? "<p>" + esc(j.body) + "</p>" : "") + (j.form ? '<div data-join-form></div>' : '<a class="go" href="' + esc(href(j.href)) + '" data-lab-button="side-join">' + esc(j.cta || "無料会員登録") + "</a>"))
+          : (j.body ? "<p>" + esc(j.body) + "</p>" : "") + (j.form ? '<div data-join-form data-lab-cta="' + esc(j.cta || "無料会員登録") + '"></div>' : '<a class="go" href="' + esc(href(j.href)) + '" data-lab-button="side-join">' + esc(j.cta || "無料会員登録") + "</a>"))
         + "</section>" : "")
       + (c.title ? '<section id="consult"><p class="k">人数限定</p><h2>' + esc(c.title) + "</h2>" + (c.body ? "<p>" + esc(c.body) + "</p>" : "") + left
         + (c.left === 0 ? "" : '<a class="go" href="' + esc(href(c.href)) + '" data-lab-button="side-consult">' + esc(c.cta || "予約する") + "</a>") + "</section>" : "")

@@ -146,7 +146,7 @@ a{color:#1a1a1a}:focus-visible{outline:3px solid #1a1a1a;outline-offset:3px}
 .bw{max-width:1280px;margin:0 auto;padding:32px 24px 96px;display:flex;flex-wrap:wrap;gap:48px;align-items:flex-start}.bw>div{flex:999 1 640px;min-width:0}
 .bs{flex:1 1 320px;min-width:0;display:flex;flex-direction:column;gap:32px}
 .crumb{display:block;margin:0 0 16px;font-size:14px;color:#555}.crumb a{color:#555}
-.lab-article{width:100%;max-width:760px;color:#1a1a1a;font-family:inherit}.lab-article h1,.lab-article h2,.lab-article h3{font-family:inherit;font-weight:700}.lab-article h2{border-left:0;padding:0;background:none}.lab-article p{font-size:inherit;line-height:inherit}.ba-h1{font-size:clamp(26px,3.4vw,32px);line-height:1.45;margin:0 0 8px;font-weight:700}
+.lab-article{width:100%;max-width:760px;color:#1a1a1a;font-family:inherit}.lab-article h1,.lab-article h2,.lab-article h3{font-family:inherit;font-weight:700}.lab-article h2{border-left:0;padding:0;background:none}.lab-article p{font-size:inherit;line-height:inherit}.ba-h1{font-size:32px;line-height:1.45;margin:0 0 8px;font-weight:700}
 .ba-meta{color:#555;font-size:14px;margin:0 0 24px}.ba-meta a{color:#555}.ba-thumb{width:100%;aspect-ratio:1200/630;object-fit:cover;border:1px solid #d9d6cf;border-radius:8px;margin:0 0 24px;display:block}
 .ba-body{font-size:18px;line-height:2}.ba-body h2{font-size:24px;line-height:1.5;margin:48px 0 12px}.ba-body h3{font-size:20px;margin:32px 0 8px}.ba-body p{margin:0 0 20px}.ba-body img{max-width:100%;height:auto;border:1px solid #d9d6cf;border-radius:8px}
 .lab-toc{background:#f3f1eb;border-radius:8px;padding:20px 24px;margin:0 0 32px}.lab-toc b{font-size:16px}.lab-toc ul{margin:8px 0 0;padding:0 0 0 20px}.lab-toc li{margin:4px 0}.lab-toc small{color:#555;font-size:14px}
@@ -166,11 +166,12 @@ a{color:#1a1a1a}:focus-visible{outline:3px solid #1a1a1a;outline-offset:3px}
 .w-next{max-width:760px;margin:40px 0 0;display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:space-between;background:#f3f1eb;border-radius:8px;padding:24px}
 .w-next p{margin:0;font-size:14px;color:#555}.w-next b{display:block;font-size:18px;margin-top:4px}.w-next a{display:inline-flex;align-items:center;min-height:48px;background:#1a1a1a;color:#fff;padding:0 24px;border-radius:8px;font-weight:700;text-decoration:none}
 .w-box{border:1px solid #d9d6cf;border-radius:8px;padding:24px;background:#fff}.w-box h2{margin:0 0 4px;font-size:18px}.w-box .c{margin:0 0 12px;font-size:14px;color:#555}
+.hand{margin:0 0 8px;font-family:"Zen Kurenaido","Noto Sans JP",sans-serif;font-size:24px;line-height:1.4;color:#c8102e;transform:rotate(-2deg);transform-origin:left center}
 .w-bar{height:6px;background:#d9d6cf;border-radius:8px;margin:0 0 16px;overflow:hidden}.w-bar i{display:block;height:6px;width:0;background:#c8102e}
 .w-ord{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:2px}.w-ord a{display:flex;gap:12px;align-items:center;min-height:44px;padding:8px;border-radius:8px;text-decoration:none;font-size:16px}
 .w-ord a[aria-current=page]{background:#f3f1eb}.w-ord .no{flex:none;width:28px;height:28px;border-radius:8px;background:#d9d6cf;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700}
 .w-ord a[aria-current=page] .no{background:#c8102e;color:#fff}.w-ord .done .no{background:#1a1a1a;color:#fff}.w-ord .t{flex:1 1 auto}.w-ord .tag{font-size:14px;color:#555;white-space:nowrap}
-.w-consult{border:2px solid #1a1a1a;border-radius:8px;padding:24px;background:#fff}.w-consult .k{margin:0 0 8px;font-size:14px;font-weight:700}.w-consult h2{margin:0 0 8px;font-size:22px;line-height:1.5}.w-consult p{margin:0 0 16px}
+.w-consult{border:2px solid #1a1a1a;border-radius:8px;padding:24px;background:#fff}.w-consult .k{margin:0 0 8px;font-size:14px;font-weight:700}.w-consult h2{margin:0 0 8px;font-size:24px;line-height:1.5}.w-consult p{margin:0 0 16px}
 .w-consult a{display:flex;align-items:center;justify-content:center;min-height:48px;background:#c8102e;color:#fff;border-radius:8px;font-weight:700;text-decoration:none}
 .w-rel h2{margin:0 0 16px;font-size:18px}.w-rel ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:16px}.w-rel a{display:flex;gap:12px;text-decoration:none}
 .w-rel i{flex:none;width:144px;aspect-ratio:16/9;border:1px solid #d9d6cf;border-radius:8px;background:#fff center/cover no-repeat;display:flex;align-items:flex-end;padding:8px}.w-rel i.np::after{content:"";display:block;width:32px;height:4px;background:#c8102e;border-radius:2px}
@@ -181,7 +182,9 @@ a{color:#1a1a1a}:focus-visible{outline:3px solid #1a1a1a;outline-offset:3px}
 .bc{display:flex;flex-direction:column;gap:8px;text-decoration:none}.bc i{display:block;aspect-ratio:1200/630;border:1px solid #d9d6cf;border-radius:8px;background:#fff center/cover no-repeat}.bc.nt i{display:flex;align-items:flex-end;padding:12px}.bc.nt i::after{content:"";display:block;width:48px;height:4px;background:#c8102e;border-radius:2px}
 .bc b{display:block;font-size:18px;line-height:1.5}.bc p{margin:0;font-size:14px;color:#555;line-height:1.7}.bc small{display:block;color:#555;font-size:14px}
 .bf{border-top:1px solid #d9d6cf}.bf>div{max-width:1280px;margin:0 auto;padding:24px;display:flex;flex-wrap:wrap;align-items:center;gap:0 24px;font-size:14px;color:#555}.bf a{color:#555;padding:12px 0}.bf span:last-child{margin-left:auto}
-@media (max-width:600px){.bw{padding-top:24px}.lab-wall{padding:24px}.w-rel i{width:112px}}`;
+@media (max-width:600px){.bw{padding-top:24px}.lab-wall{padding:24px}.w-rel i{width:112px}.ba-h1{font-size:24px}}
+/* 公式サイトの作り直し 便 6：埋め込みのフォーム（会員限定の続きの登録の枠）を v0.7 の見た目に */
+.lab-form{display:flex;flex-direction:column;gap:16px;font-size:16px;max-width:none;margin:0}.lab-form label{display:block;font-size:16px;font-weight:700;margin:0 0 8px}.lab-form .lab-note{font-weight:400;color:#555;font-size:14px;opacity:1}.lab-form .lab-input{width:100%;font:inherit;font-size:16px;padding:14px 16px;min-height:52px;border:1px solid #8a867d;border-radius:8px;background:#fff;color:#1a1a1a}.lab-form .lab-input[aria-invalid=true]{border:2px solid #c8102e}.lab-form .lab-check{display:flex;gap:12px;align-items:flex-start;font-weight:400;font-size:14px;line-height:1.7}.lab-form .lab-check input{width:24px;height:24px;flex:none;margin:0}.lab-form .lab-btn{min-height:56px;line-height:1.4;border:0;border-radius:8px;background:#c8102e;color:#fff;font:inherit;font-size:18px;font-weight:700;cursor:pointer}.lab-form .lab-btn:disabled{background:#8a867d;opacity:1;cursor:default}.lab-form .lab-err{color:#c8102e;font-weight:700;font-size:14px}.lab-form .lab-err:empty{display:none}`;
 const LEGAL = "https://lab.shia2n.jp/legal";
 function shell({ title, description, canonical, image, siteName, body, embed, jsonld, noindex, join = "/xmas-gift" }) {
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -434,9 +437,9 @@ export function makeBlog({ db, logInbound, web, pagesOrigin, previewToken, readP
     const gift = p.gift_part && pl.ids.has(p.gift_part) ? p.gift_part : pl.mid;
     const lockedFrom = gated ? Number(p.members_from) - 1 : -1;
     const tocHtml = toc.length >= 3 ? `<nav class="lab-toc" aria-label="目次"><b>目次</b><ul>${toc.map((t, i) => `<li><a href="#${t.id}">${esc(t.text)}</a>${lockedFrom >= 0 && i >= lockedFrom ? " <small>（会員限定）</small>" : ""}</li>`).join("")}</ul></nav>` : "";
-    const wall = gated ? `<section class="lab-wall" data-lab-guest aria-labelledby="wall-h"><p class="k">この続きは会員限定です</p><h2 id="wall-h">無料会員登録で、続きをお読みいただけます</h2>
+    const wall = gated ? `<section class="lab-wall" data-lab-guest aria-labelledby="wall-h"><p class="k">この続きは会員限定です</p><h2 id="wall-h">無料会員登録で、続きをお読みいただけます</h2><p class="hand" aria-hidden="true">メールだけで、ここですぐ開きます</p>
 <p>メールアドレスだけで登録でき、このページのまま続きが表示されます。会員限定コンテンツもご利用いただけます。</p>
-${join.form ? `<div data-lab-part="form:${esc(join.form)}"></div>` : `<a class="go" href="${esc(joinTo)}" data-lab-button="wall-join">無料会員登録</a>`}
+${join.form ? `<div data-lab-part="form:${esc(join.form)}" data-lab-cta="登録して続きを読む"></div>` : `<a class="go" href="${esc(joinTo)}" data-lab-button="wall-join">無料会員登録</a>`}
 <small>登録済みの方は <a href="/login?next=${encodeURIComponent("/blog/" + p.slug)}">ログイン</a></small></section><div data-lab-gated="0" hidden></div>` : "";
     const bodyHtml = gated ? `<div class="lab-has-wall"><div class="lab-free-end">${free}</div>${wall}</div>` : insertMid(free, partTag(gift));
     const where = at ? `<a href="/">ホーム</a> ／ ${esc(at.shelf.name)} ／ ${at.k + 1}本目` : `<a href="/">ホーム</a> ／ <a href="/blog">記事一覧</a>${p.category ? ` ／ <a href="/blog?cat=${encodeURIComponent(p.category)}">${esc(p.category)}</a>` : ""}`;
@@ -448,7 +451,7 @@ ${next ? `<section class="w-next" aria-label="次の記事"><div><p>次の記事
     // 横：個別相談（残り枠）・おすすめの順番（進み具合）・関連記事・横の部品
     const c = (h && h.sidebar && h.sidebar.consult) || {};
     const consult = c.title ? `<section class="w-consult" aria-labelledby="wc-h"><p class="k">人数限定</p><h2 id="wc-h">${esc(c.title)}</h2>${c.body ? `<p>${esc(c.body)}</p>` : ""}${typeof c.left === "number" ? (c.left > 0 ? `<p>今月の募集枠：<b>残り ${c.left} 名</b></p>` : "<p><b>今月の募集枠は埋まりました。</b>次回はメールでお知らせします。</p>") : ""}${c.left === 0 ? "" : `<a href="${esc(relHref(c.href))}" data-lab-button="side-consult">${esc(c.cta || "予約する")}</a>`}</section>` : "";
-    const order = at ? `<section class="w-box" aria-labelledby="wo-h" data-lab-order="${esc(books.map((b) => b.slug).join(","))}"><h2 id="wo-h">おすすめの順番</h2><p class="c" data-lab-count>${esc(at.shelf.name)} ・ 全${books.length}本</p><div class="w-bar" aria-hidden="true"><i></i></div>
+    const order = at ? `<section class="w-box" aria-labelledby="wo-h" data-lab-order="${esc(books.map((b) => b.slug).join(","))}"><h2 id="wo-h">おすすめの順番</h2><p class="hand" aria-hidden="true">上から順に読めば迷いません</p><p class="c" data-lab-count>${esc(at.shelf.name)} ・ 全${books.length}本</p><div class="w-bar" aria-hidden="true"><i></i></div>
 <ol class="w-ord">${books.map((b, i) => `<li><a href="/blog/${esc(b.slug)}?s=${at.i + 1}" data-slug="${esc(b.slug)}"${i === at.k ? ' aria-current="page"' : ""}><span class="no">${i + 1}</span><span class="t">${esc(b.title)}</span><span class="tag">${i === at.k ? "今の記事" : memberSlugs.has(b.slug) ? "会員限定" : esc(b.kind || "")}</span></a></li>`).join("")}</ol></section>` : "";
     const nextSlug = next ? next.slug : "";
     const same = p.category ? others.filter((o) => o.category === p.category && o.slug !== nextSlug) : [];
