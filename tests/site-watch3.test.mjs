@@ -155,3 +155,9 @@ test("本物の口：/api/p/gate はページで無ければ記事の続きを�
     assert.equal(open.locked, false); assert.match(open.blocks[0], /ここから会員限定の中身/);
   } finally { globalThis.fetch = realFetch; }
 });
+
+test("便 4：埋め込みのフォームは名前の札と欄が結び付き、ボタンの文字をページから決められ、間違いを読み上げる", () => {
+  assert.ok(EMBED_JS.includes('-email">メールアドレス'));
+  assert.ok(EMBED_JS.includes('data-lab-cta') && EMBED_JS.includes('role="alert"') && EMBED_JS.includes('aria-invalid'));
+  assert.ok(EMBED_JS.includes("（任意）"));
+});
