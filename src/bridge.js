@@ -90,13 +90,20 @@ export function gateView(own, keys) {
 export function memberWaiting(ent) {
   return !!(ent && (ent.member || ((ent.gate_keys) || []).some((k) => MEMBER_KEYS.includes(k))));
 }
-// 無料会員の便 B（2026-11-24）：マイページの段を 3 つにする。
-//  full＝今までどおり全部／free＝無料会員（チャット・グループ・権利 free に開いた会員サイトの棚。添削・目標・アプリは閉じる）／contract＝ご契約だけ
+// マイページの段：full＝今までどおり全部／contract＝ご契約だけ。
+//  （2026-11-24 の便 B で足した free の段は、2026-11-25 08:16 Naoki「会員サイトのログインとは別もん」でやめた。無料会員のものは公式サイトに置く）
 //  しあらぼの会員の権利（MEMBER_KEYS）を持つ人は、free を持っていても今までどおり contract（生徒への公開は 2026-10-29 の確定どおり Naoki が決める）
 export function studentTier(ent, admin = false) {
   if (appAccess(ent, admin) === "full") return "full";
   if (memberWaiting(ent)) return "contract";
-  return ((ent && ent.gate_keys) || []).includes(FREE_KEY) ? "free" : "contract";
+  // 2026-11-25 08:16 Naoki：無料会員に会員サイト（ラボシアニン）のログインは渡さない。無料会員のもの（会員限定コンテンツ・チャット）は公式サイトに置く。
+  // free だけの人は「ご契約の確認」の画面になり、公式サイトへの案内を出す（便 B の「free」の段は使わない）
+  return "contract";
+}
+// free だけの人（会員サイトの権利を何も持たない無料会員）
+export function siteOnly(ent) {
+  const keys = (ent && ent.gate_keys) || [];
+  return keys.includes(FREE_KEY) && keys.every((k) => k === FREE_KEY) && !memberWaiting(ent);
 }
 export const PUBLISH_APPS = [
   { target: "x-koryaku", name: "X攻略くん" },
