@@ -106,3 +106,9 @@ test("画面：?ai=1 のときだけ見立ての欄を出す（Naoki が中身�
   assert.equal(r.headers.get("x-robots-tag"), "noindex");
   assert.doesNotThrow(() => new Function("(" + kotobaClient.toString() + ")"));
 });
+
+test("AI の答えの読み方：囲み・前後の文・末尾のカンマがあっても読む", async () => {
+  const { parseLoose } = await import("../src/dfeedback.js");
+  assert.deepEqual(parseLoose('はい。\n```json\n{"a":[1,2,],}\n```'), { a: [1, 2] });
+  assert.equal(parseLoose("読めません"), null);
+});
