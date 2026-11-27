@@ -1,9 +1,9 @@
-// デザインの指示集（仮の名前）便 1（2026-11-27 Naoki OK）：公式サイト（lp.shia2n.jp/kotoba）の画面
+// デザインの指示集（仮の名前）便 1（2026-11-27 Naoki OK）：公式サイト（lp.shia2n.jp/design-feedback）の画面
 // 中身（指示 40 枚・場面 5 つ・見本）は kotoba-data.js。この画面は中身をそのまま HTML にして返し、
 // 動き（kotobaClient）はコピーと切り替えだけを持つ。コピーできるかは /api/p/kotoba/me で聞く
 import { KOTOBA_VIEWS, KOTOBA_RULES, KOTOBA_SCENES, KOTOBA_SAMPLE, kotobaMock } from "./kotoba-data.js";
 
-export const KOTOBA_PATH = "/kotoba";
+export const KOTOBA_PATH = "/design-feedback"; // 2026-11-27 Naoki「デザインフィードバックとかじゃない？」で /kotoba から変えた
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const rule = (n) => KOTOBA_RULES.find((r) => r[0] === n);
 
@@ -83,7 +83,7 @@ export function kotobaPageHtml({ siteName = "シアニン", join = "/xmas-gift" 
 <style>${KOTOBA_CSS}</style></head><body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><filter id="f-sh"><feDropShadow dx="1.5" dy="1.5" stdDeviation=".4" flood-color="#000" flood-opacity=".7"/></filter><linearGradient id="g-rain" x1="0" x2="1"><stop offset="0" stop-color="#ff4d6d"/><stop offset=".5" stop-color="#ffd60a"/><stop offset="1" stop-color="#3a86ff"/></linearGradient></defs></svg>
 <a class="skip" href="#main">本文へ移動</a>
-<header class="sh"><div><a class="logo" href="/">${esc(siteName)}</a><nav aria-label="サイトの案内"><a href="/#start">はじめての方へ</a><a href="/gift">会員限定コンテンツ</a><a href="${KOTOBA_PATH}" aria-current="page">デザインの直し方</a><a href="/chat">チャット</a><a href="/blog">記事一覧</a></nav>
+<header class="sh"><div><a class="logo" href="/">${esc(siteName)}</a><nav aria-label="サイトの案内"><a href="/#start">はじめての方へ</a><a href="/gift">会員限定コンテンツ</a><a href="${KOTOBA_PATH}" aria-current="page">デザインフィードバック</a><a href="/chat">チャット</a><a href="/blog">記事一覧</a></nav>
 <div data-lab-part="account"></div></div></header>
 <main id="main" tabindex="-1" class="kw">
 <section class="hero"><p class="hand" aria-hidden="true">ノンデザイナーのための</p><h1>AIに伝わる、デザインの直し方</h1>

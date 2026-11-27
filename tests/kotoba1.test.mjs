@@ -1,4 +1,4 @@
-// デザインの指示集 便 1（2026-11-27 Naoki OK）：公式サイトの棚 /kotoba（指示 40 枚・場面 5 つ・見本・コピーは無料会員）
+// デザインの指示集 便 1（2026-11-27 Naoki OK）：公式サイトの棚 /design-feedback（指示 40 枚・場面 5 つ・見本・コピーは無料会員）
 // 走らせ方：node --test tests/kotoba1.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -48,13 +48,13 @@ test("中身：人・作品・ブランドの名前を指示に入れない（�
 });
 
 test("画面：誰でも開けて、指示 40 枚・場面 5 つ・見本が HTML に入っている。ログイン先は /kotoba に戻る", async () => {
-  const r = await lp("/kotoba");
+  const r = await lp("/design-feedback");
   assert.equal(r.status, 200);
   const page = await r.text();
   assert.equal((page.match(/<article class="card"/g) || []).length, 40);
   assert.equal((page.match(/role="tab" id=/g) || []).length, 5);
   assert.match(page, /見本：この図解を見立てると/);
-  assert.match(page, /[/]login[?]next=%2Fkotoba/);
+  assert.match(page, /[/]login[?]next=%2Fdesign-feedback/);
   assert.match(page, /href="[/]xmas-gift"/);
   assert.doesNotThrow(() => new Function("(" + kotobaClient.toString() + ")"));
 });
@@ -78,7 +78,7 @@ test("コピーの文：1 枚・場面のまとめ・見本のまとめを日本
   assert.equal(kotobaCopyText("rule", 999), "");
 });
 
-test("会員サイトの住所では /kotoba を出さない（公式サイトだけの棚）", async () => {
+test("会員サイトの住所では /design-feedback を出さない（公式サイトだけの棚）", async () => {
   const r = await worker.fetch(new Request("https://lab.shia2n.jp/api/p/kotoba/me"), env, { waitUntil() {} });
   assert.notEqual(r.status, 200);
 });
@@ -86,5 +86,9 @@ test("会員サイトの住所では /kotoba を出さない（公式サイト�
 test("本番の組み立てが差し込む __name が無くても、画面へ渡す動きが止まらない（指示集・チャット・埋め込み）", async () => {
   const { EMBED_JS } = await import("../src/pages.js");
   assert.match(EMBED_JS, /^[(][(][)] => [{]\n  var __name = [(]f[)] => f;/);
-  for (const p of ["/kotoba", "/chat"]) assert.match(await (await lp(p)).text(), /<script>var __name=window\.__name\|\|function[(]f[)][{]return f[}];[(]function/, p);
+  for (const p of ["/design-feedback", "/chat"]) assert.match(await (await lp(p)).text(), /<script>var __name=window\.__name\|\|function[(]f[)][{]return f[}];[(]function/, p);
+});
+
+test("古い住所 /kotoba は使わない（まだ案内していないので残さない）", async () => {
+  assert.equal((await lp("/kotoba")).status, 404);
 });
