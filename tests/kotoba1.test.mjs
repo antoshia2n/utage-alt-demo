@@ -92,3 +92,15 @@ test("本番の組み立てが差し込む __name が無くても、画面へ渡
 test("古い住所 /kotoba は使わない（まだ案内していないので残さない）", async () => {
   assert.equal((await lp("/kotoba")).status, 404);
 });
+
+test("便 2：自分の画像をチェックする（AI を使わない）。気になる所 40 と場面の 6 を選べ、変えたい方向の言葉は一覧の中だけ", async () => {
+  const { KOTOBA_WISHES } = await import("../src/kotoba.js");
+  const { KOTOBA_WORDS } = await import("../src/kotoba-data.js");
+  const page = await (await lp("/design-feedback")).text();
+  assert.match(page, /自分の画像をチェックする/);
+  assert.equal((page.match(/<input type="checkbox" data-pk="\d+">/g) || []).length, 46);
+  assert.equal((page.match(/data-wish="/g) || []).length, KOTOBA_WISHES.length);
+  for (const w of KOTOBA_WISHES) { assert.equal(w.ja.length, w.en.length, w.id); for (const x of w.words) assert.ok(KOTOBA_WORDS.some((k) => k[0] === x), x); }
+  assert.match(page, /どこにも送りません/);
+  assert.equal((await lp("/api/p/design-feedback/look", { method: "POST", body: {} })).status, 404);
+});
