@@ -104,3 +104,13 @@ test("便 2：自分の画像をチェックする（AI を使わない）。気
   assert.match(page, /どこにも送りません/);
   assert.equal((await lp("/api/p/design-feedback/look", { method: "POST", body: {} })).status, 404);
 });
+
+test("体験版の文：ChatGPT で試して合格した文と同じ形（一覧 40・3 つ選ぶ・それ以外は変えない）。コピーは無料会員", async () => {
+  const { kotobaTrialPrompt } = await import("../src/kotoba.js");
+  const t = kotobaTrialPrompt();
+  assert.match(t, /^あなたは日本語で話すアートディレクターです。/);
+  assert.match(t, /\n40\. 毎回ちがう絵になる（決めごとが毎回ちがう）$/);
+  assert.match(t, /「それ以外は変えない」を付ける/);
+  const page = await (await lp("/design-feedback")).text();
+  assert.match(page, /data-copy="trial"/); assert.match(page, /AI に自分の画像を見立ててもらう（体験版）/);
+});
