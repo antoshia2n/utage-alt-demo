@@ -66,6 +66,7 @@ import { makeSiteLogin, siteLoginHtml, safeNext } from "./sitelogin.js";
 import { makeSiteHome } from "./sitehome.js";
 import { makeSiteChat, chatPageHtml } from "./sitechat.js";
 import { kotobaPageHtml, KOTOBA_PATH } from "./kotoba.js";
+import { makeDesignFeedback, DF_GUEST_COOKIE } from "./dfeedback.js";
 import { makeWeb } from "./web.js";
 import { makeBlog } from "./blog.js";
 import { makeLessonQA, openLessonQuestions, QUESTION_MAX } from "./lessonqa.js";
@@ -342,6 +343,8 @@ async function nkSend(env, { to, subject, text }) {
   } catch (e) { return { ok: false, error: String(e && e.message || e).slice(0, 200) }; }
 }
 const nkMail = makeNkMail({ rawDb, logInbound, send: nkSend });
+// デザインフィードバック 便 2：自分の画像を見立てる・直した画像と比べる（中身は src/dfeedback.js）
+const dfeedback = makeDesignFeedback({ db, addEvent, logInbound });
 const siteLogin = makeSiteLogin({ db, addEvent: (env, cid, type, payload, actor) => addEvent(env, cid, type, payload, actor), mail: siteMail, codeHash: siteCodeHash, siteToken });
 // cookie の中の値を 1 つ読む
 function cookieValue(request, name) {
@@ -566,6 +569,12 @@ async function pagesLinkFor(env, target, cid) {
   } catch (_) { return target; }
 }
 const PAGE_404 = `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>ページが見つかりません</title></head><body style="font-family:system-ui,sans-serif;max-width:560px;margin:15vh auto;padding:0 16px;color:#333"><h1 style="font-size:20px">ページが見つかりません</h1><p>住所が違うか、公開を止めています。</p></body></html>`;
+// デザインフィードバック：公式サイトのログインか、登録したその端末の印で、無料会員の本人を見分ける
+async function dfPerson(request, env) {
+  const cid = (await readSiteToken(env, cookieValue(request, SITE_COOKIE)).catch(() => null)) || (await readPersonToken(env, request.headers.get("x-lab-u") || "").catch(() => null));
+  const [c] = cid ? await db(env, "GET", `customers?select=id&id=eq.${cid}`) : [];
+  return c ? { id: c.id } : null;
+}
 async function handlePagesHost(request, env, url) {
   const path = url.pathname, method = request.method;
   const html = (body, status = 200, extra = {}) => new Response(body, { status, headers: { "content-type": "text/html; charset=utf-8", "x-content-type-options": "nosniff", "referrer-policy": "strict-origin-when-cross-origin", ...extra } });
@@ -676,12 +685,26 @@ async function handlePagesHost(request, env, url) {
     const h = await siteHome.read(env).catch(() => null);
     const j = h && h.sidebar && h.sidebar.join && /^[/](?![/])/.test(h.sidebar.join.href || "") ? h.sidebar.join.href : "/xmas-gift";
     const name = ((await web.getLook(env).catch(() => ({ look: {} }))).look || {}).name || "シアニン";
-    return html(kotobaPageHtml({ siteName: name, join: j }), 200, { "cache-control": "public, max-age=60" });
+    // 便 2：自分の画像で見立てるは、Naoki が中身を確かめるまで ?ai=1 のときだけ出す
+    const ai = url.searchParams.get("ai") === "1";
+    return html(kotobaPageHtml({ siteName: name, join: j, ai }), 200, { "cache-control": ai ? "no-store" : "public, max-age=60", ...(ai ? { "x-robots-tag": "noindex" } : {}) });
   }
   if (path === "/api/p/kotoba/me" && method === "GET") {
-    const cid = (await readSiteToken(env, cookieValue(request, SITE_COOKIE)).catch(() => null)) || (await readPersonToken(env, request.headers.get("x-lab-u") || "").catch(() => null));
-    const [c] = cid ? await db(env, "GET", `customers?select=id&id=eq.${cid}`) : [];
-    return json({ ok: true, member: !!c }, 200, { "cache-control": "no-store" });
+    const c = await dfPerson(request, env);
+    return json({ ok: true, member: !!c, guest_used: !c && cookieValue(request, DF_GUEST_COOKIE) === "1" }, 200, { "cache-control": "no-store" });
+  }
+  // デザインフィードバック 便 2：見立てる（登録していない人はその端末で 1 回）・比べる（無料会員）
+  if ((path === "/api/p/design-feedback/look" || path === "/api/p/design-feedback/compare") && method === "POST") {
+    const stop = await guardPublic(request, env, "df", { ip: "public" });
+    if (stop) return stop;
+    const person = await dfPerson(request, env);
+    const body = await request.json().catch(() => ({}));
+    const nc = { "cache-control": "no-store" };
+    if (path.endsWith("/compare")) { const r = await dfeedback.compare(env, person, body); return json(r, r.ok ? 200 : r.error === "need_member" ? 401 : r.error === "daily_limit" ? 429 : 400, nc); }
+    const r = await dfeedback.look(env, person, cookieValue(request, DF_GUEST_COOKIE) === "1", body);
+    const st = r.ok ? 200 : r.error === "need_member" ? 401 : r.error === "daily_limit" ? 429 : /^ai_|no_ai/.test(r.error) ? 502 : 400;
+    if (r.ok && r.guest) return json(r, 200, { ...nc, "set-cookie": `${DF_GUEST_COOKIE}=1; Path=/; Max-Age=31536000; HttpOnly; Secure; SameSite=Lax` });
+    return json(r, st, nc);
   }
   // 公式サイトの作り直し 便 2：ホームの中身（スライダー・本棚・サイドバー）
   if (path === "/api/p/home" && method === "GET") return json(await siteHome.publicHome(env), 200, { "cache-control": "public, max-age=60" });
