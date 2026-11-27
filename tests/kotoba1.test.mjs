@@ -82,3 +82,9 @@ test("会員サイトの住所では /kotoba を出さない（公式サイト�
   const r = await worker.fetch(new Request("https://lab.shia2n.jp/api/p/kotoba/me"), env, { waitUntil() {} });
   assert.notEqual(r.status, 200);
 });
+
+test("本番の組み立てが差し込む __name が無くても、画面へ渡す動きが止まらない（指示集・チャット・埋め込み）", async () => {
+  const { EMBED_JS } = await import("../src/pages.js");
+  assert.match(EMBED_JS, /^[(][(][)] => [{]\n  var __name = [(]f[)] => f;/);
+  for (const p of ["/kotoba", "/chat"]) assert.match(await (await lp(p)).text(), /<script>var __name=window\.__name\|\|function[(]f[)][{]return f[}];[(]function/, p);
+});
