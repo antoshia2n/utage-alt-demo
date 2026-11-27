@@ -7,6 +7,8 @@ import { AI_MODEL } from "./chatai.js";
 import { KOTOBA_RULES, KOTOBA_SCENES, KOTOBA_WORDS } from "./kotoba-data.js";
 
 export const DF_DAILY = 20;
+// 2026-11-27 便 2 の試し：今のモデル（AI_MODEL）は見本 3 枚とも外れた。比べるモデルは無料会員のときだけ選べる（一覧の外は使わない）
+export const DF_MODELS = [AI_MODEL, "@cf/google/gemma-4-26b-a4b-it", "@cf/moonshotai/kimi-k2.6", "@cf/mistralai/mistral-small-3.1-24b-instruct"];
 export const DF_GUEST_COOKIE = "lab_df";
 export const DF_IMAGE_MAX = 1_600_000; // data URL の長さの上限（1024px の JPEG は多くて 400KB ほど）
 const IMG_RE = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
@@ -79,6 +81,8 @@ export function shapeCompare(points, j) {
 
 // AI の答えの文から JSON を読む。前後の文・```json の囲み・末尾の余分なカンマを外してから読む
 export function rawText(r) {
+  const ch = r && Array.isArray(r.choices) && r.choices[0] && r.choices[0].message;
+  if (ch && typeof ch.content === "string") return ch.content;
   if (r && typeof r.response === "object" && r.response) return JSON.stringify(r.response);
   return typeof r?.response === "string" ? r.response : JSON.stringify(r?.response ?? r?.result?.response ?? "");
 }
@@ -99,20 +103,20 @@ export function makeDesignFeedback(h) {
     const rows = await db(env, "GET", `events?select=id&customer_id=eq.${cid}&type=in.(df_look,df_compare)&occurred_at=gte.${encodeURIComponent(since)}&limit=${DF_DAILY + 1}`);
     return rows.length;
   }
-  async function ask(env, prompt, images, max) {
+  async function ask(env, prompt, images, max, model = AI_MODEL) {
     if (!env.AI || typeof env.AI.run !== "function") return { error: "no_ai" };
     const content = [{ type: "text", text: prompt }, ...images.map((url) => ({ type: "image_url", image_url: { url } }))];
     let r;
     try {
-      r = await env.AI.run(AI_MODEL, { messages: [{ role: "user", content }], max_tokens: max, temperature: 0.2 });
+      r = await env.AI.run(model, { messages: [{ role: "user", content }], max_tokens: max, temperature: 0.2 });
     } catch (e) {
-      await logInbound(env, "df_ai", { model: AI_MODEL }, { error: String((e && e.message) || e).slice(0, 300) }, 500).catch(() => {});
+      await logInbound(env, "df_ai", { model }, { error: String((e && e.message) || e).slice(0, 300) }, 500).catch(() => {});
       return { error: "ai_failed" };
     }
     const raw = rawText(r);
     const json = parseLoose(raw);
     // 読めなかったときは、直すために AI の答えの頭を残す（画像は残さない）
-    if (!json) await logInbound(env, "df_ai", { model: AI_MODEL }, { error: "unreadable", raw: raw.slice(0, 1500) }, 502).catch(() => {});
+    if (!json) await logInbound(env, "df_ai", { model }, { error: "unreadable", raw: raw.slice(0, 1500) }, 502).catch(() => {});
     return { json };
   }
   const imgOk = (v) => typeof v === "string" && v.length <= DF_IMAGE_MAX && IMG_RE.test(v);
@@ -124,14 +128,15 @@ export function makeDesignFeedback(h) {
     if (person && (await usedToday(env, person.id)) >= DF_DAILY) return { ok: false, error: "daily_limit", max: DF_DAILY };
     const kind = body.kind === "ref" ? "ref" : "own";
     const scene = KOTOBA_SCENES.some((x) => x.id === body.scene) ? body.scene : "";
-    const r = await ask(env, lookPrompt({ kind, scene, wish: body.wish }), [body.image], 1400);
+    const model = person && DF_MODELS.includes(body.model) ? body.model : AI_MODEL;
+    const r = await ask(env, lookPrompt({ kind, scene, wish: body.wish }), [body.image], 3000, model);
     if (r.error) return { ok: false, error: r.error };
     const res = shapeLook(kind, r.json);
     if (!res) return { ok: false, error: "ai_unreadable" };
     if (!res.scene) res.scene = scene || "post";
     if (person) await addEvent(env, person.id, "df_look", { kind, scene: res.scene, picks: (res.picks || []).map((p) => p.id), wish: !!clean(body.wish, 300) }, "site");
     const left = person ? Math.max(0, DF_DAILY - (await usedToday(env, person.id))) : 0;
-    return { ok: true, result: res, left, guest: !person };
+    return { ok: true, result: res, left, guest: !person, model };
   }
 
   async function compare(env, person, body = {}) {

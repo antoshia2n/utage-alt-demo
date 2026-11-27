@@ -112,3 +112,16 @@ test("AI の答えの読み方：囲み・前後の文・末尾のカンマが�
   assert.deepEqual(parseLoose('はい。\n```json\n{"a":[1,2,],}\n```'), { a: [1, 2] });
   assert.equal(parseLoose("読めません"), null);
 });
+
+test("モデルを比べる試し：無料会員だけ一覧のモデルを選べる。答えが choices の形でも読む", async () => {
+  const { DF_MODELS, rawText } = await import("../src/dfeedback.js");
+  assert.equal(rawText({ choices: [{ message: { content: '{"a":1}' } }] }), '{"a":1}');
+  const cookie = "lab_site=" + encodeURIComponent(await siteToken(env, A));
+  s.table("b_events").splice(0);
+  aiReply = OWN; aiCalls = [];
+  const j = await (await post("/api/p/design-feedback/look", { image: IMG, model: DF_MODELS[1] }, { cookie })).json();
+  assert.equal(j.model, DF_MODELS[1]); assert.equal(aiCalls[0].model, DF_MODELS[1]);
+  aiCalls = [];
+  await post("/api/p/design-feedback/look", { image: IMG, model: "@cf/other/expensive" }, { cookie });
+  assert.equal(aiCalls[0].model, AI_MODEL);
+});
