@@ -1,7 +1,7 @@
 // デザインの指示集（仮の名前）便 1（2026-11-27 Naoki OK）：公式サイト（lp.shia2n.jp/design-feedback）の画面
 // 中身（指示 40 枚・場面 5 つ・見本）は kotoba-data.js。この画面は中身をそのまま HTML にして返し、
 // 動き（kotobaClient）はコピーと切り替えだけを持つ。コピーできるかは /api/p/kotoba/me で聞く
-import { KOTOBA_VIEWS, KOTOBA_RULES, KOTOBA_SCENES, KOTOBA_SAMPLE, kotobaMock } from "./kotoba-data.js";
+import { KOTOBA_VIEWS, KOTOBA_RULES, KOTOBA_SCENES, KOTOBA_SAMPLE, KOTOBA_WORDS, kotobaMock } from "./kotoba-data.js";
 
 export const KOTOBA_PATH = "/design-feedback"; // 2026-11-27 Naoki「デザインフィードバックとかじゃない？」で /kotoba から変えた
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -70,10 +70,26 @@ function sampleBlock() {
 <h3>直すとよくなる所（${S.picks.length}つ）</h3>${picks}
 <div class="all1"><p>まとめた指示（そのまま AI に貼れます）</p>${copyBtn("sample", "all", "まとめた指示をコピー")}</div>
 <h3>変えるなら</h3>${ch}
-<p class="soon">自分の画像を入れて見立てる機能は、準備中です。</p></div></div>`;
+</div></div>`;
 }
 
-export function kotobaPageHtml({ siteName = "シアニン", join = "/xmas-gift" } = {}) {
+// 便 2：自分の画像で見立てる（画像を置く → 詳しく指定 → 見立てる → 結果 → 直した画像で比べる）
+function lookBlock() {
+  const chips = ["もっとスタイリッシュにしたい", "もっと読みやすくしたい", "タイムラインで目立たせたい", "やさしい雰囲気にしたい"];
+  return `<div class="lk"><div class="lk-in">
+<label class="drop" id="lk-drop"><input type="file" id="lk-file" accept="image/png,image/jpeg,image/webp" class="sr"><img id="lk-prev" alt="入れた画像" hidden><span id="lk-empty"><b>画像をここに置く</b><br>または押して選ぶ（PNG・JPEG）</span></label>
+<p><button type="button" class="sub2" id="lk-sample">見本の画像で試す</button></p>
+<details class="opt"><summary>詳しく指定</summary>
+<fieldset><legend>この画像は</legend><label class="rd"><input type="radio" name="lk-kind" value="own" checked>自分の作品（直す所を見る）</label><label class="rd"><input type="radio" name="lk-kind" value="ref">参考にしたい他人の作品（良さを言葉にする）</label></fieldset>
+<label for="lk-scene" class="lb">場面</label><select id="lk-scene"><option value="">画像から決める</option>${KOTOBA_SCENES.map((s) => `<option value="${esc(s.id)}">${esc(s.name)}（${esc(s.sub)}）</option>`).join("")}</select>
+<label for="lk-wish" class="lb">こうしたい（なくてもよい）</label><textarea id="lk-wish" maxlength="300" rows="2" placeholder="例：もっとスタイリッシュにしたいけど、どう指示したらいいか"></textarea>
+<div class="chips" role="group" aria-label="こうしたいの例">${chips.map((c) => `<button type="button" data-wish="${esc(c)}">${esc(c)}</button>`).join("")}</div></details>
+<button type="button" class="go2" id="lk-go">見立てる</button>
+<p id="lk-note" class="lk-note">登録していない方も1回試せます。画像は保存しません。</p></div>
+<div id="lk-res" class="lk-res"><p class="ph">画像を入れて「見立てる」を押すと、ここに直す所と、AI に貼れる指示が出ます。</p></div></div>`;
+}
+
+export function kotobaPageHtml({ siteName = "シアニン", join = "/xmas-gift", ai = false } = {}) {
   const views = `<div class="flt" role="group" aria-label="見るところで絞る"><button type="button" data-view="" aria-pressed="true">すべて</button>${KOTOBA_VIEWS.map((v) => `<button type="button" data-view="${esc(v)}" aria-pressed="false">${esc(v)}</button>`).join("")}</div>`;
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>AIに伝わるデザインの直し方｜${esc(siteName)}</title>
@@ -91,6 +107,7 @@ export function kotobaPageHtml({ siteName = "シアニン", join = "/xmas-gift" 
 <p class="jump"><a href="#sample">見本の見立てを見る</a><a href="#scenes">場面で選ぶ</a><a href="#all">気になる所から探す</a></p>
 <p class="gate-note" id="gate-note">指示のコピーは無料会員の方がご利用いただけます。<a href="${esc(join)}">無料会員登録</a>　<a href="/login?next=${encodeURIComponent(KOTOBA_PATH)}">ログイン</a></p></section>
 <div class="lang" role="group" aria-label="コピーする言葉"><span>コピーする言葉</span><button type="button" data-lang="ja" aria-pressed="true">日本語</button><button type="button" data-lang="en" aria-pressed="false">英語</button></div>
+${ai ? `<section id="look" aria-labelledby="h-look"><h2 id="h-look">自分の画像で見立てる</h2>${lookBlock()}</section>` : ""}
 <section id="sample" aria-labelledby="h-sample"><h2 id="h-sample">見本：この図解を見立てると</h2>${sampleBlock()}</section>
 <section id="scenes" aria-labelledby="h-scenes"><h2 id="h-scenes">場面で選ぶ</h2>${sceneTabs()}</section>
 <section id="all" aria-labelledby="h-all"><h2 id="h-all">気になる所から探す（${KOTOBA_RULES.length}枚）</h2>${views}<div class="cards">${KOTOBA_RULES.map(ruleCard).join("")}</div></section>
@@ -101,7 +118,7 @@ export function kotobaPageHtml({ siteName = "シアニン", join = "/xmas-gift" 
 <div id="live" class="sr" role="status" aria-live="polite"></div>
 <footer class="bf"><div><span style="font-weight:700;color:#1a1a1a">${esc(siteName)}</span><a href="https://lab.shia2n.jp/legal/terms">利用規約</a><a href="https://lab.shia2n.jp/legal/privacy">プライバシーポリシー</a><a href="https://lab.shia2n.jp/legal/tokushoho">特定商取引法に基づく表記</a><span>© 株式会社Best Life Consulting</span></div></footer>
 <script src="/_lab/embed.js" defer data-kind="site"></script>
-<script>var __name=window.__name||function(f){return f};(${kotobaClient.toString()})(${JSON.stringify({ rules: KOTOBA_RULES.map((r) => [r[0], r[5], r[6]]), scenes: KOTOBA_SCENES.map((s) => [s.id, s.name, s.rules]), sample: { picks: KOTOBA_SAMPLE.picks.map((p) => [p.id, p.where]), changes: KOTOBA_SAMPLE.changes.map((c) => [c.title, c.steps]) } }).replace(/</g, "\\u003c")});</script>
+<script>var __name=window.__name||function(f){return f};(${kotobaClient.toString()})(${JSON.stringify({ ai, rules: KOTOBA_RULES.map((r) => [r[0], r[5], r[6], r[2], r[3]]), words: KOTOBA_WORDS, scenes: KOTOBA_SCENES.map((s) => [s.id, s.name, s.rules]), sample: { picks: KOTOBA_SAMPLE.picks.map((p) => [p.id, p.where]), changes: KOTOBA_SAMPLE.changes.map((c) => [c.title, c.steps]) } }).replace(/</g, "\\u003c")});</script>
 </body></html>`;
 }
 
@@ -125,7 +142,17 @@ button{font:inherit;color:#1a1a1a;cursor:pointer}
 .smp-r{flex:999 1 420px;min-width:0}.good{background:#fff;border:1px solid #d9d6cf;border-radius:8px;padding:16px}
 details{border:1px solid #d9d6cf;border-radius:8px;background:#fff;margin:8px 0}summary{min-height:52px;padding:12px 16px;cursor:pointer;display:flex;flex-wrap:wrap;gap:4px 16px;align-items:center}summary span{font-size:14px;color:#555}details>*:not(summary){margin-left:16px;margin-right:16px}details>:last-child{margin-bottom:16px}
 .all1{border:2px solid #1a1a1a;border-radius:8px;padding:16px;margin:24px 0;background:#fff}.all1 p{margin:0;font-weight:700}
-.soon{font-size:14px;color:#555}.tl{display:inline-flex;min-height:44px;align-items:center}
+.lk{display:flex;flex-wrap:wrap;gap:32px;align-items:flex-start}.lk-in{flex:1 1 300px;min-width:0}.lk-res{flex:999 1 420px;min-width:0}
+.drop{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:220px;border:2px dashed #8a867d;border-radius:8px;background:#fff;text-align:center;padding:16px;cursor:pointer}.drop.over{border-color:#c8102e;background:#fff5f6}.drop img{max-width:100%;max-height:360px;border-radius:4px}
+.sub2,.chips button,.x2{min-height:44px;padding:0 16px;border:1px solid #8a867d;border-radius:8px;background:#fff}
+.go2{width:100%;min-height:52px;border:0;border-radius:8px;background:#c8102e;color:#fff;font-weight:700;margin-top:16px}.go2:disabled{background:#8a867d}
+.opt fieldset{border:0;padding:0;margin:8px 0}.opt legend,.lb{font-weight:700;display:block;margin:12px 0 4px}.rd{display:flex;gap:8px;align-items:center;min-height:44px}.rd input{width:20px;height:20px}
+.opt select,.opt textarea{width:100%;font:inherit;font-size:16px;padding:12px;border:1px solid #8a867d;border-radius:8px;background:#fff;min-height:48px}.chips{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 0}
+.lk-note{font-size:14px;color:#555}.ph{color:#555;background:#f3f1eb;border-radius:8px;padding:24px;margin:0}
+.pk{display:flex;gap:8px;align-items:flex-start}.pk>input{flex:none;width:24px;height:24px;margin:14px 0 0}.pk>details{flex:1 1 auto;min-width:0;margin:4px 0}
+.lk-out{white-space:pre-wrap;background:#f3f1eb;border-radius:8px;padding:12px 16px;margin:8px 0;font:inherit;font-size:14px}
+.ok{color:#1a1a1a;font-weight:700}.ng2{color:#c8102e;font-weight:700}.cmpl{list-style:none;padding:0;margin:8px 0}.cmpl li{padding:8px 0;border-bottom:1px solid #d9d6cf}
+.fl{display:inline-flex;align-items:center;cursor:pointer}.soon{font-size:14px;color:#555}.tl{display:inline-flex;min-height:44px;align-items:center}
 .tabs{display:flex;flex-wrap:wrap;gap:8px;border-bottom:1px solid #d9d6cf}.tabs button{min-height:56px;padding:8px 16px;border:1px solid transparent;border-bottom:0;border-radius:8px 8px 0 0;background:none;display:flex;flex-direction:column;align-items:flex-start;line-height:1.4}.tabs button small{font-size:14px;color:#555}
 .tabs button[aria-selected=true]{background:#fff;border-color:#d9d6cf;font-weight:700;margin-bottom:-1px}
 .sp{background:#fff;border:1px solid #d9d6cf;border-top:0;border-radius:0 0 8px 8px;padding:8px 24px 24px}.sp ul,.sp ol{padding-left:24px;margin:0}
@@ -146,7 +173,8 @@ dialog{border:0;border-radius:8px;padding:32px;max-width:520px;width:calc(100% -
 export function kotobaClient(D) {
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => Array.from(document.querySelectorAll(s));
-  let lang = "ja", member = false, checked = false;
+  let lang = "ja", member = false, checked = false, guestUsed = false;
+  const L = { img: null, res: null, kind: "own", pick: [], chg: [], busy: false };
   const rule = (n) => D.rules.find((r) => r[0] === n);
   function text(kind, id) {
     const en = lang === "en";
@@ -161,6 +189,7 @@ export function kotobaClient(D) {
       return (en ? "Please revise this diagram with the following points:\n" : "この図解を、次の点で直してください。\n") + lines.join("\n");
     }
     if (kind === "change") { const c = D.sample.changes[Number(id)]; return c ? c[0] + "にしてください。\n" + c[1].map((s, i) => (i + 1) + ". " + s).join("\n") : ""; }
+    if (kind === "look") return lookText();
     return "";
   }
   function say(m) {
@@ -173,10 +202,11 @@ export function kotobaClient(D) {
     let u = ""; try { u = localStorage.getItem("lab_u") || ""; } catch (_) {}
     try {
       const r = await fetch("/api/p/kotoba/me", { headers: u ? { "x-lab-u": u } : {} }).then((x) => x.json());
-      member = !!(r && r.member);
+      member = !!(r && r.member); guestUsed = !!(r && r.guest_used);
     } catch (_) { member = false; }
     checked = true;
     if (member) $("#gate-note").hidden = true;
+    if ($("#lk-note")) $("#lk-note").textContent = member ? "画像は保存しません。1日20回まで使えます。" : guestUsed ? "続けて使うには無料会員登録（無料）。画像は保存しません。" : "登録していない方も1回試せます。画像は保存しません。";
   }
   const ready = who();
   document.addEventListener("click", async (e) => {
@@ -194,6 +224,7 @@ export function kotobaClient(D) {
       lang = lb.dataset.lang;
       $$("button[data-lang]").forEach((x) => x.setAttribute("aria-pressed", String(x === lb)));
       $$(".fix[lang]").forEach((p) => { p.hidden = p.getAttribute("lang") !== lang; });
+      if (L.res) drawOut();
       say(lang === "en" ? "英語でコピーします" : "日本語でコピーします");
       return;
     }
@@ -208,6 +239,114 @@ export function kotobaClient(D) {
     const tb = e.target.closest('[role="tab"]');
     if (tb) selectTab(tb);
   });
+  // ---------- 便 2：自分の画像で見立てる・比べる ----------
+  const escH = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const wordEn = (w) => { const f = D.words.find((x) => x[0] === w); return f ? f[1] : ""; };
+  async function shrink(src) {
+    const img = new Image(); img.src = src; await img.decode();
+    const k = Math.min(1, 1024 / Math.max(img.naturalWidth || img.width, img.naturalHeight || img.height));
+    const c = document.createElement("canvas"); c.width = Math.round((img.naturalWidth || img.width) * k); c.height = Math.round((img.naturalHeight || img.height) * k);
+    const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); x.drawImage(img, 0, 0, c.width, c.height);
+    return c.toDataURL("image/jpeg", 0.85);
+  }
+  async function fileUrl(file) {
+    if (!file || !/^image\/(png|jpeg|webp)$/.test(file.type || "")) { say("画像のファイル（PNG・JPEG）を選んでください"); return null; }
+    const u = URL.createObjectURL(file); try { return await shrink(u); } catch (_) { say("この画像は読めませんでした"); return null; } finally { setTimeout(() => URL.revokeObjectURL(u), 1000); }
+  }
+  function setImg(d) {
+    L.img = d; L.res = null; L.pick = []; L.chg = [];
+    const p = $("#lk-prev"); p.src = d; p.hidden = false; $("#lk-empty").hidden = true;
+    $("#lk-res").innerHTML = '<p class="ph">「見立てる」を押してください。</p>'; say("画像を入れました");
+  }
+  function lookText() {
+    const r = L.res; if (!r) return "";
+    const en = lang === "en";
+    if (r.kind === "ref") {
+      const out = [en ? "Make it in my own subject and style, borrowing only these qualities:" : "自分の題材と表現で、次の良さだけを取り入れて作ってください。"];
+      r.borrow.forEach((b) => out.push("- " + b));
+      if (r.avoid.length) { out.push(en ? "Do not copy:" : "まねしないもの："); r.avoid.forEach((b) => out.push("- " + b)); }
+      return out.join("\n");
+    }
+    const out = [en ? "Please change only the following points and keep everything else the same." : "次の点だけ変えてください。それ以外は変えないでください。"];
+    let k = 1;
+    L.pick.forEach((id) => { const ru = rule(id); const p = r.picks.find((x) => x.id === id); if (ru) out.push(en ? "- " + ru[2] : (k++) + ". " + (p && p.where ? p.where + "：" : "") + ru[1]); });
+    L.chg.forEach((i) => { const c = r.changes[i]; if (!c) return;
+      if (en) { c.steps.forEach((s) => out.push("- " + s)); const ws = c.words.map(wordEn).filter(Boolean); if (ws.length) out.push("- Style: " + ws.join(", ")); }
+      else { out.push((k++) + ". 「" + c.title + "」の方向に変える："); c.steps.forEach((s) => out.push("   ・" + s)); if (c.words.length) out.push("   ・トーン：" + c.words.join("、")); } });
+    return out.length > 1 ? out.join("\n") : "";
+  }
+  function drawOut() { const o = $("#lk-out"); if (o) o.textContent = lookText() || "上で、指示に入れる所を選んでください。"; }
+  function drawRes() {
+    const r = L.res, box = $("#lk-res");
+    if (r.kind === "ref") {
+      box.innerHTML = '<div class="good"><b>効いている所</b><ul>' + r.good.map((g) => "<li>" + escH(g) + "</li>").join("") + "</ul></div>"
+        + "<h3>借りてよい所</h3><ul>" + r.borrow.map((g) => "<li>" + escH(g) + "</li>").join("") + "</ul>"
+        + (r.avoid.length ? "<h3>借りない所（この作品だけのもの）</h3><ul class=\"ng\">" + r.avoid.map((g) => "<li>" + escH(g) + "</li>").join("") + "</ul>" : "")
+        + '<div class="all1"><p>良さを言葉にした指示（参考の画像そのものは AI に渡さないでください）</p><pre class="lk-out" id="lk-out"></pre><button type="button" class="cp" data-copy="look" data-id="1">指示をコピー</button></div>';
+      drawOut(); return;
+    }
+    let h = r.good ? '<p class="good"><b>よい所</b>　' + escH(r.good) + "</p>" : "";
+    if (r.wish) h += '<p class="good"><b>コメントをデザイナーの言葉にすると</b>　' + escH(r.wish) + "</p>";
+    h += "<h3>直すとよくなる所（" + r.picks.length + "つ）</h3>";
+    h += r.picks.map((p) => { const ru = rule(p.id); return '<div class="pk"><input type="checkbox" id="pk-' + p.id + '" data-pk="' + p.id + '"' + (L.pick.includes(p.id) ? " checked" : "") + '><label class="sr" for="pk-' + p.id + '">「' + escH(ru[3]) + "」を指示に入れる</label><details><summary><b>" + escH(ru[4]) + "</b><span>" + escH(p.where) + "</span></summary><p>" + escH(p.reason) + '</p><p class="fix">' + escH(ru[1]) + "</p></details></div>"; }).join("");
+    if (r.changes.length) {
+      h += "<h3>変えるなら</h3>" + r.changes.map((c, i) => '<div class="pk"><input type="checkbox" id="ch-' + i + '" data-ch="' + i + '"' + (L.chg.includes(i) ? " checked" : "") + '><label class="sr" for="ch-' + i + '">「' + escH(c.title) + "」を指示に入れる</label><details><summary><b>" + String.fromCharCode(65 + i) + "　" + escH(c.title) + "</b></summary><p>" + escH(c.why) + "</p><ol>" + c.steps.map((s) => "<li>" + escH(s) + "</li>").join("") + "</ol>" + (c.words.length ? "<p>言葉：" + c.words.map(escH).join("、") + "</p>" : "") + "</details></div>").join("");
+    }
+    h += '<div class="all1"><p>まとめた指示（チェックした所だけ・そのまま AI に貼れます）</p><pre class="lk-out" id="lk-out"></pre><button type="button" class="cp" data-copy="look" data-id="1">まとめた指示をコピー</button></div>';
+    h += '<div class="cmp"><h3>直した画像で比べる</h3><p class="lk-note">指示で直した画像を入れると、チェックした所が直ったかを見ます（無料会員）。</p><label class="sub2 fl"><input type="file" id="lk-after" accept="image/png,image/jpeg,image/webp" class="sr">直した画像を選ぶ</label><div id="lk-cmp"></div></div>';
+    box.innerHTML = h; drawOut();
+  }
+  const errMsg = { too_many: "少し時間をおいて、もう一度押してください", daily_limit: "今日の回数を使い切りました。明日また使えます", bad_image: "この画像は送れませんでした。別の画像で試してください", network: "つながりませんでした。もう一度押してください" };
+  async function post(path, body) {
+    let u = ""; try { u = localStorage.getItem("lab_u") || ""; } catch (_) {}
+    try { return await fetch(path, { method: "POST", headers: u ? { "content-type": "application/json", "x-lab-u": u } : { "content-type": "application/json" }, body: JSON.stringify(body) }).then((x) => x.json()); }
+    catch (_) { return { ok: false, error: "network" }; }
+  }
+  async function runLook() {
+    if (!L.img) { say("先に画像を入れてください"); $("#lk-file").focus(); return; }
+    if (!checked) await ready;
+    if (!member && guestUsed) { $("#d-gate").showModal(); return; }
+    if (L.busy) return; L.busy = true;
+    const go = $("#lk-go"); go.disabled = true; go.textContent = "見立てています…（20秒ほど）";
+    $("#lk-res").innerHTML = '<p class="ph" role="status">デザイナーの目で見ています…</p>';
+    L.kind = (document.querySelector('input[name="lk-kind"]:checked') || {}).value || "own";
+    const r = await post("/api/p/design-feedback/look", { image: L.img, kind: L.kind, scene: $("#lk-scene").value, wish: $("#lk-wish").value });
+    L.busy = false; go.disabled = false; go.textContent = "見立てる";
+    if (!r.ok) {
+      if (r.error === "need_member") { guestUsed = true; $("#lk-res").innerHTML = '<p class="ph">続けて使うには無料会員登録が必要です。</p>'; $("#d-gate").showModal(); return; }
+      $("#lk-res").innerHTML = '<p class="ph">' + escH(errMsg[r.error] || "見立てができませんでした。少し時間をおいて、もう一度「見立てる」を押してください。") + "</p>"; return;
+    }
+    L.res = r.result; L.pick = (r.result.picks || []).slice(0, 2).map((p) => p.id); L.chg = $("#lk-wish").value.trim() && (r.result.changes || []).length ? [0] : [];
+    if (r.guest) guestUsed = true;
+    $("#lk-note").textContent = member ? "今日あと " + r.left + " 回使えます。画像は保存しません。" : "続けて使うには無料会員登録（無料）。画像は保存しません。";
+    drawRes(); say("見立てが出ました"); $("#lk-res").scrollIntoView({ block: "start" });
+  }
+  async function runCompare(file) {
+    if (!checked) await ready;
+    if (!member) { $("#d-gate").showModal(); return; }
+    const after = await fileUrl(file); if (!after) return;
+    const out = $("#lk-cmp"); out.innerHTML = '<p class="ph" role="status">見比べています…</p>';
+    const r = await post("/api/p/design-feedback/compare", { before: L.img, after, picks: L.pick, changes: L.chg.map((i) => L.res.changes[i]).filter(Boolean) });
+    if (!r.ok) { out.innerHTML = '<p class="ph">' + escH(r.error === "no_points" ? "上で、比べる所を1つ以上チェックしてください" : errMsg[r.error] || "見比べができませんでした。もう一度入れてください。") + "</p>"; return; }
+    out.innerHTML = '<ul class="cmpl">' + r.result.items.map((it) => "<li><span class=\"" + (it.ok ? "ok" : "ng2") + "\">" + (it.ok ? "直った" : "もう少し") + "</span>　<b>" + escH(it.label) + "</b><br>" + escH(it.note) + "</li>").join("") + "</ul>" + (r.result.summary ? '<p class="good">' + escH(r.result.summary) + "</p>" : "");
+    say("見比べた結果が出ました");
+  }
+  if (D.ai && $("#lk-go")) {
+    $("#lk-file").addEventListener("change", async (e) => { const f = e.target.files[0]; e.target.value = ""; const d = await fileUrl(f); if (d) setImg(d); });
+    const drop = $("#lk-drop");
+    ["dragenter", "dragover"].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add("over"); }));
+    ["dragleave", "drop"].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.remove("over"); }));
+    drop.addEventListener("drop", async (e) => { const d = await fileUrl(e.dataTransfer.files[0]); if (d) setImg(d); });
+    $("#lk-sample").addEventListener("click", async () => { const svg = document.querySelector(".smp-img svg"); if (!svg) return; setImg(await shrink("data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg.outerHTML))); });
+    $("#lk-go").addEventListener("click", runLook);
+    document.addEventListener("change", (e) => {
+      if (e.target.id === "lk-after") { const f = e.target.files[0]; e.target.value = ""; if (f) runCompare(f); return; }
+      const pk = e.target.dataset && e.target.dataset.pk, ch = e.target.dataset && e.target.dataset.ch;
+      if (pk) { const n = Number(pk); L.pick = e.target.checked ? [...L.pick.filter((x) => x !== n), n] : L.pick.filter((x) => x !== n); drawOut(); }
+      if (ch !== undefined && ch !== null && ch !== "") { const n = Number(ch); L.chg = e.target.checked ? [...L.chg.filter((x) => x !== n), n] : L.chg.filter((x) => x !== n); drawOut(); }
+    });
+    document.addEventListener("click", (e) => { const w = e.target.closest("button[data-wish]"); if (w) { $("#lk-wish").value = w.dataset.wish; $("#lk-wish").focus(); } });
+  }
   function selectTab(tb) {
     $$('[role="tab"]').forEach((t) => { const on = t === tb; t.setAttribute("aria-selected", String(on)); t.tabIndex = on ? 0 : -1; document.getElementById(t.getAttribute("aria-controls")).hidden = !on; });
     tb.focus();
