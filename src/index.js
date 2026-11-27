@@ -65,6 +65,7 @@ import { makePages, EMBED_JS, personToken, readPersonToken, previewToken, readPr
 import { makeSiteLogin, siteLoginHtml, safeNext } from "./sitelogin.js";
 import { makeSiteHome } from "./sitehome.js";
 import { makeSiteChat, chatPageHtml } from "./sitechat.js";
+import { kotobaPageHtml, KOTOBA_PATH } from "./kotoba.js";
 import { makeWeb } from "./web.js";
 import { makeBlog } from "./blog.js";
 import { makeLessonQA, openLessonQuestions, QUESTION_MAX } from "./lessonqa.js";
@@ -669,6 +670,18 @@ async function handlePagesHost(request, env, url) {
     if (cg && method === "POST" && cg[2] === "read") return json(await groups.markRead(env, { group_id: cg[1] }, person.id));
     if (cg && method === "POST") { const r = await groups.post(env, { group_id: cg[1], text: body.text, images: [] }, person.id, "site"); return json(r, r.ok === false ? 400 : 200); }
     return json({ ok: false, error: "not_found" }, 404);
+  }
+  // デザインの指示集 便 1（2026-11-27）：画面は誰でも読める。コピーできるか（無料会員か）は公式サイトのログインか、登録したその端末の印で見分ける
+  if (path === KOTOBA_PATH && (method === "GET" || method === "HEAD")) {
+    const h = await siteHome.read(env).catch(() => null);
+    const j = h && h.sidebar && h.sidebar.join && /^[/](?![/])/.test(h.sidebar.join.href || "") ? h.sidebar.join.href : "/xmas-gift";
+    const name = ((await web.getLook(env).catch(() => ({ look: {} }))).look || {}).name || "シアニン";
+    return html(kotobaPageHtml({ siteName: name, join: j }), 200, { "cache-control": "public, max-age=60" });
+  }
+  if (path === "/api/p/kotoba/me" && method === "GET") {
+    const cid = (await readSiteToken(env, cookieValue(request, SITE_COOKIE)).catch(() => null)) || (await readPersonToken(env, request.headers.get("x-lab-u") || "").catch(() => null));
+    const [c] = cid ? await db(env, "GET", `customers?select=id&id=eq.${cid}`) : [];
+    return json({ ok: true, member: !!c }, 200, { "cache-control": "no-store" });
   }
   // 公式サイトの作り直し 便 2：ホームの中身（スライダー・本棚・サイドバー）
   if (path === "/api/p/home" && method === "GET") return json(await siteHome.publicHome(env), 200, { "cache-control": "public, max-age=60" });
