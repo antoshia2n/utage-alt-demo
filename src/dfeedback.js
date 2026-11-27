@@ -77,11 +77,18 @@ export function shapeCompare(points, j) {
   return items.length ? { items, summary: clean(j.summary, 140) } : null;
 }
 
-function parseJson(r) {
-  const raw = typeof r?.response === "string" ? r.response : JSON.stringify(r?.response ?? r?.result?.response ?? "");
-  if (r && typeof r.response === "object" && r.response) return r.response;
-  const m = raw.match(/\{[\s\S]*\}/);
-  return m ? JSON.parse(m[0]) : null;
+// AI の答えの文から JSON を読む。前後の文・```json の囲み・末尾の余分なカンマを外してから読む
+export function rawText(r) {
+  if (r && typeof r.response === "object" && r.response) return JSON.stringify(r.response);
+  return typeof r?.response === "string" ? r.response : JSON.stringify(r?.response ?? r?.result?.response ?? "");
+}
+export function parseLoose(raw) {
+  const t = String(raw || "").replace(/```(?:json)?/g, "");
+  const a = t.indexOf("{"), b = t.lastIndexOf("}");
+  if (a < 0 || b <= a) return null;
+  const body = t.slice(a, b + 1);
+  try { return JSON.parse(body); } catch (_) {}
+  try { return JSON.parse(body.replace(/,\s*([}\]])/g, "$1").replace(/[“”]/g, '"')); } catch (_) { return null; }
 }
 
 // h：{ db, addEvent, logInbound }
@@ -95,13 +102,18 @@ export function makeDesignFeedback(h) {
   async function ask(env, prompt, images, max) {
     if (!env.AI || typeof env.AI.run !== "function") return { error: "no_ai" };
     const content = [{ type: "text", text: prompt }, ...images.map((url) => ({ type: "image_url", image_url: { url } }))];
+    let r;
     try {
-      const r = await env.AI.run(AI_MODEL, { messages: [{ role: "user", content }], max_tokens: max, temperature: 0.2 });
-      return { json: parseJson(r) };
+      r = await env.AI.run(AI_MODEL, { messages: [{ role: "user", content }], max_tokens: max, temperature: 0.2 });
     } catch (e) {
       await logInbound(env, "df_ai", { model: AI_MODEL }, { error: String((e && e.message) || e).slice(0, 300) }, 500).catch(() => {});
       return { error: "ai_failed" };
     }
+    const raw = rawText(r);
+    const json = parseLoose(raw);
+    // 読めなかったときは、直すために AI の答えの頭を残す（画像は残さない）
+    if (!json) await logInbound(env, "df_ai", { model: AI_MODEL }, { error: "unreadable", raw: raw.slice(0, 1500) }, 502).catch(() => {});
+    return { json };
   }
   const imgOk = (v) => typeof v === "string" && v.length <= DF_IMAGE_MAX && IMG_RE.test(v);
 
@@ -115,7 +127,7 @@ export function makeDesignFeedback(h) {
     const r = await ask(env, lookPrompt({ kind, scene, wish: body.wish }), [body.image], 1400);
     if (r.error) return { ok: false, error: r.error };
     const res = shapeLook(kind, r.json);
-    if (!res) { await logInbound(env, "df_ai", { kind }, { error: "unreadable" }, 502).catch(() => {}); return { ok: false, error: "ai_unreadable" }; }
+    if (!res) return { ok: false, error: "ai_unreadable" };
     if (!res.scene) res.scene = scene || "post";
     if (person) await addEvent(env, person.id, "df_look", { kind, scene: res.scene, picks: (res.picks || []).map((p) => p.id), wish: !!clean(body.wish, 300) }, "site");
     const left = person ? Math.max(0, DF_DAILY - (await usedToday(env, person.id))) : 0;
