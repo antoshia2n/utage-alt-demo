@@ -101,7 +101,7 @@ export function kotobaPageHtml({ siteName = "シアニン", join = "/xmas-gift" 
 <div id="live" class="sr" role="status" aria-live="polite"></div>
 <footer class="bf"><div><span style="font-weight:700;color:#1a1a1a">${esc(siteName)}</span><a href="https://lab.shia2n.jp/legal/terms">利用規約</a><a href="https://lab.shia2n.jp/legal/privacy">プライバシーポリシー</a><a href="https://lab.shia2n.jp/legal/tokushoho">特定商取引法に基づく表記</a><span>© 株式会社Best Life Consulting</span></div></footer>
 <script src="/_lab/embed.js" defer data-kind="site"></script>
-<script>(${kotobaClient.toString()})(${JSON.stringify({ rules: KOTOBA_RULES.map((r) => [r[0], r[5], r[6]]), scenes: KOTOBA_SCENES.map((s) => [s.id, s.name, s.rules]), sample: { picks: KOTOBA_SAMPLE.picks.map((p) => [p.id, p.where]), changes: KOTOBA_SAMPLE.changes.map((c) => [c.title, c.steps]) } }).replace(/</g, "\\u003c")});</script>
+<script>var __name=window.__name||function(f){return f};(${kotobaClient.toString()})(${JSON.stringify({ rules: KOTOBA_RULES.map((r) => [r[0], r[5], r[6]]), scenes: KOTOBA_SCENES.map((s) => [s.id, s.name, s.rules]), sample: { picks: KOTOBA_SAMPLE.picks.map((p) => [p.id, p.where]), changes: KOTOBA_SAMPLE.changes.map((c) => [c.title, c.steps]) } }).replace(/</g, "\\u003c")});</script>
 </body></html>`;
 }
 

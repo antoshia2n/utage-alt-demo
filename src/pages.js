@@ -630,7 +630,10 @@ export function makePages(h) {
 }
 
 // 公開のページに差し込む仕掛け（lp の住所の /_lab/embed.js）。ページの中の印を本物の枠に変え、見た・押したを送る
+// 2026-11-27：本番の組み立て（wrangler）は関数の名前を残すために __name(...) を差し込む。関数の中身を文字にして画面へ渡すと
+// __name が無くて止まる（ホーム・視聴・チャット・指示集の部品）。画面へ渡す文の頭で、何もしない __name を置く
 export const EMBED_JS = `(() => {
+  var __name = (f) => f;
   const me = document.currentScript || document.querySelector('script[src*="/_lab/embed.js"]');
   const PAGE = me && me.dataset.page, PREVIEW = me && me.dataset.preview === "1", LAB = (me && me.dataset.lab) || "";
   const KIND = (me && me.dataset.kind) || ""; // 便 3：blog＝記事、site＝記事の一覧など（ページの番号が無く、ログインの表示だけ）

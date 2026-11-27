@@ -85,7 +85,7 @@ export function chatPageHtml({ siteName = "シアニン", join = "/xmas-gift" } 
 </main>
 <footer class="bf"><div><span style="font-weight:700;color:#1a1a1a">${esc(siteName)}</span><a href="https://lab.shia2n.jp/legal/terms">利用規約</a><a href="https://lab.shia2n.jp/legal/privacy">プライバシーポリシー</a><a href="https://lab.shia2n.jp/legal/tokushoho">特定商取引法に基づく表記</a><span>© 株式会社Best Life Consulting</span></div></footer>
 <script src="/_lab/embed.js" defer data-kind="site"></script>
-<script>(${chatClient.toString()})();</script>
+<script>var __name=window.__name||function(f){return f};(${chatClient.toString()})();</script>
 </body></html>`;
 }
 
