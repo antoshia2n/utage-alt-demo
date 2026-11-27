@@ -82,6 +82,31 @@ export const KOTOBA_WISHES = [
   { id: "soft", name: "やさしい雰囲気に", ja: ["色をくすみ寄り・パステル寄りにする", "四角の角を丸くする", "写真や絵は、やわらかい光にする", "文字は細めの書体にする"], en: ["Shift colors toward muted pastels", "Round the corners of boxes", "Use soft, diffused light in photos or illustrations", "Use a lighter-weight typeface"], words: ["パステル", "くすみ色", "やわらかい拡散光"] },
 ];
 
+// 2026-11-27（Naoki OK 12:50）：見立ては使う人の ChatGPT・Claude に任せる（Workers AI は外れた・ChatGPT は Naoki の画像 3 枚とも合格）。
+// 無料会員に体験版の文をコピーで渡し、有料のスキル（shia2n-design-feedback）へ案内する
+export function kotobaTrialPrompt() {
+  return `あなたは日本語で話すアートディレクターです。添付の画像は、私が作った SNS 用の画像です。
+下の「直す所の一覧」から、この画像で直すと一番良くなるものを3つ、効く順に選んでください。
+
+決まり
+・画像に実際に見えていることだけを根拠にする。見えていないことは書かない
+・良い所が多い画像でも、直すと良くなる所を選ぶ
+・人名・作品名・ブランド名は書かない
+
+出す形
+よい所：1文
+直す所（3つ）：番号・名前／画像のどこか／なぜそう見たか（1文）
+まとめた指示：画像を作る AI にそのまま貼れる形で、3つを直す指示（「それ以外は変えない」を付ける）
+
+直す所の一覧
+${KOTOBA_RULES.map((r) => `${r[0]}. ${r[2]}（${r[3]}）`).join("\n")}`;
+}
+function trialBlock() {
+  return `<div class="tr"><ol class="tr-steps"><li>下の「体験版の文をコピー」を押す</li><li>ChatGPT か Claude の新しいチャットに、自分の画像を1枚添えて貼り、送る</li><li>よい所・直す所3つ・そのまま貼れる直しの指示が返ってくる</li></ol>
+<div class="all1"><p>体験版の文（直す所の一覧40つき）</p><pre class="lk-out tr-pre">${esc(kotobaTrialPrompt().split("\n").slice(0, 6).join("\n"))}\n…（続きはコピーで）</pre><button type="button" class="cp" data-copy="trial" data-id="1">体験版の文をコピー</button></div>
+<p class="lk-note">直した画像と比べる・自分のデザインの決めごと（マイスタイル）をためる・参考作品とのパクリ度を見る、は有料版（準備中）で使えます。</p></div>`;
+}
+
 function lookBlock() {
   const first = KOTOBA_SCENES[0];
   const ck = (r) => `<label class="ckr"><input type="checkbox" data-pk="${r[0]}"><span><b>「${esc(r[2])}」</b><small>${esc(r[3])}</small></span></label>`;
@@ -114,21 +139,22 @@ export function kotobaPageHtml({ siteName = "シアニン", join = "/xmas-gift" 
 <main id="main" tabindex="-1" class="kw">
 <section class="hero"><p class="hand" aria-hidden="true">ノンデザイナーのための</p><h1>AIに伝わる、デザインの直し方</h1>
 <p>気になる所から、デザイナーが使う言葉と、AI にそのまま貼れる直しの指示が見つかります。参考の作品をまねずに、良さだけを借りる考え方で作っています。</p>
-<p class="jump"><a href="#sample">見本の見立てを見る</a><a href="#scenes">場面で選ぶ</a><a href="#all">気になる所から探す</a></p>
+<p class="jump"><a href="#trial">AI に見立ててもらう</a><a href="#sample">見本の見立てを見る</a><a href="#scenes">場面で選ぶ</a><a href="#all">気になる所から探す</a></p>
 <p class="gate-note" id="gate-note">指示のコピーは無料会員の方がご利用いただけます。<a href="${esc(join)}">無料会員登録</a>　<a href="/login?next=${encodeURIComponent(KOTOBA_PATH)}">ログイン</a></p></section>
 <div class="lang" role="group" aria-label="コピーする言葉"><span>コピーする言葉</span><button type="button" data-lang="ja" aria-pressed="true">日本語</button><button type="button" data-lang="en" aria-pressed="false">英語</button></div>
-<section id="look" aria-labelledby="h-look"><h2 id="h-look">自分の画像をチェックする</h2>${lookBlock()}</section>
+<section id="trial" aria-labelledby="h-trial"><h2 id="h-trial">AI に自分の画像を見立ててもらう（体験版）</h2>${trialBlock()}</section>
+<section id="look" aria-labelledby="h-look"><h2 id="h-look">自分の画像を自分でチェックする</h2>${lookBlock()}</section>
 <section id="sample" aria-labelledby="h-sample"><h2 id="h-sample">見本：この図解を見立てると</h2>${sampleBlock()}</section>
 <section id="scenes" aria-labelledby="h-scenes"><h2 id="h-scenes">場面で選ぶ</h2>${sceneTabs()}</section>
 <section id="all" aria-labelledby="h-all"><h2 id="h-all">気になる所から探す（${KOTOBA_RULES.length}枚）</h2>${views}<div class="cards">${KOTOBA_RULES.map(ruleCard).join("")}</div></section>
 <p class="disc">この画面の指示は、見た目を直すための一般的な考え方です。参考にした作品と似ていないか、法的に問題がないかの判断はしません。</p>
 </main>
-<dialog id="d-gate" aria-labelledby="d-gate-h"><h2 id="d-gate-h">コピーは無料会員の方がご利用いただけます</h2><p>メールアドレスだけで登録できます。登録すると、40枚の指示と場面ごとのまとめを何度でもコピーできます。</p>
+<dialog id="d-gate" aria-labelledby="d-gate-h"><h2 id="d-gate-h">コピーは無料会員の方がご利用いただけます</h2><p>メールアドレスだけで登録できます。登録すると、AI に画像を見立ててもらう体験版の文と、40枚の指示・場面ごとのまとめを何度でもコピーできます。</p>
 <p class="d-btns"><a class="go" href="${esc(join)}">無料会員登録</a><a class="sub" href="/login?next=${encodeURIComponent(KOTOBA_PATH)}">登録済みの方はログイン</a></p><form method="dialog"><button class="x">閉じる</button></form></dialog>
 <div id="live" class="sr" role="status" aria-live="polite"></div>
 <footer class="bf"><div><span style="font-weight:700;color:#1a1a1a">${esc(siteName)}</span><a href="https://lab.shia2n.jp/legal/terms">利用規約</a><a href="https://lab.shia2n.jp/legal/privacy">プライバシーポリシー</a><a href="https://lab.shia2n.jp/legal/tokushoho">特定商取引法に基づく表記</a><span>© 株式会社Best Life Consulting</span></div></footer>
 <script src="/_lab/embed.js" defer data-kind="site"></script>
-<script>var __name=window.__name||function(f){return f};(${kotobaClient.toString()})(${JSON.stringify({ rules: KOTOBA_RULES.map((r) => [r[0], r[5], r[6], r[2], r[3]]), wishes: KOTOBA_WISHES, words: KOTOBA_WORDS.filter((w) => KOTOBA_WISHES.some((x) => x.words.includes(w[0]))), scenes: KOTOBA_SCENES.map((s) => [s.id, s.name, s.rules]), sample: { picks: KOTOBA_SAMPLE.picks.map((p) => [p.id, p.where]), changes: KOTOBA_SAMPLE.changes.map((c) => [c.title, c.steps]) } }).replace(/</g, "\\u003c")});</script>
+<script>var __name=window.__name||function(f){return f};(${kotobaClient.toString()})(${JSON.stringify({ trial: kotobaTrialPrompt(), rules: KOTOBA_RULES.map((r) => [r[0], r[5], r[6], r[2], r[3]]), wishes: KOTOBA_WISHES, words: KOTOBA_WORDS.filter((w) => KOTOBA_WISHES.some((x) => x.words.includes(w[0]))), scenes: KOTOBA_SCENES.map((s) => [s.id, s.name, s.rules]), sample: { picks: KOTOBA_SAMPLE.picks.map((p) => [p.id, p.where]), changes: KOTOBA_SAMPLE.changes.map((c) => [c.title, c.steps]) } }).replace(/</g, "\\u003c")});</script>
 </body></html>`;
 }
 
@@ -164,7 +190,7 @@ details{border:1px solid #d9d6cf;border-radius:8px;background:#fff;margin:8px 0}
 .ckr{display:flex;gap:12px;align-items:flex-start;min-height:44px;padding:8px 0;cursor:pointer}.ckr input{flex:none;width:22px;height:22px;margin:3px 0 0}.ckr small{display:block;font-size:14px;color:#555}.chips button[aria-pressed=true]{background:#1a1a1a;color:#fff;border-color:#1a1a1a}
 .cmp2{display:flex;gap:12px;margin:12px 0}.cmp2 figure{flex:1 1 0;margin:0;min-width:0}.cmp2 img{width:100%;height:auto;border:1px solid #d9d6cf;border-radius:4px}.cmp2 figcaption{font-size:14px;color:#555}
 .ok{color:#1a1a1a;font-weight:700}.ng2{color:#c8102e;font-weight:700}.cmpl{list-style:none;padding:0;margin:8px 0}.cmpl li{padding:8px 0;border-bottom:1px solid #d9d6cf}
-.fl{display:inline-flex;align-items:center;cursor:pointer}.soon{font-size:14px;color:#555}.tl{display:inline-flex;min-height:44px;align-items:center}
+.fl{display:inline-flex;align-items:center;cursor:pointer}.tr-steps{padding-left:24px}.tr-steps li{margin:4px 0}.tr-pre{max-height:9em;overflow:hidden}.soon{font-size:14px;color:#555}.tl{display:inline-flex;min-height:44px;align-items:center}
 .tabs{display:flex;flex-wrap:wrap;gap:8px;border-bottom:1px solid #d9d6cf}.tabs button{min-height:56px;padding:8px 16px;border:1px solid transparent;border-bottom:0;border-radius:8px 8px 0 0;background:none;display:flex;flex-direction:column;align-items:flex-start;line-height:1.4}.tabs button small{font-size:14px;color:#555}
 .tabs button[aria-selected=true]{background:#fff;border-color:#d9d6cf;font-weight:700;margin-bottom:-1px}
 .sp{background:#fff;border:1px solid #d9d6cf;border-top:0;border-radius:0 0 8px 8px;padding:8px 24px 24px}.sp ul,.sp ol{padding-left:24px;margin:0}
@@ -202,6 +228,7 @@ export function kotobaClient(D) {
     }
     if (kind === "change") { const c = D.sample.changes[Number(id)]; return c ? c[0] + "にしてください。\n" + c[1].map((s, i) => (i + 1) + ". " + s).join("\n") : ""; }
     if (kind === "look") return lookText();
+    if (kind === "trial") return D.trial;
     return "";
   }
   function say(m) {
